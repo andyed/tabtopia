@@ -2,11 +2,20 @@ import { getFaviconUrl } from './utility.js';
 
 const margin = { top: 20, right: 30, bottom: 30, left: 60 };
 const sharedTimeScale = d3.scaleTime();
+let width, height; // Declare these at file scope
 
 export function initializeTimeline() {
   const container = d3.select('#timeline-svg');
-  const width = container.node().getBoundingClientRect().width - margin.left - margin.right;
-  const height = container.node().getBoundingClientRect().height - margin.top - margin.bottom;
+  const element = container.node();
+  
+  if (!element) {
+    console.error('Timeline container not found');
+    return;
+  }
+
+  // Initialize dimensions
+  width = element.getBoundingClientRect().width - margin.left - margin.right;
+  height = element.getBoundingClientRect().height - margin.top - margin.bottom;
 
   // Clear existing content
   container.selectAll('*').remove();
@@ -15,14 +24,17 @@ export function initializeTimeline() {
   const g = container.append('g')
     .attr('transform', `translate(${margin.left},${margin.top})`);
 
-  // Add axes groups
-  g.append('g')
-    .attr('class', 'x-axis')
-    .attr('transform', `translate(0,${height - margin.bottom})`);
-
   // Add plot area group
   g.append('g')
     .attr('class', 'plot-area');
+
+  // Add x-axis group
+  g.append('g')
+    .attr('class', 'x-axis')
+    .attr('transform', `translate(0,${margin.top})`);
+
+  // Setup initial zoom
+  setupZooming();
 
   return { width, height, g };
 }
@@ -105,31 +117,33 @@ export function updateTimeline(data) {
       .attr('data-window-id', window.id);
   });
 
-  // Plot history points with jitter
-  const historyPoints = plotArea.selectAll('.history-point')
-    .data(historySwimlane)
+  // Plot history points with jitter and store y position
+  const historyPoints = plotArea.selectAll('.timeline-point.history')
+    .data(historySwimlane.map(d => ({
+      ...d,
+      yPos: jitterScale() // Store y position in data
+    })))
     .enter()
     .append('g')
     .attr('class', 'timeline-point history')
-    .attr('transform', d => {
-      const x = sharedTimeScale(new Date(d.lastVisitTime));
-      const y = jitterScale(); // Add vertical jitter
-      return `translate(${x},${y})`;
-    });
+    .attr('transform', d => `translate(${sharedTimeScale(new Date(d.lastVisitTime))},${d.yPos})`);
 
-  // Plot window points
+  // Plot window points with stored y position
   validWindows.forEach((window, i) => {
     const tabs = windowSwimlanes[window.id] || [];
+    const yPos = historyHeight + (i * windowHeight) + (windowHeight / 2);
+    
     const windowPoints = plotArea.selectAll(`.window-point-${window.id}`)
-      .data(tabs)
+      .data(tabs.map(d => ({
+        ...d,
+        yPos: yPos // Store y position in data
+      })))
       .enter()
       .append('g')
       .attr('class', `timeline-point window-${window.id}`)
-      .attr('transform', d => {
-        const x = sharedTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
-        const y = historyHeight + (i * windowHeight) + (windowHeight / 2);
-        return `translate(${x},${y})`;
-      });
+      .attr('transform', d => 
+        `translate(${sharedTimeScale(new Date(d.lastVisitTime || d.lastAccessed))},${d.yPos})`
+      );
 
     addFaviconsToPoints(windowPoints);
   });
@@ -159,13 +173,22 @@ function addFaviconsToPoints(points) {
 
   // Add favicon images
   points.append('image')
-    .attr('xlink:href', d => `chrome://favicon/size/16@1x/${d.url}`)
     .attr('x', -8)
     .attr('y', -8)
     .attr('width', 16)
     .attr('height', 16)
     .attr('clip-path', function() {
       return `url(#${this.parentNode.querySelector('clipPath').id})`;
+    })
+    .each(function(d) {
+      // Async load favicon
+      getFaviconUrl(d.url).then(faviconUrl => {
+        d3.select(this)
+          .attr('xlink:href', faviconUrl)
+          .on('error', function() {
+            d3.select(this).attr('xlink:href', '/images/default-favicon.png');
+          });
+      });
     });
 }
 
@@ -180,23 +203,43 @@ export function setupBrushing() {
 }
 
 export function setupZooming() {
+  const svg = d3.select('#timeline-svg');
+  const plotArea = svg.select('.plot-area');
+
+  // Create zoom behavior
   const zoom = d3.zoom()
-    .on('zoom', (event) => {
-      // Update both visualizations when zooming
-      const newScale = event.transform.rescaleX(sharedTimeScale);
-      
-      // Update timeline
-      d3.select('#timeline-svg .x-axis').call(d3.axisBottom(newScale));
-      // Update timeline elements...
+    .scaleExtent([1, 20]) // Limit zoom scale
+    .on('zoom', zoomed);
 
-      // Update graph
-      d3.select('#graph-svg .x-axis').call(d3.axisTop(newScale));
-      // Update graph elements...
-    });
+  // Add zoom to SVG
+  svg.call(zoom);
 
-  // Apply zoom to both containers
-  d3.select('#timeline-svg').call(zoom);
-  d3.select('#graph-svg').call(zoom);
+  // Initialize with slight zoom into recent time
+  const initialTransform = d3.zoomIdentity
+    .scale(1.5)
+    .translate(-width * 0.3, 0); // Move right to show recent items
+
+  svg.call(zoom.transform, initialTransform);
+
+  function zoomed(event) {
+    const newTimeScale = event.transform.rescaleX(sharedTimeScale);
+    
+    // Update x-axis
+    svg.select('.x-axis')
+      .call(d3.axisTop(newTimeScale)
+        .tickFormat(d3.timeFormat('%H:%M')));
+
+    // Update all points using stored y positions
+    plotArea.selectAll('.timeline-point')
+      .attr('transform', d => {
+        const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
+        return `translate(${x},${d.yPos})`;
+      })
+      .style('display', d => {
+        const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
+        return x >= 0 && x <= width ? '' : 'none';
+      });
+  }
 }
 
 export async function drawSwimlanes(categorizedData) {
