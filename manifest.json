@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "histospire",
+  "version": "1.0",
+  "description": "A Chrome extension to visualize browsing history using D3.js",
+  "permissions": [
+    "history",
+    "tabs",
+    "storage",
+    "activeTab",
+    "webRequest",
+    "webRequestBlocking",
+    "windows",
+    "chrome://favicon/",
+    "favicon",
+    "*://*/*"
+
+  ],  
+  "web_accessible_resources": [
+    {
+      "resources": ["src/newtab/*.js", "_favicon/*"],
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": true,
+      "extension_ids": ["*"]
+    }
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "chrome_url_overrides": {
+    "newtab": "src/newtab/newtab.html"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' https://cdnjs.cloudflare.com; object-src 'self'"
+  }
+}

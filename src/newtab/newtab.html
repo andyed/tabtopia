@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Histospire</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <div id="header">
+    <div id="title">Histospire</div>
+    <div id="readout-container">
+      <span id="default-stats">
+        <span id="total-history-items"></span>
+        <span id="total-active-tabs"></span>
+        <span id="total-edges"></span>
+        <span id="average-edges-connected"></span>
+        <span id="total-sessions"></span>
+      </span>
+      <span id="tooltip-info" style="display: none;"></span>
+    </div>
+  </div>
+  <div class="visualization-container">
+    <div id="timeline-container">
+      <svg id="timeline-svg"></svg>
+    </div>
+    <div id="graph-container">
+      <svg id="graph-svg"></svg>
+    </div>
+    <div id="swimlanes-container">
+      <div class="swimlane history-swimlane">
+        <div class="swimlane-title">History</div>
+        <div class="swimlane-content" id="history-content"></div>
+      </div>
+      <div id="window-swimlanes"></div>
+    </div>
+  </div>
+  <!-- Use local D3.js instead of CDN -->
+  <script src="../lib/d3.min.js"></script>
+  <script type="module" src="utility.js"></script>
+  <script type="module" src="d3-visualizations.js"></script>
+  <script type="module" src="newtab.js"></script>
+</body>
+</html>
