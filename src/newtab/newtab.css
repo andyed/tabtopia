@@ -137,8 +137,9 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-align: right;
+  text-align: center;
   justify-content: flex-end;
+  padding-right:30px;
 }
 
 #default-stats {
