@@ -600,6 +600,17 @@ export function updateGraph(data) {
   // Add favicons to new nodes
   addFaviconsToPoints(nodeEnter);
 
+  // Add abbreviated titles for current tabs if there are fewer than 30 nodes
+  if (nodesArray.length < 30) {
+    nodeEnter.filter(d => d.type === 'current')
+      .append('text')
+      .attr('x', 12)
+      .attr('y', 4)
+      .attr('font-size', '10px')
+      .attr('fill', '#333')
+      .text(d => abbreviateTitle(d.title, 15));
+  }
+
   // Merge enter + update selections
   const nodesUpdate = nodeEnter.merge(nodes);
 
@@ -616,30 +627,12 @@ export function updateGraph(data) {
       .attr('x2', d => d.target.x)
       .attr('y2', d => d.target.y);
 
-      nodesUpdate
+    nodesUpdate
       .attr('transform', d => `translate(${d.x},${d.y})`);
   });
 
   // Restart simulation
   graphSimulation.alpha(1).restart();
-}
-
-// Add drag handlers
-function dragStarted(event) {
-  if (!event.active) graphSimulation.alphaTarget(0.3).restart();
-  event.subject.fx = event.subject.x;
-  event.subject.fy = event.subject.y;
-}
-
-function dragged(event) {
-  event.subject.fx = event.x;
-  event.subject.fy = event.y;
-}
-
-function dragEnded(event) {
-  if (!event.active) graphSimulation.alphaTarget(0);
-  event.subject.fx = null;
-  event.subject.fy = null;
 }
 
 export function setupBrushing() {
@@ -1105,4 +1098,28 @@ function createSwimlaneLabel(selection, type, windowId = null) {
       <path d="M9 8h.01" />
     `);
   }
+}
+
+function dragStarted(event, d) {
+  if (!event.active) graphSimulation.alphaTarget(0.3).restart();
+  d.fx = d.x;
+  d.fy = d.y;
+}
+
+function dragged(event, d) {
+  d.fx = event.x;
+  d.fy = event.y;
+}
+
+function dragEnded(event, d) {
+  if (!event.active) graphSimulation.alphaTarget(0);
+  d.fx = null;
+  d.fy = null;
+}
+
+function abbreviateTitle(title, maxLength) {
+  if (title.length > maxLength) {
+    return title.substring(0, maxLength) + '...';
+  }
+  return title;
 }
