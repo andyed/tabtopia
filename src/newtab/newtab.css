@@ -9,17 +9,23 @@ body {
 
 .visualization-container {
   width: 100vw;
-  padding: 10px; /* Reduced from 20px */
+  padding: 0 16px;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 #timeline-container {
   width: 100%;
   min-height: 100px;
-  margin-bottom: 16px; /* Increased from 8px */
+  max-height: 160px;
+  margin-bottom: 8px; /* Reduced from 16px */
   overflow: visible;
   height: auto; /* Remove fixed height */
   position: relative; /* For legend positioning */
+  flex: 0 0 auto; /* Don't grow, don't shrink, auto height */
 }
 
 #timeline-svg, #graph-svg {
@@ -302,7 +308,6 @@ swimlane-content::-webkit-scrollbar-thumb {
   fill: #e8f0fe;
   stroke: #1a73e8;
   stroke-width: 2px;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.1));
 }
 
 .timeline-point.current-tab:hover .favicon-background {
@@ -386,4 +391,23 @@ swimlane-content::-webkit-scrollbar-thumb {
   width: 100%;
   height: 300px; /* Adjust based on your needs */
   margin-top: 16px;
+  flex: 1 1 auto; /* Grow and shrink as needed */
+  min-height: 300px;
+  position: relative;
+  background: white;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+#graph-svg {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: grab;
+}
+
+#graph-svg:active {
+  cursor: grabbing;
 }

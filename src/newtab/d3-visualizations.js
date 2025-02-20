@@ -1,7 +1,7 @@
 import { getFaviconUrl } from './utility.js';
 
 // Update margin constant at the top
-const margin = { top: 20, right: 20, bottom: 30, left: 20 }; // Reduced left margin
+const margin = { top: 0, right: 0, bottom: 20, left: 0 }; // Only keep bottom margin for axis
 const sharedTimeScale = d3.scaleTime();
 let width, height; // Declare these at file scope
 let currentData = null;
@@ -14,13 +14,16 @@ const TRANSITION_DURATION = 300;
 // Add new focus force constant at top with other constants
 const focusForce = d3.forceRadial(0, 0, 0).strength(0);
 
-// Add near top with other shared variables
+// Update graphSimulation initialization at top
 const graphSimulation = d3.forceSimulation()
-  .force('link', d3.forceLink().id(d => d.url).distance(50)) // Reduced from 100
-  .force('charge', d3.forceManyBody().strength(-100)) // Reduced from -300
+  .force('link', d3.forceLink().id(d => d.url).distance(50))
+  .force('charge', d3.forceManyBody().strength(-150))
   .force('center', d3.forceCenter())
-  .force('collision', d3.forceCollide().radius(15)) // Reduced from 30
-  .force('focus', focusForce);
+  .force('collision', d3.forceCollide().radius(15))
+  .force('x', d3.forceX())
+  .force('y', d3.forceY())
+  .alphaDecay(0.02) // Slower decay for smoother transitions
+  .velocityDecay(0.4); // More damping to reduce jerkiness
 
 // Add near top with other constants
 const PAN_STEP = 200; // Pixels to pan per keypress
@@ -63,23 +66,21 @@ export function initializeTimeline() {
   return { width, height, g };
 }
 
+// Update initializeGraph
 export function initializeGraph() {
   const container = d3.select('#graph-svg');
   const element = container.node();
   
   if (!element) return;
 
-  // Set initial dimensions
-  const width = element.getBoundingClientRect().width - margin.left - margin.right;
-  const height = element.getBoundingClientRect().height - margin.top - margin.bottom;
+  const width = element.getBoundingClientRect().width;
+  const height = element.getBoundingClientRect().height;
 
-  // Clear existing content
   container.selectAll('*').remove();
 
-  // Create main group
+  // Create main group without margins
   const g = container.append('g')
-    .attr('class', 'plot-area')
-    .attr('transform', `translate(${margin.left},${margin.top})`);
+    .attr('class', 'plot-area');
 
   // Add zoom behavior
   const zoom = d3.zoom()
@@ -88,7 +89,6 @@ export function initializeGraph() {
       g.attr('transform', event.transform);
     });
 
-  // Apply zoom to container
   container.call(zoom);
 
   // Initialize simulation
@@ -152,11 +152,14 @@ export function updateTimeline(data) {
   const plotArea = container.select('.plot-area');
   plotArea.selectAll('*').remove();
 
-  // Add swimlane backgrounds
+  // Add swimlane backgrounds with correct positioning
+  plotArea.selectAll('.timeline-swimlane').remove();
+
+  // Add history swimlane
   plotArea.append('rect')
     .attr('class', 'timeline-swimlane history')
     .attr('x', 0)
-    .attr('y', 0)
+    .attr('y', 0) // Remove margin.top offset since plotArea is already transformed
     .attr('width', width)
     .attr('height', historyHeight);
 
@@ -165,7 +168,7 @@ export function updateTimeline(data) {
     plotArea.append('rect')
       .attr('class', 'timeline-swimlane window')
       .attr('x', 0)
-      .attr('y', yPos)
+      .attr('y', yPos) // Remove margin.top offset
       .attr('width', width)
       .attr('height', windowHeight)
       .attr('data-window-id', window.id);
@@ -402,6 +405,7 @@ async function handlePointClick(d) {
   }
 }
 
+// Update the relevant section in updateGraph function
 export function updateGraph(data) {
   if (!data?.historySwimlane) return;
 
@@ -499,6 +503,9 @@ export function updateGraph(data) {
   graphSimulation
     .nodes(nodesArray)
     .force('link').links(visibleLinks);
+
+  // Add a gentle alpha target to smooth transitions
+  graphSimulation.alpha(0.3).alphaTarget(0).restart();
 
   // Update links
   const links = plotArea.selectAll('.graph-link')
@@ -818,4 +825,59 @@ function cleanup() {
   if (updateTimer) {
     clearInterval(updateTimer);
   }
+}
+
+// Update updateGraph function to adjust forces based on aspect ratio
+// Update updateForcesByAspectRatio
+function updateForcesByAspectRatio(width, height) {
+  const aspectRatio = width / height;
+  const xStrength = 0.3; // Increased to make time-based positioning stronger
+  const yStrength = xStrength * aspectRatio;
+
+  // Use full dimensions without margins
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  // Use timeline's time scale for X positioning
+  graphSimulation
+    .force('x')
+    .strength(xStrength)
+    .x(d => {
+      const time = new Date(d.lastVisitTime || d.lastAccessed);
+      const timeScale = sharedTimeScale.copy()
+        .range([width * 0.1, width * 0.9]);
+      return timeScale(time);
+    });
+
+  // Use windowHeight-based Y positioning for nodes from same window
+  graphSimulation
+    .force('y')
+    .strength(yStrength)
+    .y(d => {
+      if (d.windowId) {
+        // Position window nodes near their swimlane
+        return d.yPos || centerY;
+      }
+      // Spread history nodes vertically around center
+      return centerY + (Math.random() - 0.5) * height * 0.3;
+    });
+
+  // Adjust other forces to work better with time-based layout
+  const baseLinkDistance = Math.min(width, height) * 0.15;
+  const baseCharge = -Math.min(width, height) * 0.3; // Reduced to prevent fighting with time-based positioning
+
+  graphSimulation
+    .force('link')
+    .distance(baseLinkDistance);
+
+  graphSimulation
+    .force('charge')
+    .strength(baseCharge);
+
+  // Center force becomes weaker to allow time-based positioning to dominate
+  graphSimulation
+    .force('center')
+    .strength(0.1) // Reduced from default
+    .x(centerX)
+    .y(centerY);
 }
