@@ -19,11 +19,12 @@ const graphSimulation = d3.forceSimulation()
   .force('link', d3.forceLink().id(d => d.url).distance(50))
   .force('charge', d3.forceManyBody().strength(-150))
   .force('center', d3.forceCenter())
-  .force('collision', d3.forceCollide().radius(15))
+  .force('collision', d3.forceCollide().radius(20))  // Increased radius
   .force('x', d3.forceX())
   .force('y', d3.forceY())
-  .alphaDecay(0.02) // Slower decay for smoother transitions
-  .velocityDecay(0.4); // More damping to reduce jerkiness
+  .alphaDecay(0.1)        // Faster initial decay
+  .velocityDecay(0.6)     // More damping
+  .alpha(0.3);            // Lower initial energy
 
 // Add near top with other constants
 const PAN_STEP = 200; // Pixels to pan per keypress
@@ -547,23 +548,36 @@ export function updateGraph(data) {
     .append('line')
     .attr('class', d => `graph-link ${d.type}`);
 
-  // Update nodes
+  // Update nodes with proper enter selection
   const nodes = plotArea.selectAll('.graph-node')
     .data(nodesArray, d => d.url);
-
+  
+  // Remove old nodes
   nodes.exit().remove();
 
+  // Create enter selection
   const nodeEnter = nodes.enter()
     .append('g')
-    .attr('class', d => `graph-node ${d.type}`)
+    .attr('class', 'graph-node')
+    .on('mouseenter', handleNodeHover)
+    .on('mouseleave', handleNodeHover)
     .call(d3.drag()
       .on('start', dragStarted)
       .on('drag', dragged)
       .on('end', dragEnded));
 
+  // Add favicons to new nodes
   addFaviconsToPoints(nodeEnter);
 
-  // Set up tick function
+  // Merge enter + update selections
+  const nodesUpdate = nodeEnter.merge(nodes);
+
+  // Update simulation with all nodes
+  graphSimulation
+    .nodes(nodesArray)
+    .force('link').links(visibleLinks);
+
+  // Set up tick function with merged selection
   graphSimulation.on('tick', () => {
     plotArea.selectAll('.graph-link')
       .attr('x1', d => d.source.x)
@@ -571,7 +585,7 @@ export function updateGraph(data) {
       .attr('x2', d => d.target.x)
       .attr('y2', d => d.target.y);
 
-    plotArea.selectAll('.graph-node')
+    nodesUpdate
       .attr('transform', d => `translate(${d.x},${d.y})`);
   });
 
@@ -905,4 +919,24 @@ function updateForcesByAspectRatio(width, height) {
     .strength(0.1) // Reduced from default
     .x(centerX)
     .y(centerY);
+}
+
+// Add this function to stop simulation on hover
+function handleNodeHover(event, d) {
+  if (event.type === 'mouseenter') {
+    // Pause simulation
+    graphSimulation.alpha(0);
+    graphSimulation.stop();
+    
+    // Fix node position
+    d.fx = d.x;
+    d.fy = d.y;
+  } else if (event.type === 'mouseleave') {
+    // Release node position
+    d.fx = null;
+    d.fy = null;
+    
+    // Gently restart simulation
+    graphSimulation.alpha(0.1).restart();
+  }
 }
