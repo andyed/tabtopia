@@ -212,4 +212,45 @@ function hideTooltipInfo() {
   document.getElementById('default-stats').style.display = 'inline';
 }
 
+// Add navigation event listeners
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  // Only handle complete navigation events with URLs
+  if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
+    updateTimelineWithNavigation(tab);
+  }
+});
+
+async function updateTimelineWithNavigation(tab) {
+  try {
+    // Get the window this tab belongs to
+    const window = await new Promise(resolve => {
+      chrome.windows.get(tab.windowId, { populate: true }, resolve);
+    });
+
+    // Update currentData with new navigation
+    if (currentData) {
+      const newNavigation = {
+        url: tab.url,
+        title: tab.title,
+        lastVisitTime: Date.now(),
+        windowId: tab.windowId,
+        tabId: tab.id,
+        favIconUrl: tab.favIconUrl,
+        isCurrentTab: true
+      };
+
+      // Add to appropriate window swimlane
+      if (!currentData.windowSwimlanes[tab.windowId]) {
+        currentData.windowSwimlanes[tab.windowId] = [];
+      }
+      currentData.windowSwimlanes[tab.windowId].push(newNavigation);
+
+      // Update the visualization
+      updateTimeline(currentData);
+    }
+  } catch (error) {
+    console.error('Error updating timeline with navigation:', error);
+  }
+}
+
 

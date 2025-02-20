@@ -101,7 +101,7 @@ export function updateTimeline(data) {
   const plotArea = container.select('.plot-area');
   plotArea.selectAll('*').remove();
 
-  // Add history swimlane
+  // Add swimlane backgrounds
   plotArea.append('rect')
     .attr('class', 'timeline-swimlane history')
     .attr('x', 0)
@@ -109,7 +109,6 @@ export function updateTimeline(data) {
     .attr('width', width)
     .attr('height', historyHeight);
 
-  // Add window swimlanes
   validWindows.forEach((window, i) => {
     const yPos = historyHeight + (i * windowHeight);
     plotArea.append('rect')
@@ -121,46 +120,50 @@ export function updateTimeline(data) {
       .attr('data-window-id', window.id);
   });
 
-  // Plot history points with jitter and store y position
+  // Update history points
   const historyPoints = plotArea.selectAll('.timeline-point.history')
-    .data(historySwimlane.map(d => ({
-      ...d,
-      yPos: jitterScale() // Store y position in data
-    })))
-    .enter()
+    .data(historySwimlane, d => d.url + d.lastVisitTime);
+
+  historyPoints.exit().remove();
+
+  const historyEnter = historyPoints.enter()
     .append('g')
     .attr('class', 'timeline-point history')
-    .attr('transform', d => `translate(${sharedTimeScale(new Date(d.lastVisitTime))},${d.yPos})`);
+    .attr('transform', d => {
+      const x = sharedTimeScale(new Date(d.lastVisitTime));
+      const y = jitterScale();
+      d.yPos = y; // Store y position in data
+      return `translate(${x},${y})`;
+    });
 
-  // Plot window points with stored y position
+  addFaviconsToPoints(historyEnter);
+
+  // Update window points
   validWindows.forEach((window, i) => {
     const tabs = windowSwimlanes[window.id] || [];
     const yPos = historyHeight + (i * windowHeight) + (windowHeight / 2);
     
-    const windowPoints = plotArea.selectAll(`.window-point-${window.id}`)
-      .data(tabs.map(d => ({
-        ...d,
-        yPos: yPos // Store y position in data
-      })))
-      .enter()
+    const windowPoints = plotArea.selectAll(`.timeline-point.window-${window.id}`)
+      .data(tabs, d => d.url + (d.lastVisitTime || d.lastAccessed));
+
+    windowPoints.exit().remove();
+
+    const windowEnter = windowPoints.enter()
       .append('g')
       .attr('class', `timeline-point window-${window.id}`)
-      .attr('transform', d => 
-        `translate(${sharedTimeScale(new Date(d.lastVisitTime || d.lastAccessed))},${d.yPos})`
-      );
+      .attr('transform', d => {
+        const x = sharedTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
+        d.yPos = yPos;
+        return `translate(${x},${yPos})`;
+      });
 
-    addFaviconsToPoints(windowPoints);
+    addFaviconsToPoints(windowEnter);
   });
 
-  // Add favicons to history points
-  addFaviconsToPoints(historyPoints);
-
-  // Update x-axis with time format
-  const xAxis = d3.axisBottom(sharedTimeScale)
-    .tickFormat(d3.timeFormat('%H:%M'));
-  
+  // Update x-axis
   container.select('.x-axis')
-    .call(xAxis);
+    .call(d3.axisBottom(sharedTimeScale)
+      .tickFormat(d3.timeFormat('%H:%M')));
 }
 
 function addFaviconsToPoints(points) {
@@ -175,7 +178,7 @@ function addFaviconsToPoints(points) {
     .attr('class', 'favicon-background')
     .attr('r', 8);
 
-  // Add favicon images
+  // Add favicon images with click handler
   points.append('image')
     .attr('x', -8)
     .attr('y', -8)
@@ -183,6 +186,11 @@ function addFaviconsToPoints(points) {
     .attr('height', 16)
     .attr('clip-path', function() {
       return `url(#${this.parentNode.querySelector('clipPath').id})`;
+    })
+    .style('cursor', 'pointer') // Add pointer cursor
+    .on('click', function(event, d) {
+      event.stopPropagation();
+      handlePointClick(d);
     })
     .each(function(d) {
       // Async load favicon
@@ -194,6 +202,33 @@ function addFaviconsToPoints(points) {
           });
       });
     });
+}
+
+// Add this new function
+async function handlePointClick(d) {
+  try {
+    // First try to find and activate existing tab
+    const tabs = await new Promise(resolve => {
+      chrome.tabs.query({ url: d.url }, resolve);
+    });
+
+    if (tabs && tabs.length > 0) {
+      // Tab exists, activate it
+      const tab = tabs[0];
+      await new Promise(resolve => {
+        chrome.windows.update(tab.windowId, { focused: true }, () => {
+          chrome.tabs.update(tab.id, { active: true }, resolve);
+        });
+      });
+    } else {
+      // Create new tab in current window
+      await new Promise(resolve => {
+        chrome.tabs.create({ url: d.url }, resolve);
+      });
+    }
+  } catch (error) {
+    console.error('Error handling point click:', error);
+  }
 }
 
 export function updateGraph(data) {
