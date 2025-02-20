@@ -7,6 +7,9 @@ let width, height; // Declare these at file scope
 let currentData = null;
 let resizeTimer;
 
+// Add to top of file with other constants
+const TRANSITION_DURATION = 300;
+
 // Add near top with other shared variables
 const graphSimulation = d3.forceSimulation()
   .force('link', d3.forceLink().id(d => d.url).distance(100))
@@ -84,17 +87,15 @@ export function updateTimeline(data) {
     window?.tabs?.some(tab => !tab.url.startsWith('chrome://'))
   );
 
-  // Calculate dynamic dimensions
-  const historyHeight = 60; // Base height for history swimlane
-  const windowHeight = 32; // Base height for window swimlanes
+  // Calculate dynamic dimensions with reduced spacing
+  const historyHeight = 60;
+  const windowHeight = 32;
   const totalWindows = validWindows.length;
-  
-  // Calculate total height needed
   const requiredHeight = historyHeight + (totalWindows * windowHeight);
   
-  // Update container dimensions
+  // Update container dimensions with reduced margins
   width = element.getBoundingClientRect().width - margin.left - margin.right;
-  height = requiredHeight + margin.top + margin.bottom;
+  height = Math.min(requiredHeight + margin.top + margin.bottom, 200); // Cap height at 200px
 
   // Update SVG size
   container
@@ -242,14 +243,20 @@ function addFaviconsToPoints(points) {
       d3.select(this.parentNode)
         .select('.favicon-background')
         .classed('highlighted', true);
+
+      // Center and highlight corresponding graph node
+      centerGraphNode(d.url);
     })
-    .on('mouseout', function() {
+    .on('mouseout', function(event, d) {
       hideTooltipInfo();
       
       // Remove highlight
       d3.select(this.parentNode)
         .select('.favicon-background')
         .classed('highlighted', false);
+
+      // Reset graph node
+      resetGraphNode(d.url);
     })
     .on('click', function(event, d) {
       event.stopPropagation();
@@ -265,6 +272,52 @@ function addFaviconsToPoints(points) {
           });
       });
     });
+}
+
+// Add these new functions
+function centerGraphNode(url) {
+  const container = d3.select('#graph-svg');
+  const plotArea = container.select('.plot-area');
+  const node = plotArea.selectAll('.graph-node')
+    .filter(d => d.url === url);
+
+  if (!node.empty()) {
+    // Get graph dimensions
+    const element = container.node();
+    const width = element.getBoundingClientRect().width;
+    const height = element.getBoundingClientRect().height;
+    
+    // Stop simulation temporarily
+    graphSimulation.stop();
+
+    // Transition node to center
+    node.classed('highlighted', true)
+      .transition()
+      .duration(TRANSITION_DURATION)
+      .attr('transform', `translate(${width/2},${height/2})`);
+
+    // Update connected links
+    plotArea.selectAll('.graph-link')
+      .filter(d => d.source.url === url || d.target.url === url)
+      .classed('highlighted', true);
+  }
+}
+
+function resetGraphNode(url) {
+  const container = d3.select('#graph-svg');
+  const plotArea = container.select('.plot-area');
+  const node = plotArea.selectAll('.graph-node')
+    .filter(d => d.url === url);
+
+  if (!node.empty()) {
+    // Remove highlight classes
+    node.classed('highlighted', false);
+    plotArea.selectAll('.graph-link')
+      .classed('highlighted', false);
+
+    // Restart simulation
+    graphSimulation.alpha(0.1).restart();
+  }
 }
 
 // Add this new function
@@ -603,46 +656,52 @@ function hideTooltipInfo() {
 }
 
 function handleResize() {
-  // Debounce resize events
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    const container = d3.select('#timeline-svg');
-    const element = container.node();
-    
-    if (!element || !currentData) return;
+  const timelineContainer = d3.select('#timeline-svg');
+  const graphContainer = d3.select('#graph-svg');
+  
+  // Update timeline dimensions
+  const timelineWidth = timelineContainer.node().getBoundingClientRect().width;
+  timelineContainer
+    .attr('width', timelineWidth)
+    .attr('height', height + margin.top + margin.bottom);
 
-    // Calculate dynamic dimensions
-    const { historySwimlane = [], activeWindowsAndTabs = [] } = currentData;
-    const validWindows = (activeWindowsAndTabs || []).filter(window => 
-      window?.tabs?.some(tab => !tab.url.startsWith('chrome://'))
-    );
+  // Update graph dimensions
+  const graphElement = graphContainer.node();
+  const graphWidth = graphElement.getBoundingClientRect().width;
+  const graphHeight = graphElement.getBoundingClientRect().height;
+  
+  graphContainer
+    .attr('width', graphWidth)
+    .attr('height', graphHeight);
 
-    const historyHeight = 60;
-    const windowHeight = 32;
-    const totalWindows = validWindows.length;
-    const requiredHeight = historyHeight + (totalWindows * windowHeight);
+  // Update force simulation center
+  graphSimulation.force('center')
+    .x(graphWidth / 2)
+    .y(graphHeight / 2);
 
-    // Update dimensions
-    width = element.getBoundingClientRect().width - margin.left - margin.right;
-    height = requiredHeight + margin.top + margin.bottom;
-
-    // Update SVG size
-    container
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', height);
-
-    // Update scales
-    sharedTimeScale.range([0, width]);
-
-    // Trigger update with current data
-    if (currentData) {
-      updateTimeline(currentData);
-    }
-  }, 250);
+  // Restart simulation
+  if (currentData) {
+    updateTimeline(currentData);
+    updateGraph(currentData);
+  }
 }
 
-// Add resize listener
-window.addEventListener('resize', handleResize);
+// Replace the lodash debounce with our own implementation
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// Update the resize listener
+const debouncedResize = debounce(handleResize, 250);
+window.addEventListener('resize', debouncedResize);
 
 function formatUrl(url) {
   try {

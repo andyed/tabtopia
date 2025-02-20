@@ -316,4 +316,16 @@ function updateTimelineIfNeeded(force) {
   }
 }
 
+// Add cleanup function
+function cleanup() {
+  window.removeEventListener('resize', debouncedResize);
+  if (updateTimer) {
+    clearInterval(updateTimer);
+    updateTimer = null;
+  }
+}
+
+// Add event listener for page unload
+window.addEventListener('unload', cleanup);
+
 
