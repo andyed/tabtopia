@@ -1,15 +1,14 @@
 import { initializeTimeline, initializeGraph, updateTimeline, updateGraph, setupBrushing, setupZooming, drawSwimlanes } from './d3-visualizations.js';
 import { getFaviconUrl } from './utility.js';
-const HISTORY_RESULTS_LIMIT = 100;
+const HISTORY_RESULTS_LIMIT = 20;
 const MICROS_SESSION_TIMEOUT = 2 * 60 * 1000; // 2 minutes in milliseconds
+const UPDATE_INTERVAL = 120000; // 2 minutes in milliseconds
+let updateTimer = null;
+let lastUpdate = Date.now();
+let currentData = null;
 
 async function initializeApp() {
   try {
-    // Initialize visualizations first with empty data
-    initializeTimeline();
-    initializeGraph();
-    
-    // Then fetch and update with real data
     const historyData = await fetchHistoryData(HISTORY_RESULTS_LIMIT);
     const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
     
@@ -18,16 +17,19 @@ async function initializeApp() {
       activeWindowsAndTabs: activeWindowsAndTabs
     };
     
-    const categorizedData = categorizeHistoryData(combinedData);
+    currentData = categorizeHistoryData(combinedData);
     
-    // Now update with real data
-    updateTimeline(categorizedData);
-    updateGraph(categorizedData);
+    // Initialize both visualizations
+    initializeTimeline();
+    initializeGraph(); // Add this line
     
-    setupBrushing();
-    setupZooming();
+    // Update both visualizations
+    updateTimeline(currentData);
+    updateGraph(currentData);
     
-    console.log('App initialized with data:', categorizedData);
+    setupTimelineUpdates();
+    
+    console.log('App initialized with data:', currentData);
   } catch (error) {
     console.error('Initialization error:', error);
   }
@@ -214,40 +216,38 @@ function hideTooltipInfo() {
 
 // Add navigation event listeners
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  // Only handle complete navigation events with URLs
-  if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
+  if (changeInfo.status === 'complete' && tab.url) {
     updateTimelineWithNavigation(tab);
   }
 });
 
 async function updateTimelineWithNavigation(tab) {
   try {
-    // Get the window this tab belongs to
-    const window = await new Promise(resolve => {
-      chrome.windows.get(tab.windowId, { populate: true }, resolve);
-    });
-
-    // Update currentData with new navigation
-    if (currentData) {
-      const newNavigation = {
-        url: tab.url,
-        title: tab.title,
-        lastVisitTime: Date.now(),
-        windowId: tab.windowId,
-        tabId: tab.id,
-        favIconUrl: tab.favIconUrl,
-        isCurrentTab: true
-      };
-
-      // Add to appropriate window swimlane
-      if (!currentData.windowSwimlanes[tab.windowId]) {
-        currentData.windowSwimlanes[tab.windowId] = [];
-      }
-      currentData.windowSwimlanes[tab.windowId].push(newNavigation);
-
-      // Update the visualization
-      updateTimeline(currentData);
+    if (!currentData) {
+      // If no current data, reinitialize
+      await initializeApp();
+      return;
     }
+
+    const newNavigation = {
+      url: tab.url,
+      title: tab.title,
+      lastVisitTime: Date.now(),
+      windowId: tab.windowId,
+      tabId: tab.id,
+      favIconUrl: tab.favIconUrl,
+      isCurrentTab: true
+    };
+
+    // Add to appropriate window swimlane
+    if (!currentData.windowSwimlanes[tab.windowId]) {
+      currentData.windowSwimlanes[tab.windowId] = [];
+    }
+    currentData.windowSwimlanes[tab.windowId].push(newNavigation);
+
+    // Update the visualizations
+    updateTimeline(currentData);
+    updateGraph(currentData);
   } catch (error) {
     console.error('Error updating timeline with navigation:', error);
   }
@@ -276,5 +276,44 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
     updateTimeline(currentData);
   }
 });
+
+function setupTimelineUpdates() {
+  // Clear any existing timer
+  if (updateTimer) {
+    clearInterval(updateTimer);
+  }
+
+  // Setup visibility change handling
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearInterval(updateTimer);
+      updateTimer = null;
+    } else {
+      // Page is visible again, update immediately and restart timer
+      updateTimelineIfNeeded(true);
+      startUpdateTimer();
+    }
+  });
+
+  // Start initial timer if page is visible
+  if (!document.hidden) {
+    startUpdateTimer();
+  }
+}
+
+function startUpdateTimer() {
+  updateTimer = setInterval(() => updateTimelineIfNeeded(false), UPDATE_INTERVAL);
+}
+
+function updateTimelineIfNeeded(force) {
+  const now = Date.now();
+  // Debounce updates to minimum 30 seconds unless forced
+  if (force || (now - lastUpdate) > 30000) {
+    if (currentData) {
+      lastUpdate = now;
+      updateTimeline(currentData);
+    }
+  }
+}
 
 

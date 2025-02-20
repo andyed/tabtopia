@@ -34,3 +34,12 @@ export async function getFaviconUrl(url) {
   // Fallback 2: Construct URL for Google's favicon service
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(new URL(url).hostname)}`;
 }
+
+function exportSession() {
+  const sessionData = {
+    timestamp: Date.now(),
+    windows: currentData.windowSwimlanes,
+    history: currentData.historySwimlane
+  };
+  return JSON.stringify(sessionData);
+}

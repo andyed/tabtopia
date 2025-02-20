@@ -7,6 +7,13 @@ let width, height; // Declare these at file scope
 let currentData = null;
 let resizeTimer;
 
+// Add near top with other shared variables
+const graphSimulation = d3.forceSimulation()
+  .force('link', d3.forceLink().id(d => d.url).distance(100))
+  .force('charge', d3.forceManyBody().strength(-300))
+  .force('center', d3.forceCenter())
+  .force('collision', d3.forceCollide().radius(30));
+
 export function initializeTimeline() {
   const container = d3.select('#timeline-svg');
   const element = container.node();
@@ -38,22 +45,27 @@ export function initializeGraph() {
   const container = d3.select('#graph-svg');
   const element = container.node();
   
-  if (!element) {
-    console.error('Graph container not found');
-    return;
-  }
+  if (!element) return;
 
+  // Set initial dimensions
   const width = element.getBoundingClientRect().width - margin.left - margin.right;
   const height = element.getBoundingClientRect().height - margin.top - margin.bottom;
 
-  // Use the shared time scale
-  container.append('g')
-    .attr('class', 'x-axis')
-    .attr('transform', `translate(${margin.left},${margin.top})`)
-    .call(d3.axisTop(sharedTimeScale)); // Note: using axisTop here
+  // Clear existing content
+  container.selectAll('*').remove();
 
-  // Rest of graph initialization
-  console.log('Initializing graph');
+  // Create main group
+  const g = container.append('g')
+    .attr('class', 'plot-area')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Initialize simulation
+  graphSimulation
+    .force('center')
+    .x(width / 2)
+    .y(height / 2);
+
+  return { width, height, g };
 }
 
 export function updateTimeline(data) {
@@ -174,6 +186,15 @@ export function updateTimeline(data) {
     .attr('transform', `translate(0,${height - margin.bottom})`) // Remove left margin offset
     .call(d3.axisBottom(sharedTimeScale) // Changed from axisTop to axisBottom
       .tickFormat(d3.timeFormat('%H:%M')));
+
+  // Update point updates in updateTimeline
+  plotArea.selectAll('.timeline-point')
+    .attr('class', d => {
+      const classes = ['timeline-point'];
+      if (d.isCurrentTab) classes.push('current-tab');
+      if (d.active) classes.push('active-tab');
+      return classes.join(' ');
+    });
 }
 
 function addFaviconsToPoints(points) {
@@ -183,10 +204,19 @@ function addFaviconsToPoints(points) {
     .append('circle')
     .attr('r', 8);
 
-  // Add background circle
+  // Add background circle with enhanced current tab styling
   points.append('circle')
     .attr('class', 'favicon-background')
-    .attr('r', 8);
+    .attr('r', 8)
+    .each(function(d) {
+      const point = d3.select(this.parentNode);
+      if (d.isCurrentTab) {
+        point.classed('current-tab', true);
+        if (d.active) {
+          point.classed('active-tab', true);
+        }
+      }
+    });
 
   // Add favicon images with hover and click handlers
   points.append('image')
@@ -265,8 +295,161 @@ async function handlePointClick(d) {
 }
 
 export function updateGraph(data) {
-  // Update the node-link force graph visualization with new data
-  console.log('Updating graph with data', data);
+  if (!data?.historySwimlane) return;
+
+  const container = d3.select('#graph-svg');
+  const element = container.node();
+  
+  if (!element) return;
+
+  const graphWidth = element.getBoundingClientRect().width - margin.left - margin.right;
+  const graphHeight = element.getBoundingClientRect().height - margin.top - margin.bottom;
+
+  // Update center force with new dimensions
+  graphSimulation.force('center')
+    .x(graphWidth / 2)
+    .y(graphHeight / 2);
+
+  const plotArea = container.select('.plot-area');
+  if (!plotArea.size()) {
+    container.append('g')
+      .attr('class', 'plot-area')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+  }
+
+  const timeWindow = sharedTimeScale.domain();
+  const [startTime, endTime] = timeWindow;
+
+  // Clear existing nodes and links
+  const visibleNodes = new Map();
+  const visibleLinks = [];
+
+  // Process history nodes first
+  data.historySwimlane.forEach((item, index) => {
+    const itemTime = new Date(item.lastVisitTime);
+    if (itemTime >= startTime && itemTime <= endTime) {
+      // Add node with initial position
+      visibleNodes.set(item.url, {
+        ...item,
+        type: 'history',
+        radius: 8,
+        x: Math.random() * graphWidth,
+        y: Math.random() * graphHeight
+      });
+
+      // Link to previous history item
+      if (index > 0) {
+        const prevItem = data.historySwimlane[index - 1];
+        const prevTime = new Date(prevItem.lastVisitTime);
+        if (prevTime >= startTime && prevTime <= endTime) {
+          visibleLinks.push({
+            source: prevItem.url,
+            target: item.url,
+            type: 'sequential'
+          });
+        }
+      }
+    }
+  });
+
+  // Process window nodes
+  Object.values(data.windowSwimlanes).forEach(tabs => {
+    tabs.forEach((tab, index) => {
+      const tabTime = new Date(tab.lastVisitTime || tab.lastAccessed);
+      if (tabTime >= startTime && tabTime <= endTime) {
+        if (!visibleNodes.has(tab.url)) {
+          visibleNodes.set(tab.url, {
+            ...tab,
+            type: 'current',
+            radius: 8,
+            x: Math.random() * graphWidth,
+            y: Math.random() * graphHeight
+          });
+        }
+
+        if (index > 0) {
+          const prevTab = tabs[index - 1];
+          if (visibleNodes.has(prevTab.url)) {
+            visibleLinks.push({
+              source: prevTab.url,
+              target: tab.url,
+              type: 'window'
+            });
+          }
+        }
+      }
+    });
+  });
+
+  const nodesArray = Array.from(visibleNodes.values());
+  console.log(`Visible nodes: ${nodesArray.length}, links: ${visibleLinks.length}`);
+
+  // Stop any existing simulation
+  graphSimulation.stop();
+
+  // Update the simulation with new data
+  graphSimulation
+    .nodes(nodesArray)
+    .force('link').links(visibleLinks);
+
+  // Update links
+  const links = plotArea.selectAll('.graph-link')
+    .data(visibleLinks, d => `${d.source.url}-${d.target.url}-${d.type}`);
+
+  links.exit().remove();
+
+  const linkEnter = links.enter()
+    .append('line')
+    .attr('class', d => `graph-link ${d.type}`);
+
+  // Update nodes
+  const nodes = plotArea.selectAll('.graph-node')
+    .data(nodesArray, d => d.url);
+
+  nodes.exit().remove();
+
+  const nodeEnter = nodes.enter()
+    .append('g')
+    .attr('class', d => `graph-node ${d.type}`)
+    .call(d3.drag()
+      .on('start', dragStarted)
+      .on('drag', dragged)
+      .on('end', dragEnded));
+
+  addFaviconsToPoints(nodeEnter);
+
+  // Set up tick function
+  graphSimulation.on('tick', () => {
+    plotArea.selectAll('.graph-link')
+      .attr('x1', d => d.source.x)
+      .attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x)
+      .attr('y2', d => d.target.y);
+
+    plotArea.selectAll('.graph-node')
+      .attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+
+  // Restart simulation
+  graphSimulation.alpha(1).restart();
+}
+
+// Add drag handlers
+function dragStarted(event) {
+  if (!event.active) graphSimulation.alphaTarget(0.3).restart();
+  event.subject.fx = event.subject.x;
+  event.subject.fy = event.subject.y;
+}
+
+function dragged(event) {
+  event.subject.fx = event.x;
+  event.subject.fy = event.y;
+}
+
+function dragEnded(event) {
+  if (!event.active) graphSimulation.alphaTarget(0);
+  event.subject.fx = null;
+  event.subject.fy = null;
 }
 
 export function setupBrushing() {
@@ -280,25 +463,20 @@ export function setupZooming() {
 
   // Create zoom behavior
   const zoom = d3.zoom()
-    .scaleExtent([1, 20]) // Limit zoom scale
+    .scaleExtent([1, 20])
     .on('zoom', zoomed)
-    // Constrain panning
     .translateExtent([
-      [0, -Infinity], // Allow vertical panning
+      [0, -Infinity],
       [width, Infinity]
     ]);
 
   // Add zoom to SVG
   svg.call(zoom);
 
-  // Initialize with slight zoom into recent time
-  const initialTransform = d3.zoomIdentity
-    .scale(1.5)
-    .translate(-width * 0.3, 0); // Move right to show recent items
-
-  svg.call(zoom.transform, initialTransform);
-
   function zoomed(event) {
+    // Only proceed if we have valid data
+    if (!currentData?.historySwimlane) return;
+
     const newTimeScale = event.transform.rescaleX(sharedTimeScale);
     
     // Prevent zooming past future limit
@@ -327,6 +505,20 @@ export function setupZooming() {
         const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
         return x >= 0 && x <= width ? '' : 'none';
       });
+
+    // Only update graph if we have data
+    if (currentData) {
+      updateGraph(currentData);
+    }
+  }
+
+  // Only apply initial transform if we have data
+  if (currentData) {
+    const initialTransform = d3.zoomIdentity
+      .scale(1.5)
+      .translate(-width * 0.3, 0);
+
+    svg.call(zoom.transform, initialTransform);
   }
 }
 

@@ -9,7 +9,6 @@
     "storage",
     "activeTab",
     "webRequest",
-    "webRequestBlocking",
     "windows",
     "chrome://favicon/",
     "favicon",

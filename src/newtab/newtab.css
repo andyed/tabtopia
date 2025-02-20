@@ -297,6 +297,32 @@ swimlane-content::-webkit-scrollbar-thumb {
   opacity: 1;
 }
 
+/* Current tab styling */
+.timeline-point.current-tab .favicon-background {
+  fill: #e8f0fe;
+  stroke: #1a73e8;
+  stroke-width: 2px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.1));
+}
+
+.timeline-point.current-tab:hover .favicon-background {
+  fill: #d2e3fc;
+  stroke-width: 2.5px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+}
+
+.timeline-point.current-tab .favicon-image {
+  opacity: 1;
+}
+
+/* Active tab in current window */
+.timeline-point.current-tab.active-tab .favicon-background {
+  stroke: #1967d2;
+  stroke-width: 2.5px;
+  fill: #d2e3fc;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+
 #tooltip-info {
   font-size: 11px;
   line-height: 1.3;
@@ -318,4 +344,46 @@ swimlane-content::-webkit-scrollbar-thumb {
   color: #1a73e8;
   font-style: normal;
   font-size: 10px;
+}
+
+/* Graph styling */
+.graph-link {
+  stroke: #ddd;
+  stroke-width: 1px;
+  stroke-opacity: 0.6;
+}
+
+.graph-link.sequential {
+  stroke: #4285f4;
+  stroke-dasharray: 2;
+}
+
+.graph-link.window {
+  stroke: #34a853;
+}
+
+.graph-node {
+  cursor: grab;
+}
+
+.graph-node:active {
+  cursor: grabbing;
+}
+
+.graph-node.current .favicon-background {
+  fill: #e8f0fe;
+  stroke: #1a73e8;
+  stroke-width: 2px;
+}
+
+.graph-node.history .favicon-background {
+  fill: white;
+  stroke: #4285f4;
+  stroke-width: 1.5px;
+}
+
+#graph-container {
+  width: 100%;
+  height: 300px; /* Adjust based on your needs */
+  margin-top: 16px;
 }
