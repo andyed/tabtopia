@@ -488,7 +488,8 @@ export function updateGraph(data) {
           visibleLinks.push({
             source: prevItem.url,
             target: item.url,
-            type: 'sequential'
+            type: 'sequential',
+            timeGap: new Date(item.lastVisitTime) - prevTime
           });
         }
       }
@@ -924,6 +925,25 @@ function updateForcesByAspectRatio(width, height) {
   graphSimulation
     .velocityDecay(0.4)
     .alphaDecay(0.05);
+
+  // Calculate base link distance based on container size
+  const baseLinkDistance = width * 0.1;
+  const maxTimeDistance = width * 0.3; // Maximum link distance
+  
+  // Update link force with dynamic distance
+  graphSimulation
+    .force('link')
+    .distance(d => {
+      const sourceTime = new Date(d.source.lastVisitTime || d.source.lastAccessed);
+      const targetTime = new Date(d.target.lastVisitTime || d.target.lastAccessed);
+      const timeGap = Math.abs(targetTime - sourceTime);
+      
+      // Scale time gap to distance, max out at 5 minutes
+      const maxGap = 5 * 60 * 1000; // 5 minutes in milliseconds
+      const scaledDistance = Math.min(timeGap / maxGap, 1) * maxTimeDistance;
+      
+      return baseLinkDistance + scaledDistance;
+    });
 }
 
 // Add this function to stop simulation on hover
