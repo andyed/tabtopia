@@ -1,6 +1,7 @@
 import { getFaviconUrl } from './utility.js';
 
-const margin = { top: 20, right: 30, bottom: 30, left: 60 };
+// Update margin constant at the top
+const margin = { top: 20, right: 20, bottom: 30, left: 20 }; // Reduced left margin
 const sharedTimeScale = d3.scaleTime();
 let width, height; // Declare these at file scope
 let currentData = null;
@@ -25,7 +26,7 @@ export function initializeTimeline() {
 
   g.append('g').attr('class', 'plot-area');
   g.append('g').attr('class', 'x-axis')
-    .attr('transform', `translate(0,${margin.top})`);
+    .attr('transform', `translate(0,${height - margin.bottom})`); // Changed from top to bottom
 
   setupZooming();
   handleResize();
@@ -88,10 +89,18 @@ export function updateTimeline(data) {
     .attr('width', width + margin.left + margin.right)
     .attr('height', height);
 
-  // Create time scale with fallback for empty history
-  const timeExtent = d3.extent(historySwimlane || [], d => new Date(d.lastVisitTime)) || [new Date(), new Date()];
+  // Create time scale with 1-minute future limit
+  const now = new Date();
+  const futureLimit = new Date(now.getTime() + 60000); // 1 minute into future
+  const timeExtent = d3.extent(historySwimlane || [], d => new Date(d.lastVisitTime));
+  
+  // Use the later of the most recent history item or now
+  const latestTime = timeExtent ? 
+    d3.max([timeExtent[1], now]) : 
+    now;
+
   sharedTimeScale
-    .domain(timeExtent)
+    .domain([timeExtent ? timeExtent[0] : d3.timeMinute.offset(now, -30), futureLimit])
     .range([0, width]);
 
   // Create jitter scale for history swimlane
@@ -160,9 +169,10 @@ export function updateTimeline(data) {
     addFaviconsToPoints(windowEnter);
   });
 
-  // Update x-axis
+  // Update x-axis position and orientation
   container.select('.x-axis')
-    .call(d3.axisBottom(sharedTimeScale)
+    .attr('transform', `translate(0,${height - margin.bottom})`) // Remove left margin offset
+    .call(d3.axisBottom(sharedTimeScale) // Changed from axisTop to axisBottom
       .tickFormat(d3.timeFormat('%H:%M')));
 }
 
@@ -178,7 +188,7 @@ function addFaviconsToPoints(points) {
     .attr('class', 'favicon-background')
     .attr('r', 8);
 
-  // Add favicon images with click handler
+  // Add favicon images with hover and click handlers
   points.append('image')
     .attr('x', -8)
     .attr('y', -8)
@@ -187,7 +197,30 @@ function addFaviconsToPoints(points) {
     .attr('clip-path', function() {
       return `url(#${this.parentNode.querySelector('clipPath').id})`;
     })
-    .style('cursor', 'pointer') // Add pointer cursor
+    .style('cursor', 'pointer')
+    .on('mouseover', function(event, d) {
+      const info = `
+        ${d.title || 'Untitled'}
+        <br/>
+        ${formatUrl(d.url)}
+        ${d.isCurrentTab ? '<br/><em>Current Tab</em>' : ''}
+      `.trim();
+      
+      showTooltipInfo(info);
+      
+      // Highlight point
+      d3.select(this.parentNode)
+        .select('.favicon-background')
+        .classed('highlighted', true);
+    })
+    .on('mouseout', function() {
+      hideTooltipInfo();
+      
+      // Remove highlight
+      d3.select(this.parentNode)
+        .select('.favicon-background')
+        .classed('highlighted', false);
+    })
     .on('click', function(event, d) {
       event.stopPropagation();
       handlePointClick(d);
@@ -248,7 +281,12 @@ export function setupZooming() {
   // Create zoom behavior
   const zoom = d3.zoom()
     .scaleExtent([1, 20]) // Limit zoom scale
-    .on('zoom', zoomed);
+    .on('zoom', zoomed)
+    // Constrain panning
+    .translateExtent([
+      [0, -Infinity], // Allow vertical panning
+      [width, Infinity]
+    ]);
 
   // Add zoom to SVG
   svg.call(zoom);
@@ -263,9 +301,20 @@ export function setupZooming() {
   function zoomed(event) {
     const newTimeScale = event.transform.rescaleX(sharedTimeScale);
     
-    // Update x-axis
+    // Prevent zooming past future limit
+    const domain = newTimeScale.domain();
+    const now = new Date();
+    const futureLimit = new Date(now.getTime() + 60000);
+    
+    if (domain[1] > futureLimit) {
+      const adjustment = domain[1] - futureLimit;
+      event.transform.x += newTimeScale(futureLimit) - newTimeScale(domain[1]);
+      svg.call(zoom.transform, event.transform);
+    }
+
+    // Update axis and points
     svg.select('.x-axis')
-      .call(d3.axisTop(newTimeScale)
+      .call(d3.axisBottom(newTimeScale)
         .tickFormat(d3.timeFormat('%H:%M')));
 
     // Update all points using stored y positions
@@ -352,7 +401,7 @@ export async function drawSwimlanes(categorizedData) {
 function showTooltipInfo(info) {
   document.getElementById('default-stats').style.display = 'none';
   const tooltipInfo = document.getElementById('tooltip-info');
-  tooltipInfo.textContent = info;
+  tooltipInfo.innerHTML = info; // Changed from textContent to innerHTML
   tooltipInfo.style.display = 'inline';
 }
 
@@ -402,3 +451,23 @@ function handleResize() {
 
 // Add resize listener
 window.addEventListener('resize', handleResize);
+
+function formatUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    let cleanHost = urlObj.hostname.replace(/^www\./, '');
+    let cleanPath = urlObj.pathname;
+    
+    // Get first parameter if exists
+    let params = '';
+    const searchParams = new URLSearchParams(urlObj.search);
+    const firstParam = searchParams.entries().next().value;
+    if (firstParam) {
+      params = `?${firstParam[0]}=${firstParam[1]}${searchParams.size > 1 ? '...' : ''}`;
+    }
+    
+    return `${cleanHost}${cleanPath}${params}`;
+  } catch (e) {
+    return url; // Fallback to original URL if parsing fails
+  }
+}

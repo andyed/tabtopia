@@ -16,7 +16,7 @@ body {
 #timeline-container {
   width: 100%;
   min-height: 100px;
-  margin-bottom: 8px;
+  margin-bottom: 16px; /* Increased from 8px */
   overflow: visible;
   height: auto; /* Remove fixed height */
   position: relative; /* For legend positioning */
@@ -32,7 +32,10 @@ body {
 }
 
 #timeline-svg {
+  width: 100%;
   min-height: 100px;
+  padding-bottom: 10px;
+  overflow: visible; /* Ensure axis is visible */
 }
 
 #legend {
@@ -232,6 +235,9 @@ swimlane-content::-webkit-scrollbar-thumb {
 
 .x-axis text {
   transition: opacity 0.2s ease;
+  font-size: 10px;
+  fill: #666;
+  transform: translateY(3px); /* Slight adjustment to text position */
 }
   
 /* Timeline swimlanes styling */
@@ -289,4 +295,27 @@ swimlane-content::-webkit-scrollbar-thumb {
 
 .timeline-point:hover .favicon-image {
   opacity: 1;
+}
+
+#tooltip-info {
+  font-size: 11px;
+  line-height: 1.3;
+  color: #555;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 0;
+  max-height:80px;
+}
+
+#tooltip-info br {
+  content: "";
+  display: block;
+  margin: 2px 0;
+}
+
+#tooltip-info em {
+  color: #1a73e8;
+  font-style: normal;
+  font-size: 10px;
 }
