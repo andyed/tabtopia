@@ -33,10 +33,40 @@ const ZOOM_DURATION = 750; // MS for zoom transitions
 // Update near top with other constants
 const KEYBOARD_NAV = {
   PAN_STEP: 100,          // Pixels to pan per keypress
-  ZOOM_FACTOR: 1.2,       // More gradual zoom steps
-  MIN_ZOOM: 0.5,          // Allow more zoom out
-  MAX_ZOOM: 10,          // Reasonable max zoom
-  TRANSITION_MS: 300      // Transition duration
+  ZOOM_FACTOR: 1.5,       // More pronounced zoom steps
+  MIN_ZOOM: 0.5,          // Allow good overview
+  MAX_ZOOM: 8,           // Reasonable detail level
+  TRANSITION_MS: 300      // Smooth transitions
+};
+
+const EDGE_TYPES = {
+  SEQUENTIAL: {
+    name: 'sequential',
+    stroke: '#4285f4',
+    strokeWidth: 1,
+    strokeDasharray: '2',
+    opacity: 0.6
+  },
+  WINDOW: {
+    name: 'window',
+    stroke: 'none',
+    strokeWidth: 1.5,
+    strokeDasharray: 'none',
+    opacity: 0.8
+  },
+  TYPED: {
+    name: 'typed',
+    stroke: 'none',
+    strokeWidth: 0,
+    strokeDasharray: '4 2',
+    opacity: 0.7
+  },
+  SESSION_BREAK: {
+    name: 'session-break',
+    stroke: 'none',  // Remove stroke
+    strokeWidth: 0,  // No stroke width
+    opacity: 0      // Fully transparent
+  }
 };
 
 export function initializeTimeline() {
@@ -628,8 +658,7 @@ function handleTimelineKeyboard(event) {
   const currentTransform = d3.zoomTransform(svg.node());
   const currentTimeScale = currentTransform.rescaleX(sharedTimeScale);
   const [start, end] = currentTimeScale.domain();
-  const now = new Date();
-  const futureLimit = new Date(now.getTime() + 60000);
+  const timeRange = end - start;
   
   switch (event.key) {
     case 'ArrowLeft':
@@ -638,52 +667,30 @@ function handleTimelineKeyboard(event) {
       const direction = event.key === 'ArrowLeft' ? 1 : -1;
       const proposedX = currentTransform.x + (KEYBOARD_NAV.PAN_STEP * direction);
       
-      // Check if we're at the boundaries
-      const proposedTimeScale = currentTransform.translate(proposedX, 0).rescaleX(sharedTimeScale);
-      const [newStart, newEnd] = proposedTimeScale.domain();
-      
-      if (newStart < sharedTimeScale.domain()[0] || newEnd > futureLimit) {
-        // At boundary - transition to zoomed out view
-        svg.transition()
-          .duration(KEYBOARD_NAV.TRANSITION_MS)
-          .call(zoom.transform, d3.zoomIdentity.scale(KEYBOARD_NAV.MIN_ZOOM));
-      } else {
-        // Normal pan
-        svg.transition()
-          .duration(KEYBOARD_NAV.TRANSITION_MS)
-          .call(zoom.transform, currentTransform.translate(proposedX, 0));
-      }
+      svg.transition()
+        .duration(KEYBOARD_NAV.TRANSITION_MS)
+        .call(zoom.transform, currentTransform.translate(proposedX, 0));
       break;
 
     case 'ArrowUp':
     case 'ArrowDown':
       event.preventDefault();
-      const isZoomIn = event.key === 'ArrowUp';
+      const isZoomIn = event.key === 'ArrowDown';
       const factor = isZoomIn ? KEYBOARD_NAV.ZOOM_FACTOR : 1/KEYBOARD_NAV.ZOOM_FACTOR;
-      const newK = Math.max(KEYBOARD_NAV.MIN_ZOOM, 
-                   Math.min(KEYBOARD_NAV.MAX_ZOOM, 
-                   currentTransform.k * factor));
+      const newK = Math.max(
+        KEYBOARD_NAV.MIN_ZOOM, 
+        Math.min(KEYBOARD_NAV.MAX_ZOOM, currentTransform.k * factor)
+      );
       
-      if (newK === KEYBOARD_NAV.MAX_ZOOM && isZoomIn) {
-        // At max zoom - transition to pan
-        const centerTime = new Date((start.getTime() + end.getTime()) / 2);
-        const panDirection = end > now ? -1 : 1;
-        const newTransform = currentTransform.translate(KEYBOARD_NAV.PAN_STEP * panDirection, 0);
-        
-        svg.transition()
-          .duration(KEYBOARD_NAV.TRANSITION_MS)
-          .call(zoom.transform, newTransform);
-      } else if (newK === KEYBOARD_NAV.MIN_ZOOM && !isZoomIn) {
-        // At min zoom - show full timeline
-        svg.transition()
-          .duration(KEYBOARD_NAV.TRANSITION_MS)
-          .call(zoom.transform, d3.zoomIdentity.scale(KEYBOARD_NAV.MIN_ZOOM));
-      } else {
-        // Normal zoom
-        svg.transition()
-          .duration(KEYBOARD_NAV.TRANSITION_MS)
-          .call(zoom.transform, currentTransform.scale(factor));
-      }
+      // Calculate the new transform to keep the most recent visible area in view
+      const rightEdge = currentTransform.invertX(width);
+      const newTransform = d3.zoomIdentity
+        .scale(newK)
+        .translate(width/newK - rightEdge, 0);
+      
+      svg.transition()
+        .duration(KEYBOARD_NAV.TRANSITION_MS)
+        .call(zoom.transform, newTransform);
       break;
   }
 }
