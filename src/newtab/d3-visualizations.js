@@ -585,7 +585,7 @@ export function updateGraph(data) {
       .attr('x2', d => d.target.x)
       .attr('y2', d => d.target.y);
 
-    nodesUpdate
+      nodesUpdate
       .attr('transform', d => `translate(${d.x},${d.y})`);
   });
 
@@ -870,55 +870,60 @@ function cleanup() {
 // Update updateForcesByAspectRatio
 function updateForcesByAspectRatio(width, height) {
   const aspectRatio = width / height;
-  const xStrength = 0.3; // Increased to make time-based positioning stronger
-  const yStrength = xStrength * aspectRatio;
+  // Make x strength weaker than y to encourage horizontal spread
+  const xStrength = 0.1;
+  const yStrength = 0.3;
 
-  // Use full dimensions without margins
-  const centerX = width / 2;
-  const centerY = height / 2;
+  // Calculate force strengths based on container size
+  const centerStrength = 0.05;
+  const chargeStrength = -Math.min(width, height) * 0.5;
+  const collisionRadius = Math.min(width, height) * 0.03;
+  const linkDistance = width * 0.1; // Make links longer horizontally
 
-  // Use timeline's time scale for X positioning
+  // Update each force with size-appropriate values
   graphSimulation
     .force('x')
     .strength(xStrength)
     .x(d => {
       const time = new Date(d.lastVisitTime || d.lastAccessed);
       const timeScale = sharedTimeScale.copy()
-        .range([width * 0.1, width * 0.9]);
+        .range([width * 0.1, width * 0.9]); // Use more of the width
       return timeScale(time);
     });
 
-  // Use windowHeight-based Y positioning for nodes from same window
   graphSimulation
     .force('y')
     .strength(yStrength)
     .y(d => {
       if (d.windowId) {
-        // Position window nodes near their swimlane
-        return d.yPos || centerY;
+        return d.yPos || height/2;
       }
-      // Spread history nodes vertically around center
-      return centerY + (Math.random() - 0.5) * height * 0.3;
+      // Spread history nodes in middle third of height
+      return height/2 + (Math.random() - 0.5) * height * 0.3;
     });
-
-  // Adjust other forces to work better with time-based layout
-  const baseLinkDistance = Math.min(width, height) * 0.15;
-  const baseCharge = -Math.min(width, height) * 0.3; // Reduced to prevent fighting with time-based positioning
-
-  graphSimulation
-    .force('link')
-    .distance(baseLinkDistance);
 
   graphSimulation
     .force('charge')
-    .strength(baseCharge);
+    .strength(chargeStrength);
 
-  // Center force becomes weaker to allow time-based positioning to dominate
+  graphSimulation
+    .force('collision')
+    .radius(collisionRadius);
+
   graphSimulation
     .force('center')
-    .strength(0.1) // Reduced from default
-    .x(centerX)
-    .y(centerY);
+    .strength(centerStrength)
+    .x(width/2)
+    .y(height/2);
+
+  graphSimulation
+    .force('link')
+    .distance(linkDistance);
+
+  // Update velocityDecay to allow more movement
+  graphSimulation
+    .velocityDecay(0.4)
+    .alphaDecay(0.05);
 }
 
 // Add this function to stop simulation on hover
