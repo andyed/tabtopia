@@ -3,19 +3,18 @@ import { getFaviconUrl } from './utility.js';
 const margin = { top: 20, right: 30, bottom: 30, left: 60 };
 const sharedTimeScale = d3.scaleTime();
 let width, height; // Declare these at file scope
+let currentData = null;
+let resizeTimer;
 
 export function initializeTimeline() {
   const container = d3.select('#timeline-svg');
   const element = container.node();
   
-  if (!element) {
-    console.error('Timeline container not found');
-    return;
-  }
+  if (!element) return;
 
-  // Initialize dimensions
+  // Initialize with minimum dimensions
   width = element.getBoundingClientRect().width - margin.left - margin.right;
-  height = element.getBoundingClientRect().height - margin.top - margin.bottom;
+  height = 100; // Minimum initial height
 
   // Clear existing content
   container.selectAll('*').remove();
@@ -24,17 +23,12 @@ export function initializeTimeline() {
   const g = container.append('g')
     .attr('transform', `translate(${margin.left},${margin.top})`);
 
-  // Add plot area group
-  g.append('g')
-    .attr('class', 'plot-area');
-
-  // Add x-axis group
-  g.append('g')
-    .attr('class', 'x-axis')
+  g.append('g').attr('class', 'plot-area');
+  g.append('g').attr('class', 'x-axis')
     .attr('transform', `translate(0,${margin.top})`);
 
-  // Setup initial zoom
   setupZooming();
+  handleResize();
 
   return { width, height, g };
 }
@@ -62,28 +56,38 @@ export function initializeGraph() {
 }
 
 export function updateTimeline(data) {
+  // Store current data for resize handling
+  currentData = data;
+  
   const { historySwimlane = [], windowSwimlanes = {}, activeWindowsAndTabs = [] } = data || {};
   
   const container = d3.select('#timeline-svg');
   const element = container.node();
   
-  if (!element) {
-    console.error('Timeline container not found');
-    return;
-  }
+  if (!element) return;
 
-  const width = element.getBoundingClientRect().width - margin.left - margin.right;
-  const height = element.getBoundingClientRect().height - margin.top - margin.bottom;
-
-  // Filter out windows with only chrome:// URLs, with null check
+  // Filter out windows with only chrome:// URLs
   const validWindows = (activeWindowsAndTabs || []).filter(window => 
     window?.tabs?.some(tab => !tab.url.startsWith('chrome://'))
   );
 
-  // Calculate swimlane heights
-  const historyHeight = 80; // Double height for history
-  const windowHeight = 40;
+  // Calculate dynamic dimensions
+  const historyHeight = 60; // Base height for history swimlane
+  const windowHeight = 32; // Base height for window swimlanes
+  const totalWindows = validWindows.length;
   
+  // Calculate total height needed
+  const requiredHeight = historyHeight + (totalWindows * windowHeight);
+  
+  // Update container dimensions
+  width = element.getBoundingClientRect().width - margin.left - margin.right;
+  height = requiredHeight + margin.top + margin.bottom;
+
+  // Update SVG size
+  container
+    .attr('width', width + margin.left + margin.right)
+    .attr('height', height);
+
   // Create time scale with fallback for empty history
   const timeExtent = d3.extent(historySwimlane || [], d => new Date(d.lastVisitTime)) || [new Date(), new Date()];
   sharedTimeScale
@@ -321,3 +325,45 @@ function hideTooltipInfo() {
   document.getElementById('tooltip-info').style.display = 'none';
   document.getElementById('default-stats').style.display = 'inline';
 }
+
+function handleResize() {
+  // Debounce resize events
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const container = d3.select('#timeline-svg');
+    const element = container.node();
+    
+    if (!element || !currentData) return;
+
+    // Calculate dynamic dimensions
+    const { historySwimlane = [], activeWindowsAndTabs = [] } = currentData;
+    const validWindows = (activeWindowsAndTabs || []).filter(window => 
+      window?.tabs?.some(tab => !tab.url.startsWith('chrome://'))
+    );
+
+    const historyHeight = 60;
+    const windowHeight = 32;
+    const totalWindows = validWindows.length;
+    const requiredHeight = historyHeight + (totalWindows * windowHeight);
+
+    // Update dimensions
+    width = element.getBoundingClientRect().width - margin.left - margin.right;
+    height = requiredHeight + margin.top + margin.bottom;
+
+    // Update SVG size
+    container
+      .attr('width', width + margin.left + margin.right)
+      .attr('height', height);
+
+    // Update scales
+    sharedTimeScale.range([0, width]);
+
+    // Trigger update with current data
+    if (currentData) {
+      updateTimeline(currentData);
+    }
+  }, 250);
+}
+
+// Add resize listener
+window.addEventListener('resize', handleResize);
