@@ -6,16 +6,35 @@ const sharedTimeScale = d3.scaleTime();
 let width, height; // Declare these at file scope
 let currentData = null;
 let resizeTimer;
+let zoom; // Add this line
 
 // Add to top of file with other constants
 const TRANSITION_DURATION = 300;
 
+// Add new focus force constant at top with other constants
+const focusForce = d3.forceRadial(0, 0, 0).strength(0);
+
 // Add near top with other shared variables
 const graphSimulation = d3.forceSimulation()
-  .force('link', d3.forceLink().id(d => d.url).distance(100))
-  .force('charge', d3.forceManyBody().strength(-300))
+  .force('link', d3.forceLink().id(d => d.url).distance(50)) // Reduced from 100
+  .force('charge', d3.forceManyBody().strength(-100)) // Reduced from -300
   .force('center', d3.forceCenter())
-  .force('collision', d3.forceCollide().radius(30));
+  .force('collision', d3.forceCollide().radius(15)) // Reduced from 30
+  .force('focus', focusForce);
+
+// Add near top with other constants
+const PAN_STEP = 200; // Pixels to pan per keypress
+const ZOOM_FACTOR = 1.5; // Zoom in/out multiplier
+const ZOOM_DURATION = 750; // MS for zoom transitions
+
+// Update near top with other constants
+const KEYBOARD_NAV = {
+  PAN_STEP: 200,
+  ZOOM_FACTOR: 1.5,
+  ZOOM_DURATION: 750,
+  MIN_ZOOM: 1,
+  MAX_ZOOM: 20
+};
 
 export function initializeTimeline() {
   const container = d3.select('#timeline-svg');
@@ -62,6 +81,16 @@ export function initializeGraph() {
     .attr('class', 'plot-area')
     .attr('transform', `translate(${margin.left},${margin.top})`);
 
+  // Add zoom behavior
+  const zoom = d3.zoom()
+    .scaleExtent([0.5, 4]) // Set min/max zoom levels
+    .on('zoom', (event) => {
+      g.attr('transform', event.transform);
+    });
+
+  // Apply zoom to container
+  container.call(zoom);
+
   // Initialize simulation
   graphSimulation
     .force('center')
@@ -88,14 +117,14 @@ export function updateTimeline(data) {
   );
 
   // Calculate dynamic dimensions with reduced spacing
-  const historyHeight = 60;
-  const windowHeight = 32;
+  const historyHeight = 40; // Reduced from 60
+  const windowHeight = 24; // Reduced from 32
   const totalWindows = validWindows.length;
   const requiredHeight = historyHeight + (totalWindows * windowHeight);
   
   // Update container dimensions with reduced margins
   width = element.getBoundingClientRect().width - margin.left - margin.right;
-  height = Math.min(requiredHeight + margin.top + margin.bottom, 200); // Cap height at 200px
+  height = Math.min(requiredHeight + margin.top + margin.bottom, 160); // Cap at 160px
 
   // Update SVG size
   container
@@ -245,7 +274,7 @@ function addFaviconsToPoints(points) {
         .classed('highlighted', true);
 
       // Center and highlight corresponding graph node
-      centerGraphNode(d.url);
+      focusGraphNode(d.url);  // Replace centerGraphNode with focusGraphNode
     })
     .on('mouseout', function(event, d) {
       hideTooltipInfo();
@@ -272,6 +301,50 @@ function addFaviconsToPoints(points) {
           });
       });
     });
+}
+
+// Replace centerGraphNode with new focus behavior
+function focusGraphNode(url) {
+  const container = d3.select('#graph-svg');
+  const plotArea = container.select('.plot-area');
+  const node = plotArea.selectAll('.graph-node')
+    .filter(d => d.url === url);
+
+  if (!node.empty()) {
+    const element = container.node();
+    const width = element.getBoundingClientRect().width;
+    const height = element.getBoundingClientRect().height;
+
+    // Update focus force center and strength
+    focusForce
+      .x(width / 2)
+      .y(height / 2)
+      .strength(0.3);
+
+    // Highlight node and connected links
+    node.classed('highlighted', true);
+    plotArea.selectAll('.graph-link')
+      .filter(d => d.source.url === url || d.target.url === url)
+      .classed('highlighted', true);
+
+    // Restart simulation with focus
+    graphSimulation.alpha(0.3).restart();
+  }
+}
+
+// Update resetGraphNode
+function resetGraphNode(url) {
+  const plotArea = d3.select('#graph-svg').select('.plot-area');
+  
+  // Remove highlights
+  plotArea.selectAll('.graph-node').classed('highlighted', false);
+  plotArea.selectAll('.graph-link').classed('highlighted', false);
+  
+  // Reset focus force
+  focusForce.strength(0);
+  
+  // Gently restart simulation
+  graphSimulation.alpha(0.1).restart();
 }
 
 // Add these new functions
@@ -303,24 +376,6 @@ function centerGraphNode(url) {
   }
 }
 
-function resetGraphNode(url) {
-  const container = d3.select('#graph-svg');
-  const plotArea = container.select('.plot-area');
-  const node = plotArea.selectAll('.graph-node')
-    .filter(d => d.url === url);
-
-  if (!node.empty()) {
-    // Remove highlight classes
-    node.classed('highlighted', false);
-    plotArea.selectAll('.graph-link')
-      .classed('highlighted', false);
-
-    // Restart simulation
-    graphSimulation.alpha(0.1).restart();
-  }
-}
-
-// Add this new function
 async function handlePointClick(d) {
   try {
     // First try to find and activate existing tab
@@ -510,68 +565,101 @@ export function setupBrushing() {
   console.log('Setting up brushing');
 }
 
+// Update setupZooming function
 export function setupZooming() {
   const svg = d3.select('#timeline-svg');
   const plotArea = svg.select('.plot-area');
 
   // Create zoom behavior
-  const zoom = d3.zoom()
-    .scaleExtent([1, 20])
+  zoom = d3.zoom()
+    .scaleExtent([KEYBOARD_NAV.MIN_ZOOM, KEYBOARD_NAV.MAX_ZOOM])
     .on('zoom', zoomed)
-    .translateExtent([
-      [0, -Infinity],
-      [width, Infinity]
-    ]);
+    .translateExtent([[0, -Infinity], [width, Infinity]]);
 
   // Add zoom to SVG
   svg.call(zoom);
 
+  // Remove duplicate keyboard listener
+  document.removeEventListener('keydown', handleTimelineKeyboard);
+  document.addEventListener('keydown', handleTimelineKeyboard);
+
   function zoomed(event) {
-    // Only proceed if we have valid data
     if (!currentData?.historySwimlane) return;
 
     const newTimeScale = event.transform.rescaleX(sharedTimeScale);
-    
-    // Prevent zooming past future limit
-    const domain = newTimeScale.domain();
-    const now = new Date();
-    const futureLimit = new Date(now.getTime() + 60000);
-    
-    if (domain[1] > futureLimit) {
-      const adjustment = domain[1] - futureLimit;
-      event.transform.x += newTimeScale(futureLimit) - newTimeScale(domain[1]);
-      svg.call(zoom.transform, event.transform);
-    }
-
-    // Update axis and points
-    svg.select('.x-axis')
-      .call(d3.axisBottom(newTimeScale)
-        .tickFormat(d3.timeFormat('%H:%M')));
-
-    // Update all points using stored y positions
-    plotArea.selectAll('.timeline-point')
-      .attr('transform', d => {
-        const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
-        return `translate(${x},${d.yPos})`;
-      })
-      .style('display', d => {
-        const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
-        return x >= 0 && x <= width ? '' : 'none';
-      });
-
-    // Only update graph if we have data
-    if (currentData) {
-      updateGraph(currentData);
-    }
+    updateTimelineView(newTimeScale, svg, plotArea);
   }
+}
 
-  // Only apply initial transform if we have data
+function updateTimelineView(newTimeScale, svg, plotArea) {
+  // Update axis
+  svg.select('.x-axis')
+    .call(d3.axisBottom(newTimeScale)
+      .tickFormat(d3.timeFormat('%H:%M')));
+
+  // Update points
+  plotArea.selectAll('.timeline-point')
+    .attr('transform', d => {
+      const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
+      return `translate(${x},${d.yPos})`;
+    })
+    .style('display', d => {
+      const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
+      return x >= 0 && x <= width ? '' : 'none';
+    });
+
+  // Update graph
   if (currentData) {
-    const initialTransform = d3.zoomIdentity
-      .scale(1.5)
-      .translate(-width * 0.3, 0);
+    updateGraph(currentData);
+  }
+}
 
-    svg.call(zoom.transform, initialTransform);
+function handleTimelineKeyboard(event) {
+  if (!currentData?.historySwimlane || !zoom) return;
+  
+  const svg = d3.select('#timeline-svg');
+  const currentTransform = d3.zoomTransform(svg.node());
+  const currentTimeScale = currentTransform.rescaleX(sharedTimeScale);
+  const domain = currentTimeScale.domain();
+  const now = new Date();
+  const futureLimit = new Date(now.getTime() + 60000); // 1 minute into future
+  
+  switch (event.key) {
+    case 'ArrowLeft':
+    case 'ArrowRight':
+      event.preventDefault();
+      const direction = event.key === 'ArrowLeft' ? 1 : -1;
+      const proposedX = currentTransform.x + (KEYBOARD_NAV.PAN_STEP * direction);
+      
+      // Check boundaries
+      const proposedTimeScale = currentTransform.translate(proposedX, 0).rescaleX(sharedTimeScale);
+      const [start, end] = proposedTimeScale.domain();
+      
+      // Don't pan before earliest history item or after future limit
+      if (start < sharedTimeScale.domain()[0] || end > futureLimit) {
+        return;
+      }
+      
+      svg.transition()
+        .duration(300)
+        .call(zoom.transform, currentTransform.translate(proposedX, 0));
+      break;
+
+    case 'ArrowUp':
+    case 'ArrowDown':
+      event.preventDefault();
+      const factor = event.key === 'ArrowUp' ? KEYBOARD_NAV.ZOOM_FACTOR : 1/KEYBOARD_NAV.ZOOM_FACTOR;
+      const newK = Math.max(KEYBOARD_NAV.MIN_ZOOM, 
+                   Math.min(KEYBOARD_NAV.MAX_ZOOM, 
+                   currentTransform.k * factor));
+      
+      // Only zoom if within bounds
+      if (newK !== currentTransform.k) {
+        svg.transition()
+          .duration(300)
+          .call(zoom.transform, currentTransform.scale(newK/currentTransform.k));
+      }
+      break;
   }
 }
 
@@ -720,5 +808,14 @@ function formatUrl(url) {
     return `${cleanHost}${cleanPath}${params}`;
   } catch (e) {
     return url; // Fallback to original URL if parsing fails
+  }
+}
+
+// Update cleanup to remove keyboard listener
+function cleanup() {
+  document.removeEventListener('keydown', handleTimelineKeyboard);
+  window.removeEventListener('resize', debouncedResize);
+  if (updateTimer) {
+    clearInterval(updateTimer);
   }
 }
