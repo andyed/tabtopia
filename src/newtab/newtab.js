@@ -28,6 +28,7 @@ async function initializeApp() {
     updateGraph(currentData);
     
     setupTimelineUpdates();
+    setupMenu(); // Add this line
     
     console.log('App initialized with data:', currentData);
   } catch (error) {
@@ -42,13 +43,13 @@ if (document.readyState === 'loading') {
   initializeApp();
 }
 
-async function fetchHistoryData(limit) {
+async function fetchHistoryData(limit, startTime) {
   return new Promise((resolve) => {
     chrome.history.search(
       { 
         text: '', 
         maxResults: limit,
-        startTime: Date.now() - (24 * 60 * 60 * 1000) // Last 24 hours
+        startTime: startTime || Date.now() - (24 * 60 * 60 * 1000) // Last 24 hours
       }, 
       (historyItems) => {
         // Get visits for each history item to get more details
@@ -327,5 +328,93 @@ function cleanup() {
 
 // Add event listener for page unload
 window.addEventListener('unload', cleanup);
+
+// Update the setupMenu function
+async function setupMenu() {
+  const menuButton = document.getElementById('menuButton');
+  const menuDropdown = document.getElementById('menuDropdown');
+  const menuItems = document.querySelectorAll('.menu-item');
+
+  menuButton?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menuDropdown?.classList.toggle('show');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!menuDropdown?.contains(e.target) && !menuButton?.contains(e.target)) {
+      menuDropdown?.classList.remove('show');
+    }
+  });
+
+  menuItems.forEach(item => {
+    item.addEventListener('click', async () => {
+      // Update active state
+      menuItems.forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+
+      const type = item.dataset.type;
+      const value = parseInt(item.dataset.value);
+
+      try {
+        // Fetch new history data based on selection
+        const historyData = await fetchHistoryRange(type, value);
+        
+        // Get current windows and tabs
+        const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
+        
+        // Update visualizations
+        currentData = await categorizeHistoryData({
+          history: historyData,
+          activeWindowsAndTabs
+        });
+        
+        updateTimeline(currentData);
+        updateGraph(currentData);
+
+      } catch (error) {
+        console.error('Error updating history:', error);
+      }
+
+      // Dismiss menu
+      menuDropdown?.classList.remove('show');
+    });
+  });
+}
+
+async function fetchHistoryRange(type, value) {
+  const query = {
+    text: '',
+    maxResults: 10000 // Default max results
+  };
+
+  if (type === 'time') {
+    // Calculate start time based on selected range
+    const startTime = new Date(Date.now() - (value * 1000));
+    query.startTime = startTime.getTime();
+  } else if (type === 'count') {
+    // Use specified count as maxResults
+    query.maxResults = value;
+  }
+
+  return chrome.history.search(query);
+}
+
+async function updateHistoryTimeRange(startTime) {
+  const historyData = await fetchHistoryData(null, startTime);
+  const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
+  updateVisualization({ history: historyData, activeWindowsAndTabs });
+}
+
+async function updateHistoryCount(count) {
+  const historyData = await fetchHistoryData(count);
+  const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
+  updateVisualization({ history: historyData, activeWindowsAndTabs });
+}
+
+// Add to initialization section
+document.addEventListener('DOMContentLoaded', () => {
+  setupMenu();
+  // ...existing initialization code...
+});
 
 

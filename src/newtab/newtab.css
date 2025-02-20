@@ -97,8 +97,9 @@ s  box-sizing: border-box;
 }
 
 #title {
-  font-size: 24px;
-  font-weight: bold;
+  font-size: 18px;
+  font-weight: 500;
+  color: #333;
   margin-right: 20px;
 }
 
@@ -410,4 +411,74 @@ swimlane-content::-webkit-scrollbar-thumb {
 
 #graph-svg:active {
   cursor: grabbing;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+}
+
+.menu-container {
+  position: relative;
+  z-index: 1001; /* Ensure menu stays above other elements */
+}
+
+.menu-button {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.menu-button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  padding: 8px 0;
+  display: none;
+  z-index: 1000;
+  min-width: 180px;
+}
+
+.menu-dropdown.show {
+  display: block;
+}
+
+.menu-group {
+  padding: 4px 0;
+}
+
+.menu-group:not(:last-child) {
+  border-bottom: 1px solid #eee;
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+}
+
+.menu-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.menu-item.active {
+  color: #1a73e8;
+  font-weight: 500;
 }
