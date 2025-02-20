@@ -36,7 +36,7 @@ const KEYBOARD_NAV = {
   PAN_STEP: 100,          // Pixels to pan per keypress
   ZOOM_FACTOR: 1.5,       // More pronounced zoom steps
   MIN_ZOOM: 0.5,          // Allow good overview
-  MAX_ZOOM: 8,           // Reasonable detail level
+  MAX_ZOOM: 30,          // Increased to allow 2-minute detail view
   TRANSITION_MS: 300      // Smooth transitions
 };
 
@@ -89,8 +89,11 @@ export function initializeTimeline() {
 
   g.append('g').attr('class', 'plot-area');
   g.append('g').attr('class', 'x-axis')
-    .attr('transform', `translate(0,${height - margin.bottom})`); // Changed from top to bottom
+    .attr('transform', `translate(0,${height - margin.bottom})`);
 
+  // Initialize stats with default time scale
+  updateStats(sharedTimeScale);
+  
   setupZooming();
   handleResize();
 
@@ -622,9 +625,15 @@ export function setupZooming() {
   const svg = d3.select('#timeline-svg');
   const plotArea = svg.select('.plot-area');
 
-  // Create zoom behavior
+  // Calculate max zoom based on 2-minute window
+  const domain = sharedTimeScale.domain();
+  const totalMs = domain[1] - domain[0];
+  const twoMinutes = 2 * 60 * 1000;
+  const maxZoom = totalMs / twoMinutes;
+
+  // Create zoom behavior with calculated max zoom
   zoom = d3.zoom()
-    .scaleExtent([KEYBOARD_NAV.MIN_ZOOM, KEYBOARD_NAV.MAX_ZOOM])
+    .scaleExtent([KEYBOARD_NAV.MIN_ZOOM, maxZoom])
     .on('zoom', zoomed)
     .translateExtent([[0, -Infinity], [width, Infinity]]);
 
@@ -640,6 +649,7 @@ export function setupZooming() {
 
     const newTimeScale = event.transform.rescaleX(sharedTimeScale);
     updateTimelineView(newTimeScale, svg, plotArea);
+    updateStats(newTimeScale);
   }
 }
 
@@ -870,80 +880,73 @@ function cleanup() {
 // Update updateGraph function to adjust forces based on aspect ratio
 // Update updateForcesByAspectRatio
 function updateForcesByAspectRatio(width, height) {
-  const aspectRatio = width / height;
-  // Make x strength weaker than y to encourage horizontal spread
-  const xStrength = 0.1;
+  const xStrength = 0.8;  // Stronger horizontal alignment
   const yStrength = 0.3;
+  const layerHeight = height / 4; // Divide height into layers
 
-  // Calculate force strengths based on container size
-  const centerStrength = 0.05;
-  const chargeStrength = -Math.min(width, height) * 0.5;
-  const collisionRadius = Math.min(width, height) * 0.03;
-  const linkDistance = width * 0.1; // Make links longer horizontally
+  // Calculate time-based x positions first
+  const timeScale = sharedTimeScale.copy()
+    .range([width * 0.1, width * 0.9]);
 
-  // Update each force with size-appropriate values
+  // Create hierarchical layout
   graphSimulation
     .force('x')
     .strength(xStrength)
-    .x(d => {
-      const time = new Date(d.lastVisitTime || d.lastAccessed);
-      const timeScale = sharedTimeScale.copy()
-        .range([width * 0.1, width * 0.9]); // Use more of the width
-      return timeScale(time);
-    });
+    .x(d => timeScale(new Date(d.lastVisitTime || d.lastAccessed)));
 
+  // Layer-based Y positioning
   graphSimulation
     .force('y')
     .strength(yStrength)
     .y(d => {
-      if (d.windowId) {
-        return d.yPos || height/2;
+      if (d.type === 'history') {
+        return layerHeight; // History items in top layer
       }
-      // Spread history nodes in middle third of height
-      return height/2 + (Math.random() - 0.5) * height * 0.3;
+      // Window tabs in layers based on window ID
+      return layerHeight * (2 + (d.windowId % 2));
     });
 
+  // Adjust other forces
   graphSimulation
     .force('charge')
-    .strength(chargeStrength);
+    .strength(-100) // Reduced repulsion
+    .distanceMax(width * 0.1); // Limit charge effect range
 
   graphSimulation
     .force('collision')
-    .radius(collisionRadius);
+    .radius(12) // Slightly larger to prevent overlap
+    .strength(0.8); // Stronger collision avoidance
 
-  graphSimulation
-    .force('center')
-    .strength(centerStrength)
-    .x(width/2)
-    .y(height/2);
-
-  graphSimulation
-    .force('link')
-    .distance(linkDistance);
-
-  // Update velocityDecay to allow more movement
-  graphSimulation
-    .velocityDecay(0.4)
-    .alphaDecay(0.05);
-
-  // Calculate base link distance based on container size
-  const baseLinkDistance = width * 0.1;
-  const maxTimeDistance = width * 0.3; // Maximum link distance
-  
-  // Update link force with dynamic distance
-  graphSimulation
-    .force('link')
-    .distance(d => {
-      const sourceTime = new Date(d.source.lastVisitTime || d.source.lastAccessed);
-      const targetTime = new Date(d.target.lastVisitTime || d.target.lastAccessed);
-      const timeGap = Math.abs(targetTime - sourceTime);
+  // Use curved links for better visibility
+  plotArea.selectAll('.graph-link')
+    .attr('d', d => {
+      const sourceX = d.source.x;
+      const sourceY = d.source.y;
+      const targetX = d.target.x;
+      const targetY = d.target.y;
       
-      // Scale time gap to distance, max out at 5 minutes
-      const maxGap = 5 * 60 * 1000; // 5 minutes in milliseconds
-      const scaledDistance = Math.min(timeGap / maxGap, 1) * maxTimeDistance;
+      // Calculate control points for curve
+      const midX = (sourceX + targetX) / 2;
+      const midY = (sourceY + targetY) / 2;
+      const dx = targetX - sourceX;
+      const dy = targetY - sourceY;
+      const curvature = 0.5;
       
-      return baseLinkDistance + scaledDistance;
+      // Curve upward if going to higher layer, downward if going to lower
+      const sign = sourceY > targetY ? -1 : 1;
+      const controlX = midX;
+      const controlY = midY + (sign * Math.abs(dx) * curvature);
+      
+      return `M${sourceX},${sourceY} Q${controlX},${controlY} ${targetX},${targetY}`;
     });
+
+  // Remove center force as we're using explicit positioning
+  graphSimulation.force('center', null);
+
+  // Slower decay for smoother movement
+  graphSimulation
+    .velocityDecay(0.3)
+    .alphaDecay(0.02);
 }
 
 // Add this function to stop simulation on hover
@@ -964,4 +967,65 @@ function handleNodeHover(event, d) {
     // Gently restart simulation
     graphSimulation.alpha(0.1).restart();
   }
+}
+
+function updateStats(currentTimeScale) {
+  // Add null check for currentData
+  if (!currentData?.historySwimlane) {
+    // Set default values when no data is available
+    document.getElementById('time-range-stat').textContent = '--:-- - --:--';
+    document.getElementById('events-stat').textContent = '0 shown';
+    document.getElementById('sessions-stat').textContent = '0';
+    return;
+  }
+
+  const [start, end] = currentTimeScale.domain();
+  const timeRange = `${d3.timeFormat('%H:%M')(start)} - ${d3.timeFormat('%H:%M')(end)}`;
+  
+  // Count visible events
+  const visibleEvents = currentData.historySwimlane.filter(d => {
+    const time = new Date(d.lastVisitTime);
+    return time >= start && time <= end;
+  }).length;
+
+  // Count sessions (gaps > 30 min)
+  const sessions = countSessions(currentData.historySwimlane, start, end);
+
+  document.getElementById('time-range-stat').textContent = timeRange;
+  document.getElementById('events-stat').textContent = `${visibleEvents} shown`;
+  document.getElementById('sessions-stat').textContent = sessions;
+}
+
+function countSessions(data, start, end) {
+  const SESSION_GAP = 30 * 60 * 1000; // 30 minutes
+  let sessionCount = 0;
+  let lastTime = null;
+
+  // Sort data by time to ensure proper gap detection
+  const sortedData = [...data].sort((a, b) => 
+    new Date(a.lastVisitTime) - new Date(b.lastVisitTime)
+  );
+
+  // Filter to visible range first
+  const visibleData = sortedData.filter(d => {
+    const time = new Date(d.lastVisitTime);
+    return time >= start && time <= end;
+  });
+
+  if (visibleData.length === 0) return 0;
+
+  // Initialize with first session
+  sessionCount = 1;
+  lastTime = new Date(visibleData[0].lastVisitTime);
+
+  // Check gaps between consecutive events
+  for (let i = 1; i < visibleData.length; i++) {
+    const currentTime = new Date(visibleData[i].lastVisitTime);
+    if (currentTime - lastTime > SESSION_GAP) {
+      sessionCount++;
+    }
+    lastTime = currentTime;
+  }
+
+  return sessionCount;
 }

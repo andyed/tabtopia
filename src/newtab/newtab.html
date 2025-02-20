@@ -29,32 +29,37 @@
       </div>
       <div id="title">Histospire</div>
     </div>
-    
-    <div class="header-right">
-      <div id="readout">
-        <span id="default-stats">...</span>
-        <div id="tooltip-info" style="display: none;"></div>
+  </div>
+
+  <div id="timeline-container">
+    <svg id="timeline-svg"></svg>
+  </div>
+
+  <div id="stats-panel">
+    <div class="stats-content">
+      <div class="stat-group">
+        <span class="stat-label">Time Range:</span>
+        <span id="time-range-stat">...</span>
+      </div>
+      <div class="stat-group">
+        <span class="stat-label">Events:</span>
+        <span id="events-stat">...</span>
+      </div>
+      <div class="stat-group">
+        <span class="stat-label">Sessions:</span>
+        <span id="sessions-stat">...</span>
       </div>
     </div>
-  </div>
-  <div id="readout-container">
-    <span id="default-stats">
-      <span id="total-history-items"></span>
-      <span id="total-active-tabs"></span>
-      <span id="total-edges"></span>
-      <span id="average-edges-connected"></span>
-      <span id="total-sessions"></span>
-    </span>
-    <span id="tooltip-info" style="display: none;"></span>
-  </div>
-  <div class="visualization-container">
-    <div id="timeline-container">
-      <svg id="timeline-svg"></svg>
-    </div>
-    <div id="graph-container">
-      <svg id="graph-svg"></svg>
+    <div id="readout">
+      <span id="default-stats">...</span>
+      <div id="tooltip-info" style="display: none;"></div>
     </div>
   </div>
+
+  <div id="graph-container">
+    <svg id="graph-svg"></svg>
+  </div>
+
   <!-- Use local D3.js instead of CDN -->
   <script src="../lib/d3.min.js"></script>
   <script type="module" src="utility.js"></script>
