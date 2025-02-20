@@ -188,6 +188,12 @@ swimlane-content::-webkit-scrollbar-thumb {
   border-radius: 3px;
 }
 
+.swimlane-icon {
+  margin-right: 4px;  // Reduced from 8px
+  transform: scale(0.75);  // Make icons slightly smaller
+  transform-origin: center;
+}
+
 /* Update history point styles */
 .history-point {
   transition: transform 0.2s ease;
@@ -255,12 +261,14 @@ swimlane-content::-webkit-scrollbar-thumb {
   stroke: #ddd;
   stroke-width: 1px;
   fill: none;
+  opacity: 0.5;
 }
 
 .timeline-swimlane.history {
   height: 60px;
   fill: #f8f9fa;
   fill-opacity: 0.2;
+  opacity: 0.3;
 }
 
 .timeline-swimlane.window {

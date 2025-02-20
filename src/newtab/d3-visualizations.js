@@ -70,6 +70,14 @@ const EDGE_TYPES = {
   }
 };
 
+const WINDOW_COLORS = [
+  '#34a853', // green
+  '#ea4335', // red
+  '#fbbc04', // yellow
+  '#4285f4', // blue
+  '#9334e6', // purple
+];
+
 export function initializeTimeline() {
   const container = d3.select('#timeline-svg');
   const element = container.node();
@@ -151,10 +159,11 @@ export function updateTimeline(data) {
   );
 
   // Calculate dynamic dimensions with reduced spacing
-  const historyHeight = 40; // Reduced from 60
-  const windowHeight = 24; // Reduced from 32
+  const historyHeight = 32;   // Reduced from 40
+  const windowHeight = 32;    // Reduced from 40
+  const swimlanePadding = 4;  // Reduced from 8
   const totalWindows = validWindows.length;
-  const requiredHeight = historyHeight + (totalWindows * windowHeight);
+  const requiredHeight = historyHeight + (totalWindows * (windowHeight + swimlanePadding));
   
   // Update container dimensions with reduced margins
   width = element.getBoundingClientRect().width - margin.left - margin.right;
@@ -198,7 +207,7 @@ export function updateTimeline(data) {
     .attr('height', historyHeight);
 
   validWindows.forEach((window, i) => {
-    const yPos = historyHeight + (i * windowHeight);
+    const yPos = historyHeight + (i * (windowHeight + swimlanePadding));
     plotArea.append('rect')
       .attr('class', 'timeline-swimlane window')
       .attr('x', 0)
@@ -229,7 +238,7 @@ export function updateTimeline(data) {
   // Update window points
   validWindows.forEach((window, i) => {
     const tabs = windowSwimlanes[window.id] || [];
-    const yPos = historyHeight + (i * windowHeight) + (windowHeight / 2);
+    const yPos = historyHeight + swimlanePadding + (i * (windowHeight + swimlanePadding)) + (windowHeight / 2);
     
     const windowPoints = plotArea.selectAll(`.timeline-point.window-${window.id}`)
       .data(tabs, d => d.url + (d.lastVisitTime || d.lastAccessed));
@@ -255,12 +264,30 @@ export function updateTimeline(data) {
       .tickFormat(d3.timeFormat('%H:%M')));
 
   // Update point updates in updateTimeline
-  plotArea.selectAll('.timeline-point')
+  const timelinePoints = plotArea.selectAll('.timeline-point');
+  
+  timelinePoints
     .attr('class', d => {
       const classes = ['timeline-point'];
       if (d.isCurrentTab) classes.push('current-tab');
       if (d.active) classes.push('active-tab');
       return classes.join(' ');
+    })
+    .attr('data-window-id', d => d.windowId || 0);  // Move this here
+
+  // In updateTimeline function
+  plotArea.selectAll('.swimlane-label')
+    .data([{type: 'history'}, ...validWindows.map(w => ({type: 'window', windowId: w.id}))])
+    .join('g')
+    .attr('class', 'swimlane-label')
+    .attr('transform', (d, i) => {
+      const y = d.type === 'history' 
+        ? (historyHeight / 2) - 2
+        : historyHeight + (i-1) * (windowHeight + swimlanePadding) + (windowHeight / 2);
+      return `translate(8, ${y})`;
+    })
+    .each(function(d) {
+      createSwimlaneLabel(d3.select(this), d.type, d.windowId);
     });
 }
 
@@ -997,35 +1024,85 @@ function updateStats(currentTimeScale) {
 }
 
 function countSessions(data, start, end) {
-  const SESSION_GAP = 30 * 60 * 1000; // 30 minutes
+  const SHORT_GAP = 2 * 60 * 1000;    // 5 minutes
+  const MEDIUM_GAP = 5 * 60 * 1000;  // 15 minutes
+  const LONG_GAP = 10 * 60 * 1000;    // 30 minutes
+  
   let sessionCount = 0;
   let lastTime = null;
+  let lastDomain = null;
+  let interactionBurst = 0;
 
-  // Sort data by time to ensure proper gap detection
-  const sortedData = [...data].sort((a, b) => 
-    new Date(a.lastVisitTime) - new Date(b.lastVisitTime)
-  );
-
-  // Filter to visible range first
-  const visibleData = sortedData.filter(d => {
-    const time = new Date(d.lastVisitTime);
-    return time >= start && time <= end;
-  });
+  // Sort and filter data first
+  const visibleData = [...data]
+    .sort((a, b) => new Date(a.lastVisitTime) - new Date(b.lastVisitTime))
+    .filter(d => {
+      const time = new Date(d.lastVisitTime);
+      return time >= start && time <= end;
+    });
 
   if (visibleData.length === 0) return 0;
 
-  // Initialize with first session
+  // Initialize first session
   sessionCount = 1;
   lastTime = new Date(visibleData[0].lastVisitTime);
+  lastDomain = new URL(visibleData[0].url).hostname;
 
-  // Check gaps between consecutive events
+  // Check sequential events
   for (let i = 1; i < visibleData.length; i++) {
     const currentTime = new Date(visibleData[i].lastVisitTime);
-    if (currentTime - lastTime > SESSION_GAP) {
+    const currentDomain = new URL(visibleData[i].url).hostname;
+    const timeDiff = currentTime - lastTime;
+    
+    // Detect session breaks based on:
+    // 1. Long gaps always break sessions
+    // 2. Medium gaps break sessions unless we're in same domain
+    // 3. Short gaps only break sessions if domain changes and no recent activity
+    if (timeDiff > LONG_GAP || 
+        (timeDiff > MEDIUM_GAP && currentDomain !== lastDomain) ||
+        (timeDiff > SHORT_GAP && currentDomain !== lastDomain && interactionBurst < 3)) {
       sessionCount++;
+      interactionBurst = 0;
+    } else {
+      // Track rapid interactions
+      if (timeDiff < SHORT_GAP) {
+        interactionBurst++;
+      } else {
+        interactionBurst = Math.max(0, interactionBurst - 1);
+      }
     }
+
     lastTime = currentTime;
+    lastDomain = currentDomain;
   }
 
   return sessionCount;
+}
+
+function createSwimlaneLabel(selection, type, windowId = null) {
+  const icon = selection.append('svg')
+    .attr('width', 24)
+    .attr('height', 24)
+    .attr('viewBox', '0 0 24 24')
+    .attr('fill', 'none')
+    .attr('stroke', windowId ? WINDOW_COLORS[windowId % WINDOW_COLORS.length] : 'currentColor')
+    .attr('stroke-width', 2)
+    .attr('stroke-linecap', 'round')
+    .attr('stroke-linejoin', 'round')
+    .attr('class', 'swimlane-icon');
+
+  if (type === 'history') {
+    icon.html(`
+      <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+      <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+      <path d="M12 7v5l3 3" />
+    `);
+  } else {
+    icon.html(`
+      <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+      <path d="M3 5m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z" />
+      <path d="M6 8h.01" />
+      <path d="M9 8h.01" />
+    `);
+  }
 }
