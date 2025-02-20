@@ -374,6 +374,19 @@ swimlane-content::-webkit-scrollbar-thumb {
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
 }
 
+.timeline-point.highlighted .favicon-background,
+.graph-node.highlighted .favicon-background {
+  stroke-width: 2px;
+  stroke: #1a73e8;
+  fill: #e8f0fe;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+}
+
+.timeline-point.highlighted .favicon-image,
+.graph-node.highlighted .favicon-image {
+  opacity: 1;
+}
+
 #tooltip-info {
   display: flex;
   gap: 16px;
