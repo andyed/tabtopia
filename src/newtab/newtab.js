@@ -253,4 +253,28 @@ async function updateTimelineWithNavigation(tab) {
   }
 }
 
+// Add window event listeners
+chrome.windows.onCreated.addListener(async (window) => {
+  // Refresh data and update timeline
+  const historyData = await fetchHistoryData(HISTORY_RESULTS_LIMIT);
+  const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
+  
+  const combinedData = {
+    history: historyData,
+    activeWindowsAndTabs: activeWindowsAndTabs
+  };
+  
+  const categorizedData = categorizeHistoryData(combinedData);
+  updateTimeline(categorizedData);
+});
+
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  // Remove window from current data if it exists
+  if (currentData && currentData.windowSwimlanes) {
+    delete currentData.windowSwimlanes[windowId];
+    currentData.activeWindowsAndTabs = currentData.activeWindowsAndTabs.filter(w => w.id !== windowId);
+    updateTimeline(currentData);
+  }
+});
+
 
