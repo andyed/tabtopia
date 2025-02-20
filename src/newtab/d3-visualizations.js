@@ -32,11 +32,11 @@ const ZOOM_DURATION = 750; // MS for zoom transitions
 
 // Update near top with other constants
 const KEYBOARD_NAV = {
-  PAN_STEP: 200,
-  ZOOM_FACTOR: 1.5,
-  ZOOM_DURATION: 750,
-  MIN_ZOOM: 1,
-  MAX_ZOOM: 20
+  PAN_STEP: 100,          // Pixels to pan per keypress
+  ZOOM_FACTOR: 1.2,       // More gradual zoom steps
+  MIN_ZOOM: 0.5,          // Allow more zoom out
+  MAX_ZOOM: 10,          // Reasonable max zoom
+  TRANSITION_MS: 300      // Transition duration
 };
 
 export function initializeTimeline() {
@@ -627,9 +627,9 @@ function handleTimelineKeyboard(event) {
   const svg = d3.select('#timeline-svg');
   const currentTransform = d3.zoomTransform(svg.node());
   const currentTimeScale = currentTransform.rescaleX(sharedTimeScale);
-  const domain = currentTimeScale.domain();
+  const [start, end] = currentTimeScale.domain();
   const now = new Date();
-  const futureLimit = new Date(now.getTime() + 60000); // 1 minute into future
+  const futureLimit = new Date(now.getTime() + 60000);
   
   switch (event.key) {
     case 'ArrowLeft':
@@ -638,33 +638,51 @@ function handleTimelineKeyboard(event) {
       const direction = event.key === 'ArrowLeft' ? 1 : -1;
       const proposedX = currentTransform.x + (KEYBOARD_NAV.PAN_STEP * direction);
       
-      // Check boundaries
+      // Check if we're at the boundaries
       const proposedTimeScale = currentTransform.translate(proposedX, 0).rescaleX(sharedTimeScale);
-      const [start, end] = proposedTimeScale.domain();
+      const [newStart, newEnd] = proposedTimeScale.domain();
       
-      // Don't pan before earliest history item or after future limit
-      if (start < sharedTimeScale.domain()[0] || end > futureLimit) {
-        return;
+      if (newStart < sharedTimeScale.domain()[0] || newEnd > futureLimit) {
+        // At boundary - transition to zoomed out view
+        svg.transition()
+          .duration(KEYBOARD_NAV.TRANSITION_MS)
+          .call(zoom.transform, d3.zoomIdentity.scale(KEYBOARD_NAV.MIN_ZOOM));
+      } else {
+        // Normal pan
+        svg.transition()
+          .duration(KEYBOARD_NAV.TRANSITION_MS)
+          .call(zoom.transform, currentTransform.translate(proposedX, 0));
       }
-      
-      svg.transition()
-        .duration(300)
-        .call(zoom.transform, currentTransform.translate(proposedX, 0));
       break;
 
     case 'ArrowUp':
     case 'ArrowDown':
       event.preventDefault();
-      const factor = event.key === 'ArrowUp' ? KEYBOARD_NAV.ZOOM_FACTOR : 1/KEYBOARD_NAV.ZOOM_FACTOR;
+      const isZoomIn = event.key === 'ArrowUp';
+      const factor = isZoomIn ? KEYBOARD_NAV.ZOOM_FACTOR : 1/KEYBOARD_NAV.ZOOM_FACTOR;
       const newK = Math.max(KEYBOARD_NAV.MIN_ZOOM, 
                    Math.min(KEYBOARD_NAV.MAX_ZOOM, 
                    currentTransform.k * factor));
       
-      // Only zoom if within bounds
-      if (newK !== currentTransform.k) {
+      if (newK === KEYBOARD_NAV.MAX_ZOOM && isZoomIn) {
+        // At max zoom - transition to pan
+        const centerTime = new Date((start.getTime() + end.getTime()) / 2);
+        const panDirection = end > now ? -1 : 1;
+        const newTransform = currentTransform.translate(KEYBOARD_NAV.PAN_STEP * panDirection, 0);
+        
         svg.transition()
-          .duration(300)
-          .call(zoom.transform, currentTransform.scale(newK/currentTransform.k));
+          .duration(KEYBOARD_NAV.TRANSITION_MS)
+          .call(zoom.transform, newTransform);
+      } else if (newK === KEYBOARD_NAV.MIN_ZOOM && !isZoomIn) {
+        // At min zoom - show full timeline
+        svg.transition()
+          .duration(KEYBOARD_NAV.TRANSITION_MS)
+          .call(zoom.transform, d3.zoomIdentity.scale(KEYBOARD_NAV.MIN_ZOOM));
+      } else {
+        // Normal zoom
+        svg.transition()
+          .duration(KEYBOARD_NAV.TRANSITION_MS)
+          .call(zoom.transform, currentTransform.scale(factor));
       }
       break;
   }
