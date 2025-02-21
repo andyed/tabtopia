@@ -1,5 +1,7 @@
 import { initializeTimeline, initializeGraph, updateTimeline, updateGraph, setupBrushing, setupZooming, drawSwimlanes } from './d3-visualizations.js';
-import { getFaviconUrl } from './utility.js';
+import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from './utility.js';
+import { updateStats } from './stats.js';
+
 
 const HISTORY_RESULTS_LIMIT = 20;
 const MICROS_SESSION_TIMEOUT = 2 * 60 * 1000; // 2 minutes in milliseconds

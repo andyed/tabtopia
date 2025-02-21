@@ -1,5 +1,43 @@
 // Utility functions can be added here
 
+export function abbreviateTitle(title, maxLength) {
+  if (title.length > maxLength) {
+    return title.substring(0, maxLength) + '...';
+  }
+  return title;
+}
+
+export function formatUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    let cleanHost = urlObj.hostname.replace(/^www\./, '');
+    let cleanPath = urlObj.pathname;
+    
+    let params = '';
+    const searchParams = new URLSearchParams(urlObj.search);
+    const firstParam = searchParams.entries().next().value;
+    if (firstParam) {
+      params = `?${firstParam[0]}=${firstParam[1]}${searchParams.size > 1 ? '...' : ''}`;
+    }
+    
+    return `${cleanHost}${cleanPath}${params}`;
+  } catch (e) {
+    return url;
+  }
+}
+
+export function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 // Update favicon handling function
 export async function getFaviconUrl(url) {
   // Try to get favicon using chrome.tabs.favIconUrl for active tabs

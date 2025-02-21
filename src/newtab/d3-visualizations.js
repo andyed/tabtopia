@@ -75,6 +75,20 @@ const WINDOW_COLORS = [
   '#9334e6', // purple
 ];
 
+const ACTIVE_WINDOW_STYLES = {
+  padding: 4,
+  cornerRadius: 4,
+  glowColor: 'rgba(66, 133, 244, 0.3)', // Google Blue with transparency
+  glowSpread: '0 0 0 4px'
+};
+
+const HIGHLIGHT_STYLES = {
+  fill: 'rgba(66, 133, 244, 0.1)', // Very light blue
+  cornerRadius: 4,
+  width: 28,
+  height: 28
+};
+
 export function initializeTimeline() {
   const container = d3.select('#timeline-svg');
   const element = container.node();
@@ -292,6 +306,33 @@ export function updateTimeline(data) {
 }
 
 function addFaviconsToPoints(points) {
+  // Add highlight background (but keep it hidden initially)
+  points.append('rect')
+    .attr('class', 'hover-highlight')
+    .attr('x', -14)
+    .attr('y', -14)
+    .attr('width', HIGHLIGHT_STYLES.width)
+    .attr('height', HIGHLIGHT_STYLES.height)
+    .attr('rx', HIGHLIGHT_STYLES.cornerRadius)
+    .attr('ry', HIGHLIGHT_STYLES.cornerRadius)
+    .attr('fill', HIGHLIGHT_STYLES.fill)
+    .style('opacity', 0); // Hidden by default
+
+  // Add highlight rectangle for all open window tabs
+  points.filter(d => d.windowId) // Check if the point has a windowId (meaning it's a current window tab)
+    .append('rect')
+    .attr('class', 'active-window-highlight')
+    .attr('x', -12)
+    .attr('y', -12)
+    .attr('width', 24)
+    .attr('height', 24)
+    .attr('rx', ACTIVE_WINDOW_STYLES.cornerRadius)
+    .attr('ry', ACTIVE_WINDOW_STYLES.cornerRadius)
+    .attr('fill', '#ffffff') // Add white background instead of 'none'
+    .attr('stroke', d => WINDOW_COLORS[d.windowId % WINDOW_COLORS.length])
+    .attr('stroke-width', 2)
+    .style('filter', `drop-shadow(${ACTIVE_WINDOW_STYLES.glowSpread} ${ACTIVE_WINDOW_STYLES.glowColor})`);
+
   // Add unique IDs to clip paths
   points.append('clipPath')
     .attr('id', (d, i) => `clip-${Math.random().toString(36).substr(2, 9)}`)
@@ -323,6 +364,18 @@ function addFaviconsToPoints(points) {
     })
     .style('cursor', 'pointer')
     .on('mouseover', function(event, d) {
+      // Show hover highlight in timeline
+      d3.select(this.parentNode)
+        .select('.hover-highlight')
+        .style('opacity', 1);
+
+      // Highlight corresponding node in graph
+      d3.select('#graph-svg')
+        .selectAll('.graph-node')
+        .filter(n => n.url === d.url)
+        .select('.hover-highlight')
+        .style('opacity', 1);
+
       const info = `
         ${d.title || 'Untitled'}
         <br/>
@@ -341,6 +394,18 @@ function addFaviconsToPoints(points) {
       focusGraphNode(d.url);  // Replace centerGraphNode with focusGraphNode
     })
     .on('mouseout', function(event, d) {
+      // Hide hover highlight in timeline
+      d3.select(this.parentNode)
+        .select('.hover-highlight')
+        .style('opacity', 0);
+
+      // Remove highlight from graph
+      d3.select('#graph-svg')
+        .selectAll('.graph-node')
+        .filter(n => n.url === d.url)
+        .select('.hover-highlight')
+        .style('opacity', 0);
+
       hideTooltipInfo();
       
       // Remove highlight
@@ -599,12 +664,52 @@ export function updateGraph(data) {
   const nodeEnter = nodes.enter()
     .append('g')
     .attr('class', 'graph-node')
-    .on('mouseenter', handleNodeHover)
-    .on('mouseleave', handleNodeHover)
+    .on('mouseenter', function(event, d) {
+      // Show hover highlight in graph
+      d3.select(this)
+        .select('.hover-highlight')
+        .style('opacity', 1);
+
+      // Highlight corresponding points in timeline
+      d3.select('#timeline-svg')
+        .selectAll('.timeline-point')
+        .filter(n => n.url === d.url)
+        .select('.hover-highlight')
+        .style('opacity', 1);
+
+      handleNodeHover(event, d);
+    })
+    .on('mouseleave', function(event, d) {
+      // Hide hover highlight in graph
+      d3.select(this)
+        .select('.hover-highlight')
+        .style('opacity', 0);
+
+      // Remove highlight from timeline
+      d3.select('#timeline-svg')
+        .selectAll('.timeline-point')
+        .filter(n => n.url === d.url)
+        .select('.hover-highlight')
+        .style('opacity', 0);
+
+      handleNodeHover(event, d);
+    })
     .call(d3.drag()
       .on('start', dragStarted)
       .on('drag', dragged)
       .on('end', dragEnded));
+
+  // Add hover highlight rect before favicons
+  nodeEnter.append('rect')
+    .attr('class', 'hover-highlight')
+    .attr('x', -14)
+    .attr('y', -14)
+    .attr('width', HIGHLIGHT_STYLES.width)
+    .attr('height', HIGHLIGHT_STYLES.height)
+    .attr('rx', HIGHLIGHT_STYLES.cornerRadius)
+    .attr('ry', HIGHLIGHT_STYLES.cornerRadius)
+    .attr('fill', HIGHLIGHT_STYLES.fill)
+    .style('opacity', 0);
 
   // Add favicons to new nodes
   addFaviconsToPoints(nodeEnter);
