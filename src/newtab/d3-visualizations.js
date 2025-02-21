@@ -127,33 +127,21 @@ export function initializeGraph() {
   const container = d3.select('#graph-svg');
   const element = container.node();
   
-  if (!element) return;
+  // Get the available height from the parent container
+  const parentHeight = element.parentElement.getBoundingClientRect().height;
+  
+  // Set full height
+  container
+    .attr('width', element.getBoundingClientRect().width)
+    .attr('height', parentHeight);
 
-  const width = element.getBoundingClientRect().width;
-  const height = element.getBoundingClientRect().height;
-
-  container.selectAll('*').remove();
-
-  // Create main group without margins
-  const g = container.append('g')
-    .attr('class', 'plot-area');
-
-  // Add zoom behavior
-  const zoom = d3.zoom()
-    .scaleExtent([0.5, 4]) // Set min/max zoom levels
-    .on('zoom', (event) => {
-      g.attr('transform', event.transform);
-    });
-
-  container.call(zoom);
-
-  // Initialize simulation
+  // Update simulation center force
   graphSimulation
     .force('center')
     .x(width / 2)
-    .y(height / 2);
+    .y(parentHeight / 2);
 
-  return { width, height, g };
+  return { width, height: parentHeight };
 }
 
 export function updateTimeline(data) {
@@ -1298,3 +1286,29 @@ function customForce(nodesArray) {
     });
   };
 }
+
+// Add a resize handler
+function handleGraphResize() {
+  const container = d3.select('#graph-svg');
+  const element = container.node();
+  const parentHeight = element.parentElement.getBoundingClientRect().height;
+  
+  // Update SVG dimensions
+  container
+    .attr('width', element.getBoundingClientRect().width)
+    .attr('height', parentHeight);
+
+  // Update simulation center
+  graphSimulation
+    .force('center')
+    .x(width / 2)
+    .y(parentHeight / 2);
+
+  // Restart simulation gently
+  graphSimulation.alpha(0.1).restart();
+}
+
+// Add window resize listener
+window.addEventListener('resize', debounce(() => {
+  handleGraphResize();
+}, 250));
