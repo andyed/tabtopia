@@ -102,6 +102,9 @@ export function initializeTimeline() {
   setupZooming();
   handleResize();
 
+  // Add event listener for keyboard navigation
+  document.addEventListener('keydown', handleTimelineKeyboard);
+
   return { width, height, g };
 }
 
@@ -720,7 +723,7 @@ function handleTimelineKeyboard(event) {
       
       svg.transition()
         .duration(KEYBOARD_NAV.TRANSITION_MS)
-        .call(zoom.transform, currentTransform.translate(proposedX, 0))
+        .call(zoom.transform, d3.zoomIdentity.translate(proposedX, currentTransform.y).scale(currentTransform.k))
         .on('end', () => {
           // Update currentTransform after transition
           currentTransform = d3.zoomTransform(svg.node());
@@ -734,7 +737,7 @@ function handleTimelineKeyboard(event) {
       
       svg.transition()
         .duration(KEYBOARD_NAV.TRANSITION_MS)
-        .call(zoom.transform, currentTransform.translate(proposedX, 0))
+        .call(zoom.transform, d3.zoomIdentity.translate(proposedX, currentTransform.y).scale(currentTransform.k))
         .on('end', () => {
           // Update currentTransform after transition
           currentTransform = d3.zoomTransform(svg.node());
@@ -1056,8 +1059,8 @@ function updateStats(currentTimeScale) {
   const [start, end] = currentTimeScale.domain();
   const timeRange = `${d3.timeFormat('%H:%M')(start)} - ${d3.timeFormat('%H:%M')(end)}`;
   
-  // Count visible events
-  const visibleEvents = currentData.historySwimlane.filter(d => {
+  // Count visible nodes in the graph
+  const visibleNodes = currentData.historySwimlane.filter(d => {
     const time = new Date(d.lastVisitTime);
     return time >= start && time <= end;
   }).length;
@@ -1066,7 +1069,7 @@ function updateStats(currentTimeScale) {
   const sessions = countSessions(currentData.historySwimlane, start, end);
 
   document.getElementById('time-range-stat').textContent = timeRange;
-  document.getElementById('events-stat').textContent = `${visibleEvents} shown`;
+  document.getElementById('events-stat').textContent = `${visibleNodes} shown`;
   document.getElementById('sessions-stat').textContent = sessions;
 }
 
