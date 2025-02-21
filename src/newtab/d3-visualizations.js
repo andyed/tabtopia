@@ -16,12 +16,13 @@ const focusForce = d3.forceRadial(0, 0, 0).strength(0);
 
 // Update the force simulation settings
 const graphSimulation = d3.forceSimulation()
-  .force('link', d3.forceLink().id(d => d.id).distance(150).strength(0.5)) // Increase link distance and adjust strength
+  .force('link', d3.forceLink().id(d => d.id).distance(100).strength(0.5)) // Increase link distance and adjust strength
   .force('charge', d3.forceManyBody().strength(-300)) // Increase repulsion
   .force('center', d3.forceCenter())
   .force('collision', d3.forceCollide().radius(30).strength(1)) // Increase collision radius and strength
   .force('x', d3.forceX())
   .force('y', d3.forceY())
+  .force('custom', customForce([])) // Initialize with empty array
   .alphaDecay(0.1)        // Faster initial decay
   .velocityDecay(0.6)     // More damping
   .alpha(0.3);            // Lower initial energy
@@ -46,27 +47,23 @@ const EDGE_TYPES = {
     stroke: '#4285f4',
     strokeWidth: 1,
     strokeDasharray: '2',
-    opacity: 0.6
+    opacity: 0.6,
+    forceStrength: -50 // Attractive force
   },
   WINDOW: {
     name: 'window',
-    stroke: 'none',
+    stroke: 'none', // Ensure stroke is defined
     strokeWidth: 1.5,
     strokeDasharray: 'none',
-    opacity: 0.8
-  },
-  TYPED: {
-    name: 'typed',
-    stroke: 'none',
-    strokeWidth: 0,
-    strokeDasharray: '4 2',
-    opacity: 0.7
+    opacity: 0.8,
+    forceStrength: 0 // Neutral force
   },
   SESSION_BREAK: {
     name: 'session-break',
-    stroke: 'none',  // Remove stroke
+    stroke: 'none',  // Ensure stroke is defined
     strokeWidth: 0,  // No stroke width
-    opacity: 0      // Fully transparent
+    opacity: 0,      // Fully transparent
+    forceStrength: 0 // Neutral force
   }
 };
 
@@ -510,8 +507,8 @@ export function updateGraph(data) {
         y: Math.random() * graphHeight
       });
 
-      // Link to previous history item
-      if (index > 0) {
+      // Link to previous history item if not typed
+      if (index > 0 && item.transition !== 'typed') {
         const prevItem = data.historySwimlane[index - 1];
         const prevTime = new Date(prevItem.lastVisitTime);
         if (prevTime >= startTime && prevTime <= endTime) {
@@ -582,7 +579,11 @@ export function updateGraph(data) {
 
   const linkEnter = links.enter()
     .append('line')
-    .attr('class', d => `graph-link ${d.type}`);
+    .attr('class', d => `graph-link ${d.type}`)
+    .attr('stroke', d => EDGE_TYPES[d.type]?.stroke || 'black') // Default to black if undefined
+    .attr('stroke-width', d => EDGE_TYPES[d.type]?.strokeWidth || 1) // Default to 1 if undefined
+    .attr('stroke-dasharray', d => EDGE_TYPES[d.type]?.strokeDasharray || 'none') // Default to none if undefined
+    .attr('opacity', d => EDGE_TYPES[d.type]?.opacity || 1); // Default to 1 if undefined
 
   // Update nodes with proper enter selection
   const nodes = plotArea.selectAll('.graph-node')
@@ -1127,4 +1128,17 @@ function abbreviateTitle(title, maxLength) {
     return title.substring(0, maxLength) + '...';
   }
   return title;
+}
+
+// Custom force for typed nodes
+function customForce(nodesArray) {
+  return (alpha) => {
+    nodesArray.forEach(node => {
+      if (node.transition === 'typed') {
+        const strength = EDGE_TYPES.TYPED.forceStrength;
+        node.vx += strength * alpha;
+        node.vy += strength * alpha;
+      }
+    });
+  };
 }
