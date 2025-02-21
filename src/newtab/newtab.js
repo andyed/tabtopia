@@ -1,11 +1,13 @@
 import { initializeTimeline, initializeGraph, updateTimeline, updateGraph, setupBrushing, setupZooming, drawSwimlanes } from './d3-visualizations.js';
 import { getFaviconUrl } from './utility.js';
+
 const HISTORY_RESULTS_LIMIT = 20;
 const MICROS_SESSION_TIMEOUT = 2 * 60 * 1000; // 2 minutes in milliseconds
 const UPDATE_INTERVAL = 120000; // 2 minutes in milliseconds
 let updateTimer = null;
 let lastUpdate = Date.now();
 let currentData = null;
+let tabEdges = new Map(); // Track edges between tabs
 
 async function initializeApp() {
   try {
@@ -21,14 +23,14 @@ async function initializeApp() {
     
     // Initialize both visualizations
     initializeTimeline();
-    initializeGraph(); // Add this line
+    initializeGraph();
     
     // Update both visualizations
     updateTimeline(currentData);
     updateGraph(currentData);
     
     setupTimelineUpdates();
-    setupMenu(); // Add this line
+    setupMenu();
     
     console.log('App initialized with data:', currentData);
   } catch (error) {
@@ -121,13 +123,13 @@ function categorizeHistoryData(data) {
       });
       
       // Store reference for history matching
-      activeTabs.set(tab.url, { windowId: window.id, tab });
+      activeTabs.set(tab.id, { windowId: window.id, tab });
     });
   });
 
   // Then categorize history items
   history.forEach(item => {
-    const activeTab = activeTabs.get(item.url);
+    const activeTab = activeTabs.get(item.id);
     
     if (item.windowId && windowSwimlanes[item.windowId]) {
       // If we know the window ID and it exists, add to that window
@@ -416,5 +418,56 @@ document.addEventListener('DOMContentLoaded', () => {
   setupMenu();
   // ...existing initialization code...
 });
+
+// Capture new tab creation and update edges
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.openerTabId) {
+    const edge = {
+      source: tab.openerTabId,
+      target: tab.id,
+      type: 'new-tab'
+    };
+    tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
+    updateGraphWithNewEdge(edge);
+  }
+});
+
+// Capture tab updates to ensure edges are tracked
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.openerTabId) {
+    const edge = {
+      source: tab.openerTabId,
+      target: tab.id,
+      type: 'new-tab'
+    };
+    tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
+    updateGraphWithNewEdge(edge);
+  }
+});
+
+// Update graph with new edge
+function updateGraphWithNewEdge(edge) {
+  if (currentData) {
+    const { windowSwimlanes } = currentData;
+    const sourceTab = findTabById(windowSwimlanes, edge.source);
+    const targetTab = findTabById(windowSwimlanes, edge.target);
+    
+    if (sourceTab && targetTab) {
+      currentData.edges.push(edge);
+      updateGraph(currentData);
+    }
+  }
+}
+
+// Find tab by ID in window swimlanes
+function findTabById(windowSwimlanes, tabId) {
+  for (const tabs of Object.values(windowSwimlanes)) {
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab) {
+      return tab;
+    }
+  }
+  return null;
+}
 
 

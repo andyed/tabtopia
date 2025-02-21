@@ -396,11 +396,11 @@ swimlane-content::-webkit-scrollbar-thumb {
 
 .graph-link.sequential {
   stroke: #4285f4;
-  stroke-dasharray: 2;
 }
 
 .graph-link.window {
-  stroke: #34a853;
+  stroke: #fff;
+  stroke-width:0px;
 }
 
 .graph-node {
