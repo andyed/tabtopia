@@ -159,15 +159,15 @@ export function updateTimeline(data) {
   );
 
   // Calculate dynamic dimensions with reduced spacing
-  const historyHeight = 32;   // Reduced from 40
-  const windowHeight = 32;    // Reduced from 40
-  const swimlanePadding = 4;  // Reduced from 8
+  const historyHeight = 64;   // Double height for history lane
+  const windowHeight = 32;    // Standard height for window lanes
+  const swimlanePadding = 4;  // Padding between lanes
   const totalWindows = validWindows.length;
   const requiredHeight = historyHeight + (totalWindows * (windowHeight + swimlanePadding));
   
   // Update container dimensions with reduced margins
   width = element.getBoundingClientRect().width - margin.left - margin.right;
-  height = Math.min(requiredHeight + margin.top + margin.bottom, 160); // Cap at 160px
+  height = requiredHeight + margin.top + margin.bottom; // Remove the 160px cap
 
   // Update SVG size
   container
@@ -238,7 +238,7 @@ export function updateTimeline(data) {
   // Update window points
   validWindows.forEach((window, i) => {
     const tabs = windowSwimlanes[window.id] || [];
-    const yPos = historyHeight + swimlanePadding + (i * (windowHeight + swimlanePadding)) + (windowHeight / 2);
+    const yPos = historyHeight + (i * (windowHeight + swimlanePadding)) + (windowHeight / 2);
     
     const windowPoints = plotArea.selectAll(`.timeline-point.window-${window.id}`)
       .data(tabs, d => d.url + (d.lastVisitTime || d.lastAccessed));
@@ -277,17 +277,17 @@ export function updateTimeline(data) {
 
   // In updateTimeline function
   plotArea.selectAll('.swimlane-label')
-    .data([{type: 'history'}, ...validWindows.map(w => ({type: 'window', windowId: w.id}))])
+    .data([{type: 'history'}, ...validWindows.map((w, i) => ({type: 'window', offset: i}))])
     .join('g')
     .attr('class', 'swimlane-label')
     .attr('transform', (d, i) => {
       const y = d.type === 'history' 
-        ? (historyHeight / 2) - 2
-        : historyHeight + (i-1) * (windowHeight + swimlanePadding) + (windowHeight / 2);
+        ? (historyHeight / 2) - 12 // Center within history lane, moved up 12px
+        : historyHeight + ((i - 1) * (windowHeight + swimlanePadding)) + (windowHeight * 0.5) - 12; // Center within window lane, moved up 12px
       return `translate(8, ${y})`;
     })
     .each(function(d) {
-      createSwimlaneLabel(d3.select(this), d.type, d.windowId);
+      createSwimlaneLabel(d3.select(this), d.type, d.offset);
     });
 }
 
