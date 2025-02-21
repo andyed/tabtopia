@@ -14,12 +14,12 @@ const TRANSITION_DURATION = 300;
 // Add new focus force constant at top with other constants
 const focusForce = d3.forceRadial(0, 0, 0).strength(0);
 
-// Update graphSimulation initialization at top
+// Update the force simulation settings
 const graphSimulation = d3.forceSimulation()
-  .force('link', d3.forceLink().id(d => d.url).distance(50))
-  .force('charge', d3.forceManyBody().strength(-150))
+  .force('link', d3.forceLink().id(d => d.id).distance(150).strength(0.5)) // Increase link distance and adjust strength
+  .force('charge', d3.forceManyBody().strength(-300)) // Increase repulsion
   .force('center', d3.forceCenter())
-  .force('collision', d3.forceCollide().radius(20))  // Increased radius
+  .force('collision', d3.forceCollide().radius(30).strength(1)) // Increase collision radius and strength
   .force('x', d3.forceX())
   .force('y', d3.forceY())
   .alphaDecay(0.1)        // Faster initial decay
@@ -502,7 +502,7 @@ export function updateGraph(data) {
     const itemTime = new Date(item.lastVisitTime);
     if (itemTime >= startTime && itemTime <= endTime) {
       // Add node with initial position
-      visibleNodes.set(item.url, {
+      visibleNodes.set(item.id, {
         ...item,
         type: 'history',
         radius: 8,
@@ -516,8 +516,8 @@ export function updateGraph(data) {
         const prevTime = new Date(prevItem.lastVisitTime);
         if (prevTime >= startTime && prevTime <= endTime) {
           visibleLinks.push({
-            source: prevItem.url,
-            target: item.url,
+            source: prevItem.id,
+            target: item.id,
             type: 'sequential',
             timeGap: new Date(item.lastVisitTime) - prevTime
           });
@@ -531,8 +531,8 @@ export function updateGraph(data) {
     tabs.forEach((tab, index) => {
       const tabTime = new Date(tab.lastVisitTime || tab.lastAccessed);
       if (tabTime >= startTime && tabTime <= endTime) {
-        if (!visibleNodes.has(tab.url)) {
-          visibleNodes.set(tab.url, {
+        if (!visibleNodes.has(tab.id)) {
+          visibleNodes.set(tab.id, {
             ...tab,
             type: 'current',
             radius: 8,
@@ -543,10 +543,10 @@ export function updateGraph(data) {
 
         if (index > 0) {
           const prevTab = tabs[index - 1];
-          if (visibleNodes.has(prevTab.url)) {
+          if (visibleNodes.has(prevTab.id)) {
             visibleLinks.push({
-              source: prevTab.url,
-              target: tab.url,
+              source: prevTab.id,
+              target: tab.id,
               type: 'window'
             });
           }
@@ -558,20 +558,25 @@ export function updateGraph(data) {
   const nodesArray = Array.from(visibleNodes.values());
   console.log(`Visible nodes: ${nodesArray.length}, links: ${visibleLinks.length}`);
 
+  // Ensure all nodes referenced in links are present in nodesArray
+  const validLinks = visibleLinks.filter(link => 
+    visibleNodes.has(link.source) && visibleNodes.has(link.target)
+  );
+
   // Stop any existing simulation
   graphSimulation.stop();
 
   // Update the simulation with new data
   graphSimulation
     .nodes(nodesArray)
-    .force('link').links(visibleLinks);
+    .force('link').links(validLinks);
 
   // Add a gentle alpha target to smooth transitions
   graphSimulation.alpha(0.3).alphaTarget(0).restart();
 
   // Update links
   const links = plotArea.selectAll('.graph-link')
-    .data(visibleLinks, d => `${d.source.url}-${d.target.url}-${d.type}`);
+    .data(validLinks, d => `${d.source}-${d.target}-${d.type}`);
 
   links.exit().remove();
 
@@ -581,7 +586,7 @@ export function updateGraph(data) {
 
   // Update nodes with proper enter selection
   const nodes = plotArea.selectAll('.graph-node')
-    .data(nodesArray, d => d.url);
+    .data(nodesArray, d => d.id);
   
   // Remove old nodes
   nodes.exit().remove();
@@ -617,7 +622,7 @@ export function updateGraph(data) {
   // Update simulation with all nodes
   graphSimulation
     .nodes(nodesArray)
-    .force('link').links(visibleLinks);
+    .force('link').links(validLinks);
 
   // Set up tick function with merged selection
   graphSimulation.on('tick', () => {
