@@ -706,45 +706,93 @@ function handleTimelineKeyboard(event) {
   if (!currentData?.historySwimlane || !zoom) return;
   
   const svg = d3.select('#timeline-svg');
-  const currentTransform = d3.zoomTransform(svg.node());
+  let currentTransform = d3.zoomTransform(svg.node());
   const currentTimeScale = currentTransform.rescaleX(sharedTimeScale);
   const [start, end] = currentTimeScale.domain();
   const timeRange = end - start;
+  let direction, proposedX, newK, rightEdge, newTransform, factor;
   
   switch (event.key) {
     case 'ArrowLeft':
-    case 'ArrowRight':
       event.preventDefault();
-      const direction = event.key === 'ArrowLeft' ? 1 : -1;
-      const proposedX = currentTransform.x + (KEYBOARD_NAV.PAN_STEP * direction);
+      direction = 1; // Pan left
+      proposedX = currentTransform.x + (KEYBOARD_NAV.PAN_STEP * direction);
       
       svg.transition()
         .duration(KEYBOARD_NAV.TRANSITION_MS)
-        .call(zoom.transform, currentTransform.translate(proposedX, 0));
+        .call(zoom.transform, currentTransform.translate(proposedX, 0))
+        .on('end', () => {
+          // Update currentTransform after transition
+          currentTransform = d3.zoomTransform(svg.node());
+        });
+      break;
+      
+    case 'ArrowRight':
+      event.preventDefault();
+      direction = -1; // Pan right
+      proposedX = currentTransform.x + (KEYBOARD_NAV.PAN_STEP * direction);
+      
+      svg.transition()
+        .duration(KEYBOARD_NAV.TRANSITION_MS)
+        .call(zoom.transform, currentTransform.translate(proposedX, 0))
+        .on('end', () => {
+          // Update currentTransform after transition
+          currentTransform = d3.zoomTransform(svg.node());
+        });
       break;
 
     case 'ArrowUp':
-    case 'ArrowDown':
       event.preventDefault();
-      const isZoomIn = event.key === 'ArrowDown';
-      const factor = isZoomIn ? KEYBOARD_NAV.ZOOM_FACTOR : 1/KEYBOARD_NAV.ZOOM_FACTOR;
-      const newK = Math.max(
+      const isZoomIn = true; // Zoom in
+      factor = isZoomIn ? KEYBOARD_NAV.ZOOM_FACTOR : 1 / KEYBOARD_NAV.ZOOM_FACTOR;
+      newK = Math.max(
         KEYBOARD_NAV.MIN_ZOOM, 
         Math.min(KEYBOARD_NAV.MAX_ZOOM, currentTransform.k * factor)
       );
       
       // Calculate the new transform to keep the most recent visible area in view
-      const rightEdge = currentTransform.invertX(width);
-      const newTransform = d3.zoomIdentity
+      rightEdge = currentTransform.invertX(width);
+      newTransform = d3.zoomIdentity
         .scale(newK)
-        .translate(width/newK - rightEdge, 0);
+        .translate(width / newK - rightEdge, 0);
       
       svg.transition()
         .duration(KEYBOARD_NAV.TRANSITION_MS)
-        .call(zoom.transform, newTransform);
+        .call(zoom.transform, newTransform)
+        .on('end', () => {
+          // Update currentTransform after transition
+          currentTransform = d3.zoomTransform(svg.node());
+        });
+      break;
+      
+    case 'ArrowDown':
+      event.preventDefault();
+      const isZoomOut = false; // Zoom out
+      factor = isZoomOut ? KEYBOARD_NAV.ZOOM_FACTOR : 1 / KEYBOARD_NAV.ZOOM_FACTOR;
+      newK = Math.max(
+        KEYBOARD_NAV.MIN_ZOOM, 
+        Math.min(KEYBOARD_NAV.MAX_ZOOM, currentTransform.k * factor)
+      );
+      
+      // Calculate the new transform to keep the most recent visible area in view
+      rightEdge = currentTransform.invertX(width);
+      newTransform = d3.zoomIdentity
+        .scale(newK)
+        .translate(width / newK - rightEdge, 0);
+      
+      svg.transition()
+        .duration(KEYBOARD_NAV.TRANSITION_MS)
+        .call(zoom.transform, newTransform)
+        .on('end', () => {
+          // Update currentTransform after transition
+          currentTransform = d3.zoomTransform(svg.node());
+        });
       break;
   }
 }
+
+// Add event listener for keyboard navigation
+document.addEventListener('keydown', handleTimelineKeyboard);
 
 export async function drawSwimlanes(categorizedData) {
   if (!categorizedData || !categorizedData.windowSwimlanes) {
