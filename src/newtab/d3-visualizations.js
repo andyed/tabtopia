@@ -934,6 +934,12 @@ export function updateGraph(data) {
     });
 
   //updateReadoutPosition(data);
+
+  const visibleGraphNodes = nodesArray.filter(n => !n.hidden).length;
+  console.log('Visible nodes in graph:', visibleGraphNodes);
+  
+  // Update stats with graph node count
+  updateStats(visibleGraphNodes, data);
 }
 
 export function setupBrushing() {

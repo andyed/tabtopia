@@ -40,7 +40,6 @@ body {
   width: 100%;
   height: 170px;  /* LAYOUT.TIMELINE_HEIGHT */
   margin-bottom: 0;  /* Ensure no extra space */
-  outline: 1px solid red; /* Temporary debug styles - remove after fixing layout */
 }
 
 #timeline-svg, #graph-svg {
@@ -171,12 +170,11 @@ body {
   background-color: #f5f5f5;
   border-bottom: 1px solid #ddd;
   padding: 8px 12px;
-  min-height: 45px;  /* Accommodate 2-3 lines: (14px + 11px + 11px) + padding */
+  min-height: 54px;  /* Accommodate 2-3 lines: (14px + 11px + 11px) + padding */
   display: flex;
   flex-direction: column;
   gap: 4px;  /* Space between lines */
   margin: 0;
-  outline: 1px solid green; /* Temporary debug styles - remove after fixing layout */
 }
 
 /* Text styles for different lines */
@@ -492,7 +490,6 @@ swimlane-content::-webkit-scrollbar-thumb {
   position: relative;
   width: 100%;
   margin-top: 0;  /* Ensure no extra space */
-  outline: 1px solid blue; /* Temporary debug styles - remove after fixing layout */
 }
 
 #graph-svg {
