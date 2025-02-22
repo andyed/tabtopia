@@ -30,6 +30,10 @@
     "service_worker": "src/background.js",
     "type": "module"
   },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["src/content/content.js"]
+  }],
   "chrome_url_overrides": {
     "newtab": "src/newtab/newtab.html"
   },

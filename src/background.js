@@ -97,6 +97,16 @@ chrome.webRequest.onBeforeRequest.addListener(
   ["blocking"]
 );
 
+// Add to existing background.js
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'GET_TAB_ACTIVITY') {
+    sendResponse({
+      tabActivityLog: Array.from(tabActivityLog.entries()),
+      navigationEvents: Array.from(navigationEvents.entries())
+    });
+  }
+});
+
 // Initial population of history and active tabs
 updateHistory();
 updateActiveTabs();

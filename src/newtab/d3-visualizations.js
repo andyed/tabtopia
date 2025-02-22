@@ -36,7 +36,7 @@ const ZOOM_DURATION = 750; // MS for zoom transitions
 const KEYBOARD_NAV = {
   PAN_STEP: 100,          // Pixels to pan per keypress
   ZOOM_FACTOR: 1.5,       // More pronounced zoom steps
-  MIN_ZOOM: 0.5,          // Allow good overview
+  MIN_ZOOM: 0.25,          // Allow good overview
   MAX_ZOOM: 30,          // Increased to allow 2-minute detail view
   TRANSITION_MS: 300      // Smooth transitions
 };
@@ -45,25 +45,41 @@ const EDGE_TYPES = {
   SEQUENTIAL: {
     name: 'sequential',
     stroke: '#4285f4',
-    strokeWidth: 1,
-    strokeDasharray: '2',
-    opacity: 0.6,
-    forceStrength: -50 // Attractive force
+    strokeWidth: 2,
+    strokeDasharray: 'none',
+    opacity: 0.8,
+    forceStrength: -50 // Strong attractive force for sequential navigation
+  },
+  LINK_CLICK: {
+    name: 'link-click',
+    stroke: '#34a853',
+    strokeWidth: 2,
+    strokeDasharray: 'none',
+    opacity: 0.9,
+    forceStrength: -30 // Strong connection for explicit navigation
+  },
+  FORM_SUBMIT: {
+    name: 'form-submit',
+    stroke: '#ea4335',
+    strokeWidth: 2,
+    strokeDasharray: 'none',
+    opacity: 0.9,
+    forceStrength: -30 // Strong connection for explicit navigation
   },
   WINDOW: {
     name: 'window',
-    stroke: 'none', // Ensure stroke is defined
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.8,
-    forceStrength: 0 // Neutral force
+    stroke: '#fbbc04',
+    strokeWidth: 1,
+    strokeDasharray: '4',
+    opacity: 0.6,
+    forceStrength: -10 // Weaker connection for window relationships
   },
   SESSION_BREAK: {
     name: 'session-break',
-    stroke: 'none',  // Ensure stroke is defined
-    strokeWidth: 0,  // No stroke width
-    opacity: 0,      // Fully transparent
-    forceStrength: 0 // Neutral force
+    stroke: 'none',
+    strokeWidth: 0,
+    opacity: 0,
+    forceStrength: 0 // No force for session breaks
   }
 };
 
@@ -87,6 +103,14 @@ const HIGHLIGHT_STYLES = {
   cornerRadius: 4,
   width: 28,
   height: 28
+};
+
+// Add to constants at top
+const TEMPORAL_LAYOUT = {
+  xPadding: 0.1,    // 10% padding on each side
+  yPadding: 0.1,    // 10% padding on each side
+  timeStrength: 0.8, // Strong horizontal alignment
+  recentStrength: 0.4 // Moderate vertical push
 };
 
 export function initializeTimeline() {
@@ -550,52 +574,74 @@ export function updateGraph(data) {
   const visibleNodes = new Map();
   const visibleLinks = [];
 
-  // Process history nodes first
+  // Create time scale for initial positioning
+  const timePositionScale = sharedTimeScale.copy()
+    .range([graphWidth * 0.1, graphWidth * 0.9]); // Use 80% of width for time positioning
+
+  // Process nodes with improved initial positioning
   data.historySwimlane.forEach((item, index) => {
     const itemTime = new Date(item.lastVisitTime);
     if (itemTime >= startTime && itemTime <= endTime) {
-      // Add node with initial position
+      const timeX = timePositionScale(itemTime);
+      const shouldAlign = Math.random() < 0.5; // 50% chance of timeline alignment
+      
       visibleNodes.set(item.id, {
         ...item,
         type: 'history',
         radius: 8,
-        x: Math.random() * graphWidth,
-        y: Math.random() * graphHeight
+        x: shouldAlign ? timeX : timeX + (Math.random() - 0.5) * graphWidth * 0.2, // Jitter within 20% of width
+        y: shouldAlign ? graphHeight * 0.3 : graphHeight * (0.2 + Math.random() * 0.2) // Cluster in top third
       });
 
-      // Link to previous history item if not typed
-      if (index > 0 && item.transition !== 'typed') {
+      // Link to previous history item if in same tab
+      if (index > 0) {
         const prevItem = data.historySwimlane[index - 1];
         const prevTime = new Date(prevItem.lastVisitTime);
         if (prevTime >= startTime && prevTime <= endTime) {
-          visibleLinks.push({
-            source: prevItem.id,
-            target: item.id,
-            type: 'sequential',
-            timeGap: new Date(item.lastVisitTime) - prevTime
-          });
+          // Only create sequential link if same tab
+          if (item.tabId === prevItem.tabId) {
+            visibleLinks.push({
+              source: prevItem.id,
+              target: item.id,
+              type: 'sequential',
+              timeGap: new Date(item.lastVisitTime) - prevTime
+            });
+          }
+          // Add link-click or form-submit if we have that info
+          else if (item.sourceUrl === prevItem.url) {
+            visibleLinks.push({
+              source: prevItem.id,
+              target: item.id,
+              type: item.transitionType || 'link-click',
+              text: item.linkText,
+              timeGap: new Date(item.lastVisitTime) - prevTime
+            });
+          }
         }
       }
     }
   });
 
-  // Process window nodes
+  // Process window nodes with similar positioning strategy
   Object.values(data.windowSwimlanes).forEach(tabs => {
-    tabs.forEach((tab, index) => {
+    tabs.forEach((tab, tabIndex) => { // Add tabIndex parameter here
       const tabTime = new Date(tab.lastVisitTime || tab.lastAccessed);
       if (tabTime >= startTime && tabTime <= endTime) {
+        const timeX = timePositionScale(tabTime);
+        const shouldAlign = Math.random() < 0.5;
+
         if (!visibleNodes.has(tab.id)) {
           visibleNodes.set(tab.id, {
             ...tab,
             type: 'current',
             radius: 8,
-            x: Math.random() * graphWidth,
-            y: Math.random() * graphHeight
+            x: shouldAlign ? timeX : timeX + (Math.random() - 0.5) * graphWidth * 0.2,
+            y: shouldAlign ? graphHeight * 0.7 : graphHeight * (0.6 + Math.random() * 0.2) // Cluster in bottom third
           });
         }
 
-        if (index > 0) {
-          const prevTab = tabs[index - 1];
+        if (tabIndex > 0) { // Use tabIndex instead of index
+          const prevTab = tabs[tabIndex - 1];
           if (visibleNodes.has(prevTab.id)) {
             visibleLinks.push({
               source: prevTab.id,
@@ -1050,65 +1096,41 @@ function cleanup() {
 // Update updateGraph function to adjust forces based on aspect ratio
 // Update updateForcesByAspectRatio
 function updateForcesByAspectRatio(width, height) {
-  const xStrength = 0.8;  // Stronger horizontal alignment
-  const yStrength = 0.3;
-  const layerHeight = height / 4; // Divide height into layers
-
-  // Calculate time-based x positions first
   const timeScale = sharedTimeScale.copy()
-    .range([width * 0.1, width * 0.9]);
+    .range([width * TEMPORAL_LAYOUT.xPadding, width * (1 - TEMPORAL_LAYOUT.xPadding)]);
+  
+  // Get the time range for calculating recency
+  const [timeStart, timeEnd] = sharedTimeScale.domain();
+  const timeRange = timeEnd - timeStart;
 
-  // Create hierarchical layout
   graphSimulation
     .force('x')
-    .strength(xStrength)
+    .strength(TEMPORAL_LAYOUT.timeStrength)
     .x(d => timeScale(new Date(d.lastVisitTime || d.lastAccessed)));
 
-  // Layer-based Y positioning
+  // Modify Y force to consider recency
   graphSimulation
     .force('y')
-    .strength(yStrength)
+    .strength(TEMPORAL_LAYOUT.recentStrength)
     .y(d => {
-      if (d.type === 'history') {
-        return layerHeight; // History items in top layer
-      }
-      // Window tabs in layers based on window ID
-      return layerHeight * (2 + (d.windowId % 2));
+      const time = new Date(d.lastVisitTime || d.lastAccessed);
+      const recencyFactor = (timeEnd - time) / timeRange; // 0 for most recent, 1 for oldest
+      const baseY = height * (0.8 - (recencyFactor * 0.6)); // Map 0-1 to 80%-20% of height
+      
+      // Add some random jitter to prevent exact alignment
+      return baseY + (Math.random() - 0.5) * height * 0.1;
     });
 
-  // Adjust other forces
+  // Adjust other forces for better layout
   graphSimulation
     .force('charge')
-    .strength(-100) // Reduced repulsion
-    .distanceMax(width * 0.1); // Limit charge effect range
+    .strength(-100)
+    .distanceMax(width * 0.1);
 
   graphSimulation
     .force('collision')
-    .radius(12) // Slightly larger to prevent overlap
-    .strength(0.8); // Stronger collision avoidance
-
-  // Use curved links for better visibility
-  plotArea.selectAll('.graph-link')
-    .attr('d', d => {
-      const sourceX = d.source.x;
-      const sourceY = d.source.y;
-      const targetX = d.target.x;
-      const targetY = d.target.y;
-      
-      // Calculate control points for curve
-      const midX = (sourceX + targetX) / 2;
-      const midY = (sourceY + targetY) / 2;
-      const dx = targetX - sourceX;
-      const dy = targetY - sourceY;
-      const curvature = 0.5;
-      
-      // Curve upward if going to higher layer, downward if going to lower
-      const sign = sourceY > targetY ? -1 : 1;
-      const controlX = midX;
-      const controlY = midY + (sign * Math.abs(dx) * curvature);
-      
-      return `M${sourceX},${sourceY} Q${controlX},${controlY} ${targetX},${targetY}`;
-    });
+    .radius(16)
+    .strength(0.8);
 
   // Remove center force as we're using explicit positioning
   graphSimulation.force('center', null);

@@ -11,6 +11,15 @@ let lastUpdate = Date.now();
 let currentData = null;
 let tabEdges = new Map(); // Track edges between tabs
 
+// Add new tracking constants
+const TAB_ACTIVITY = {
+  ACTIVE_THRESHOLD: 1000, // minimum ms to count as active time
+  IDLE_THRESHOLD: 300000  // 5 minutes without interaction = idle
+};
+
+// Add tab activity tracking
+let tabActivityLog = new Map(); // Track tab activity periods
+
 async function initializeApp() {
   try {
     const historyData = await fetchHistoryData(HISTORY_RESULTS_LIMIT);
@@ -78,21 +87,33 @@ async function fetchHistoryData(limit, startTime) {
   });
 }
 
+// Modify fetchActiveWindowsAndTabs to include time tracking
 async function fetchActiveWindowsAndTabs() {
   return new Promise((resolve) => {
     chrome.windows.getAll({ populate: true }, (windows) => {
       const activeWindows = windows.map(window => ({
         id: window.id,
         focused: window.focused,
-        tabs: window.tabs.map(tab => ({
-          id: tab.id,
-          windowId: window.id,
-          url: tab.url,
-          title: tab.title,
-          active: tab.active,
-          favIconUrl: tab.favIconUrl,
-          lastAccessed: tab.lastAccessed
-        }))
+        tabs: window.tabs.map(tab => {
+          const activity = tabActivityLog.get(tab.id) || {
+            totalTimeSpent: 0,
+            lastTouch: tab.active ? Date.now() : null,
+            firstSeen: Date.now()
+          };
+          
+          return {
+            id: tab.id,
+            windowId: window.id,
+            url: tab.url,
+            title: tab.title,
+            active: tab.active,
+            favIconUrl: tab.favIconUrl,
+            lastAccessed: tab.lastAccessed,
+            totalTimeSpent: activity.totalTimeSpent,
+            lastTouch: activity.lastTouch,
+            firstSeen: activity.firstSeen
+          };
+        })
       }));
       console.log('Active windows and tabs:', activeWindows); // Debug log
       resolve(activeWindows);
@@ -113,6 +134,12 @@ function categorizeHistoryData(data) {
     
     // Add current tabs to the window's swimlane
     window.tabs.forEach(tab => {
+      const activity = tabActivityLog.get(tab.id) || {
+        totalTimeSpent: 0,
+        lastTouch: tab.active ? Date.now() : null,
+        firstSeen: Date.now()
+      };
+      
       windowSwimlanes[window.id].push({
         id: tab.id,
         url: tab.url,
@@ -121,7 +148,10 @@ function categorizeHistoryData(data) {
         favIconUrl: tab.favIconUrl,
         lastAccessed: tab.lastAccessed,
         windowId: window.id,
-        isCurrentTab: true
+        isCurrentTab: true,
+        totalTimeSpent: activity.totalTimeSpent,
+        lastTouch: activity.lastTouch,
+        firstSeen: activity.firstSeen
       });
       
       // Store reference for history matching
@@ -282,6 +312,31 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
   }
 });
 
+// Replace direct tab activity tracking with message-based sync
+async function syncTabActivity() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_TAB_ACTIVITY' });
+    if (response) {
+      tabActivityLog = new Map(response.tabActivityLog);
+      navigationEvents = new Map(response.navigationEvents);
+      
+      // Update visualizations with new data
+      if (currentData) {
+        const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
+        currentData = categorizeHistoryData({
+          history: currentData.historySwimlane,
+          activeWindowsAndTabs
+        });
+        updateTimeline(currentData);
+        updateGraph(currentData);
+      }
+    }
+  } catch (error) {
+    console.error('Error syncing tab activity:', error);
+  }
+}
+
+// Update setupTimelineUpdates to include tab activity sync
 function setupTimelineUpdates() {
   // Clear any existing timer
   if (updateTimer) {
@@ -294,8 +349,8 @@ function setupTimelineUpdates() {
       clearInterval(updateTimer);
       updateTimer = null;
     } else {
-      // Page is visible again, update immediately and restart timer
-      updateTimelineIfNeeded(true);
+      // Page is visible again, sync immediately and restart timer
+      syncTabActivity();
       startUpdateTimer();
     }
   });
@@ -307,18 +362,10 @@ function setupTimelineUpdates() {
 }
 
 function startUpdateTimer() {
-  updateTimer = setInterval(() => updateTimelineIfNeeded(false), UPDATE_INTERVAL);
-}
-
-function updateTimelineIfNeeded(force) {
-  const now = Date.now();
-  // Debounce updates to minimum 30 seconds unless forced
-  if (force || (now - lastUpdate) > 30000) {
-    if (currentData) {
-      lastUpdate = now;
-      updateTimeline(currentData);
-    }
-  }
+  // Sync tab activity data periodically
+  updateTimer = setInterval(async () => {
+    await syncTabActivity();
+  }, UPDATE_INTERVAL);
 }
 
 // Add cleanup function
@@ -328,6 +375,7 @@ function cleanup() {
     clearInterval(updateTimer);
     updateTimer = null;
   }
+  tabActivityLog.clear();
 }
 
 // Add event listener for page unload
@@ -471,5 +519,45 @@ function findTabById(windowSwimlanes, tabId) {
   }
   return null;
 }
+
+// Add tab activity tracking listeners
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  const now = Date.now();
+  const previousTab = Array.from(tabActivityLog.entries())
+    .find(([_, data]) => data.lastTouch === Math.max(...Array.from(tabActivityLog.values())
+      .map(d => d.lastTouch || 0)));
+
+  if (previousTab) {
+    const [prevTabId, prevData] = previousTab;
+    if (prevData.lastTouch) {
+      const timeSpent = now - prevData.lastTouch;
+      if (timeSpent > TAB_ACTIVITY.ACTIVE_THRESHOLD) {
+        prevData.totalTimeSpent += timeSpent;
+      }
+    }
+  }
+
+  const currentActivity = tabActivityLog.get(tabId) || {
+    totalTimeSpent: 0,
+    firstSeen: now
+  };
+  currentActivity.lastTouch = now;
+  tabActivityLog.set(tabId, currentActivity);
+
+  // Update visualizations if needed
+  if (currentData) {
+    updateTimelineIfNeeded(true);
+  }
+});
+
+function inspectNavigationData() {
+  console.group('Navigation Data Inspection');
+  console.log('Current Navigation Events:', Array.from(navigationEvents.entries()));
+  console.log('Edge Data:', currentData?.edges);
+  console.groupEnd();
+}
+
+// Add to window for easy console access
+window.inspectNavigationData = inspectNavigationData;
 
 
