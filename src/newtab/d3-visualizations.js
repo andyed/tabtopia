@@ -27,6 +27,10 @@ const graphSimulation = d3.forceSimulation()
   .velocityDecay(0.6)     // More damping
   .alpha(0.3);            // Lower initial energy
 
+// Add near the top with other constants
+let activeLanes = ['history']; // Initialize with history lane
+const LANE_HEIGHT = 100; // Height per swimlane
+
 // Add near top with other constants
 const PAN_STEP = 200; // Pixels to pan per keypress
 const ZOOM_FACTOR = 1.5; // Zoom in/out multiplier
@@ -558,6 +562,9 @@ async function handlePointClick(d) {
 // Fix the prevItem undefined error in updateGraph
 export function updateGraph(data) {
   if (!data?.historySwimlane) return;
+
+  // Call updateVisualizationSizes at the start
+  updateVisualizationSizes();
 
   const container = d3.select('#graph-svg');
   const element = container.node();
@@ -1484,3 +1491,44 @@ export function handleNavigationEvent(event) {
     updateGraph(currentData);
   }
 }
+
+function updateVisualizationSizes() {
+  const container = d3.select('.visualization-container');
+  const legendContainer = container.select('.legend-container');
+  const graphContainer = container.select('.graph-container');
+  const readoutPanel = container.select('.readout-panel');
+  const svg = d3.select('#graph-svg'); // Add this line to get SVG reference
+
+  // Update active lanes based on current data
+  if (currentData?.windowSwimlanes) {
+    activeLanes = ['history'];
+    Object.keys(currentData.windowSwimlanes).forEach(windowId => {
+      if (currentData.windowSwimlanes[windowId].length > 0) {
+        activeLanes.push(`window-${windowId}`);
+      }
+    });
+  }
+  
+  // Calculate required height for lanes
+  const requiredHeight = (activeLanes.length * LANE_HEIGHT) + margin.top + margin.bottom;
+  
+  // Set graph container height
+  graphContainer
+    .style('height', `${requiredHeight}px`)
+    .style('min-height', '300px');
+
+  // Update SVG dimensions
+  const svgNode = svg.node();
+  if (svgNode) {
+    svg.attr('height', requiredHeight)
+       .attr('width', window.innerWidth - margin.left - margin.right);
+  }
+
+  // Position readout panel
+  readoutPanel.style('margin-top', `${requiredHeight}px`);
+}
+
+// Keep the resize listener
+window.addEventListener('resize', debounce(() => {
+  updateVisualizationSizes();
+}, 250));

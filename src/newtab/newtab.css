@@ -22,8 +22,9 @@ body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
+  height: auto;
+  min-height: 100vh;
+  overflow-y: auto;
 }
 
 #timeline-container {
@@ -67,6 +68,13 @@ body {
   width: 12px;
   height: 12px;
   border-radius: 2px;
+}
+
+.legend-container {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: white;
 }
 
 #swimlanes-container {
@@ -582,4 +590,15 @@ swimlane-content::-webkit-scrollbar-thumb {
 .graph-container {
   flex: 1 1 auto; /* Grow and shrink as needed */
   display: flex;
+  position: relative;
+  width: 100%;
+  transition: height 0.3s ease;
+}
+
+.readout-panel {
+  width: 100%;
+  padding: 20px;
+  background: white;
+  border-top: 1px solid #ccc;
+  transition: margin-top 0.3s ease;
 }
