@@ -150,9 +150,9 @@ const LAYOUT = {
     TIMELINE_HEIGHT: 170,    // Timeline visualization height
     HEADER_HEIGHT: 43,      // Header section height
     Y_AXIS_HEIGHT: 22,      // Y-axis height
-    ROW_HEIGHT: 30,         // Height per swimlane row
-    AXIS_HEIGHT: 30,        // X-axis height
-    AXIS_MARGIN: 10,        // Additional margin
+    ROW_HEIGHT: 32,         // Height per swimlane row
+    AXIS_HEIGHT: 50,        // X-axis height
+    AXIS_MARGIN: 70,        // Additional margin
     HISTORY_ROWS: 2,        // Number of history rows
     READOUT_HEIGHT: 45      // Default height for readout
 };
@@ -1400,39 +1400,57 @@ function updateLayout() {
     const swimlaneRows = LAYOUT.HISTORY_ROWS + numWindows;
     const swimlaneHeight = swimlaneRows * LAYOUT.ROW_HEIGHT;
     
-    // Calculate total timeline height including all components
-    const timelineHeight = swimlaneHeight +                 // Height for all swimlanes
-                          LAYOUT.AXIS_HEIGHT;               // X-axis height
+    // Calculate timeline section height
+    const timelineHeight = swimlaneHeight +           // Height for all swimlanes
+                          LAYOUT.AXIS_HEIGHT +        // X-axis height (30px)
+                          LAYOUT.AXIS_MARGIN;         // Margin after x-axis (10px)
 
-    // Position readout immediately after timeline
+    // Position readout after timeline
     const readoutContainer = document.getElementById('readout-container');
-    const readoutYPosition = timelineHeight;
-    
     if (readoutContainer) {
         readoutContainer.style.position = 'absolute';
-        readoutContainer.style.top = `${readoutYPosition}px`;
+        readoutContainer.style.top = `${timelineHeight}px`;
+        readoutContainer.style.width = '100%';
+        readoutContainer.style.zIndex = '2';  // Ensure readout is above other elements
     }
     
-    // Calculate remaining height for graph
-    const totalHeight = window.innerHeight;
+    // Get actual readout height after positioning
     const readoutHeight = readoutContainer?.getBoundingClientRect().height || LAYOUT.READOUT_HEIGHT;
-    const graphHeight = totalHeight - readoutYPosition - readoutHeight;
+    
+    // Calculate space for graph
+    const totalHeight = window.innerHeight;
+    const graphStartY = timelineHeight + readoutHeight;
+    const graphHeight = totalHeight - graphStartY;
 
     console.log('Layout calculation:', {
-        swimlaneHeight,
-        timelineHeight,
-        readoutYPosition,
+        timelineEnd: timelineHeight,
         readoutHeight,
-        graphHeight
+        graphStartY,
+        graphHeight,
+        totalHeight
     });
 
-    // Position graph below readout
-    const graphContainer = d3.select('.graph-container');
+    // Position and size graph container
+    const graphContainer = d3.select('#graph-container');
     graphContainer
         .style('position', 'absolute')
-        .style('top', `${readoutYPosition + readoutHeight}px`)
+        .style('top', `${graphStartY}px`)
         .style('height', `${graphHeight}px`)
         .style('width', '100%');
+
+    // Update graph SVG dimensions
+    const graphSvg = d3.select('#graph-svg');
+    graphSvg
+        .attr('width', '100%')
+        .attr('height', graphHeight);
+
+    // Update graph simulation center force
+    if (graphSimulation) {
+        graphSimulation.force('center')
+            .x(width / 2)
+            .y(graphHeight / 2);
+        graphSimulation.alpha(0.1).restart();
+    }
 }
 
 
