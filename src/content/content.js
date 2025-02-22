@@ -1,28 +1,23 @@
 // Track link clicks and form submissions
 document.addEventListener('click', (event) => {
   let target = event.target;
-  let linkInfo = null;
-
-  // Check if click was on or inside an anchor tag
   while (target && target !== document.body) {
     if (target.tagName === 'A') {
-      linkInfo = {
-        type: 'link',
-        url: target.href,
+      const linkInfo = {
+        type: 'navigation',
+        sourceUrl: window.location.href,  // This is the key - we have the source URL
+        targetUrl: target.href,
         text: target.innerText.trim() || target.title || target.href,
-        sourceUrl: window.location.href,
         timestamp: Date.now()
       };
+      
+      chrome.runtime.sendMessage({
+        type: 'navigation_event',
+        data: linkInfo
+      });
       break;
     }
     target = target.parentElement;
-  }
-
-  if (linkInfo) {
-    chrome.runtime.sendMessage({
-      type: 'navigation_event',
-      data: linkInfo
-    });
   }
 }, true);
 

@@ -45,49 +45,33 @@ const EDGE_TYPES = {
   SEQUENTIAL: {
     name: 'sequential',
     stroke: '#4285f4',
-    strokeWidth: 2,
+    strokeWidth: 0,
     strokeDasharray: 'none',
-    opacity: 0.8,
-    forceStrength: -50 // Strong attractive force for sequential navigation
+    opacity: 0,
+    forceStrength: -50
   },
-  LINK_CLICK: {
-    name: 'link-click',
+  NAVIGATION: {
+    name: 'navigation',
     stroke: '#34a853',
     strokeWidth: 2,
     strokeDasharray: 'none',
     opacity: 0.9,
-    forceStrength: -30 // Strong connection for explicit navigation
-  },
-  FORM_SUBMIT: {
-    name: 'form-submit',
-    stroke: '#ea4335',
-    strokeWidth: 2,
-    strokeDasharray: 'none',
-    opacity: 0.9,
-    forceStrength: -30 // Strong connection for explicit navigation
+    forceStrength: -30
   },
   WINDOW: {
     name: 'window',
     stroke: '#fbbc04',
-    strokeWidth: 1,
-    strokeDasharray: '4',
-    opacity: 0.6,
-    forceStrength: -10 // Weaker connection for window relationships
+    strokeWidth: 0,
+    strokeDasharray: '4none',
+    opacity: 0,
+    forceStrength: -10
   },
   SESSION_BREAK: {
     name: 'session-break',
     stroke: 'none',
     strokeWidth: 0,
     opacity: 0,
-    forceStrength: 0 // No force for session breaks
-  },
-  NAVIGATION: {
-    name: 'navigation',
-    stroke: '#34a853', // Google green
-    strokeWidth: 3,    // Thicker for emphasis
-    strokeDasharray: 'none',
-    opacity: 1.0,      // Full opacity for importance
-    forceStrength: -70 // Strongest force for navigation events
+    forceStrength: 0
   }
 };
 
@@ -658,25 +642,35 @@ export function updateGraph(data) {
     }
   });
 
-  // Process window nodes with similar positioning strategy
+  // Process window nodes only if they fall within time window
   Object.values(data.windowSwimlanes).forEach(tabs => {
-    tabs.forEach((tab, tabIndex) => { // Add tabIndex parameter here
+    tabs.forEach((tab, tabIndex) => {
       const tabTime = new Date(tab.lastVisitTime || tab.lastAccessed);
+      const tabHistory = data.historySwimlane.filter(h => h.tabId === tab.id)
+        .sort((a, b) => new Date(b.lastVisitTime) - new Date(a.lastVisitTime));
+      
+      // Only show tab if it exists in the current time window
       if (tabTime >= startTime && tabTime <= endTime) {
-        const timeX = timePositionScale(tabTime);
-        const shouldAlign = Math.random() < 0.5;
+        // Find the tab's state at this point in time
+        const historicalState = tabHistory.find(h => 
+          new Date(h.lastVisitTime) <= endTime
+        );
 
-        if (!visibleNodes.has(tab.id)) {
+        if (historicalState) {
+          // Use historical state data
           visibleNodes.set(tab.id, {
             ...tab,
+            url: historicalState.url,
+            title: historicalState.title,
             type: 'current',
             radius: 8,
-            x: shouldAlign ? timeX : timeX + (Math.random() - 0.5) * graphWidth * 0.2,
-            y: shouldAlign ? graphHeight * 0.7 : graphHeight * (0.6 + Math.random() * 0.2) // Cluster in bottom third
+            x: timePositionScale(tabTime),
+            y: graphHeight * 0.7
           });
         }
 
-        if (tabIndex > 0) { // Use tabIndex instead of index
+        // Window edges only if both tabs exist at this time
+        if (tabIndex > 0) {
           const prevTab = tabs[tabIndex - 1];
           if (visibleNodes.has(prevTab.id)) {
             visibleLinks.push({
@@ -852,6 +846,22 @@ export function updateGraph(data) {
       .text(d => abbreviateTitle(d.title, 15));
   }
 
+  // In the node creation part of updateGraph:
+  nodeEnter
+    .filter(d => d.active)
+    .append('rect')
+    .attr('class', 'active-tab-border')
+    .attr('x', -12)
+    .attr('y', -12)
+    .attr('width', 24)
+    .attr('height', 24)
+    .attr('rx', ACTIVE_WINDOW_STYLES.cornerRadius)
+    .attr('ry', ACTIVE_WINDOW_STYLES.cornerRadius)
+    .attr('fill', 'none')
+    .attr('stroke', d => WINDOW_COLORS[d.windowId % WINDOW_COLORS.length])
+    .attr('stroke-width', 2)
+    .style('filter', `drop-shadow(${ACTIVE_WINDOW_STYLES.glowSpread} ${ACTIVE_WINDOW_STYLES.glowColor})`);
+
   // Merge enter + update selections
   const nodesUpdate = nodeEnter.merge(nodes);
 
@@ -884,6 +894,13 @@ export function updateGraph(data) {
     .strength(d => {
       const transitionType = d.type || 'WINDOW';
       return (EDGE_TRANSITIONS[transitionType]?.strengthMultiplier || 1) * 0.5;
+    });
+
+  // Then in the node update section:
+  nodesUpdate.selectAll('.active-tab-border')
+    .style('display', d => {
+      const nodeTime = new Date(d.lastVisitTime || d.lastAccessed);
+      return nodeTime >= startTime && nodeTime <= endTime ? '' : 'none';
     });
 }
 
@@ -1172,7 +1189,12 @@ function formatUrl(url) {
   try {
     const urlObj = new URL(url);
     let cleanHost = urlObj.hostname.replace(/^www\./, '');
-    let cleanPath = urlObj.pathname;
+    
+    // Split path into segments and limit to 3
+    let pathSegments = urlObj.pathname.split('/').filter(Boolean);
+    let cleanPath = pathSegments.length > 0 
+      ? '/' + pathSegments.slice(0, 3).join('/') + (pathSegments.length > 3 ? '/...' : '')
+      : '/';
     
     // Get first parameter if exists
     let params = '';
@@ -1182,9 +1204,16 @@ function formatUrl(url) {
       params = `?${firstParam[0]}=${firstParam[1]}${searchParams.size > 1 ? '...' : ''}`;
     }
     
-    return `${cleanHost}${cleanPath}${params}`;
+    // Combine and truncate to 60 chars if needed
+    let formatted = `${cleanHost}${cleanPath}${params}`;
+    if (formatted.length > 60) {
+      formatted = formatted.substring(0, 57) + '...';
+    }
+    
+    return formatted;
   } catch (e) {
-    return url; // Fallback to original URL if parsing fails
+    // Fallback to original URL if parsing fails
+    return url.length > 60 ? url.substring(0, 57) + '...' : url;
   }
 }
 
@@ -1450,7 +1479,7 @@ export function handleNavigationEvent(event) {
 
   // Update the graph immediately if within current time window
   const [startTime, endTime] = sharedTimeScale.domain();
-  if (event.timestamp >= startTime && event.timestamp <= endTime) {
+  if (event.timestamp   >= startTime && event.timestamp <= endTime) {
     updateGraph(currentData);
   }
 }
