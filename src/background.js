@@ -137,6 +137,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       tabActivityLog: Array.from(tabActivityLog.entries()),
       navigationEvents: Array.from(navigationEvents.entries())
     });
+    return true; // Keep message channel open for async response
   }
 });
 

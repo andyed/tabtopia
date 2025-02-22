@@ -28,9 +28,11 @@ const TAB_ACTIVITY = {
 
 // Add tab activity tracking
 let tabActivityLog = new Map(); // Track tab activity periods
+let navigationEvents = new Map();
 
 async function initializeApp() {
   try {
+    await syncTabActivity(); // Add this line
     const historyData = await fetchHistoryData(HISTORY_RESULTS_LIMIT);
     const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
     
@@ -78,17 +80,23 @@ async function fetchHistoryData(limit, startTime) {
         Promise.all(historyItems.map(item => 
           new Promise(resolveVisits => {
             chrome.history.getVisits({ url: item.url }, visits => {
+              // Get the most recent visit
+              const latestVisit = visits[visits.length - 1];
               resolveVisits({
                 ...item,
                 visits: visits,
-                // Use the most recent visit's referringVisit if available
-                tabId: visits[visits.length - 1]?.tabId,
-                windowId: visits[visits.length - 1]?.windowId
+                tabId: latestVisit?.tabId,
+                windowId: latestVisit?.windowId,
+                transitionType: latestVisit?.transition, // Add transition type
+                transitionQualifiers: latestVisit?.transitionQualifiers, // Add qualifiers
+                referrer: latestVisit?.referringVisit ? 
+                  visits.find(v => v.visitId === latestVisit.referringVisit)?.url : 
+                  null
               });
-            });
+            })
           })
         )).then(detailedHistoryItems => {
-          console.log('Detailed history items:', detailedHistoryItems);
+          console.log('Detailed history items with transitions:', detailedHistoryItems);
           resolve(detailedHistoryItems);
         });
       }
@@ -524,22 +532,22 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Update graph with new edge
 function updateGraphWithNewEdge(edge) {
-  if (currentData) {
-    if (!currentData.edges) {
-      currentData.edges = []; // Ensure edges array exists
-    }
-    
-    const { windowSwimlanes } = currentData;
-    const sourceTab = findTabById(windowSwimlanes, edge.source);
-    const targetTab = findTabById(windowSwimlanes, edge.target);
-    
-    if (sourceTab && targetTab) {
-      currentData.edges.push(edge);
-      currentData.totalEdges++;
-      currentData.nodesWithEdges.add(sourceTab.id);
-      currentData.nodesWithEdges.add(targetTab.id);
-      updateGraph(currentData);
-    }
+  if (!currentData) return;
+  
+  if (!currentData.edges) {
+    currentData.edges = [];
+  }
+  
+  const { windowSwimlanes } = currentData;
+  const sourceTab = findTabById(windowSwimlanes, edge.source);
+  const targetTab = findTabById(windowSwimlanes, edge.target);
+  
+  if (sourceTab && targetTab && shouldCreateNavigationEdge(targetTab, sourceTab)) {
+    currentData.edges.push(edge);
+    currentData.totalEdges++;
+    currentData.nodesWithEdges.add(sourceTab.id);
+    currentData.nodesWithEdges.add(targetTab.id);
+    updateGraph(currentData);
   }
 }
 
@@ -645,4 +653,36 @@ function updateTimelineIfNeeded(force = false) {
 // Create a debounced version for rapid updates
 const debouncedTimelineUpdate = debounce(updateTimelineIfNeeded, 250);
 
+// Add this function with the other utility functions
+function shouldCreateNavigationEdge(current, previous) {
+  try {
+    // Skip chrome:// and extension URLs
+    if (current.url.startsWith('chrome://') || 
+        previous.url.startsWith('chrome://') ||
+        current.url.startsWith('chrome-extension://') ||
+        previous.url.startsWith('chrome-extension://')) {
+      return false;
+    }
+
+    // Only create edges for explicit navigation types
+    const navigationType = current.transitionType;
+    if (!['link', 'form_submit'].includes(navigationType)) {
+      return false;
+    }
+
+    // Trust referrer as primary signal
+    if (current.referrer === previous.url) {
+      return true;
+    }
+
+    // Fallback to explicit navigation events
+    if (navigationEvents.has(`${previous.id}-${current.id}`)) {
+      return true;
+    }
+
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
 

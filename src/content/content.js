@@ -3,6 +3,12 @@ document.addEventListener('click', (event) => {
   let target = event.target;
   while (target && target !== document.body) {
     if (target.tagName === 'A') {
+      // Don't track navigation from chrome:// URLs or new tab pages
+      if (window.location.href.startsWith('chrome://') || 
+          window.location.href === 'about:blank') {
+        break;
+      }
+
       const linkInfo = {
         type: 'navigation',
         sourceUrl: window.location.href,  // This is the key - we have the source URL
@@ -19,7 +25,7 @@ document.addEventListener('click', (event) => {
     }
     target = target.parentElement;
   }
-}, true);
+});
 
 // Track form submissions
 document.addEventListener('submit', (event) => {

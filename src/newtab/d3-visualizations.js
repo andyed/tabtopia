@@ -48,7 +48,7 @@ const EDGE_TYPES = {
     strokeWidth: 0,
     strokeDasharray: 'none',
     opacity: 0,
-    forceStrength: -50
+    forceStrength: -60
   },
   NAVIGATION: {
     name: 'navigation',
@@ -56,7 +56,7 @@ const EDGE_TYPES = {
     strokeWidth: 2,
     strokeDasharray: 'none',
     opacity: 0.9,
-    forceStrength: -30
+    forceStrength: -90
   },
   WINDOW: {
     name: 'window',
@@ -663,6 +663,7 @@ export function updateGraph(data) {
             url: historicalState.url,
             title: historicalState.title,
             type: 'current',
+            active: tab.active, // Preserve active state from current tab
             radius: 8,
             x: timePositionScale(tabTime),
             y: graphHeight * 0.7
