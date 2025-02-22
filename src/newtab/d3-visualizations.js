@@ -129,6 +129,13 @@ const EDGE_TRANSITIONS = {
   }
 };
 
+// Add near other constants
+const LAYOUT = {
+  LEGEND_HEIGHT: 60,
+  LANE_HEIGHT: 100,
+  READOUT_PADDING: 40  // Space between graph and readout
+};
+
 export function initializeTimeline() {
   const container = d3.select('#timeline-svg');
   const element = container.node();
@@ -1497,7 +1504,13 @@ function updateVisualizationSizes() {
   const legendContainer = container.select('.legend-container');
   const graphContainer = container.select('.graph-container');
   const readoutPanel = container.select('.readout-panel');
-  const svg = d3.select('#graph-svg'); // Add this line to get SVG reference
+  const svg = d3.select('#graph-svg');
+
+  // Get legend height
+  const legendHeight = Math.max(
+    legendContainer.node()?.getBoundingClientRect()?.height || 0, 
+    LAYOUT.LEGEND_HEIGHT
+  );
 
   // Update active lanes based on current data
   if (currentData?.windowSwimlanes) {
@@ -1509,23 +1522,29 @@ function updateVisualizationSizes() {
     });
   }
   
-  // Calculate required height for lanes
-  const requiredHeight = (activeLanes.length * LANE_HEIGHT) + margin.top + margin.bottom;
+  // Calculate total graph height
+  const graphHeight = (activeLanes.length * LAYOUT.LANE_HEIGHT) + margin.top + margin.bottom;
   
-  // Set graph container height
+  // Set graph container position and height
   graphContainer
-    .style('height', `${requiredHeight}px`)
-    .style('min-height', '300px');
+    .style('position', 'absolute')
+    .style('top', `${legendHeight}px`)
+    .style('height', `${graphHeight}px`)
+    .style('min-height', '300px')
+    .style('width', '100%');
 
   // Update SVG dimensions
   const svgNode = svg.node();
   if (svgNode) {
-    svg.attr('height', requiredHeight)
+    svg.attr('height', graphHeight)
        .attr('width', window.innerWidth - margin.left - margin.right);
   }
 
-  // Position readout panel
-  readoutPanel.style('margin-top', `${requiredHeight}px`);
+  // Position readout panel below graph
+  readoutPanel
+    .style('position', 'absolute')
+    .style('top', `${legendHeight + graphHeight + LAYOUT.READOUT_PADDING}px`)
+    .style('width', '100%');
 }
 
 // Keep the resize listener

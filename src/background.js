@@ -11,6 +11,7 @@ let activeTabs = [];
 let lastClickedLink = null;
 let tabActivityLog = new Map();
 let navigationEvents = new Map();
+let tabEdges = new Map(); // Initialize tabEdges as a Map
 
 // Add tracking constants
 const TAB_ACTIVITY = {
@@ -177,21 +178,42 @@ chrome.tabs.onCreated.addListener((tab) => {
 });
 
 // Track new windows from context menu
-chrome.windows.onCreated.addListener((window) => {
-  if (lastClickedLink && window.tabs?.[0]?.pendingUrl === lastClickedLink.targetUrl) {
-    const edge = {
-      source: lastClickedLink.sourceTabId,
-      target: window.tabs[0].id,
-      type: 'link-click',
-      text: lastClickedLink.text,
-      sourceUrl: lastClickedLink.sourceUrl,
-      targetUrl: window.tabs[0].pendingUrl,
-      timestamp: lastClickedLink.timestamp,
-      openContext: 'new_window'
-    };
-    tabEdges.set(`${lastClickedLink.sourceTabId}-${window.tabs[0].id}`, edge);
-    lastClickedLink = null; // Clear after use
-  }
+chrome.windows.onCreated.addListener(async (window) => {
+  if (!lastClickedLink) return;
+
+  // Wait for the tab to be fully loaded
+  const checkTab = async (attempts = 0) => {
+    if (attempts > 10) {
+      console.log('Max attempts reached waiting for window tab');
+      return;
+    }
+
+    const [tab] = await chrome.tabs.query({ windowId: window.id });
+    
+    if (!tab || (!tab.url && !tab.pendingUrl)) {
+      // Wait 100ms and try again
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return checkTab(attempts + 1);
+    }
+
+    const targetUrl = tab.pendingUrl || tab.url;
+    if (targetUrl === lastClickedLink.targetUrl) {
+      const edge = {
+        source: lastClickedLink.sourceTabId,
+        target: tab.id,
+        type: 'link-click',
+        text: lastClickedLink.text,
+        sourceUrl: lastClickedLink.sourceUrl,
+        targetUrl: targetUrl,
+        timestamp: lastClickedLink.timestamp,
+        openContext: 'new_window'
+      };
+      tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
+      lastClickedLink = null; // Clear after use
+    }
+  };
+
+  await checkTab();
 });
 
 // Add cleanup for closed tabs
@@ -199,6 +221,19 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabActivityLog.delete(tabId);
   // Cleanup any navigation events
   navigationEvents.delete(tabId);
+});
+
+// Add tab update listener
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  try {
+    if (!tabEdges) {
+      tabEdges = new Map(); // Initialize if undefined
+    }
+    
+    // Rest of your handler code...
+  } catch (error) {
+    console.error('Error in tab update handler:', error);
+  }
 });
 
 // Initial population of history and active tabs
