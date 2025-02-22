@@ -90,16 +90,31 @@ async function fetchHistoryData(limit, startTime) {
 // Modify fetchActiveWindowsAndTabs to include time tracking
 async function fetchActiveWindowsAndTabs() {
   return new Promise((resolve) => {
-    chrome.windows.getAll({ populate: true }, (windows) => {
-      const activeWindows = windows.map(window => ({
+    chrome.windows.getAll({ populate: true }, async (windows) => {
+      const activeWindows = await Promise.all(windows.map(async window => ({
         id: window.id,
         focused: window.focused,
-        tabs: window.tabs.map(tab => {
-          const activity = tabActivityLog.get(tab.id) || {
+        tabs: await Promise.all(window.tabs.map(async tab => {
+          // Get stored activity data
+          const storedActivity = await chrome.storage.local.get(`tab_${tab.id}`);
+          const activity = storedActivity[`tab_${tab.id}`] || {
             totalTimeSpent: 0,
             lastTouch: tab.active ? Date.now() : null,
             firstSeen: Date.now()
           };
+          
+          // Update if tab is active
+          if (tab.active) {
+            const now = Date.now();
+            if (activity.lastTouch) {
+              activity.totalTimeSpent += (now - activity.lastTouch);
+            }
+            activity.lastTouch = now;
+            // Store updated activity
+            await chrome.storage.local.set({
+              [`tab_${tab.id}`]: activity
+            });
+          }
           
           return {
             id: tab.id,
@@ -113,9 +128,10 @@ async function fetchActiveWindowsAndTabs() {
             lastTouch: activity.lastTouch,
             firstSeen: activity.firstSeen
           };
-        })
-      }));
-      console.log('Active windows and tabs:', activeWindows); // Debug log
+        }))
+      })));
+      
+      console.log('Active windows and tabs with time spent:', activeWindows);
       resolve(activeWindows);
     });
   });
@@ -521,8 +537,10 @@ function findTabById(windowSwimlanes, tabId) {
 }
 
 // Add tab activity tracking listeners
-chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
   const now = Date.now();
+  
+  // Update previous tab
   const previousTab = Array.from(tabActivityLog.entries())
     .find(([_, data]) => data.lastTouch === Math.max(...Array.from(tabActivityLog.values())
       .map(d => d.lastTouch || 0)));
@@ -533,21 +551,39 @@ chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
       const timeSpent = now - prevData.lastTouch;
       if (timeSpent > TAB_ACTIVITY.ACTIVE_THRESHOLD) {
         prevData.totalTimeSpent += timeSpent;
+        // Persist updated time
+        await chrome.storage.local.set({
+          [`tab_${prevTabId}`]: prevData
+        });
       }
     }
   }
 
-  const currentActivity = tabActivityLog.get(tabId) || {
+  // Update current tab
+  const storedActivity = await chrome.storage.local.get(`tab_${tabId}`);
+  const currentActivity = storedActivity[`tab_${tabId}`] || {
     totalTimeSpent: 0,
     firstSeen: now
   };
   currentActivity.lastTouch = now;
+  
+  // Persist current tab data
+  await chrome.storage.local.set({
+    [`tab_${tabId}`]: currentActivity
+  });
+  
   tabActivityLog.set(tabId, currentActivity);
 
   // Update visualizations if needed
   if (currentData) {
     updateTimelineIfNeeded(true);
   }
+});
+
+// Add cleanup for stored data when tab is closed
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  await chrome.storage.local.remove(`tab_${tabId}`);
+  tabActivityLog.delete(tabId);
 });
 
 function inspectNavigationData() {
@@ -559,5 +595,36 @@ function inspectNavigationData() {
 
 // Add to window for easy console access
 window.inspectNavigationData = inspectNavigationData;
+
+// Add near other utility functions
+function updateTimelineIfNeeded(force = false) {
+  const now = Date.now();
+  
+  // Don't update if not forced and last update was recent
+  if (!force && now - lastUpdate < UPDATE_INTERVAL) {
+    return;
+  }
+
+  // Update last update time
+  lastUpdate = now;
+
+  // Fetch latest data and update visualizations
+  fetchActiveWindowsAndTabs().then(activeWindowsAndTabs => {
+    if (currentData) {
+      currentData = categorizeHistoryData({
+        history: currentData.historySwimlane,
+        activeWindowsAndTabs
+      });
+      
+      // Update both visualizations
+      updateTimeline(currentData);
+      updateGraph(currentData);
+      updateStats(sharedTimeScale);
+    }
+  });
+}
+
+// Create a debounced version for rapid updates
+const debouncedTimelineUpdate = debounce(updateTimelineIfNeeded, 250);
 
 

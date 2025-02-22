@@ -8,6 +8,38 @@ chrome.runtime.onInstalled.addListener(() => {
 
 let historyEntries = [];
 let activeTabs = [];
+let lastClickedLink = null;
+let tabActivityLog = new Map();
+let navigationEvents = new Map();
+
+// Add tracking constants
+const TAB_ACTIVITY = {
+  ACTIVE_THRESHOLD: 1000,    // 1 second minimum to count as active time
+  IDLE_THRESHOLD: 300000,    // 5 minutes without interaction = idle
+  UPDATE_INTERVAL: 5000      // Update active tab time every 5 seconds
+};
+
+// Add time tracking function
+function updateTabActivity(tabId, isActive) {
+  const now = Date.now();
+  const activity = tabActivityLog.get(tabId) || {
+    totalTimeSpent: 0,
+    firstSeen: now,
+    lastTouch: null
+  };
+
+  if (isActive) {
+    if (activity.lastTouch) {
+      const timeSpent = now - activity.lastTouch;
+      if (timeSpent > TAB_ACTIVITY.ACTIVE_THRESHOLD) {
+        activity.totalTimeSpent += timeSpent;
+      }
+    }
+    activity.lastTouch = now;
+  }
+
+  tabActivityLog.set(tabId, activity);
+}
 
 // Function to update history entries
 function updateHistory() {
@@ -55,6 +87,7 @@ chrome.history.onVisited.addListener((result) => {
 
 // Listen for tab changes
 chrome.tabs.onActivated.addListener((activeInfo) => {
+  updateTabActivity(activeInfo.tabId, true);
   updateActiveTabs();
   chrome.tabs.get(activeInfo.tabId, (tab) => {
       const faviconUrl = getFaviconUrl(tab.url);
@@ -105,6 +138,66 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       navigationEvents: Array.from(navigationEvents.entries())
     });
   }
+});
+
+// Store context for potential new tab/window opens
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message.type === 'store_link_context') {
+    lastClickedLink = {
+      ...message.data,
+      sourceTabId: sender.tab.id,
+      sourceWindowId: sender.tab.windowId
+    };
+    // Clear after 5 seconds if not used
+    setTimeout(() => {
+      if (lastClickedLink?.timestamp === message.data.timestamp) {
+        lastClickedLink = null;
+      }
+    }, 5000);
+  }
+});
+
+// Track new tabs from context menu
+chrome.tabs.onCreated.addListener((tab) => {
+  if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
+    const edge = {
+      source: lastClickedLink.sourceTabId,
+      target: tab.id,
+      type: 'link-click',
+      text: lastClickedLink.text,
+      sourceUrl: lastClickedLink.sourceUrl,
+      targetUrl: tab.pendingUrl,
+      timestamp: lastClickedLink.timestamp,
+      openContext: 'new_tab'
+    };
+    tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
+    lastClickedLink = null; // Clear after use
+  }
+});
+
+// Track new windows from context menu
+chrome.windows.onCreated.addListener((window) => {
+  if (lastClickedLink && window.tabs?.[0]?.pendingUrl === lastClickedLink.targetUrl) {
+    const edge = {
+      source: lastClickedLink.sourceTabId,
+      target: window.tabs[0].id,
+      type: 'link-click',
+      text: lastClickedLink.text,
+      sourceUrl: lastClickedLink.sourceUrl,
+      targetUrl: window.tabs[0].pendingUrl,
+      timestamp: lastClickedLink.timestamp,
+      openContext: 'new_window'
+    };
+    tabEdges.set(`${lastClickedLink.sourceTabId}-${window.tabs[0].id}`, edge);
+    lastClickedLink = null; // Clear after use
+  }
+});
+
+// Add cleanup for closed tabs
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabActivityLog.delete(tabId);
+  // Cleanup any navigation events
+  navigationEvents.delete(tabId);
 });
 
 // Initial population of history and active tabs
