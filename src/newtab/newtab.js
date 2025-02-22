@@ -1,4 +1,13 @@
-import { initializeTimeline, initializeGraph, updateTimeline, updateGraph, setupBrushing, setupZooming, drawSwimlanes } from './d3-visualizations.js';
+import { 
+  initializeTimeline, 
+  initializeGraph, 
+  updateTimeline, 
+  updateGraph, 
+  setupBrushing, 
+  setupZooming, 
+  drawSwimlanes,
+  sharedTimeScale // Add this import
+} from './d3-visualizations.js';
 import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from './utility.js';
 import { updateStats } from './stats.js';
 
@@ -142,6 +151,7 @@ function categorizeHistoryData(data) {
   const activeTabs = new Map();
   const historySwimlane = [];
   const windowSwimlanes = {};
+  const edges = []; // Initialize edges array
 
   // First, initialize windowSwimlanes with active tabs
   activeWindowsAndTabs.forEach(window => {
@@ -213,7 +223,8 @@ function categorizeHistoryData(data) {
   return {
     historySwimlane,
     windowSwimlanes,
-    activeWindowsAndTabs, // Add this to pass through active windows data
+    activeWindowsAndTabs,
+    edges, // Add edges to returned data structure
     totalEdges: 0,
     nodesWithEdges: new Set()
   };
@@ -514,12 +525,19 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Update graph with new edge
 function updateGraphWithNewEdge(edge) {
   if (currentData) {
+    if (!currentData.edges) {
+      currentData.edges = []; // Ensure edges array exists
+    }
+    
     const { windowSwimlanes } = currentData;
     const sourceTab = findTabById(windowSwimlanes, edge.source);
     const targetTab = findTabById(windowSwimlanes, edge.target);
     
     if (sourceTab && targetTab) {
       currentData.edges.push(edge);
+      currentData.totalEdges++;
+      currentData.nodesWithEdges.add(sourceTab.id);
+      currentData.nodesWithEdges.add(targetTab.id);
       updateGraph(currentData);
     }
   }
@@ -576,7 +594,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
 
   // Update visualizations if needed
   if (currentData) {
-    updateTimelineIfNeeded(true);
+    debouncedTimelineUpdate(true);
   }
 });
 

@@ -2,7 +2,7 @@ import { getFaviconUrl } from './utility.js';
 
 // Update margin constant at the top
 const margin = { top: 0, right: 0, bottom: 20, left: 0 }; // Only keep bottom margin for axis
-const sharedTimeScale = d3.scaleTime();
+export const sharedTimeScale = d3.scaleTime();
 let width, height; // Declare these at file scope
 let currentData = null;
 let resizeTimer;
@@ -80,6 +80,14 @@ const EDGE_TYPES = {
     strokeWidth: 0,
     opacity: 0,
     forceStrength: 0 // No force for session breaks
+  },
+  NAVIGATION: {
+    name: 'navigation',
+    stroke: '#34a853', // Google green
+    strokeWidth: 3,    // Thicker for emphasis
+    strokeDasharray: 'none',
+    opacity: 1.0,      // Full opacity for importance
+    forceStrength: -70 // Strongest force for navigation events
   }
 };
 
@@ -111,6 +119,26 @@ const TEMPORAL_LAYOUT = {
   yPadding: 0.1,    // 10% padding on each side
   timeStrength: 0.8, // Strong horizontal alignment
   recentStrength: 0.4 // Moderate vertical push
+};
+
+// Add new visualization constants
+const EDGE_TRANSITIONS = {
+  LINK_CLICK: {
+    strengthMultiplier: 1.2,  // Stronger forces for explicit navigation
+    distance: 120
+  },
+  FORM_SUBMIT: {
+    strengthMultiplier: 1.2,
+    distance: 120
+  },
+  WINDOW: {
+    strengthMultiplier: 0.8,  // Weaker forces for window relationships
+    distance: 80
+  },
+  TYPED: {
+    strengthMultiplier: 0,    // No forces for typed URLs
+    distance: 0
+  }
 };
 
 export function initializeTimeline() {
@@ -543,7 +571,7 @@ async function handlePointClick(d) {
   }
 }
 
-// Update the relevant section in updateGraph function
+// Fix the prevItem undefined error in updateGraph
 export function updateGraph(data) {
   if (!data?.historySwimlane) return;
 
@@ -593,28 +621,36 @@ export function updateGraph(data) {
         y: shouldAlign ? graphHeight * 0.3 : graphHeight * (0.2 + Math.random() * 0.2) // Cluster in top third
       });
 
-      // Link to previous history item if in same tab
+      // Move sequential link creation inside the same loop
       if (index > 0) {
         const prevItem = data.historySwimlane[index - 1];
         const prevTime = new Date(prevItem.lastVisitTime);
+        
         if (prevTime >= startTime && prevTime <= endTime) {
-          // Only create sequential link if same tab
-          if (item.tabId === prevItem.tabId) {
+          // Only create sequential edges if:
+          // 1. Not typed URLs
+          // 2. Same tab
+          // 3. No existing navigation edge between these nodes
+          if (item.transitionType !== 'typed' && 
+              item.tabId === prevItem.tabId &&
+              !visibleLinks.some(link => 
+                (link.source === prevItem.id && link.target === item.id) ||
+                (link.source === item.id && link.target === prevItem.id))) {
             visibleLinks.push({
               source: prevItem.id,
               target: item.id,
               type: 'sequential',
-              timeGap: new Date(item.lastVisitTime) - prevTime
+              timeGap: itemTime - prevTime
             });
-          }
-          // Add link-click or form-submit if we have that info
-          else if (item.sourceUrl === prevItem.url) {
+          } else if (item.sourceUrl === prevItem.url) {
+            // Navigation edge
             visibleLinks.push({
               source: prevItem.id,
               target: item.id,
-              type: item.transitionType || 'link-click',
-              text: item.linkText,
-              timeGap: new Date(item.lastVisitTime) - prevTime
+              type: 'navigation',
+              text: item.transitionType === 'form_submit' ? 
+                `FORM: ${item.linkText}` : item.linkText,
+              timeGap: itemTime - prevTime
             });
           }
         }
@@ -652,6 +688,63 @@ export function updateGraph(data) {
         }
       }
     });
+  });
+
+  // Process navigation edges first
+  data.edges?.forEach(edge => {
+    if (edge.type === 'link-click' || edge.type === 'form-submit') {
+      visibleLinks.push({
+        source: edge.source,
+        target: edge.target,
+        type: edge.type,
+        text: edge.text,      // Include anchor text
+        timestamp: edge.timestamp,
+        transitionType: edge.type
+      });
+    }
+  });
+
+  // Process navigation events first to ensure they take priority
+  data.navigationEvents?.forEach(event => {
+    if (event.timestamp >= startTime && event.timestamp <= endTime) {
+      visibleLinks.push({
+        source: event.sourceTabId,
+        target: event.targetTabId,
+        type: 'navigation',
+        text: event.linkText || event.formText,
+        timestamp: event.timestamp,
+        sourceUrl: event.sourceUrl,
+        targetUrl: event.targetUrl
+      });
+    }
+  });
+
+  // Then process sequential navigation (only if not already connected by navigation)
+  data.historySwimlane.forEach((item, index) => {
+    const itemTime = new Date(item.lastVisitTime);
+    if (itemTime >= startTime && itemTime <= endTime) {
+      if (index > 0) {
+        const prevItem = data.historySwimlane[index - 1]; // Define prevItem here
+        const prevTime = new Date(prevItem.lastVisitTime);
+        
+        // Only create sequential edges if:
+        // 1. Not typed URLs
+        // 2. Same tab
+        // 3. No existing navigation edge between these nodes
+        if (item.transitionType !== 'typed' && 
+            item.tabId === prevItem.tabId &&
+            !visibleLinks.some(link => 
+              (link.source === prevItem.id && link.target === item.id) ||
+              (link.source === item.id && link.target === prevItem.id))) {
+          visibleLinks.push({
+            source: prevItem.id,
+            target: item.id,
+            type: 'sequential',
+            timeGap: itemTime - prevTime
+          });
+        }
+      }
+    }
   });
 
   const nodesArray = Array.from(visibleNodes.values());
@@ -781,6 +874,17 @@ export function updateGraph(data) {
 
   // Restart simulation
   graphSimulation.alpha(1).restart();
+
+  // Update force link parameters based on edge type
+  graphSimulation.force('link')
+    .distance(d => {
+      const transitionType = d.type || 'WINDOW';
+      return EDGE_TRANSITIONS[transitionType]?.distance || 100;
+    })
+    .strength(d => {
+      const transitionType = d.type || 'WINDOW';
+      return (EDGE_TRANSITIONS[transitionType]?.strengthMultiplier || 1) * 0.5;
+    });
 }
 
 export function setupBrushing() {
@@ -1334,3 +1438,19 @@ function handleGraphResize() {
 window.addEventListener('resize', debounce(() => {
   handleGraphResize();
 }, 250));
+
+export function handleNavigationEvent(event) {
+  if (!currentData) return;
+
+  // Add to navigation events collection
+  if (!currentData.navigationEvents) {
+    currentData.navigationEvents = [];
+  }
+  currentData.navigationEvents.push(event);
+
+  // Update the graph immediately if within current time window
+  const [startTime, endTime] = sharedTimeScale.domain();
+  if (event.timestamp >= startTime && event.timestamp <= endTime) {
+    updateGraph(currentData);
+  }
+}
