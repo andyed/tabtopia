@@ -686,3 +686,29 @@ function shouldCreateNavigationEdge(current, previous) {
   }
 }
 
+const LAYOUT = {
+    ROW_HEIGHT: 30,
+    AXIS_HEIGHT: 30,
+    HISTORY_ROWS: 2,
+    AXIS_MARGIN: 10
+};
+
+function updateReadoutPosition() {
+    if (!currentData) {
+        console.log('updateReadoutPosition: no currentData');
+        return;
+    }
+    
+    const totalSwimlanes = d3.max(currentData, d => d.lane) + 1;
+    const swimlaneRows = LAYOUT.HISTORY_ROWS + totalSwimlanes;
+    const totalHeight = (swimlaneRows * LAYOUT.ROW_HEIGHT) + 
+                       LAYOUT.AXIS_HEIGHT + 
+                       LAYOUT.AXIS_MARGIN;
+
+    console.log(`updateReadoutPosition: swimlanes=${totalSwimlanes}, rows=${swimlaneRows}, height=${totalHeight}`);
+
+    d3.select('#readout')
+        .style('position', 'absolute')
+        .style('top', `${totalHeight}px`);
+}
+

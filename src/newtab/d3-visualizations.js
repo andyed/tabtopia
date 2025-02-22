@@ -134,7 +134,11 @@ const EDGE_TRANSITIONS = {
 const LAYOUT = {
   LEGEND_HEIGHT: 60,
   LANE_HEIGHT: 100,
-  READOUT_PADDING: 40  // Space between graph and readout
+  READOUT_PADDING: 40,  // Space between graph and readout
+  ROW_HEIGHT: 30,  // default height of a single row
+  AXIS_HEIGHT: 30, // height for x-axis
+  HISTORY_ROWS: 2,  // number of rows for history section
+  AXIS_MARGIN: 10    // additional margin for x-axis
 };
 
 export function initializeTimeline() {
@@ -569,6 +573,7 @@ async function handlePointClick(d) {
 
 // Fix the prevItem undefined error in updateGraph
 export function updateGraph(data) {
+  console.log('updateGraph called with data:', data);
   if (!data?.historySwimlane) return;
 
   // Call updateVisualizationSizes at the start
@@ -918,6 +923,8 @@ export function updateGraph(data) {
       const nodeTime = new Date(d.lastVisitTime || d.lastAccessed);
       return nodeTime >= startTime && nodeTime <= endTime ? '' : 'none';
     });
+
+  updateReadoutPosition(data);
 }
 
 export function setupBrushing() {
@@ -1457,3 +1464,26 @@ function updateVisualizationSizes() {
 window.addEventListener('resize', debounce(() => {
   updateVisualizationSizes();
 }, 250));
+
+function updateReadoutPosition(data) {
+  console.log('updateReadoutPosition called with data:', data);
+  
+  const totalSwimlanes = d3.max(data, d => d.lane) + 1;
+  const swimlaneRows = LAYOUT.HISTORY_ROWS + totalSwimlanes;
+  const totalHeight = (swimlaneRows * LAYOUT.ROW_HEIGHT) + 
+                     LAYOUT.AXIS_HEIGHT + 
+                     LAYOUT.AXIS_MARGIN;
+
+  console.log(`Calculated dimensions: swimlanes=${totalSwimlanes}, rows=${swimlaneRows}, height=${totalHeight}`);
+
+  d3.select('#readout')
+      .style('position', 'absolute')
+      .style('top', `${totalHeight}px`);
+}
+
+async function updateVisualizations() {
+    console.log('Updating visualizations with data:', currentData);
+    await updateTimeline(currentData);
+    await updateGraph(currentData);
+}
+
