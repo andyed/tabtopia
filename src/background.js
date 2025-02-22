@@ -127,8 +127,7 @@ chrome.webRequest.onBeforeRequest.addListener(
     }
     return {};
   },
-  { urls: ["*://*/*"] },
-  ["blocking"]
+  { urls: ["*://*/*"] }
 );
 
 // Add to existing background.js

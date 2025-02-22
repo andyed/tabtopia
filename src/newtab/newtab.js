@@ -272,16 +272,11 @@ function displayStats(data, sessionCount) {
   document.getElementById('total-sessions').textContent = `Total Sessions: ${sessionCount}`;
 }
 
-function showTooltipInfo(info) {
-  document.getElementById('default-stats').style.display = 'none';
-  const tooltipInfo = document.getElementById('tooltip-info');
-  tooltipInfo.textContent = info;
-  tooltipInfo.style.display = 'inline';
-}
-
-function hideTooltipInfo() {
-  document.getElementById('tooltip-info').style.display = 'none';
-  document.getElementById('default-stats').style.display = 'inline';
+function updateReadoutText(text) {
+  const readout = document.getElementById('readout');
+  if (readout) {
+    readout.textContent = text;
+  }
 }
 
 // Add navigation event listeners
@@ -693,22 +688,5 @@ const LAYOUT = {
     AXIS_MARGIN: 10
 };
 
-function updateReadoutPosition() {
-    if (!currentData) {
-        console.log('updateReadoutPosition: no currentData');
-        return;
-    }
-    
-    const totalSwimlanes = d3.max(currentData, d => d.lane) + 1;
-    const swimlaneRows = LAYOUT.HISTORY_ROWS + totalSwimlanes;
-    const totalHeight = (swimlaneRows * LAYOUT.ROW_HEIGHT) + 
-                       LAYOUT.AXIS_HEIGHT + 
-                       LAYOUT.AXIS_MARGIN;
 
-    console.log(`updateReadoutPosition: swimlanes=${totalSwimlanes}, rows=${swimlaneRows}, height=${totalHeight}`);
-
-    d3.select('#readout')
-        .style('position', 'absolute')
-        .style('top', `${totalHeight}px`);
-}
 

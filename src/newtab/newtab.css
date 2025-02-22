@@ -36,6 +36,11 @@ body {
   height: auto; /* Remove fixed height */
   position: relative; /* For legend positioning */
   flex: 0 0 auto; /* Don't grow, don't shrink, auto height */
+  position: relative;
+  width: 100%;
+  height: 170px;  /* LAYOUT.TIMELINE_HEIGHT */
+  margin-bottom: 0;  /* Ensure no extra space */
+  outline: 1px solid red; /* Temporary debug styles - remove after fixing layout */
 }
 
 #timeline-svg, #graph-svg {
@@ -143,6 +148,9 @@ body {
   justify-content: flex-start;
   font-size: 16px;
   color: #333;
+  position: relative;
+  width: 100%;
+  z-index: 2;
 }
 
 #readout {
@@ -158,6 +166,44 @@ body {
   text-align: center;
   justify-content: flex-end;
   padding-right:30px;
+  position: absolute;
+  width: 100%;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  padding: 8px 12px;
+  min-height: 45px;  /* Accommodate 2-3 lines: (14px + 11px + 11px) + padding */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;  /* Space between lines */
+  margin: 0;
+  outline: 1px solid green; /* Temporary debug styles - remove after fixing layout */
+}
+
+/* Text styles for different lines */
+#readout .primary-text {
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#readout .secondary-text {
+  font-size: 11px;
+  line-height: 1.2;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#readout .secondary-text.url {
+  color: #0066cc;
+}
+
+#readout .secondary-text.time {
+  font-style: italic;
 }
 
 #default-stats {
@@ -443,6 +489,10 @@ swimlane-content::-webkit-scrollbar-thumb {
   background: white;
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  position: relative;
+  width: 100%;
+  margin-top: 0;  /* Ensure no extra space */
+  outline: 1px solid blue; /* Temporary debug styles - remove after fixing layout */
 }
 
 #graph-svg {

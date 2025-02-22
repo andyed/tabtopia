@@ -1,4 +1,7 @@
+import { formatUrl } from './utility.js';
+
 export function showTooltipInfo(info) {
+  console.log(info)
   document.getElementById('default-stats').style.display = 'none';
   const tooltipInfo = document.getElementById('tooltip-info');
   tooltipInfo.innerHTML = info; // Changed from textContent to innerHTML
@@ -35,6 +38,39 @@ export function updateStats(currentTimeScale, currentData) {
   document.getElementById('time-range-stat').textContent = timeRange;
   document.getElementById('events-stat').textContent = `${visibleNodes} shown`;
   document.getElementById('sessions-stat').textContent = sessions;
+}
+
+export function updateNodeReadout(node) {
+    const readout = document.getElementById('readout');
+    if (!readout || !node) return;
+
+    const primaryText = readout.querySelector('.primary-text');
+    const urlText = readout.querySelector('.secondary-text.url');
+    const timeText = readout.querySelector('.secondary-text.time');
+
+    // Set title as primary text
+    primaryText.textContent = node.title || formatUrl(node.url);
+
+    // Set truncated URL as secondary
+    urlText.textContent = formatUrl(node.url);
+
+    // Format time
+    const visitDate = new Date(node.lastVisitTime);
+    const now = new Date();
+    const isToday = visitDate.toDateString() === now.toDateString();
+    
+    timeText.textContent = isToday 
+        ? `Visited at ${visitDate.toLocaleTimeString()}` 
+        : `Visited on ${visitDate.toLocaleDateString()} at ${visitDate.toLocaleTimeString()}`;
+}
+
+export function clearReadout() {
+    const readout = document.getElementById('readout');
+    if (!readout) return;
+
+    readout.querySelector('.primary-text').textContent = '';
+    readout.querySelector('.secondary-text.url').textContent = '';
+    readout.querySelector('.secondary-text.time').textContent = '';
 }
 
 function countSessions(data, start, end) {

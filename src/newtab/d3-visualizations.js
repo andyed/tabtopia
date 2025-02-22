@@ -1,5 +1,20 @@
 import { getFaviconUrl } from './utility.js';
 import { showTooltipInfo, hideTooltipInfo, updateStats } from './d3-readout.js';
+import { updateNodeReadout, clearReadout } from './d3-readout.js';
+
+// Add near the top with other utility functions
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
 
 // Update margin constant at the top
 const margin = { top: 0, right: 0, bottom: 20, left: 0 }; // Only keep bottom margin for axis
@@ -132,13 +147,14 @@ const EDGE_TRANSITIONS = {
 
 // Add near other constants
 const LAYOUT = {
-  LEGEND_HEIGHT: 60,
-  LANE_HEIGHT: 100,
-  READOUT_PADDING: 40,  // Space between graph and readout
-  ROW_HEIGHT: 30,  // default height of a single row
-  AXIS_HEIGHT: 30, // height for x-axis
-  HISTORY_ROWS: 2,  // number of rows for history section
-  AXIS_MARGIN: 10    // additional margin for x-axis
+    TIMELINE_HEIGHT: 170,    // Timeline visualization height
+    HEADER_HEIGHT: 43,      // Header section height
+    Y_AXIS_HEIGHT: 22,      // Y-axis height
+    ROW_HEIGHT: 30,         // Height per swimlane row
+    AXIS_HEIGHT: 30,        // X-axis height
+    AXIS_MARGIN: 10,        // Additional margin
+    HISTORY_ROWS: 2,        // Number of history rows
+    READOUT_HEIGHT: 45      // Default height for readout
 };
 
 export function initializeTimeline() {
@@ -416,14 +432,8 @@ function addFaviconsToPoints(points) {
         .select('.hover-highlight')
         .style('opacity', 1);
 
-      const info = `
-        ${d.title || 'Untitled'}
-        <br/>
-        ${formatUrl(d.url)}
-        ${d.isCurrentTab ? '<br/><em>Current Tab</em>' : ''}
-      `.trim();
-      
-      showTooltipInfo(info);
+      // Update readout with node info
+      updateNodeReadout(d);
       
       // Highlight point
       d3.select(this.parentNode)
@@ -446,7 +456,8 @@ function addFaviconsToPoints(points) {
         .select('.hover-highlight')
         .style('opacity', 0);
 
-      hideTooltipInfo();
+      // Clear readout
+      clearReadout();
       
       // Remove highlight
       d3.select(this.parentNode)
@@ -576,8 +587,6 @@ export function updateGraph(data) {
   console.log('updateGraph called with data:', data);
   if (!data?.historySwimlane) return;
 
-  // Call updateVisualizationSizes at the start
-  updateVisualizationSizes();
 
   const container = d3.select('#graph-svg');
   const element = container.node();
@@ -924,7 +933,7 @@ export function updateGraph(data) {
       return nodeTime >= startTime && nodeTime <= endTime ? '' : 'none';
     });
 
-  updateReadoutPosition(data);
+  //updateReadoutPosition(data);
 }
 
 export function setupBrushing() {
@@ -1148,52 +1157,25 @@ export async function drawSwimlanes(categorizedData) {
   }
 }
 
+// Update handleResize function
 function handleResize() {
-  const timelineContainer = d3.select('#timeline-svg');
-  const graphContainer = d3.select('#graph-svg');
-  
-  // Update timeline dimensions
-  const timelineWidth = timelineContainer.node().getBoundingClientRect().width;
-  timelineContainer
-    .attr('width', timelineWidth)
-    .attr('height', height + margin.top + margin.bottom);
-
-  // Update graph dimensions
-  const graphElement = graphContainer.node();
-  const graphWidth = graphElement.getBoundingClientRect().width;
-  const graphHeight = graphElement.getBoundingClientRect().height;
-  
-  graphContainer
-    .attr('width', graphWidth)
-    .attr('height', graphHeight);
-
-  // Update force simulation center
-  graphSimulation.force('center')
-    .x(graphWidth / 2)
-    .y(graphHeight / 2);
-
-  // Restart simulation
-  if (currentData) {
-    updateTimeline(currentData);
-    updateGraph(currentData);
-  }
+    console.log('handleResize called');
+    updateLayout();  // Call single layout function
+    
+    if (currentData) {
+        updateTimeline(currentData);
+        updateGraph(currentData);
+    }
 }
 
-// Replace the lodash debounce with our own implementation
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
+// Update the resize event listener
+const debouncedResize = debounce(() => {
+    console.log('Window resize event triggered');
+    handleResize();
+}, 250);
 
-// Update the resize listener
-const debouncedResize = debounce(handleResize, 250);
+// Make sure we're only adding one listener
+window.removeEventListener('resize', debouncedResize);
 window.addEventListener('resize', debouncedResize);
 
 function formatUrl(url) {
@@ -1412,78 +1394,45 @@ export function handleNavigationEvent(event) {
   }
 }
 
-function updateVisualizationSizes() {
-  const container = d3.select('.visualization-container');
-  const legendContainer = container.select('.legend-container');
-  const graphContainer = container.select('.graph-container');
-  const readoutPanel = container.select('.readout-panel');
-  const svg = d3.select('#graph-svg');
+function updateLayout() {
+    // Calculate swimlane heights
+    const numWindows = currentData?.windowSwimlanes ? Object.keys(currentData.windowSwimlanes).length : 0;
+    const swimlaneRows = LAYOUT.HISTORY_ROWS + numWindows;
+    const swimlaneHeight = swimlaneRows * LAYOUT.ROW_HEIGHT;
+    
+    // Calculate total timeline height including all components
+    const timelineHeight = swimlaneHeight +                 // Height for all swimlanes
+                          LAYOUT.AXIS_HEIGHT;               // X-axis height
 
-  // Get legend height
-  const legendHeight = Math.max(
-    legendContainer.node()?.getBoundingClientRect()?.height || 0, 
-    LAYOUT.LEGEND_HEIGHT
-  );
+    // Position readout immediately after timeline
+    const readoutContainer = document.getElementById('readout-container');
+    const readoutYPosition = timelineHeight;
+    
+    if (readoutContainer) {
+        readoutContainer.style.position = 'absolute';
+        readoutContainer.style.top = `${readoutYPosition}px`;
+    }
+    
+    // Calculate remaining height for graph
+    const totalHeight = window.innerHeight;
+    const readoutHeight = readoutContainer?.getBoundingClientRect().height || LAYOUT.READOUT_HEIGHT;
+    const graphHeight = totalHeight - readoutYPosition - readoutHeight;
 
-  // Update active lanes based on current data
-  if (currentData?.windowSwimlanes) {
-    activeLanes = ['history'];
-    Object.keys(currentData.windowSwimlanes).forEach(windowId => {
-      if (currentData.windowSwimlanes[windowId].length > 0) {
-        activeLanes.push(`window-${windowId}`);
-      }
+    console.log('Layout calculation:', {
+        swimlaneHeight,
+        timelineHeight,
+        readoutYPosition,
+        readoutHeight,
+        graphHeight
     });
-  }
-  
-  // Calculate total graph height
-  const graphHeight = (activeLanes.length * LAYOUT.LANE_HEIGHT) + margin.top + margin.bottom;
-  
-  // Set graph container position and height
-  graphContainer
-    .style('position', 'absolute')
-    .style('top', `${legendHeight}px`)
-    .style('height', `${graphHeight}px`)
-    .style('min-height', '300px')
-    .style('width', '100%');
 
-  // Update SVG dimensions
-  const svgNode = svg.node();
-  if (svgNode) {
-    svg.attr('height', graphHeight)
-       .attr('width', window.innerWidth - margin.left - margin.right);
-  }
-
-  // Position readout panel below graph
-  readoutPanel
-    .style('position', 'absolute')
-    .style('top', `${legendHeight + graphHeight + LAYOUT.READOUT_PADDING}px`)
-    .style('width', '100%');
+    // Position graph below readout
+    const graphContainer = d3.select('.graph-container');
+    graphContainer
+        .style('position', 'absolute')
+        .style('top', `${readoutYPosition + readoutHeight}px`)
+        .style('height', `${graphHeight}px`)
+        .style('width', '100%');
 }
 
-// Keep the resize listener
-window.addEventListener('resize', debounce(() => {
-  updateVisualizationSizes();
-}, 250));
-
-function updateReadoutPosition(data) {
-  console.log('updateReadoutPosition called with data:', data);
-  
-  const totalSwimlanes = d3.max(data, d => d.lane) + 1;
-  const swimlaneRows = LAYOUT.HISTORY_ROWS + totalSwimlanes;
-  const totalHeight = (swimlaneRows * LAYOUT.ROW_HEIGHT) + 
-                     LAYOUT.AXIS_HEIGHT + 
-                     LAYOUT.AXIS_MARGIN;
-
-  console.log(`Calculated dimensions: swimlanes=${totalSwimlanes}, rows=${swimlaneRows}, height=${totalHeight}`);
-
-  d3.select('#readout')
-      .style('position', 'absolute')
-      .style('top', `${totalHeight}px`);
-}
-
-async function updateVisualizations() {
-    console.log('Updating visualizations with data:', currentData);
-    await updateTimeline(currentData);
-    await updateGraph(currentData);
-}
 
