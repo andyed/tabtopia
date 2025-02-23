@@ -56,7 +56,16 @@ export function drawTreemap(categorizedData) {
                 url: tab.url || '',
                 favIconUrl: tab.favIconUrl,
                 lastAccessed: tab.lastAccessed,
-                timeSpent: 100
+                timeSpent: 100,
+                children: tab.openInNewTab ? tab.openInNewTab.map(newTab => ({
+                    id: `tab${newTab.id}`,
+                    windowId: window.id,
+                    title: newTab.title || 'Untitled',
+                    url: newTab.url || '',
+                    favIconUrl: newTab.favIconUrl,
+                    lastAccessed: newTab.lastAccessed,
+                    timeSpent: 100
+                })) : []
             }))
         }))
     };
