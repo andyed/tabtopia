@@ -10,6 +10,7 @@ import {
 } from './d3-visualizations.js';
 import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from './utility.js';
 import { updateStats } from './stats.js';
+import { drawTreemap } from './treemap.js';
 
 
 const HISTORY_RESULTS_LIMIT = 20;
@@ -32,29 +33,21 @@ let navigationEvents = new Map();
 
 async function initializeApp() {
   try {
-    await syncTabActivity(); // Add this line
-    const historyData = await fetchHistoryData(HISTORY_RESULTS_LIMIT);
-    const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
-    
-    const combinedData = {
-      history: historyData,
-      activeWindowsAndTabs: activeWindowsAndTabs
-    };
-    
-    currentData = categorizeHistoryData(combinedData);
-    
-    // Initialize both visualizations
-    initializeTimeline();
-    initializeGraph();
-    
-    // Update both visualizations
-    updateTimeline(currentData);
-    updateGraph(currentData);
-    
-    setupTimelineUpdates();
-    setupMenu();
-    
-    console.log('App initialized with data:', currentData);
+    const [history, windows] = await Promise.all([
+        chrome.history.search({ text: '', maxResults: 10000, startTime: 0 }),
+        chrome.windows.getAll({ populate: true })
+    ]);
+
+    const categorizedData = categorizeData(history, windows);
+    console.log('Categorized Data:', categorizedData);
+
+    // Ensure we have valid data before initializing visualizations
+    if (categorizedData && categorizedData.activeWindows) {
+        drawTreemap(categorizedData);
+    } else {
+        console.error('Invalid categorized data structure:', categorizedData);
+    }
+
   } catch (error) {
     console.error('Initialization error:', error);
   }
@@ -311,8 +304,8 @@ async function updateTimelineWithNavigation(tab) {
     currentData.windowSwimlanes[tab.windowId].push(newNavigation);
 
     // Update the visualizations
-    updateTimeline(currentData);
-    updateGraph(currentData);
+    //updateTimeline(currentData);
+    //updateGraph(currentData);
   } catch (error) {
     console.error('Error updating timeline with navigation:', error);
   }
@@ -688,5 +681,111 @@ const LAYOUT = {
     AXIS_MARGIN: 10
 };
 
+document.addEventListener('DOMContentLoaded', function () {
+    const width = document.getElementById('sidebar').offsetWidth;
+    const height = window.innerHeight;
 
+    const svg = d3.select('#treemap')
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height);
+
+    const treemap = d3.treemap()
+        .size([width, height])
+        .padding(1);
+
+    function drawTreemap(data) {
+        const root = d3.hierarchy(data)
+            .sum(d => d.totalTimeSpent)
+            .sort((a, b) => b.value - a.value);
+
+        treemap(root);
+
+        const nodes = svg.selectAll('g')
+            .data(root.leaves())
+            .enter()
+            .append('g')
+            .attr('transform', d => `translate(${d.x0},${d.y0})`)
+            .style('cursor', 'pointer')
+            .on('dblclick', (event, d) => {
+                // Focus the tab
+                chrome.windows.update(d.data.windowId, { focused: true }, () => {
+                    chrome.tabs.update(d.data.id.replace('tab', ''), { active: true });
+                });
+            });
+
+        // Make the rect and text both clickable
+        nodes.append('rect')
+            .attr('id', d => d.data.id)
+            .attr('width', d => d.x1 - d.x0)
+            .attr('height', d => d.y1 - d.y0)
+            .attr('fill', d => d.parent.data.focused ? '#4a9eff' : '#69b3a2')
+            .attr('opacity', 0.7);
+
+        nodes.append('image')
+            .attr('xlink:href', d => d.data.favIconUrl)
+            .attr('x', 3)
+            .attr('y', 3)
+            .attr('width', 16)
+            .attr('height', 16);
+
+        nodes.append('text')
+            .attr('x', 22)
+            .attr('y', 15)
+            .text(d => d.data.title)
+            .attr('font-size', '10px')
+            .attr('fill', 'white')
+            .attr('text-anchor', 'start')
+            .attr('dominant-baseline', 'hanging');
+    }
+
+    // Example usage with windowData
+    if (window.windowData) {
+        drawTreemap(window.windowData);
+    }
+});
+
+export function categorizeData(history, windows) {
+    // Sort windows to put focused window first
+    const sortedWindows = [...windows].sort((a, b) => {
+        if (a.focused === b.focused) return 0;
+        return a.focused ? -1 : 1;
+    });
+
+    const activeWindows = sortedWindows.map(window => ({
+        id: window.id,
+        focused: window.focused,
+        tabs: window.tabs.map(tab => ({
+            id: tab.id,
+            windowId: tab.windowId,
+            url: tab.url,
+            title: tab.title,
+            active: tab.active,
+            favIconUrl: tab.favIconUrl,
+            lastAccessed: tab.lastAccessed
+        }))
+    }));
+
+    const windowSwimlanes = {};
+    activeWindows.forEach(window => {
+        windowSwimlanes[window.id] = window.tabs;
+    });
+
+    const historySwimlane = history.map(entry => ({
+        id: entry.id,
+        url: entry.url,
+        title: entry.title,
+        lastVisitTime: entry.lastVisitTime,
+        visitCount: entry.visitCount
+    }));
+
+    const tabsCount = activeWindows.map(window => window.tabs.length);
+
+    return {
+        activeWindows,
+        windowSwimlanes,
+        historySwimlane,
+        tabsCount
+    };
+}
 

@@ -4,6 +4,7 @@
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Chrome History Plugin installed.");
+  console.log('Extension installed');
 });
 
 let historyEntries = [];
@@ -87,9 +88,15 @@ chrome.history.onVisited.addListener((result) => {
 });
 
 // Listen for tab changes
-chrome.tabs.onActivated.addListener((activeInfo) => {
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
   updateTabActivity(activeInfo.tabId, true);
   updateActiveTabs();
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    console.log('Tab activated:', tab);
+  } catch (error) {
+    console.error('Error getting tab info:', error);
+  }
   chrome.tabs.get(activeInfo.tabId, (tab) => {
       const faviconUrl = getFaviconUrl(tab.url);
       console.log(`New active tab: ${tab.url} with favicon: ${faviconUrl}`);
@@ -227,6 +234,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   try {
     if (!tabEdges) {
       tabEdges = new Map(); // Initialize if undefined
+    }
+    
+    if (changeInfo.status === 'complete') {
+      console.log('Tab updated:', tab);
     }
     
     // Rest of your handler code...

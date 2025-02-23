@@ -2,69 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Histospire</title>
-  <link rel="stylesheet" href="newtab.css">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="header">
-    <div class="header-left">
-      <div class="menu-container">
-        <button id="menuButton" class="menu-button">
-          <svg width="24" height="24" viewBox="0 0 24 24">
-            <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
-          </svg>
-        </button>
-        <div id="menuDropdown" class="menu-dropdown">
-          <div class="menu-group">
-            <button class="menu-item" data-type="time" data-value="3600">Last Hour</button>
-            <button class="menu-item" data-type="time" data-value="86400">Last Day</button>
-            <button class="menu-item" data-type="time" data-value="604800">Last Week</button>
-          </div>
-          <div class="menu-group">
-            <button class="menu-item" data-type="count" data-value="200">200 Events</button>
-            <button class="menu-item" data-type="count" data-value="1000">1000 Events</button>
-            <button class="menu-item" data-type="count" data-value="10000">10000 Events</button>
-          </div>
-        </div>
-      </div>
-      <div id="title">Histospire</div>
-      <div class="stats-content" style="float:right">
-        <div class="stat-group">
-          <span class="stat-label">Time Range:</span>
-          <span id="time-range-stat">...</span>
-        </div>
-        <div class="stat-group">
-          <span class="stat-label">Events:</span>
-          <span id="events-stat">...</span>
-        </div>
-        <div class="stat-group">
-          <span class="stat-label">Sessions:</span>
-          <span id="sessions-stat">...</span>
-        </div>
-      </div>
-    </div>
+  
+
+  <div id="sidebar">
+    <div id="treemap"></div>
+  </div>
+  <div id="main-content">
+    <!-- Other visualizations will go here -->
   </div>
 
-  <div id="timeline-container">
-    <svg id="timeline-svg"></svg>
-  </div>
-
-  <div id="readout-container">
-    <div id="readout">
-        <div class="primary-text"></div>
-        <div class="secondary-text url"></div>
-        <div class="secondary-text time"></div>
-    </div>
-  </div>
-
-  <div id="graph-container">
-    <svg id="graph-svg"></svg>
-  </div>
-
-  <!-- Use local D3.js instead of CDN -->
   <script src="../lib/d3.min.js"></script>
-  <script type="module" src="utility.js"></script>
-  <script type="module" src="d3-visualizations.js"></script>
-  <script type="module" src="newtab.js"></script>
+  <script src="newtab.js" type="module"></script>
+
 </body>
 </html>
