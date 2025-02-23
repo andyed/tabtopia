@@ -74,7 +74,8 @@ export function drawTreemap(categorizedData) {
 
     const treemap = d3.treemap()
         .size([width, height])
-        .padding(0); // Set padding to 0 to remove white space between windows
+        .paddingInner(5) // Inner padding between nodes
+        .paddingOuter(10); // Outer padding around the treemap
 
     const root = d3.hierarchy(hierarchyData)
         .sum(d => d.timeSpent)
@@ -108,9 +109,20 @@ export function drawTreemap(categorizedData) {
         tabs.sort((a, b) => b.data.lastAccessed - a.data.lastAccessed);
 
         // Assign border styles to the most recent tabs
-        if (tabs.length > 0) tabs[0].data.borderStyle = 'solid';
-        if (tabs.length > 1) tabs[1].data.borderStyle = 'dashed';
-        if (tabs.length > 2) tabs[2].data.borderStyle = 'dotted';
+        if (tabs.length > 0) tabs[0].data.borderWidth = 8; // Wide border
+        if (tabs.length > 1) tabs[1].data.borderWidth = 4; // Medium border
+        if (tabs.length > 2) tabs[2].data.borderWidth = 2; // Narrow border
+    });
+
+    // Add background rectangles for each window
+    root.children.forEach(windowNode => {
+        svg.append('rect')
+            .attr('x', windowNode.x0)
+            .attr('y', windowNode.y0)
+            .attr('width', windowNode.x1 - windowNode.x0)
+            .attr('height', windowNode.y1 - windowNode.y0)
+            .attr('fill', d3.color(windowColors.get(parseInt(windowNode.data.name.replace('Window ', ''), 10))).darker(0.5))
+            .attr('stroke', 'none');
     });
 
     const nodes = svg.selectAll('g')
@@ -119,9 +131,17 @@ export function drawTreemap(categorizedData) {
         .append('g')
         .attr('transform', d => `translate(${d.x0},${d.y0})`)
         .style('cursor', 'pointer')
-        .on('mouseover', (event, d) => {
+        .on('mouseover', function(event, d) {
             console.log('Node info:', d.data);
             displayReadout(d.data, false);
+            d3.select(this).select('rect')
+                .attr('fill', '#ffff99') // Light yellow color on hover
+                .attr('stroke', '#ffff99'); // Match stroke to fill color on hover
+        })
+        .on('mouseout', function(event, d) {
+            d3.select(this).select('rect')
+                .attr('fill', d.data.color) // Revert to original color
+                .attr('stroke', d.data.borderWidth ? d3.color(d.data.color).darker(2) : 'none'); // Revert to original stroke
         })
         .on('click', (event, d) => {
             displayReadout(d.data, true);
@@ -144,13 +164,8 @@ export function drawTreemap(categorizedData) {
         .attr('height', d => d.y1 - d.y0)
         .attr('fill', d => d.data.color)
         .attr('opacity', d => d.parent.data.focused ? 1 : 0.7)
-        .attr('stroke', d => d.data.borderStyle ? d3.color(d.data.color).darker(2) : 'none')
-        .attr('stroke-width', d => d.data.borderStyle ? 3 : 0)
-        .attr('stroke-dasharray', d => {
-            if (d.data.borderStyle === 'dashed') return '6, 3';
-            if (d.data.borderStyle === 'dotted') return '2, 2';
-            return 'none';
-        });
+        .attr('stroke', d => d.data.borderWidth ? d3.color(d.data.color).darker(2) : 'none')
+        .attr('stroke-width', d => d.data.borderWidth || 0); // Use borderWidth for recent tabs
 
     console.log('Rectangles added to nodes'); // Debug
 
@@ -215,6 +230,12 @@ function displayReadout(tabData, sticky) {
         <p><a href="${tabData.url}" target="_blank">${tabData.url}</a></p>
         <p>Last accessed: ${formatDistanceToNow(new Date(tabData.lastAccessed))}</p>
         <p>Time spent: ${tabData.timeSpent ? `${tabData.timeSpent} seconds` : 'N/A'}</p>
+        <h3>History</h3>
+        <ul>
+            ${tabData.history.sort((a, b) => b.timestamp - a.timestamp).map(entry => `
+                <li>${new Date(entry.timestamp).toLocaleString()}: <a href="${entry.url}" target="_blank">${entry.title || entry.url}</a></li>
+            `).join('')}
+        </ul>
     `;
 
     if (sticky) {
