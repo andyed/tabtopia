@@ -1406,33 +1406,22 @@ export function initializeVisualization(data) {
     const timeExtent = d3.extent(data.historySwimlane, d => new Date(d.lastVisitTime));
     sharedTimeScale.domain(timeExtent).range([0, width]);
 
-    // Count unique URLs for graph nodes
-    const uniqueUrls = new Set(data.historySwimlane.map(d => d.url));
-    const visibleGraphNodes = uniqueUrls.size;
-    
-    // Count total sessions (favicons in swimlanes)
-    const timelineNodes = Object.values(data.windowSwimlanes || {})
-        .reduce((total, tabs) => total + tabs.length, 0) + 
-        (data.historySwimlane || []).length;
-    
-    console.log('Initial counts:', {
-        uniqueUrls: visibleGraphNodes,
-        totalSessions: timelineNodes
-    });
-
-    // Initialize timeline
     initializeTimeline();
     setupZooming();
     setupBrushing();
 
-    // Initial update of visualizations
+    // Initial updates
     updateTimeline(data);
     updateGraph(data);
 
+    // Set up resize handling
+    window.removeEventListener('resize', () => debouncedResize(currentData, updateTimeline, updateGraph));
+    window.addEventListener('resize', () => debouncedResize(currentData, updateTimeline, updateGraph));
+
     // Initial stats update
     updateStats({
-        graphNodes: visibleGraphNodes,
-        timelineNodes: timelineNodes
+        graphNodes: new Set(data.historySwimlane.map(d => d.url)).size,
+        timelineNodes: countTimelineNodes(data)
     });
 }
 

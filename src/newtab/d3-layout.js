@@ -23,14 +23,15 @@ function debounce(func, wait) {
 }
 
 export function updateLayout(currentData) {
-    // Calculate swimlane heights
+    // Calculate section heights
     const numWindows = currentData?.windowSwimlanes ? 
         Object.keys(currentData.windowSwimlanes).length : 0;
     const swimlaneRows = LAYOUT.HISTORY_ROWS + numWindows;
-    const swimlaneHeight = swimlaneRows * LAYOUT.ROW_HEIGHT;
     
-    // Calculate total timeline height
-    const timelineHeight = swimlaneHeight + 
+    // Include TIMELINE_HEIGHT in calculation
+    const swimlaneHeight = swimlaneRows * LAYOUT.ROW_HEIGHT;
+    const timelineHeight = LAYOUT.TIMELINE_HEIGHT + 
+                          swimlaneHeight + 
                           LAYOUT.AXIS_HEIGHT + 
                           LAYOUT.AXIS_MARGIN;
 
@@ -42,54 +43,40 @@ export function updateLayout(currentData) {
         readoutContainer.style.width = '100%';
         readoutContainer.style.zIndex = '2';
     }
-    
+
     // Calculate remaining heights
-    const readoutHeight = readoutContainer?.getBoundingClientRect().height || 
-                         LAYOUT.READOUT_HEIGHT;
-    
+    const readoutHeight = readoutContainer?.getBoundingClientRect().height || LAYOUT.READOUT_HEIGHT;
     const totalHeight = window.innerHeight;
     const graphStartY = timelineHeight + readoutHeight;
     const graphHeight = totalHeight - graphStartY;
 
-    return {
-        timelineHeight,
-        readoutHeight,
-        graphStartY,
-        graphHeight,
-        totalHeight,
-        width,
-        height
-    };
+    // Position graph
+    const graphContainer = d3.select('#graph-container');
+    graphContainer
+        .style('position', 'absolute')
+        .style('top', `${graphStartY}px`)
+        .style('height', `${graphHeight}px`)
+        .style('width', '100%');
+
+    return { timelineHeight, readoutHeight, graphStartY, graphHeight, totalHeight };
 }
 
 export function handleResize(currentData, updateTimeline, updateGraph) {
-    // Get dimensions
-    const container = d3.select('#timeline-svg');
-    const element = container.node();
-    if (!element) return;
-
-    // Update timeline dimensions
-    const width = element.getBoundingClientRect().width;
-    const numWindows = currentData?.windowSwimlanes ? 
-        Object.keys(currentData.windowSwimlanes).length : 0;
-    const swimlaneRows = LAYOUT.HISTORY_ROWS + numWindows;
-    const height = (swimlaneRows * LAYOUT.ROW_HEIGHT) + 
-                   LAYOUT.AXIS_HEIGHT + 
-                   LAYOUT.AXIS_MARGIN;
-
-    // Update containers
-    container
-        .attr('width', width)
-        .attr('height', height);
-
-    // Update visualizations
+    const dimensions = updateLayout(currentData);
     if (currentData) {
         updateTimeline(currentData);
         updateGraph(currentData);
     }
-
-    return { width, height };
+    return dimensions;
 }
 
 // Create debounced resize handler
-export const debouncedResize = debounce(handleResize, 250);
+export const debouncedResize = debounce((currentData, updateTimeline, updateGraph) => {
+    handleResize(currentData, updateTimeline, updateGraph);
+}, 250);
+
+// Remove old resize listeners
+window.removeEventListener('resize', debouncedResize);
+
+// Add new resize listener with proper parameters
+window.addEventListener('resize', () => debouncedResize(currentData, updateTimeline, updateGraph));
