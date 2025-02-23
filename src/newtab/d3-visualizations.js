@@ -937,9 +937,7 @@ export function updateGraph(data) {
 
   const visibleGraphNodes = nodesArray.filter(n => !n.hidden).length;
   console.log('Visible nodes in graph:', visibleGraphNodes);
-  
-  // Update stats with graph node count
-  updateStats(visibleGraphNodes, data);
+  updateStats(visibleGraphNodes);  // Updates Events count
 }
 
 export function setupBrushing() {
@@ -976,7 +974,7 @@ export function setupZooming() {
 
     const newTimeScale = event.transform.rescaleX(sharedTimeScale);
     updateTimelineView(newTimeScale, svg, plotArea);
-    updateStats(newTimeScale, currentData);
+    updateStats(newTimeScale);  // Updates Time Range
   }
 }
 
@@ -1212,7 +1210,7 @@ function formatUrl(url) {
     return formatted;
   } catch (e) {
     // Fallback to original URL if parsing fails
-    return url.length > 60 ? url.substring(0, 57) + '...' : url;
+    return (url.length > 60) ? url.substring(0, 57) + '...' : url;
   }
 }
 

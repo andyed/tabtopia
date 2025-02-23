@@ -13,31 +13,26 @@ export function hideTooltipInfo() {
   document.getElementById('default-stats').style.display = 'inline';
 }
 
-export function updateStats(currentTimeScale, currentData) {
-  // Add null check for currentData
-  if (!currentData?.historySwimlane) {
-    // Set default values when no data is available
-    document.getElementById('time-range-stat').textContent = '--:-- - --:--';
-    document.getElementById('events-stat').textContent = '0 shown';
-    document.getElementById('sessions-stat').textContent = '0';
-    return;
-  }
+export function updateStats(data, type = 'events') {
+    // Get all stat elements
+    const timeRangeStat = document.getElementById('time-range-stat');
+    const eventsStat = document.getElementById('events-stat');
+    const sessionsStat = document.getElementById('sessions-stat');
 
-  const [start, end] = currentTimeScale.domain();
-  const timeRange = `${d3.timeFormat('%H:%M')(start)} - ${d3.timeFormat('%H:%M')(end)}`;
-  
-  // Count visible nodes in the graph
-  const visibleNodes = currentData.historySwimlane.filter(d => {
-    const time = new Date(d.lastVisitTime);
-    return time >= start && time <= end;
-  }).length;
+    if (!timeRangeStat || !eventsStat || !sessionsStat) return;
 
-  // Count sessions (gaps > 30 min)
-  const sessions = countSessions(currentData.historySwimlane, start, end);
-
-  document.getElementById('time-range-stat').textContent = timeRange;
-  document.getElementById('events-stat').textContent = `${visibleNodes} shown`;
-  document.getElementById('sessions-stat').textContent = sessions;
+    // Handle different types of updates
+    if (data?.domain) {
+        // It's a time scale update
+        const [start, end] = data.domain();
+        const timeRange = `${d3.timeFormat('%H:%M')(start)} - ${d3.timeFormat('%H:%M')(end)}`;
+        timeRangeStat.textContent = timeRange;
+    } 
+    else if (typeof data === 'object' && data.graphNodes !== undefined) {
+        // It's a node count update
+        eventsStat.textContent = data.graphNodes;
+        sessionsStat.textContent = data.timelineNodes;
+    }
 }
 
 export function updateNodeReadout(node) {
