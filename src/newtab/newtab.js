@@ -1,16 +1,7 @@
-import { 
-  initializeTimeline, 
-  initializeGraph, 
-  updateTimeline, 
-  updateGraph, 
-  setupBrushing, 
-  setupZooming, 
-  drawSwimlanes,
-  sharedTimeScale // Add this import
-} from './d3-visualizations.js';
 import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from './utility.js';
 import { updateStats } from './stats.js';
 import { drawTreemap } from './treemap.js';
+
 
 
 const HISTORY_RESULTS_LIMIT = 20;
@@ -31,34 +22,81 @@ const TAB_ACTIVITY = {
 let tabActivityLog = new Map(); // Track tab activity periods
 let navigationEvents = new Map();
 
+function categorizeData(history, windows) {
+    console.log('Categorizing data...'); // Debug
+
+    const activeWindows = windows.map(window => ({
+        id: window.id,
+        focused: window.focused,
+        tabs: window.tabs.map(tab => ({
+            id: tab.id,
+            windowId: tab.windowId,
+            url: tab.url,
+            title: tab.title,
+            active: tab.active,
+            favIconUrl: tab.favIconUrl,
+            lastAccessed: tab.lastAccessed
+        }))
+    }));
+
+    console.log('Active windows:', activeWindows); // Debug
+
+    const windowSwimlanes = {};
+    activeWindows.forEach(window => {
+        windowSwimlanes[window.id] = window.tabs;
+    });
+
+    console.log('Window swimlanes:', windowSwimlanes); // Debug
+
+    const historySwimlane = history.map(entry => ({
+        id: entry.id,
+        url: entry.url,
+        title: entry.title,
+        lastVisitTime: entry.lastVisitTime,
+        visitCount: entry.visitCount
+    }));
+
+    console.log('History swimlane:', historySwimlane); // Debug
+
+    const tabsCount = activeWindows.map(window => window.tabs.length);
+
+    console.log('Tabs count:', tabsCount); // Debug
+
+    const categorizedData = {
+        activeWindows,
+        windowSwimlanes,
+        historySwimlane,
+        tabsCount
+    };
+
+    console.log('Categorized data:', categorizedData); // Debug
+
+    return categorizedData;
+}
+
 async function initializeApp() {
-  try {
-    const [history, windows] = await Promise.all([
-        chrome.history.search({ text: '', maxResults: 10000, startTime: 0 }),
-        chrome.windows.getAll({ populate: true })
-    ]);
+    try {
+        const [history, windows] = await Promise.all([
+            chrome.history.search({ text: '', maxResults: 10000, startTime: 0 }),
+            chrome.windows.getAll({ populate: true })
+        ]);
 
-    const categorizedData = categorizeData(history, windows);
-    console.log('Categorized Data:', categorizedData);
+        const categorizedData = categorizeData(history, windows);
+        console.log('Categorized Data:', categorizedData); // Debug
 
-    // Ensure we have valid data before initializing visualizations
-    if (categorizedData && categorizedData.activeWindows) {
-        drawTreemap(categorizedData);
-    } else {
-        console.error('Invalid categorized data structure:', categorizedData);
+        if (categorizedData && categorizedData.activeWindows) {
+            console.log('Calling drawTreemap...'); // Debug
+            drawTreemap(categorizedData);
+        } else {
+            console.error('Invalid categorized data structure:', categorizedData);
+        }
+
+    } catch (error) {
+        console.error('Initialization error:', error);
     }
-
-  } catch (error) {
-    console.error('Initialization error:', error);
-  }
 }
 
-// Call initializeApp when the DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeApp);
-} else {
-  initializeApp();
-}
+document.addEventListener('DOMContentLoaded', initializeApp);
 
 async function fetchHistoryData(limit, startTime) {
   return new Promise((resolve) => {
@@ -682,7 +720,7 @@ const LAYOUT = {
 };
 
 document.addEventListener('DOMContentLoaded', function () {
-    const width = document.getElementById('sidebar').offsetWidth;
+    const width = 800;//document.getElementById('visualization-container').offsetWidth;
     const height = window.innerHeight;
 
     const svg = d3.select('#treemap')
@@ -744,48 +782,4 @@ document.addEventListener('DOMContentLoaded', function () {
         drawTreemap(window.windowData);
     }
 });
-
-export function categorizeData(history, windows) {
-    // Sort windows to put focused window first
-    const sortedWindows = [...windows].sort((a, b) => {
-        if (a.focused === b.focused) return 0;
-        return a.focused ? -1 : 1;
-    });
-
-    const activeWindows = sortedWindows.map(window => ({
-        id: window.id,
-        focused: window.focused,
-        tabs: window.tabs.map(tab => ({
-            id: tab.id,
-            windowId: tab.windowId,
-            url: tab.url,
-            title: tab.title,
-            active: tab.active,
-            favIconUrl: tab.favIconUrl,
-            lastAccessed: tab.lastAccessed
-        }))
-    }));
-
-    const windowSwimlanes = {};
-    activeWindows.forEach(window => {
-        windowSwimlanes[window.id] = window.tabs;
-    });
-
-    const historySwimlane = history.map(entry => ({
-        id: entry.id,
-        url: entry.url,
-        title: entry.title,
-        lastVisitTime: entry.lastVisitTime,
-        visitCount: entry.visitCount
-    }));
-
-    const tabsCount = activeWindows.map(window => window.tabs.length);
-
-    return {
-        activeWindows,
-        windowSwimlanes,
-        historySwimlane,
-        tabsCount
-    };
-}
 
