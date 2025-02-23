@@ -149,38 +149,40 @@ const EDGE_TRANSITIONS = {
 
 
 export function initializeTimeline() {
-  const container = d3.select('#timeline-svg');
-  const element = container.node();
-  
-  if (!element) return;
+    const container = d3.select('#timeline-svg');
+    const element = container.node();
+    
+    if (!element) return;
 
-  // Initialize with minimum dimensions
-  width = element.getBoundingClientRect().width - margin.left - margin.right;
-  height = 100; // Minimum initial height
+    // Initialize with minimum dimensions
+    width = element.getBoundingClientRect().width - margin.left - margin.right;
+    height = 100; // Minimum initial height
 
-  // Clear existing content
-  container.selectAll('*').remove();
+    // Clear existing content
+    container.selectAll('*').remove();
 
-  // Create main group
-  const g = container.append('g')
-    .attr('transform', `translate(${margin.left},${margin.top})`);
+    // Create main group
+    const g = container.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
 
-  g.append('g').attr('class', 'plot-area');
-  g.append('g').attr('class', 'x-axis')
-    .attr('transform', `translate(0,${height - margin.bottom})`);
+    g.append('g').attr('class', 'plot-area');
+    g.append('g').attr('class', 'x-axis')
+        .attr('transform', `translate(0,${height - margin.bottom})`);
 
-  // Initialize stats with default time scale
-  updateStats(sharedTimeScale, currentData);
-  
-  setupZooming();
-  
-  // Use imported handleResize
-  handleResize(currentData, updateTimeline, updateGraph);
+    // Initialize stats with default time scale
+    updateStats(sharedTimeScale, currentData);
+    
+    setupZooming();
+    
+    // Delay the initial resize to ensure DOM is rendered
+    setTimeout(() => {
+        console.log("Triggering initial resize after render");
+        debouncedResize(currentData);
+    }, 0);
 
-  // Add event listener for keyboard navigation
-  document.addEventListener('keydown', handleTimelineKeyboard);
+    document.addEventListener('keydown', handleTimelineKeyboard);
 
-  return { width, height, g };
+    return { width, height, g };
 }
 
 // Update initializeGraph
