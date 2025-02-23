@@ -1,6 +1,7 @@
 import { getFaviconUrl } from './utility.js';
 import { showTooltipInfo, hideTooltipInfo, updateStats } from './d3-readout.js';
 import { updateNodeReadout, clearReadout } from './d3-readout.js';
+import { LAYOUT, updateLayout, handleResize, debouncedResize } from './d3-layout.js';
 
 // Add near the top with other utility functions
 
@@ -16,13 +17,13 @@ function debounce(func, wait) {
     };
 }
 
-// Update margin constant at the top
+// Timeline state
 const margin = { top: 0, right: 0, bottom: 20, left: 0 }; // Only keep bottom margin for axis
 export const sharedTimeScale = d3.scaleTime();
-let width, height; // Declare these at file scope
+let width = 800;
+let height = 600;
 let currentData = null;
-let resizeTimer;
-let zoom; // Add this line
+let zoom = null; // Add this line
 
 // Add to top of file with other constants
 const TRANSITION_DURATION = 300;
@@ -52,7 +53,7 @@ const PAN_STEP = 200; // Pixels to pan per keypress
 const ZOOM_FACTOR = 1.5; // Zoom in/out multiplier
 const ZOOM_DURATION = 750; // MS for zoom transitions
 
-// Update near top with other constants
+// Constants
 const KEYBOARD_NAV = {
   PAN_STEP: 100,          // Pixels to pan per keypress
   ZOOM_FACTOR: 1.5,       // More pronounced zoom steps
@@ -145,17 +146,7 @@ const EDGE_TRANSITIONS = {
   }
 };
 
-// Add near other constants
-const LAYOUT = {
-    TIMELINE_HEIGHT: 170,    // Timeline visualization height
-    HEADER_HEIGHT: 43,      // Header section height
-    Y_AXIS_HEIGHT: 22,      // Y-axis height
-    ROW_HEIGHT: 32,         // Height per swimlane row
-    AXIS_HEIGHT: 50,        // X-axis height
-    AXIS_MARGIN: 70,        // Additional margin
-    HISTORY_ROWS: 2,        // Number of history rows
-    READOUT_HEIGHT: 45      // Default height for readout
-};
+
 
 export function initializeTimeline() {
   const container = d3.select('#timeline-svg');
@@ -182,7 +173,9 @@ export function initializeTimeline() {
   updateStats(sharedTimeScale, currentData);
   
   setupZooming();
-  handleResize();
+  
+  // Use imported handleResize
+  handleResize(currentData, updateTimeline, updateGraph);
 
   // Add event listener for keyboard navigation
   document.addEventListener('keydown', handleTimelineKeyboard);
@@ -1182,22 +1175,8 @@ export async function drawSwimlanes(categorizedData) {
   }
 }
 
-// Update handleResize function
-function handleResize() {
-    console.log('handleResize called');
-    updateLayout();  // Call single layout function
-    
-    if (currentData) {
-        updateTimeline(currentData);
-        updateGraph(currentData);
-    }
-}
 
-// Update the resize event listener
-const debouncedResize = debounce(() => {
-    console.log('Window resize event triggered');
-    handleResize();
-}, 250);
+
 
 // Make sure we're only adding one listener
 window.removeEventListener('resize', debouncedResize);
@@ -1419,64 +1398,6 @@ export function handleNavigationEvent(event) {
   }
 }
 
-function updateLayout() {
-    // Calculate swimlane heights
-    const numWindows = currentData?.windowSwimlanes ? Object.keys(currentData.windowSwimlanes).length : 0;
-    const swimlaneRows = LAYOUT.HISTORY_ROWS + numWindows;
-    const swimlaneHeight = swimlaneRows * LAYOUT.ROW_HEIGHT;
-    
-    // Calculate timeline section height
-    const timelineHeight = swimlaneHeight +           // Height for all swimlanes
-                          LAYOUT.AXIS_HEIGHT +        // X-axis height (30px)
-                          LAYOUT.AXIS_MARGIN;         // Margin after x-axis (10px)
-
-    // Position readout after timeline
-    const readoutContainer = document.getElementById('readout-container');
-    if (readoutContainer) {
-        readoutContainer.style.position = 'absolute';
-        readoutContainer.style.top = `${timelineHeight}px`;
-        readoutContainer.style.width = '100%';
-        readoutContainer.style.zIndex = '2';  // Ensure readout is above other elements
-    }
-    
-    // Get actual readout height after positioning
-    const readoutHeight = readoutContainer?.getBoundingClientRect().height || LAYOUT.READOUT_HEIGHT;
-    
-    // Calculate space for graph
-    const totalHeight = window.innerHeight;
-    const graphStartY = timelineHeight + readoutHeight;
-    const graphHeight = totalHeight - graphStartY;
-
-    console.log('Layout calculation:', {
-        timelineEnd: timelineHeight,
-        readoutHeight,
-        graphStartY,
-        graphHeight,
-        totalHeight
-    });
-
-    // Position and size graph container
-    const graphContainer = d3.select('#graph-container');
-    graphContainer
-        .style('position', 'absolute')
-        .style('top', `${graphStartY}px`)
-        .style('height', `${graphHeight}px`)
-        .style('width', '100%');
-
-    // Update graph SVG dimensions
-    const graphSvg = d3.select('#graph-svg');
-    graphSvg
-        .attr('width', '100%')
-        .attr('height', graphHeight);
-
-    // Update graph simulation center force
-    if (graphSimulation) {
-        graphSimulation.force('center')
-            .x(width / 2)
-            .y(graphHeight / 2);
-        graphSimulation.alpha(0.1).restart();
-    }
-}
 
 export function initializeVisualization(data) {
     currentData = data;
