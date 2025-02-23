@@ -936,8 +936,18 @@ export function updateGraph(data) {
   //updateReadoutPosition(data);
 
   const visibleGraphNodes = nodesArray.filter(n => !n.hidden).length;
-  console.log('Visible nodes in graph:', visibleGraphNodes);
-  updateStats(visibleGraphNodes);  // Updates Events count
+  const visibleTimelineNodes = plotArea.selectAll('.timeline-point').size();
+  
+  console.log('Nodes:', {
+      graph: visibleGraphNodes,
+      timeline: visibleTimelineNodes
+  });
+  
+  // Update both counts
+  updateStats({
+      graphNodes: visibleGraphNodes,
+      timelineNodes: visibleTimelineNodes
+  });
 }
 
 export function setupBrushing() {
@@ -974,31 +984,42 @@ export function setupZooming() {
 
     const newTimeScale = event.transform.rescaleX(sharedTimeScale);
     updateTimelineView(newTimeScale, svg, plotArea);
-    updateStats(newTimeScale);  // Updates Time Range
   }
 }
 
 function updateTimelineView(newTimeScale, svg, plotArea) {
-  // Update axis
-  svg.select('.x-axis')
-    .call(d3.axisBottom(newTimeScale)
-      .tickFormat(d3.timeFormat('%H:%M')));
-
-  // Update points
-  plotArea.selectAll('.timeline-point')
-    .attr('transform', d => {
-      const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
-      return `translate(${x},${d.yPos})`;
-    })
-    .style('display', d => {
-      const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
-      return x >= 0 && x <= width ? '' : 'none';
-    });
-
-  // Update graph
-  if (currentData) {
-    updateGraph(currentData);
-  }
+    // Update axis
+    svg.select('.x-axis')
+      .call(d3.axisBottom(newTimeScale)
+        .tickFormat(d3.timeFormat('%H:%M')));
+  
+    // Update points
+    plotArea.selectAll('.timeline-point')
+      .attr('transform', d => {
+        const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
+        return `translate(${x},${d.yPos})`;
+      })
+      .style('display', d => {
+        const x = newTimeScale(new Date(d.lastVisitTime || d.lastAccessed));
+        return x >= 0 && x <= width ? '' : 'none';
+      });
+  
+    // Count visible timeline points after zoom/pan
+    const visibleTimelineNodes = plotArea.selectAll('.timeline-point:not([style*="display: none"])')
+        .size();
+    
+    // Update graph and get visible graph nodes
+    if (currentData) {
+        updateGraph(currentData);
+        const visibleGraphNodes = plotArea.selectAll('.graph-node:not([style*="display: none"])')
+            .size();
+            
+        // Update stats with new counts
+        updateStats({
+            graphNodes: visibleGraphNodes,
+            timelineNodes: visibleTimelineNodes
+        });
+    }
 }
 
 function handleTimelineKeyboard(event) {
@@ -1455,6 +1476,43 @@ function updateLayout() {
             .y(graphHeight / 2);
         graphSimulation.alpha(0.1).restart();
     }
+}
+
+export function initializeVisualization(data) {
+    currentData = data;
+    
+    // Initialize shared time scale
+    const timeExtent = d3.extent(data.historySwimlane, d => new Date(d.lastVisitTime));
+    sharedTimeScale.domain(timeExtent).range([0, width]);
+
+    // Count unique URLs for graph nodes
+    const uniqueUrls = new Set(data.historySwimlane.map(d => d.url));
+    const visibleGraphNodes = uniqueUrls.size;
+    
+    // Count total sessions (favicons in swimlanes)
+    const timelineNodes = Object.values(data.windowSwimlanes || {})
+        .reduce((total, tabs) => total + tabs.length, 0) + 
+        (data.historySwimlane || []).length;
+    
+    console.log('Initial counts:', {
+        uniqueUrls: visibleGraphNodes,
+        totalSessions: timelineNodes
+    });
+
+    // Initialize timeline
+    initializeTimeline();
+    setupZooming();
+    setupBrushing();
+
+    // Initial update of visualizations
+    updateTimeline(data);
+    updateGraph(data);
+
+    // Initial stats update
+    updateStats({
+        graphNodes: visibleGraphNodes,
+        timelineNodes: timelineNodes
+    });
 }
 
 
