@@ -160,7 +160,7 @@ export function drawTreemap(categorizedData) {
             });
         });
 
-    console.log('Nodes created:', nodes); // Debug
+    //console.log('Nodes created:', nodes); // Debug
 
     // Background rectangles
     nodes.append('rect')
@@ -171,7 +171,6 @@ export function drawTreemap(categorizedData) {
         .attr('opacity', d => d.parent.data.focused ? 1 : 0.7)
         .attr('stroke', 'none');
 
-    console.log('Rectangles added to nodes'); // Debug
 
     // Create centered container for content
     const cellContent = nodes.append('g')
@@ -182,7 +181,6 @@ export function drawTreemap(categorizedData) {
             return `translate(${cellWidth / 2},${cellHeight / 2})`;
         });
 
-    console.log('Cell content containers created'); // Debug
 
     // Favicon or SVG icon for Chrome URLs
     cellContent.append('image')
@@ -210,7 +208,6 @@ export function drawTreemap(categorizedData) {
                 .attr('height', 128);
         });
 
-    console.log('Favicons added to cell content'); // Debug
 
     // Centered text below favicon
     const textElement = cellContent.append('text')
@@ -221,7 +218,6 @@ export function drawTreemap(categorizedData) {
         .attr('pointer-events', 'none')
         .text(d => d.data.title);
 
-    console.log('Text elements added:', textElement); // Debug
 
     // Adjust font size to fit the available cell space
     nodes.each(function(d) {

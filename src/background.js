@@ -263,6 +263,68 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
+// Track tab updates to ensure edges are tracked
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.openerTabId) {
+    const edge = {
+      source: tab.openerTabId,
+      target: tab.id,
+      type: 'new-tab'
+    };
+    console.log("Tab updated, new edge:", edge);
+    tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
+    updateGraphWithNewEdge(edge);
+  }
+  chrome.runtime.sendMessage({
+    action: 'tabUpdated',
+    tabId: tabId,
+    changeInfo: changeInfo,
+    tab: tab
+  });
+});
+
+// Example usage in a tab update handler
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') {
+        const tabData = findTabById(windowSwimlanes, tabId);
+        if (tabData) {
+            console.log(`Tab data for updated tab: ${JSON.stringify(tabData)}`);
+            // Handle the tab update with the found tab data
+        }
+    }
+});
+
+// Example usage in a tab removal handler
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+    const tabData = findTabById(windowSwimlanes, tabId);
+    if (tabData) {
+        console.log(`Tab data for removed tab: ${JSON.stringify(tabData)}`);
+        // Handle the tab removal with the found tab data
+    }
+});
+
+// Track link clicks and form submissions
+document.addEventListener('click', (event) => {
+  let target = event.target;
+  while (target && target !== document.body) {
+    if (target.tagName === 'A') {
+      const linkInfo = {
+        type: 'navigation',
+        sourceUrl: window.location.href,
+        targetUrl: target.href,
+        text: target.innerText.trim() || target.title || target.href,
+        timestamp: Date.now()
+      };
+      chrome.runtime.sendMessage({
+        type: 'navigation_event',
+        data: linkInfo
+      });
+      break;
+    }
+    target = target.parentElement;
+  }
+});
+
 // Initial population of history and active tabs
 updateHistory();
 updateActiveTabs();

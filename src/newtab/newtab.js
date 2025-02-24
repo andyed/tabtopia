@@ -313,6 +313,7 @@ function updateReadoutText(text) {
 // Add navigation event listeners
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url) {
+    console.log("Tab updated:", tab); // Debug
     updateTimelineWithNavigation(tab);
   }
 });
@@ -324,6 +325,7 @@ async function updateTimelineWithNavigation(tab) {
       await initializeApp();
       return;
     }
+    console.log("Updating timeline with navigation:", tab); // Debug
 
     const newNavigation = {
       url: tab.url,
@@ -340,7 +342,7 @@ async function updateTimelineWithNavigation(tab) {
       currentData.windowSwimlanes[tab.windowId] = [];
     }
     currentData.windowSwimlanes[tab.windowId].push(newNavigation);
-
+    console.log('Updated window swimlanes:', currentData.windowSwimlanes); // Debug
     // Update the visualizations
     //updateTimeline(currentData);
     //updateGraph(currentData);
@@ -361,7 +363,9 @@ chrome.windows.onCreated.addListener(async (window) => {
   };
   
   const categorizedData = categorizeHistoryData(combinedData);
-  updateTimeline(categorizedData);
+  //updateTimeline(categorizedData);
+  console.log('Window created:', window); // Debug
+  console.log('Active windows and tabs:', activeWindowsAndTabs); // Debug
 });
 
 chrome.windows.onRemoved.addListener(async (windowId) => {
@@ -441,58 +445,6 @@ function cleanup() {
 
 // Add event listener for page unload
 window.addEventListener('unload', cleanup);
-
-// Update the setupMenu function
-async function setupMenu() {
-  const menuButton = document.getElementById('menuButton');
-  const menuDropdown = document.getElementById('menuDropdown');
-  const menuItems = document.querySelectorAll('.menu-item');
-
-  menuButton?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    menuDropdown?.classList.toggle('show');
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!menuDropdown?.contains(e.target) && !menuButton?.contains(e.target)) {
-      menuDropdown?.classList.remove('show');
-    }
-  });
-
-  menuItems.forEach(item => {
-    item.addEventListener('click', async () => {
-      // Update active state
-      menuItems.forEach(i => i.classList.remove('active'));
-      item.classList.add('active');
-
-      const type = item.dataset.type;
-      const value = parseInt(item.dataset.value);
-
-      try {
-        // Fetch new history data based on selection
-        const historyData = await fetchHistoryRange(type, value);
-        
-        // Get current windows and tabs
-        const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
-        
-        // Update visualizations
-        currentData = await categorizeHistoryData({
-          history: historyData,
-          activeWindowsAndTabs
-        });
-        
-        updateTimeline(currentData);
-        updateGraph(currentData);
-
-      } catch (error) {
-        console.error('Error updating history:', error);
-      }
-
-      // Dismiss menu
-      menuDropdown?.classList.remove('show');
-    });
-  });
-}
 
 async function fetchHistoryRange(type, value) {
   const query = {
@@ -579,12 +531,15 @@ function updateGraphWithNewEdge(edge) {
 
 // Find tab by ID in window swimlanes
 function findTabById(windowSwimlanes, tabId) {
+  console.log(`findTabById called with tabId: ${tabId}`);
   for (const tabs of Object.values(windowSwimlanes)) {
-    const tab = tabs.find(t => t.id === tabId);
-    if (tab) {
-      return tab;
-    }
+      const tab = tabs.find(t => t.id === tabId);
+      if (tab) {
+          console.log(`---Tab found: ${JSON.stringify(tab)}`);
+          return tab;
+      }
   }
+  console.log(`Tab with id ${tabId} not found`);
   return null;
 }
 
@@ -638,43 +593,11 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   tabActivityLog.delete(tabId);
 });
 
-function inspectNavigationData() {
-  console.group('Navigation Data Inspection');
-  console.log('Current Navigation Events:', Array.from(navigationEvents.entries()));
-  console.log('Edge Data:', currentData?.edges);
-  console.groupEnd();
-}
 
-// Add to window for easy console access
-window.inspectNavigationData = inspectNavigationData;
-
-// Add near other utility functions
-function updateTimelineIfNeeded(force = false) {
-  const now = Date.now();
-  
-  // Don't update if not forced and last update was recent
-  if (!force && now - lastUpdate < UPDATE_INTERVAL) {
-    return;
-  }
 
   // Update last update time
   lastUpdate = now;
 
-  // Fetch latest data and update visualizations
-  fetchActiveWindowsAndTabs().then(activeWindowsAndTabs => {
-    if (currentData) {
-      currentData = categorizeHistoryData({
-        history: currentData.historySwimlane,
-        activeWindowsAndTabs
-      });
-      
-      // Update both visualizations
-      updateTimeline(currentData);
-      updateGraph(currentData);
-      updateStats(sharedTimeScale);
-    }
-  });
-}
 
 // Create a debounced version for rapid updates
 const debouncedTimelineUpdate = debounce(updateTimelineIfNeeded, 250);
@@ -711,13 +634,6 @@ function shouldCreateNavigationEdge(current, previous) {
     return false;
   }
 }
-
-const LAYOUT = {
-    ROW_HEIGHT: 30,
-    AXIS_HEIGHT: 30,
-    HISTORY_ROWS: 2,
-    AXIS_MARGIN: 10
-};
 
 document.addEventListener('DOMContentLoaded', function () {
     const width = 800;//document.getElementById('visualization-container').offsetWidth;
