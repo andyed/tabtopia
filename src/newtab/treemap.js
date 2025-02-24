@@ -289,20 +289,26 @@ export function drawTreemap(categorizedData) {
             const cellWidth = d.x1 - d.x0;
             const cellHeight = d.y1 - d.y0;
             return `translate(${cellWidth / 2},${cellHeight / 2})`;
+        })
+        .each(function(d) {
+            // Calculate icon size for this specific cell
+            const cellWidth = d.x1 - d.x0;
+            const cellHeight = d.y1 - d.y0;
+            d.iconSize = calculateCellIconSize(cellWidth, cellHeight);
         });
 
     // Add placeholder images first
     cellContent.append('image')
         .attr('xlink:href', '')
-        .attr('width', iconSize)
-        .attr('height', iconSize)
-        .attr('x', -iconSize/2)
-        .attr('y', -iconSize/2);
+        .attr('width', d => d.iconSize)
+        .attr('height', d => d.iconSize)
+        .attr('x', d => -d.iconSize/2)
+        .attr('y', d => -d.iconSize/2);
 
     // Update favicons asynchronously
     cellContent.each(function(d) {
         if (d.data?.url) {
-            updateCellFavicon(d3.select(this), d.data.url, iconSize);
+            updateCellFavicon(d3.select(this), d.data.url, d.iconSize);
         }
     });
 
@@ -318,24 +324,24 @@ export function drawTreemap(categorizedData) {
                     </svg>
                 `);
             } else {
-                return d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=${iconSize}`;
+                return d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=${d.iconSize}`;
             }
         })
-        .attr('width', iconSize)
-        .attr('height', iconSize)
-        .attr('x', -iconSize/2)
-        .attr('y', -iconSize/2)
+        .attr('width', d => d.iconSize)
+        .attr('height', d => d.iconSize)
+        .attr('x', d => -d.iconSize/2)
+        .attr('y', d => -d.iconSize/2)
         .on('error', function(event, d) {
             d3.select(this)
                 .attr('xlink:href', `${new URL(d.data.url).origin}/favicon.ico?size=16`)
-                .attr('width', iconSize)
-                .attr('height', iconSize);
+                .attr('width', d.iconSize)
+                .attr('height', d.iconSize);
         });
 
     // Centered text below favicon
     const textElement = cellContent.append('text')
         .attr('text-anchor', 'middle')
-        .attr('y', iconSize/2 + 20) // Position text below icon
+        .attr('y', d => d.iconSize/2 + 20) // Position text below icon
         .attr('fill', 'black') // Black font color
         .attr('opacity', 0.8) // 80% opacity
         .attr('pointer-events', 'none')
@@ -344,7 +350,7 @@ export function drawTreemap(categorizedData) {
     // Adjust font size to fit the available cell space
     nodes.each(function(d) {
         const text = d3.select(this).select('text');
-        fitTextToCell(text, d.x1 - d.x0 - 16, d.y1 - d.y0 - (iconSize + 44)); // Account for icon size
+        fitTextToCell(text, d.x1 - d.x0 - 16, d.y1 - d.y0 - (d.iconSize + 44)); // Account for icon size
     });
 
     console.log('Text adjusted to fit cell'); // Debug
@@ -641,4 +647,20 @@ function findClosestNodeInDirection(direction, currentIndex) {
     return validCandidates.reduce((prev, curr) => 
         curr.distance < prev.distance ? curr : prev
     ).index;
+}
+
+function calculateCellIconSize(cellWidth, cellHeight, maxIconSize = 128, minIconSize = 16) {
+    // Account for padding and text height
+    const padding = 10;
+    const textHeight = 40;
+    
+    // Calculate available space
+    const availableWidth = cellWidth - (padding * 2);
+    const availableHeight = cellHeight - (padding * 2) - textHeight;
+    
+    // Get the limiting dimension
+    const maxPossibleSize = Math.min(availableWidth, availableHeight);
+    
+    // Constrain to our min/max bounds
+    return Math.max(minIconSize, Math.min(maxPossibleSize, maxIconSize));
 }
