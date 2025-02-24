@@ -60,6 +60,41 @@ function calculateOptimalIconSize(root, width, height) {
     return iconSize;
 }
 
+function calculateOptimalLayout(totalTabs, width, viewportHeight) {
+    // Start with maximum icon size
+    let iconSize = 128;
+    const minIconSize = 16;
+    const padding = 10;
+    const textHeight = 40; // Approximate height for text
+    
+    // Calculate minimum cell size needed for each icon size
+    while (iconSize > minIconSize) {
+        const cellSize = iconSize + padding * 2 + textHeight;
+        const cellsPerRow = Math.floor(width / cellSize);
+        const rows = Math.ceil(totalTabs / cellsPerRow);
+        const totalHeight = rows * cellSize;
+        
+        // If it fits in viewport, use this size
+        if (totalHeight <= viewportHeight) {
+            return {
+                iconSize,
+                height: viewportHeight, // Use full viewport
+                enableScroll: false
+            };
+        }
+        
+        // Try next smaller icon size
+        iconSize -= 16;
+    }
+    
+    // If we get here, even smallest icons don't fit
+    return {
+        iconSize: minIconSize,
+        height: Math.max(viewportHeight, (Math.ceil(totalTabs / Math.floor(width / (minIconSize + padding * 2 + textHeight)))) * (minIconSize + padding * 2 + textHeight)),
+        enableScroll: true
+    };
+}
+
 export function drawTreemap(categorizedData) {
     // Validate input data
     if (!categorizedData?.activeWindows) {
@@ -70,22 +105,26 @@ export function drawTreemap(categorizedData) {
     categorizedDataCache = categorizedData;
     currentData = categorizedData;
 
-    // Get container and dimensions
+    // Update container and SVG setup
     const container = document.getElementById('treemap');
-    if (!container) {
-        console.error('Treemap container not found');
-        return;
-    }
-
+    const viewportHeight = window.innerHeight;
     const width = container.offsetWidth || 800;
-    const height = window.innerHeight;
+    const totalTabs = categorizedData.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
+    
+    // Calculate optimal layout
+    const layout = calculateOptimalLayout(totalTabs, width, viewportHeight);
+    
+    // Apply scroll only if necessary
+    container.style.height = `${viewportHeight}px`;
+    container.style.overflowY = layout.enableScroll ? 'auto' : 'hidden';
+    container.style.overflowX = 'hidden';
 
-    // Clear and create SVG
+    // Create SVG with calculated height
     d3.select('#treemap').selectAll('*').remove();
     const svg = d3.select('#treemap')
         .append('svg')
         .attr('width', width)
-        .attr('height', height);
+        .attr('height', layout.height);
 
     // Create color schemes
     const lightColors = [
@@ -118,7 +157,7 @@ export function drawTreemap(categorizedData) {
 
     // Create and configure treemap
     const treemap = d3.treemap()
-        .size([width, height])
+        .size([width, layout.height])
         .paddingInner(5)
         .paddingOuter(10);
 
@@ -240,8 +279,8 @@ export function drawTreemap(categorizedData) {
         .attr('opacity', d => d.parent.data.focused ? 1 : 0.7)
         .attr('stroke', 'none');
 
-    // Calculate optimal icon size
-    const iconSize = calculateOptimalIconSize(root, width, height);
+    // Use calculated icon size instead of recalculating
+    const iconSize = layout.iconSize;
 
     // Create centered container for content
     const cellContent = nodes.append('g')
