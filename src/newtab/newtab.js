@@ -22,6 +22,8 @@ const TAB_ACTIVITY = {
 let tabActivityLog = new Map(); // Track tab activity periods
 let navigationEvents = new Map();
 
+
+
 function categorizeData(history, windows) {
     console.log('Categorizing data...'); // Debug
 
@@ -464,13 +466,6 @@ async function fetchHistoryRange(type, value) {
   return chrome.history.search(query);
 }
 
-
-// Add to initialization section
-document.addEventListener('DOMContentLoaded', () => {
-  setupMenu();
-  // ...existing initialization code...
-});
-
 // Capture new tab creation and update edges
 chrome.tabs.onCreated.addListener((tab) => {
   if (tab.openerTabId) {
@@ -583,14 +578,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 
-
-  // Update last update time
-  lastUpdate = now;
-
-
-// Create a debounced version for rapid updates
-const debouncedTimelineUpdate = debounce(updateTimelineIfNeeded, 250);
-
 // Add this function with the other utility functions
 function shouldCreateNavigationEdge(current, previous) {
   console.log("--- Considering edge between:", previous, current);
@@ -624,6 +611,93 @@ function shouldCreateNavigationEdge(current, previous) {
     return false;
   }
 }
+
+// After initializing windowSwimlanes
+chrome.windows.getAll({ populate: true }, async (windows) => {
+    for (const window of windows) {
+        windowSwimlanes[window.id] = window.tabs;
+        
+        // Enrich each tab with history data
+        for (const tab of windowSwimlanes[window.id]) {
+            chrome.runtime.sendMessage({
+                type: 'getTabHistory',
+                tabId: tab.id
+            }, (response) => {
+                if (response?.history) {
+                    tab.history = response.history;
+                    tab.referringTabId = response.relationship?.referringTabId;
+                    console.log(`Updated tab ${tab.id} with history:`, tab);
+                }
+            });
+        }
+    }
+    console.log('Enriched windowSwimlanes with history:', windowSwimlanes);
+});
+
+// Also update when tabs change
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') {
+        chrome.runtime.sendMessage({
+            type: 'getTabHistory',
+            tabId: tabId
+        }, (response) => {
+            if (response?.history) {
+                const windowId = tab.windowId;
+                const tabIndex = windowSwimlanes[windowId]?.findIndex(t => t.id === tabId);
+                if (tabIndex !== -1) {
+                    windowSwimlanes[windowId][tabIndex].history = response.history;
+                    windowSwimlanes[windowId][tabIndex].referringTabId = response.relationship?.referringTabId;
+                    console.log(`Updated tab ${tabId} history in swimlane:`, windowSwimlanes[windowId][tabIndex]);
+                }
+            }
+        });
+    }
+});
+
+// Function to enrich tabs with history data
+function enrichTabsWithHistory() {
+    for (const windowId in currentData.windowSwimlanes) {
+        const tabs = currentData.windowSwimlanes[windowId];
+        tabs.forEach(tab => {
+            chrome.runtime.sendMessage({
+                type: 'getTabHistory',
+                tabId: tab.id
+            }, (response) => {
+                if (response?.history) {
+                    tab.history = response.history;
+                    tab.referringTabId = response.relationship?.referringTabId;
+                    console.log(`Updated tab ${tab.id} with history:`, tab);
+                }
+            });
+        });
+    }
+    console.log('Enriched currentData.windowSwimlanes with history:', currentData.windowSwimlanes);
+}
+
+// Update when tabs change
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') {
+        chrome.runtime.sendMessage({
+            type: 'getTabHistory',
+            tabId: tabId
+        }, (response) => {
+            if (response?.history) {
+                const windowId = tab.windowId;
+                const tabs = currentData.windowSwimlanes[windowId];
+                if (tabs) {
+                    const tabIndex = tabs.findIndex(t => t.id === tabId);
+                    if (tabIndex !== -1) {
+                        tabs[tabIndex].history = response.history;
+                        tabs[tabIndex].referringTabId = response.relationship?.referringTabId;
+                        console.log(`Updated tab ${tabId} history in swimlane:`, tabs[tabIndex]);
+                    }
+                }
+            }
+        });
+    }
+});
+
+// Call enrichTabsWithHistory after currentData.windowSwimlanes is initialized
 
 document.addEventListener('DOMContentLoaded', function () {
     const width = 800;//document.getElementById('visualization-container').offsetWidth;

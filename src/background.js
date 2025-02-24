@@ -13,6 +13,8 @@ let lastClickedLink = null;
 let tabActivityLog = new Map();
 let navigationEvents = new Map();
 let tabEdges = new Map(); // Initialize tabEdges as a Map
+const tabRelationships = new Map();
+const tabHistory = new Map();  // Add this to track URLs per tab
 
 // Add tracking constants
 const TAB_ACTIVITY = {
@@ -231,6 +233,9 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   tabActivityLog.delete(tabId);
   // Cleanup any navigation events
   navigationEvents.delete(tabId);
+  tabRelationships.delete(tabId);
+  tabHistory.delete(tabId);
+  console.log(`Cleaned up history for tab ${tabId}`);
   chrome.runtime.sendMessage({
     action: 'tabRemoved',
     tabId: tabId,
@@ -303,25 +308,32 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     }
 });
 
-// Track link clicks and form submissions
-document.addEventListener('click', (event) => {
-  let target = event.target;
-  while (target && target !== document.body) {
-    if (target.tagName === 'A') {
-      const linkInfo = {
-        type: 'navigation',
-        sourceUrl: window.location.href,
-        targetUrl: target.href,
-        text: target.innerText.trim() || target.title || target.href,
-        timestamp: Date.now()
-      };
-      chrome.runtime.sendMessage({
-        type: 'navigation_event',
-        data: linkInfo
-      });
-      break;
+// Track tab URL changes
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url) {
+    if (!tabHistory.has(tabId)) {
+      tabHistory.set(tabId, []);
     }
-    target = target.parentElement;
+    const history = tabHistory.get(tabId);
+    history.push({
+      url: changeInfo.url,
+      timestamp: Date.now(),
+      referringTabId: tabRelationships.get(tabId)?.referringTabId
+    });
+    console.log(`Added URL to tab ${tabId} history:`, history);
+  }
+});
+
+// Add message handler to get history for a tab
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'getTabHistory') {
+    const history = tabHistory.get(message.tabId) || [];
+    const relationship = tabRelationships.get(message.tabId);
+    sendResponse({
+      history,
+      relationship
+    });
+    return true;
   }
 });
 
