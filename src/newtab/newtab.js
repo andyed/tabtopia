@@ -464,17 +464,6 @@ async function fetchHistoryRange(type, value) {
   return chrome.history.search(query);
 }
 
-async function updateHistoryTimeRange(startTime) {
-  const historyData = await fetchHistoryData(null, startTime);
-  const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
-  updateVisualization({ history: historyData, activeWindowsAndTabs });
-}
-
-async function updateHistoryCount(count) {
-  const historyData = await fetchHistoryData(count);
-  const activeWindowsAndTabs = await fetchActiveWindowsAndTabs();
-  updateVisualization({ history: historyData, activeWindowsAndTabs });
-}
 
 // Add to initialization section
 document.addEventListener('DOMContentLoaded', () => {
@@ -604,6 +593,7 @@ const debouncedTimelineUpdate = debounce(updateTimelineIfNeeded, 250);
 
 // Add this function with the other utility functions
 function shouldCreateNavigationEdge(current, previous) {
+  console.log("--- Considering edge between:", previous, current);
   try {
     // Skip chrome:// and extension URLs
     if (current.url.startsWith('chrome://') || 

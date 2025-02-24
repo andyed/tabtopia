@@ -74,7 +74,7 @@ export function drawTreemap(categorizedData) {
         }))
     };
 
-    console.log('Hierarchy data:', hierarchyData); // Debug
+    console.log('--- Hierarchy data:', hierarchyData); // Debug
 
     const treemap = d3.treemap()
         .size([width, height])
@@ -136,7 +136,7 @@ export function drawTreemap(categorizedData) {
         .attr('transform', d => `translate(${d.x0},${d.y0})`)
         .style('cursor', 'pointer')
         .on('mouseover', function(event, d) {
-            console.log('Node info:', d.data);
+            //console.log('Node info:', d.data);
             displayReadout(d.data, false);
             d3.select(this).select('rect')
                 .attr('fill', '#ffff99') // Light yellow color on hover
