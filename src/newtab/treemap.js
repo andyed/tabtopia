@@ -2,9 +2,47 @@ import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './uti
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
+let currentData = null;  // Add this line
+
+// Update favicon loading function
+async function updateCellFavicon(cell, url) {
+    try {
+        // Request favicon through background script
+        chrome.runtime.sendMessage({
+            type: 'getFavicon',
+            url: url,
+            size: 128
+        }, response => {
+            if (response?.faviconUrl) {
+                cell.select('image')
+                    .attr('xlink:href', response.faviconUrl)
+                    .attr('width', 16)
+                    .attr('height', 16)
+                    .attr('x', -8)
+                    .attr('y', -8)
+                    .on('error', function() {
+                        // If high-res fails, try smaller size
+                        chrome.runtime.sendMessage({
+                            type: 'getFavicon',
+                            url: url,
+                            size: 16
+                        }, fallbackResponse => {
+                            if (fallbackResponse?.faviconUrl) {
+                                d3.select(this)
+                                    .attr('xlink:href', fallbackResponse.faviconUrl);
+                            }
+                        });
+                    });
+            }
+        });
+    } catch (error) {
+        console.warn('Error loading favicon for:', url, error);
+    }
+}
 
 export function drawTreemap(categorizedData) {
     categorizedDataCache = categorizedData; // Cache the data for redraw
+    currentData = categorizedData;  // Add this line
     console.log('Drawing treemap with data:', categorizedData); // Debug
 
     const container = document.getElementById('treemap-container');
@@ -181,6 +219,20 @@ export function drawTreemap(categorizedData) {
             return `translate(${cellWidth / 2},${cellHeight / 2})`;
         });
 
+    // Add placeholder images first
+    cellContent.append('image')
+        .attr('xlink:href', '')
+        .attr('width', 16)
+        .attr('height', 16)
+        .attr('x', -8)
+        .attr('y', -8);
+
+    // Update favicons asynchronously
+    cellContent.each(function(d) {
+        if (d.data?.url) {
+            updateCellFavicon(d3.select(this), d.data.url);
+        }
+    });
 
     // Favicon or SVG icon for Chrome URLs
     cellContent.append('image')
@@ -339,9 +391,9 @@ window.onresize = () => {
 };
 
 // Listen for messages from background.js
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message) => {
     if (message.action === 'tabUpdated') {
-        handleTabUpdated(message.tabId, message.changeInfo, message.tab);
+        handleTabUpdated(message);
     } else if (message.action === 'tabRemoved') {
         handleTabRemoved(message.tabId, message.removeInfo);
     } else if (message.action === 'tabCreated') {
@@ -349,20 +401,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-function handleTabUpdated(tabId, changeInfo, tab) {
-    // Update the tab data in categorizedDataCache
-    categorizedDataCache.activeWindows.forEach(window => {
-        window.tabs.forEach(t => {
-            if (t.id === tabId) {
-                if (changeInfo.url) t.url = changeInfo.url;
-                if (changeInfo.title) t.title = changeInfo.title;
-                t.lastAccessed = Date.now();
-            }
-        });
-    });
+// Update the handleTabUpdated function with better error handling
+function handleTabUpdated(message) {
+    const { tabId, changeInfo, tab } = message;
+    
+    if (!currentData?.activeWindows) {
+        console.warn('No active windows data available:', currentData);
+        return;
+    }
 
-    // Redraw the treemap
-    drawTreemap(categorizedDataCache);
+    const window = currentData.activeWindows.find(w => w.id === tab.windowId);
+    if (!window) {
+        console.warn(`Window ${tab.windowId} not found in active windows:`, currentData.activeWindows);
+        return;
+    }
+
+    const tabIndex = window.tabs.findIndex(t => t.id === tabId);
+    if (tabIndex !== -1) {
+        window.tabs[tabIndex] = {
+            ...window.tabs[tabIndex],
+            ...tab,
+            lastUpdated: Date.now()
+        };
+        console.log(`Updated tab ${tabId} in window ${tab.windowId}:`, window.tabs[tabIndex]);
+        
+        // Redraw treemap with updated data
+        drawTreemap(currentData);
+    }
 }
 
 function handleTabRemoved(tabId, removeInfo) {

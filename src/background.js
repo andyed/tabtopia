@@ -23,6 +23,42 @@ const TAB_ACTIVITY = {
   UPDATE_INTERVAL: 5000      // Update active tab time every 5 seconds
 };
 
+// Add after the TAB_ACTIVITY constant definition
+function findTabById(tabId) {
+  return new Promise((resolve) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        console.log(`Tab ${tabId} not found:`, chrome.runtime.lastError);
+        resolve(null);
+      } else {
+        console.log(`Found tab:`, tab);
+        resolve(tab);
+      }
+    });
+  });
+}
+
+// Update the existing edge creation code to use the Promise-based findTabById
+async function updateGraphWithNewEdge(edge) {
+  console.log('Creating new edge:', edge);
+  
+  try {
+    const sourceTab = await findTabById(edge.source);
+    const targetTab = await findTabById(edge.target);
+    
+    if (sourceTab && targetTab) {
+      tabRelationships.set(targetTab.id, {
+        referringTabId: sourceTab.id,
+        referringURL: sourceTab.url,
+        timestamp: Date.now()
+      });
+      console.log('Added tab relationship:', tabRelationships.get(targetTab.id));
+    }
+  } catch (error) {
+    console.error('Error creating edge:', error);
+  }
+}
+
 // Add time tracking function
 function updateTabActivity(tabId, isActive) {
   const now = Date.now();
@@ -289,22 +325,30 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 // Example usage in a tab update handler
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete') {
-        const tabData = findTabById(windowSwimlanes, tabId);
-        if (tabData) {
-            console.log(`Tab data for updated tab: ${JSON.stringify(tabData)}`);
-            // Handle the tab update with the found tab data
+        try {
+            const tabData = await findTabById(tabId);
+            if (tabData) {
+                console.log(`Tab data for updated tab:`, tabData);
+                // Handle the tab update with the found tab data
+            }
+        } catch (error) {
+            console.error('Error finding tab:', error);
         }
     }
 });
 
 // Example usage in a tab removal handler
-chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-    const tabData = findTabById(windowSwimlanes, tabId);
-    if (tabData) {
-        console.log(`Tab data for removed tab: ${JSON.stringify(tabData)}`);
-        // Handle the tab removal with the found tab data
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+    try {
+        const tabData = await findTabById(tabId);
+        if (tabData) {
+            console.log(`Tab data for removed tab:`, tabData);
+            // Handle the tab removal with the found tab data
+        }
+    } catch (error) {
+        console.error('Error finding tab:', error);
     }
 });
 
@@ -337,6 +381,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+
+
 // Initial population of history and active tabs
 updateHistory();
 updateActiveTabs();
+
+// Listen for tab creation
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.openerTabId) {
+    const edge = {
+      source: tab.openerTabId,
+      target: tab.id,
+      type: 'new-tab'
+    };
+    updateGraphWithNewEdge(edge);
+  }
+});

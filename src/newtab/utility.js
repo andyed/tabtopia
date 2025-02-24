@@ -39,7 +39,7 @@ export function debounce(func, wait) {
 }
 
 // Update favicon handling function
-export async function getFaviconUrl(url) {
+export async function getFaviconUrl(url, preferredSize = 128) {
   // Try to get favicon using chrome.tabs.favIconUrl for active tabs
   try {
     const tab = await new Promise(resolve => {
@@ -47,7 +47,17 @@ export async function getFaviconUrl(url) {
     });
     
     if (tab?.favIconUrl) {
-      return tab.favIconUrl;
+      // Check if we have a high-res favicon
+      if (tab.favIconUrl.includes('chrome://favicon/size/128')) {
+        return tab.favIconUrl;
+      }
+      // Try to request high-res version
+      try {
+        const highResFavicon = `chrome://favicon/size/${preferredSize}/${url}`;
+        return highResFavicon;
+      } catch (error) {
+        return tab.favIconUrl; // Fallback to original favicon
+      }
     }
   } catch (error) {
     console.warn('Error fetching tab favicon:', error);
@@ -57,11 +67,22 @@ export async function getFaviconUrl(url) {
   if (chrome.favicon) {
     try {
       return new Promise(resolve => {
+        // Try large favicon first
         chrome.favicon.getFavicon({
           url: url,
-          size: 16
+          size: preferredSize
         }, favicon => {
-          resolve(favicon || '/images/default-favicon.png');
+          if (favicon) {
+            resolve(favicon);
+          } else {
+            // Fallback to smaller size if large one isn't available
+            chrome.favicon.getFavicon({
+              url: url,
+              size: 16
+            }, smallFavicon => {
+              resolve(smallFavicon || '/images/default-favicon.png');
+            });
+          }
         });
       });
     } catch (error) {
@@ -69,8 +90,9 @@ export async function getFaviconUrl(url) {
     }
   }
 
-  // Fallback 2: Construct URL for Google's favicon service
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(new URL(url).hostname)}`;
+  // Fallback 2: Try Google's favicon service with size parameter
+  const hostname = encodeURIComponent(new URL(url).hostname);
+  return `https://www.google.com/s2/favicons?sz=${preferredSize}&domain=${hostname}`;
 }
 
 function exportSession() {
