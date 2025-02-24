@@ -256,12 +256,22 @@ export function drawTreemap(categorizedData) {
             d3.select(this).select('rect')
                 .attr('fill', '#ffff99')
                 .attr('stroke', '#ffff99');
+            // Show close button
+            d3.select(this).select('.close-button')
+                .transition()
+                .duration(200)
+                .style('opacity', 1);
         })
         .on('blur', function(event, d) {
             d3.select(this).select('rect')
                 .attr('fill', d.data.color)
                 .attr('stroke', 'none');
             hideReadout();
+            // Hide close button
+            d3.select(this).select('.close-button')
+                .transition()
+                .duration(200)
+                .style('opacity', 0);
         })
         .on('keydown', function(event, d) {
             handleKeyNavigation(event, this, d);
@@ -345,7 +355,7 @@ export function drawTreemap(categorizedData) {
         .attr('fill', 'black') // Black font color
         .attr('opacity', 0.8) // 80% opacity
         .attr('pointer-events', 'none')
-        .text(d => d.data.title);
+        .text(d => formatTitle(d.data.title));
 
     // Adjust font size to fit the available cell space
     nodes.each(function(d) {
@@ -355,7 +365,36 @@ export function drawTreemap(categorizedData) {
 
     console.log('Text adjusted to fit cell'); // Debug
 
+    // Add after cell content creation
+    nodes.append('g')  // Append to nodes instead of cellContent
+        .attr('class', 'close-button')
+        .style('cursor', 'pointer')
+        .attr('transform', d => {
+            const cellWidth = d.x1 - d.x0;
+            return `translate(${cellWidth - 32}, 8)`;  // Position in top right
+        })
+        .html(() => `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#cc0000" class="icon icon-tabler icons-tabler-filled icon-tabler-xbox-x">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M12 2c5.523 0 10 4.477 10 10s-4.477 10 -10 10s-10 -4.477 -10 -10s4.477 -10 10 -10m3.6 5.2a1 1 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
+            </svg>
+        `)
+        .on('click', function(event, d) {
+            event.stopPropagation();
+            const tabId = parseInt(d.data.id.replace('tab', ''), 10);
+            chrome.tabs.remove(tabId);
+        });
+
     console.log('Treemap drawn'); // Debug
+}
+
+// Helper function to format title
+function formatTitle(title) {
+    // If title has more than one underscore, split and join with spaces
+    if ((title.match(/_/g) || []).length > 1) {
+        return title.split('_').join(' ');
+    }
+    return title;
 }
 
 function fitTextToCell(textElement, cellWidth, cellHeight) {
