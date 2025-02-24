@@ -7,21 +7,21 @@ let currentFocusIndex = -1;
 let focusableNodes = [];
 
 // Update favicon loading function
-async function updateCellFavicon(cell, url) {
+async function updateCellFavicon(cell, url, size) {
     try {
         // Request favicon through background script
         chrome.runtime.sendMessage({
             type: 'getFavicon',
             url: url,
-            size: 128
+            size: size
         }, response => {
             if (response?.faviconUrl) {
                 cell.select('image')
                     .attr('xlink:href', response.faviconUrl)
-                    .attr('width', 16)
-                    .attr('height', 16)
-                    .attr('x', -8)
-                    .attr('y', -8)
+                    .attr('width', size)
+                    .attr('height', size)
+                    .attr('x', -size/2)
+                    .attr('y', -size/2)
                     .on('error', function() {
                         // If high-res fails, try smaller size
                         chrome.runtime.sendMessage({
@@ -42,6 +42,23 @@ async function updateCellFavicon(cell, url) {
     }
 }
 
+function calculateOptimalIconSize(root, width, height) {
+    // Get total area and count of leaf nodes
+    const totalArea = width * height;
+    const leafCount = root.leaves().length;
+    
+    // Calculate average cell area
+    const avgCellArea = totalArea / leafCount;
+    
+    // Calculate shortest side of average cell (assuming square)
+    const avgCellSide = Math.sqrt(avgCellArea);
+    
+    // Calculate icon size (max 128, min 16)
+    const iconSize = Math.max(16, Math.min(128, Math.floor(avgCellSide / 2)));
+    
+    console.log(`Calculated icon size: ${iconSize}px for ${leafCount} nodes`);
+    return iconSize;
+}
 
 export function drawTreemap(categorizedData) {
     // Validate input data
@@ -223,6 +240,8 @@ export function drawTreemap(categorizedData) {
         .attr('opacity', d => d.parent.data.focused ? 1 : 0.7)
         .attr('stroke', 'none');
 
+    // Calculate optimal icon size
+    const iconSize = calculateOptimalIconSize(root, width, height);
 
     // Create centered container for content
     const cellContent = nodes.append('g')
@@ -236,15 +255,15 @@ export function drawTreemap(categorizedData) {
     // Add placeholder images first
     cellContent.append('image')
         .attr('xlink:href', '')
-        .attr('width', 16)
-        .attr('height', 16)
-        .attr('x', -8)
-        .attr('y', -8);
+        .attr('width', iconSize)
+        .attr('height', iconSize)
+        .attr('x', -iconSize/2)
+        .attr('y', -iconSize/2);
 
     // Update favicons asynchronously
     cellContent.each(function(d) {
         if (d.data?.url) {
-            updateCellFavicon(d3.select(this), d.data.url);
+            updateCellFavicon(d3.select(this), d.data.url, iconSize);
         }
     });
 
@@ -260,35 +279,33 @@ export function drawTreemap(categorizedData) {
                     </svg>
                 `);
             } else {
-                return d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=128`;
+                return d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=${iconSize}`;
             }
         })
-        .attr('width', 128)
-        .attr('height', 128)
-        .attr('x', -64) // Center horizontally
-        .attr('y', -64) // Center vertically)
+        .attr('width', iconSize)
+        .attr('height', iconSize)
+        .attr('x', -iconSize/2)
+        .attr('y', -iconSize/2)
         .on('error', function(event, d) {
             d3.select(this)
                 .attr('xlink:href', `${new URL(d.data.url).origin}/favicon.ico?size=16`)
-                .attr('width', 128)
-                .attr('height', 128);
+                .attr('width', iconSize)
+                .attr('height', iconSize);
         });
-
 
     // Centered text below favicon
     const textElement = cellContent.append('text')
         .attr('text-anchor', 'middle')
-        .attr('y', 80) // Adjusted for favicon height and padding
+        .attr('y', iconSize/2 + 20) // Position text below icon
         .attr('fill', 'black') // Black font color
         .attr('opacity', 0.8) // 80% opacity
         .attr('pointer-events', 'none')
         .text(d => d.data.title);
 
-
     // Adjust font size to fit the available cell space
     nodes.each(function(d) {
         const text = d3.select(this).select('text');
-        fitTextToCell(text, d.x1 - d.x0 - 16, d.y1 - d.y0 - 144); // Adjusted for padding and favicon height
+        fitTextToCell(text, d.x1 - d.x0 - 16, d.y1 - d.y0 - (iconSize + 44)); // Account for icon size
     });
 
     console.log('Text adjusted to fit cell'); // Debug
