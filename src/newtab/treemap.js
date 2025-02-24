@@ -1,6 +1,10 @@
 import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './utility.js';
 
+let categorizedDataCache = null;
+let readoutTimeout = null;
+
 export function drawTreemap(categorizedData) {
+    categorizedDataCache = categorizedData; // Cache the data for redraw
     console.log('Drawing treemap with data:', categorizedData); // Debug
 
     const container = document.getElementById('treemap-container');
@@ -108,10 +112,10 @@ export function drawTreemap(categorizedData) {
         // Sort tabs by lastAccessed to determine the most recent ones
         tabs.sort((a, b) => b.data.lastAccessed - a.data.lastAccessed);
 
-        // Assign border styles to the most recent tabs
-        if (tabs.length > 0) tabs[0].data.borderWidth = 8; // Wide border
-        if (tabs.length > 1) tabs[1].data.borderWidth = 4; // Medium border
-        if (tabs.length > 2) tabs[2].data.borderWidth = 2; // Narrow border
+        // Ensure the colors for the three most recent items are different
+        if (tabs.length > 0) tabs[0].data.color = baseColor.brighter(0.2);
+        if (tabs.length > 1) tabs[1].data.color = baseColor;
+        if (tabs.length > 2) tabs[2].data.color = baseColor.darker(0.5);
     });
 
     // Add background rectangles for each window
@@ -141,7 +145,8 @@ export function drawTreemap(categorizedData) {
         .on('mouseout', function(event, d) {
             d3.select(this).select('rect')
                 .attr('fill', d.data.color) // Revert to original color
-                .attr('stroke', d.data.borderWidth ? d3.color(d.data.color).darker(2) : 'none'); // Revert to original stroke
+                .attr('stroke', 'none'); // Remove stroke
+            hideReadout();
         })
         .on('click', (event, d) => {
             displayReadout(d.data, true);
@@ -164,8 +169,7 @@ export function drawTreemap(categorizedData) {
         .attr('height', d => d.y1 - d.y0)
         .attr('fill', d => d.data.color)
         .attr('opacity', d => d.parent.data.focused ? 1 : 0.7)
-        .attr('stroke', d => d.data.borderWidth ? d3.color(d.data.color).darker(2) : 'none')
-        .attr('stroke-width', d => d.data.borderWidth || 0); // Use borderWidth for recent tabs
+        .attr('stroke', 'none');
 
     console.log('Rectangles added to nodes'); // Debug
 
@@ -182,40 +186,78 @@ export function drawTreemap(categorizedData) {
 
     // Favicon
     cellContent.append('image')
-        .attr('xlink:href', d => {
-            try {
-                const url = new URL(d.data.url);
-                return `${url.origin}/favicon.ico?size=128`;
-            } catch (e) {
-                console.error('Invalid URL:', d.data.url);
-                return '';
-            }
-        })
-        .attr('width', 32)
-        .attr('height', 32)
-        .attr('x', -16)
-        .attr('y', -16)
-        .attr('preserveAspectRatio', 'xMidYMid meet');
+        .attr('xlink:href', d => d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=128`)
+        .attr('width', 128)
+        .attr('height', 128)
+        .attr('x', -64) // Center horizontally
+        .attr('y', -64) // Center vertically
+        .attr('onerror', function() {
+            d3.select(this)
+                .attr('xlink:href', d => d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=16`)
+                .attr('width', 128)
+                .attr('height', 128);
+        });
 
     console.log('Favicons added to cell content'); // Debug
 
     // Centered text below favicon
-    cellContent.append('text')
+    const textElement = cellContent.append('text')
         .attr('text-anchor', 'middle')
-        .attr('y', 48) // Adjusted for larger font size
-        .attr('font-size', '20px') // 2x the original size
+        .attr('y', 80) // Adjusted for favicon height and padding
         .attr('fill', 'black') // Black font color
+        .attr('opacity', 0.8) // 80% opacity
         .attr('pointer-events', 'none')
-        .text(d => {
-            const maxLength = Math.floor((d.x1 - d.x0) / 10); // Adjusted for larger font size
-            return d.data.title.length > maxLength 
-                ? d.data.title.substring(0, maxLength - 3) + '...'
-                : d.data.title;
-        });
+        .text(d => d.data.title);
+
+    // Adjust font size to fit the available cell space
+    nodes.each(function(d) {
+        const text = d3.select(this).select('text');
+        fitTextToCell(text, d.x1 - d.x0 - 16, d.y1 - d.y0 - 144); // Adjusted for padding and favicon height
+    });
 
     console.log('Text added to cell content'); // Debug
 
     console.log('Treemap drawn'); // Debug
+}
+
+function fitTextToCell(textElement, cellWidth, cellHeight) {
+    const words = textElement.text().split(' ');
+    let lines = [];
+    let line = [];
+    let lineNumber = 0;
+    const lineHeight = 1.1; // ems
+    const y = textElement.attr('y');
+    const dy = 0;
+
+    // Determine the number of lines based on the number of words
+    if (words.length <= 2) {
+        lines = [words.join(' ')];
+    } else if (words.length === 3) {
+        lines = words;
+    } else {
+        const mid = Math.ceil(words.length / 2);
+        lines = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
+    }
+
+    textElement.text(null);
+    lines.forEach((line, index) => {
+        textElement.append('tspan')
+            .attr('x', 0)
+            .attr('dy', index * lineHeight + dy + 'em')
+            .text(line);
+    });
+
+    // Adjust font size to fit the available cell space
+    let fontSize = 12; // Start with a base font size
+    textElement.attr('font-size', fontSize + 'px');
+
+    while (textElement.node().getBBox().width < cellWidth && textElement.node().getBBox().height < cellHeight) {
+        fontSize += 1;
+        textElement.attr('font-size', fontSize + 'px');
+    }
+
+    // Reduce font size by 1 to fit within the cell
+    textElement.attr('font-size', (fontSize - 1) + 'px');
 }
 
 function displayReadout(tabData, sticky) {
@@ -232,17 +274,17 @@ function displayReadout(tabData, sticky) {
         <p>Time spent: ${tabData.timeSpent ? `${tabData.timeSpent} seconds` : 'N/A'}</p>
         <h3>History</h3>
         <ul>
-            ${tabData.history.sort((a, b) => b.timestamp - a.timestamp).map(entry => `
+            ${tabData.history ? tabData.history.sort((a, b) => b.timestamp - a.timestamp).map(entry => `
                 <li>${new Date(entry.timestamp).toLocaleString()}: <a href="${entry.url}" target="_blank">${entry.title || entry.url}</a></li>
-            `).join('')}
+            `).join('') : ''}
         </ul>
     `;
 
-    if (sticky) {
-        readoutContainer.innerHTML = readoutHtml;
-    } else {
-        readoutContainer.innerHTML = readoutHtml;
-        setTimeout(() => {
+    readoutContainer.innerHTML = readoutHtml;
+
+    if (!sticky) {
+        clearTimeout(readoutTimeout);
+        readoutTimeout = setTimeout(() => {
             if (!readoutContainer.classList.contains('sticky')) {
                 readoutContainer.innerHTML = '';
             }
@@ -255,3 +297,17 @@ function displayReadout(tabData, sticky) {
         readoutContainer.classList.remove('sticky');
     }
 }
+
+function hideReadout() {
+    const readoutContainer = document.getElementById('readout');
+    if (!readoutContainer.classList.contains('sticky')) {
+        readoutContainer.innerHTML = '';
+    }
+}
+
+// Add resize handler
+window.onresize = () => {
+    if (categorizedDataCache) {
+        drawTreemap(categorizedDataCache);
+    }
+};

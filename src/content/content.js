@@ -66,3 +66,15 @@ document.addEventListener('contextmenu', (event) => {
     target = target.parentElement;
   }
 }, true);
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'getTabData') {
+        const tabData = {
+            title: document.title,
+            url: window.location.href,
+            favIconUrl: document.querySelector('link[rel~="icon"]') ? document.querySelector('link[rel~="icon"]').href : '',
+            lastAccessed: Date.now()
+        };
+        sendResponse(tabData);
+    }
+});
