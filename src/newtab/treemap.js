@@ -184,16 +184,28 @@ export function drawTreemap(categorizedData) {
 
     console.log('Cell content containers created'); // Debug
 
-    // Favicon
+    // Favicon or SVG icon for Chrome URLs
     cellContent.append('image')
-        .attr('xlink:href', d => d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=128`)
+        .attr('xlink:href', d => {
+            if (d.data.url.startsWith('chrome://')) {
+                return 'data:image/svg+xml;base64,' + btoa(`
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${windowColors.get(d.data.windowId)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-settings">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+                        <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+                    </svg>
+                `);
+            } else {
+                return d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=128`;
+            }
+        })
         .attr('width', 128)
         .attr('height', 128)
         .attr('x', -64) // Center horizontally
-        .attr('y', -64) // Center vertically
-        .attr('onerror', function() {
+        .attr('y', -64) // Center vertically)
+        .on('error', function(event, d) {
             d3.select(this)
-                .attr('xlink:href', d => d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=16`)
+                .attr('xlink:href', `${new URL(d.data.url).origin}/favicon.ico?size=16`)
                 .attr('width', 128)
                 .attr('height', 128);
         });
@@ -209,13 +221,15 @@ export function drawTreemap(categorizedData) {
         .attr('pointer-events', 'none')
         .text(d => d.data.title);
 
+    console.log('Text elements added:', textElement); // Debug
+
     // Adjust font size to fit the available cell space
     nodes.each(function(d) {
         const text = d3.select(this).select('text');
         fitTextToCell(text, d.x1 - d.x0 - 16, d.y1 - d.y0 - 144); // Adjusted for padding and favicon height
     });
 
-    console.log('Text added to cell content'); // Debug
+    console.log('Text adjusted to fit cell'); // Debug
 
     console.log('Treemap drawn'); // Debug
 }
@@ -224,19 +238,21 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
     const words = textElement.text().split(' ');
     let lines = [];
     let line = [];
-    let lineNumber = 0;
+    const maxWordsPerLine = 4;
+    const maxLines = 3;
     const lineHeight = 1.1; // ems
     const y = textElement.attr('y');
     const dy = 0;
 
     // Determine the number of lines based on the number of words
-    if (words.length <= 2) {
-        lines = [words.join(' ')];
-    } else if (words.length === 3) {
-        lines = words;
-    } else {
-        const mid = Math.ceil(words.length / 2);
-        lines = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
+    for (let i = 0; i < words.length; i += maxWordsPerLine) {
+        lines.push(words.slice(i, i + maxWordsPerLine).join(' '));
+        if (lines.length === maxLines) {
+            if (i + maxWordsPerLine < words.length) {
+                lines[lines.length - 1] += '...';
+            }
+            break;
+        }
     }
 
     textElement.text(null);
@@ -267,6 +283,20 @@ function displayReadout(tabData, sticky) {
         return;
     }
 
+    // Collect history of URLs with the same tabId
+    const history = [];
+    categorizedDataCache.activeWindows.forEach(window => {
+        window.tabs.forEach(tab => {
+            if (tab.id === tabData.id) {
+                history.push({
+                    timestamp: tab.lastAccessed,
+                    url: tab.url,
+                    title: tab.title
+                });
+            }
+        });
+    });
+
     const readoutHtml = `
         <h2>${tabData.title}</h2>
         <p><a href="${tabData.url}" target="_blank">${tabData.url}</a></p>
@@ -274,9 +304,9 @@ function displayReadout(tabData, sticky) {
         <p>Time spent: ${tabData.timeSpent ? `${tabData.timeSpent} seconds` : 'N/A'}</p>
         <h3>History</h3>
         <ul>
-            ${tabData.history ? tabData.history.sort((a, b) => b.timestamp - a.timestamp).map(entry => `
+            ${history.sort((a, b) => b.timestamp - a.timestamp).map(entry => `
                 <li>${new Date(entry.timestamp).toLocaleString()}: <a href="${entry.url}" target="_blank">${entry.title || entry.url}</a></li>
-            `).join('') : ''}
+            `).join('')}
         </ul>
     `;
 
@@ -311,3 +341,61 @@ window.onresize = () => {
         drawTreemap(categorizedDataCache);
     }
 };
+
+// Listen for messages from background.js
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'tabUpdated') {
+        handleTabUpdated(message.tabId, message.changeInfo, message.tab);
+    } else if (message.action === 'tabRemoved') {
+        handleTabRemoved(message.tabId, message.removeInfo);
+    } else if (message.action === 'tabCreated') {
+        handleTabCreated(message.tab);
+    }
+});
+
+function handleTabUpdated(tabId, changeInfo, tab) {
+    // Update the tab data in categorizedDataCache
+    categorizedDataCache.activeWindows.forEach(window => {
+        window.tabs.forEach(t => {
+            if (t.id === tabId) {
+                if (changeInfo.url) t.url = changeInfo.url;
+                if (changeInfo.title) t.title = changeInfo.title;
+                t.lastAccessed = Date.now();
+            }
+        });
+    });
+
+    // Redraw the treemap
+    drawTreemap(categorizedDataCache);
+}
+
+function handleTabRemoved(tabId, removeInfo) {
+    // Remove the tab from categorizedDataCache
+    categorizedDataCache.activeWindows.forEach(window => {
+        window.tabs = window.tabs.filter(t => t.id !== tabId);
+    });
+
+    // Redraw the treemap
+    drawTreemap(categorizedDataCache);
+}
+
+function handleTabCreated(tab) {
+    // Add the new tab to categorizedDataCache
+    categorizedDataCache.activeWindows.forEach(window => {
+        if (window.id === tab.windowId) {
+            window.tabs.push({
+                id: tab.id,
+                windowId: tab.windowId,
+                title: tab.title || 'Untitled',
+                url: tab.url || '',
+                favIconUrl: tab.favIconUrl,
+                lastAccessed: Date.now(),
+                timeSpent: 100,
+                children: []
+            });
+        }
+    });
+
+    // Redraw the treemap
+    drawTreemap(categorizedDataCache);
+}

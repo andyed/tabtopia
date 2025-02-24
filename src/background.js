@@ -181,6 +181,10 @@ chrome.tabs.onCreated.addListener((tab) => {
     tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
     lastClickedLink = null; // Clear after use
   }
+  chrome.runtime.sendMessage({
+    action: 'tabCreated',
+    tab: tab
+  });
 });
 
 // Track new windows from context menu
@@ -223,10 +227,15 @@ chrome.windows.onCreated.addListener(async (window) => {
 });
 
 // Add cleanup for closed tabs
-chrome.tabs.onRemoved.addListener((tabId) => {
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   tabActivityLog.delete(tabId);
   // Cleanup any navigation events
   navigationEvents.delete(tabId);
+  chrome.runtime.sendMessage({
+    action: 'tabRemoved',
+    tabId: tabId,
+    removeInfo: removeInfo
+  });
 });
 
 // Add tab update listener
@@ -243,6 +252,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // Rest of your handler code...
   } catch (error) {
     console.error('Error in tab update handler:', error);
+  }
+  if (changeInfo.url || changeInfo.title) {
+    chrome.runtime.sendMessage({
+      action: 'tabUpdated',
+      tabId: tabId,
+      changeInfo: changeInfo,
+      tab: tab
+    });
   }
 });
 
