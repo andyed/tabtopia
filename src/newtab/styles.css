@@ -75,3 +75,17 @@ body {
 #readout.sticky {
     background-color: #e0e0e0;
 }
+
+.cell-content:focus {
+    outline: 2px solid #4a90e2;
+    outline-offset: 2px;
+}
+
+[tabindex]:focus {
+    outline: none; /* Remove default outline */
+}
+
+[tabindex]:focus rect {
+    stroke: #4a90e2;
+    stroke-width: 2px;
+}

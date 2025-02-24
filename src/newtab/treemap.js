@@ -3,6 +3,8 @@ import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './uti
 let categorizedDataCache = null;
 let readoutTimeout = null;
 let currentData = null;  // Add this line
+let currentFocusIndex = -1;
+let focusableNodes = [];
 
 // Update favicon loading function
 async function updateCellFavicon(cell, url) {
@@ -40,53 +42,46 @@ async function updateCellFavicon(cell, url) {
     }
 }
 
-export function drawTreemap(categorizedData) {
-    categorizedDataCache = categorizedData; // Cache the data for redraw
-    currentData = categorizedData;  // Add this line
-    console.log('Drawing treemap with data:', categorizedData); // Debug
 
-    const container = document.getElementById('treemap-container');
+export function drawTreemap(categorizedData) {
+    // Validate input data
+    if (!categorizedData?.activeWindows) {
+        console.warn('Invalid treemap data:', categorizedData);
+        return;
+    }
+
+    categorizedDataCache = categorizedData;
+    currentData = categorizedData;
+
+    // Get container and dimensions
+    const container = document.getElementById('treemap');
     if (!container) {
         console.error('Treemap container not found');
         return;
     }
 
-    const width = container.offsetWidth;
+    const width = container.offsetWidth || 800;
     const height = window.innerHeight;
 
-    console.log('Treemap dimensions:', { width, height }); // Debug
-
-    // Clear existing content
+    // Clear and create SVG
     d3.select('#treemap').selectAll('*').remove();
-
     const svg = d3.select('#treemap')
         .append('svg')
         .attr('width', width)
         .attr('height', height);
 
-    console.log('SVG created:', svg); // Debug
-
-    // Create a color scale for windows
+    // Create color schemes
     const lightColors = [
-        '#e3f2fd', // very light blue
-        '#e8f5e9', // very light green
-        '#fff3e0', // very light orange
-        '#ffebee', // very light red
-        '#f3e5f5', // very light purple
-        '#e0f7fa', // very light cyan
-        '#fffde7', // very light yellow
-        '#efebe9', // very light brown
+        '#e3f2fd', '#e8f5e9', '#fff3e0', '#ffebee', 
+        '#f3e5f5', '#e0f7fa', '#fffde7', '#efebe9'
     ];
 
-    // Create a map of window IDs to colors
     const windowColors = new Map();
     categorizedData.activeWindows.forEach((window, index) => {
         windowColors.set(window.id, lightColors[index % lightColors.length]);
     });
 
-    console.log('Window colors:', windowColors); // Debug
-
-    // Transform data into hierarchy
+    // Create hierarchy data
     const hierarchyData = {
         name: 'root',
         children: categorizedData.activeWindows.map(window => ({
@@ -98,26 +93,17 @@ export function drawTreemap(categorizedData) {
                 url: tab.url || '',
                 favIconUrl: tab.favIconUrl,
                 lastAccessed: tab.lastAccessed,
-                timeSpent: 100,
-                children: tab.openInNewTab ? tab.openInNewTab.map(newTab => ({
-                    id: `tab${newTab.id}`,
-                    windowId: window.id,
-                    title: newTab.title || 'Untitled',
-                    url: newTab.url || '',
-                    favIconUrl: newTab.favIconUrl,
-                    lastAccessed: newTab.lastAccessed,
-                    timeSpent: 100
-                })) : []
+                timeSpent: tab.totalTimeSpent || 1, // Use actual time spent
+                children: []
             }))
         }))
     };
 
-    console.log('--- Hierarchy data:', hierarchyData); // Debug
-
+    // Create and configure treemap
     const treemap = d3.treemap()
         .size([width, height])
-        .paddingInner(5) // Inner padding between nodes
-        .paddingOuter(10); // Outer padding around the treemap
+        .paddingInner(5)
+        .paddingOuter(10);
 
     const root = d3.hierarchy(hierarchyData)
         .sum(d => d.timeSpent)
@@ -167,38 +153,66 @@ export function drawTreemap(categorizedData) {
             .attr('stroke', 'none');
     });
 
+    // Create nodes with both keyboard and mouse interactions
     const nodes = svg.selectAll('g')
         .data(root.leaves())
         .enter()
         .append('g')
         .attr('transform', d => `translate(${d.x0},${d.y0})`)
         .style('cursor', 'pointer')
-        .on('mouseover', function(event, d) {
-            //console.log('Node info:', d.data);
+        .attr('tabindex', (d, i) => i) // Make nodes focusable
+        .attr('role', 'button') // Add ARIA role
+        .attr('aria-label', d => d.data.title) // Add ARIA label
+        // Add hover effects
+        .on('mouseenter', function(event, d) {
+            // Store original color for restoration
+            d3.select(this).attr('data-original-color', d.data.color);
+            // Update both rectangle and stroke
+            d3.select(this).select('rect')
+                .attr('fill', '#ffff99')
+                .attr('stroke', '#ffff99')
+                .attr('stroke-width', '2px');
             displayReadout(d.data, false);
-            d3.select(this).select('rect')
-                .attr('fill', '#ffff99') // Light yellow color on hover
-                .attr('stroke', '#ffff99'); // Match stroke to fill color on hover
         })
-        .on('mouseout', function(event, d) {
+        .on('mouseleave', function(event, d) {
+            // Restore original color
+            const originalColor = d3.select(this).attr('data-original-color');
             d3.select(this).select('rect')
-                .attr('fill', d.data.color) // Revert to original color
-                .attr('stroke', 'none'); // Remove stroke
+                .attr('fill', originalColor)
+                .attr('stroke', 'none')
+                .attr('stroke-width', null);
             hideReadout();
         })
-        .on('click', (event, d) => {
-            displayReadout(d.data, true);
-        })
-        .on('dblclick', (event, d) => {
+        .on('dblclick', function(event, d) {
+            // Navigate to tab on double click
             const windowId = parseInt(d.data.windowId, 10);
             const tabId = parseInt(d.data.id.replace('tab', ''), 10);
-            
             chrome.windows.update(windowId, { focused: true }, () => {
                 chrome.tabs.update(tabId, { active: true });
             });
+        })
+        .on('click', function(event, d) {
+            displayReadout(d.data, true);
+        })
+        .on('focus', function(event, d) {
+            currentFocusIndex = parseInt(this.getAttribute('tabindex'));
+            displayReadout(d.data, false);
+            d3.select(this).select('rect')
+                .attr('fill', '#ffff99')
+                .attr('stroke', '#ffff99');
+        })
+        .on('blur', function(event, d) {
+            d3.select(this).select('rect')
+                .attr('fill', d.data.color)
+                .attr('stroke', 'none');
+            hideReadout();
+        })
+        .on('keydown', function(event, d) {
+            handleKeyNavigation(event, this, d);
         });
 
-    //console.log('Nodes created:', nodes); // Debug
+    // Store focusable nodes for navigation
+    focusableNodes = nodes.nodes();
 
     // Background rectangles
     nodes.append('rect')
@@ -459,4 +473,116 @@ function handleTabCreated(tab) {
 
     // Redraw the treemap
     drawTreemap(categorizedDataCache);
+}
+
+// Update handleKeyNavigation to use the same navigation logic
+function handleKeyNavigation(event, node, data) {
+    const key = event.key;
+    const currentIndex = parseInt(node.getAttribute('tabindex'));
+    let nextIndex = currentIndex;
+
+    switch (key) {
+        case 'Enter':
+            // Navigate to tab on Enter key
+            const windowId = parseInt(data.data.windowId, 10); // Access through data.data
+            const tabId = parseInt(data.data.id.replace(/\D/g, ''), 10); // Access through data.data
+            if (!isNaN(windowId) && !isNaN(tabId)) {
+                chrome.windows.update(windowId, { focused: true }, () => {
+                    chrome.tabs.update(tabId, { active: true });
+                });
+                console.log(`Navigating to window: ${windowId}, tab: ${tabId}`);
+            } else {
+                console.warn('Invalid window or tab ID:', { windowId, tabId, data: data.data });
+            }
+            event.preventDefault();
+            break;
+        case ' ':
+            // Simulate click behavior
+            displayReadout(data.data, true); // Access through data.data
+            event.preventDefault();
+            break;
+        case 'ArrowRight':
+            nextIndex = findClosestNodeInDirection('right', currentIndex);
+            event.preventDefault();
+            break;
+        case 'ArrowLeft':
+            nextIndex = findClosestNodeInDirection('left', currentIndex);
+            event.preventDefault();
+            break;
+        case 'ArrowUp':
+            nextIndex = findClosestNodeInDirection('up', currentIndex);
+            event.preventDefault();
+            break;
+        case 'ArrowDown':
+            nextIndex = findClosestNodeInDirection('down', currentIndex);
+            event.preventDefault();
+            break;
+    }
+
+    if (nextIndex !== currentIndex) {
+        focusableNodes[nextIndex].focus();
+    }
+}
+
+function findClosestNodeInDirection(direction, currentIndex) {
+    const currentNode = focusableNodes[currentIndex];
+    const currentRect = currentNode.getBoundingClientRect();
+    const currentCenter = {
+        x: currentRect.left + currentRect.width / 2,
+        y: currentRect.top + currentRect.height / 2
+    };
+
+    const candidates = focusableNodes.map((node, index) => {
+        const rect = node.getBoundingClientRect();
+        return {
+            node,
+            index,
+            rect,
+            center: {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2
+            },
+            distance: 0 // Will be calculated based on direction
+        };
+    });
+
+    // Filter and score candidates based on direction
+    const validCandidates = candidates.filter(c => {
+        switch (direction) {
+            case 'right':
+                return c.center.x > currentCenter.x;
+            case 'left':
+                return c.center.x < currentCenter.x;
+            case 'up':
+                return c.center.y < currentCenter.y;
+            case 'down':
+                return c.center.y > currentCenter.y;
+        }
+    });
+
+    if (!validCandidates.length) return currentIndex;
+
+    // Calculate weighted distances
+    validCandidates.forEach(c => {
+        const dx = c.center.x - currentCenter.x;
+        const dy = c.center.y - currentCenter.y;
+        
+        switch (direction) {
+            case 'right':
+            case 'left':
+                // Prefer nodes that are more horizontally aligned
+                c.distance = Math.abs(dx) + Math.abs(dy) * 3;
+                break;
+            case 'up':
+            case 'down':
+                // Prefer nodes that are more vertically aligned
+                c.distance = Math.abs(dy) + Math.abs(dx) * 3;
+                break;
+        }
+    });
+
+    // Return the index of the closest valid candidate
+    return validCandidates.reduce((prev, curr) => 
+        curr.distance < prev.distance ? curr : prev
+    ).index;
 }

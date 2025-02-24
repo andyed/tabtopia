@@ -62,11 +62,17 @@ document.addEventListener('contextmenu', (event) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getTabData') {
+        // Get current tab info from sender
+        const tabId = sender.tab?.id;
+        const windowId = sender.tab?.windowId;
+
         const tabData = {
             title: document.title,
             url: window.location.href,
             favIconUrl: document.querySelector('link[rel~="icon"]') ? document.querySelector('link[rel~="icon"]').href : '',
-            lastAccessed: Date.now()
+            lastAccessed: Date.now(),
+            tabId: tabId,
+            windowId: windowId
         };
         sendResponse(tabData);
     }

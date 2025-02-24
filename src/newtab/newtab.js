@@ -371,12 +371,60 @@ chrome.windows.onCreated.addListener(async (window) => {
 });
 
 chrome.windows.onRemoved.addListener(async (windowId) => {
-  // Remove window from current data if it exists
-  if (currentData && currentData.windowSwimlanes) {
-    delete currentData.windowSwimlanes[windowId];
-    currentData.activeWindowsAndTabs = currentData.activeWindowsAndTabs.filter(w => w.id !== windowId);
-    updateTimeline(currentData);
-  }
+    try {
+        if (!currentData) {
+            console.warn('No current data available for window removal');
+            return;
+        }
+
+        // Create new data structure without the removed window
+        const updatedData = {
+            ...currentData,
+            activeWindowsAndTabs: (currentData.activeWindowsAndTabs || [])
+                .filter(w => w.id !== windowId),
+            windowSwimlanes: { ...currentData.windowSwimlanes }
+        };
+        
+        // Remove the window from swimlanes
+        delete updatedData.windowSwimlanes[windowId];
+
+        // Ensure we still have valid tree data structure
+        const treeData = {
+            name: 'Browser Windows',
+            children: updatedData.activeWindowsAndTabs.map(window => ({
+                name: `Window ${window.id}`,
+                id: window.id,
+                focused: window.focused,
+                children: window.tabs.map(tab => ({
+                    name: tab.title || 'Untitled',
+                    id: tab.id,
+                    url: tab.url || '',
+                    title: tab.title || 'Untitled',
+                    active: tab.active || false,
+                    favIconUrl: tab.favIconUrl,
+                    lastAccessed: tab.lastAccessed || Date.now(),
+                    windowId: window.id,
+                    totalTimeSpent: tab.totalTimeSpent || 1
+                }))
+            }))
+        };
+
+        // Update current data
+        currentData = updatedData;
+
+        // Redraw treemap with new structure
+        if (treeData.children && treeData.children.length > 0) {
+            await drawTreemap(treeData);
+        } else {
+            // Handle empty state
+            document.getElementById('treemap').innerHTML = 
+                '<div class="empty-state">No windows open</div>';
+        }
+
+        console.log('Window removed, updated data:', currentData);
+    } catch (error) {
+        console.error('Error handling window removal:', error);
+    }
 });
 
 // Replace direct tab activity tracking with message-based sync
@@ -564,11 +612,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
   });
   
   tabActivityLog.set(tabId, currentActivity);
-
-  // Update visualizations if needed
-  if (currentData) {
-    debouncedTimelineUpdate(true);
-  }
+  console.log('Tab activity log updated:', tabActivityLog);
 });
 
 // Add cleanup for stored data when tab is closed
