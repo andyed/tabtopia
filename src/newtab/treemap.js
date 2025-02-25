@@ -6,6 +6,7 @@ let readoutTimeout = null;
 let currentData = null;  // Add this line
 let currentFocusIndex = -1;
 let focusableNodes = [];
+let currentTabOrder = []; // Store current tab order IDs
 
 // Update favicon loading function
 async function updateCellFavicon(cell, url, size) {
@@ -229,6 +230,14 @@ export function drawTreemap(categorizedData) {
             .attr('ry', '4');
     });
 
+    // Create sorted tab order based on lastAccessed
+    const allTabs = root.leaves().sort((a, b) => {
+        return b.data.lastAccessed - a.data.lastAccessed;
+    });
+
+    // Store the current tab order
+    currentTabOrder = allTabs.map(tab => tab.data.id);
+
     // Create nodes with both keyboard and mouse interactions
     const nodes = svg.selectAll('g')
         .data(root.leaves())
@@ -236,7 +245,7 @@ export function drawTreemap(categorizedData) {
         .append('g')
         .attr('transform', d => `translate(${d.x0},${d.y0})`)
         .style('cursor', 'pointer')
-        .attr('tabindex', (d, i) => i) // Make nodes focusable
+        .attr('tabindex', d => currentTabOrder.indexOf(d.data.id)) // Set tabindex based on order
         .attr('role', 'button') // Add ARIA role
         .attr('aria-label', d => d.data.title) // Add ARIA label
         // Add hover effects
@@ -757,4 +766,23 @@ function calculateCellIconSize(cellWidth, cellHeight, maxIconSize = 128, minIcon
     
     // Constrain to our min/max bounds
     return Math.max(minIconSize, Math.min(maxPossibleSize, maxIconSize));
+}
+
+function updateTabOrder(searchResults) {
+    if (!searchResults) {
+        // Reset to default last-accessed order
+        const sortedNodes = focusableNodes.sort((a, b) => {
+            const aData = d3.select(a).datum();
+            const bData = d3.select(b).datum();
+            return bData.data.lastAccessed - aData.data.lastAccessed;
+        });
+        currentTabOrder = sortedNodes.map(node => d3.select(node).datum().data.id);
+    } else {
+        // Set order based on search results
+        currentTabOrder = searchResults.map(result => result.id);
+    }
+
+    // Update tabindex for all nodes
+    d3.selectAll('#treemap g[role="button"]')
+        .attr('tabindex', d => currentTabOrder.indexOf(d.data.id));
 }
