@@ -1,0 +1,107 @@
+
+
+class TabSearch {
+    constructor() {
+        this.searchIndex = null;
+        this.documentLookup = new Map();
+        this.lastQuery = '';
+    }
+
+    buildIndex(categorizedDataCache) {
+        const documents = [];
+        
+        // Flatten all tabs into searchable documents
+        categorizedDataCache.activeWindows.forEach(window => {
+            window.tabs.forEach(tab => {
+                try {
+                    const domain = new URL(tab.url).hostname;
+                    const doc = {
+                        id: `tab${tab.id}`,
+                        title: tab.title || '',
+                        url: tab.url || '',
+                        domain: domain,
+                        windowId: window.id
+                    };
+                    documents.push(doc);
+                    this.documentLookup.set(doc.id, tab);
+                } catch (e) {
+                    console.warn('Invalid URL in tab:', tab.url);
+                }
+            });
+        });
+
+        // Build lunr index
+        this.searchIndex = lunr(function() {
+            // Boost factors for different fields
+            this.field('title', { boost: 10 });
+            this.field('url', { boost: 5 });
+            this.field('domain', { boost: 3 });
+            
+            this.ref('id');
+
+            // Add documents to index
+            documents.forEach(doc => this.add(doc));
+        });
+    }
+
+    search(query) {
+        if (!this.searchIndex) return [];
+        if (!query.trim()) return [];
+        
+        this.lastQuery = query;
+
+        try {
+            // Perform lunr search
+            const results = this.searchIndex.search(query);
+            
+            // Map results to tabs with scores
+            return results.map(result => ({
+                score: result.score,
+                tab: this.documentLookup.get(result.ref),
+                matches: result.matchData.metadata
+            }));
+        } catch (e) {
+            console.warn('Search error, falling back to basic search:', e);
+            
+            // Fallback to basic substring search
+            const searchTerm = query.toLowerCase();
+            return Array.from(this.documentLookup.values())
+                .filter(tab => 
+                    tab.title?.toLowerCase().includes(searchTerm) ||
+                    tab.url?.toLowerCase().includes(searchTerm)
+                )
+                .map(tab => ({ 
+                    score: 1, 
+                    tab,
+                    matches: {} 
+                }));
+        }
+    }
+
+    highlightMatches(text, matches) {
+        if (!matches || Object.keys(matches).length === 0) return text;
+        
+        // Create array of positions where highlighting should occur
+        const positions = [];
+        Object.values(matches).forEach(match => {
+            Object.keys(match).forEach(field => {
+                const positions = match[field].position || [];
+                positions.forEach(([start, length]) => {
+                    positions.push({ start, length });
+                });
+            });
+        });
+
+        // Sort positions and apply highlighting
+        return positions
+            .sort((a, b) => b.start - a.start)
+            .reduce((str, pos) => {
+                const before = str.slice(0, pos.start);
+                const match = str.slice(pos.start, pos.start + pos.length);
+                const after = str.slice(pos.start + pos.length);
+                return `${before}<mark>${match}</mark>${after}`;
+            }, text);
+    }
+}
+
+export const tabSearch = new TabSearch();

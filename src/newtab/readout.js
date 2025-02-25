@@ -1,5 +1,6 @@
 import { formatDistanceToNow, formatSessionDuration } from './utility.js';
 import { getMotivationalMessage } from './motivational-posters.js';
+import { tabSearch } from './search.js';
 
 let readoutTimeout = null;
 let currentBookmarkPage = 0;
@@ -7,7 +8,7 @@ const BOOKMARKS_PER_PAGE = 10;
 let stickyCell = null;  // Track currently sticky cell
 
 let inactivityTimer = null;
-const INACTIVITY_TIMEOUT = 5000; // 5 seconds
+const INACTIVITY_TIMEOUT = 30000; // 30 seconds
 
 let currentMotivationalMessage = null;
 
@@ -35,6 +36,32 @@ function resetInactivityTimer(categorizedDataCache) {
     }, INACTIVITY_TIMEOUT);
 }
 
+function initializeSearchBox() {
+    const readoutContainer = document.getElementById('readout');
+    if (!readoutContainer) return;
+
+    // Create search box wrapper if it doesn't exist
+    let searchContainer = document.querySelector('.search-container');
+    if (!searchContainer) {
+        searchContainer = document.createElement('div');
+        searchContainer.className = 'search-container';
+        searchContainer.innerHTML = `
+            <input type="text" 
+                id="tabSearch" 
+                placeholder="Search tabs..." 
+                class="search-input"
+            />
+        `;
+        readoutContainer.insertBefore(searchContainer, readoutContainer.firstChild);
+
+        // Add search handler
+        const searchInput = document.getElementById('tabSearch');
+        if (searchInput) {
+            searchInput.addEventListener('input', handleTabSearch);
+        }
+    }
+}
+
 async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
     // Clear any existing inactivity timer
     clearTimeout(inactivityTimer);
@@ -48,6 +75,17 @@ async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
     if (!readoutContainer) {
         console.error('Readout container not found');
         return;
+    }
+
+    // Initialize search box if needed
+    initializeSearchBox();
+
+    // Get or create content container
+    let contentContainer = document.querySelector('.readout-content');
+    if (!contentContainer) {
+        contentContainer = document.createElement('div');
+        contentContainer.className = 'readout-content';
+        readoutContainer.appendChild(contentContainer);
     }
 
     // Show default state if no tab data
@@ -169,7 +207,7 @@ async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
         ` : ''}
     `;
 
-    readoutContainer.innerHTML = readoutHtml;
+    contentContainer.innerHTML = readoutHtml;
 
     // Set up pagination handlers
     window.nextBookmarkPage = () => {
@@ -196,14 +234,44 @@ async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
 
 function hideReadout() {
     const readoutContainer = document.getElementById('readout');
-    if (readoutContainer && !stickyCell) {
-        readoutContainer.innerHTML = '';
-        if (stickyCell) {
-            d3.select(stickyCell).select('rect')
-                .attr('fill', d => d.data.color)
-                .attr('stroke', 'none');
-            stickyCell = null;
+    if (!readoutContainer) return;
+
+    // Preserve any existing search input value
+    const searchInput = document.getElementById('tabSearch');
+    const searchValue = searchInput ? searchInput.value : '';
+
+    // Show default view with just search
+    const readoutHtml = `
+        <div class="readout-container">
+            <div class="search-container">
+                <input type="text" 
+                    id="tabSearch" 
+                    placeholder="Search tabs..." 
+                    class="search-input"
+                    value="${searchValue}"
+                />
+            </div>
+        </div>
+    `;
+
+    readoutContainer.innerHTML = readoutHtml;
+
+    // Reattach search handler
+    const newSearchInput = document.getElementById('tabSearch');
+    if (newSearchInput) {
+        newSearchInput.addEventListener('input', handleTabSearch);
+        // Restore focus if it was focused
+        if (document.activeElement === searchInput) {
+            newSearchInput.focus();
         }
+    }
+
+    // Clear sticky state if needed
+    if (stickyCell) {
+        d3.select(stickyCell).select('rect')
+            .attr('fill', d => d.data.color)
+            .attr('stroke', 'none');
+        stickyCell = null;
     }
 }
 
@@ -214,41 +282,63 @@ function showDefaultReadout(categorizedDataCache) {
         return;
     }
 
+    // Initialize search box if needed
+    initializeSearchBox();
+
     const windows = categorizedDataCache.activeWindows.length;
     const tabs = categorizedDataCache.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
     
-    // Only get new message if we don't have one
     if (!currentMotivationalMessage) {
         currentMotivationalMessage = getMotivationalMessage(windows, tabs);
     }
 
-    const readoutHtml = `
-        <div class="readout-container">
-            <div class="search-container">
-                <input type="text" 
-                    id="tabSearch" 
-                    placeholder="Search tabs..." 
-                    class="search-input"
-                />
-            </div>
-            <div class="readout-default">
-                <h1 class="status-message">${currentMotivationalMessage}</h1>
-                <div class="stats">
-                    <span>${windows} window${windows !== 1 ? 's' : ''}</span>
-                    <span>•</span>
-                    <span>${tabs} tab${tabs !== 1 ? 's' : ''}</span>
-                </div>
+    // Get the content container or create it
+    let contentContainer = document.querySelector('.readout-content');
+    if (!contentContainer) {
+        contentContainer = document.createElement('div');
+        contentContainer.className = 'readout-content';
+        readoutContainer.appendChild(contentContainer);
+    }
+
+    contentContainer.innerHTML = `
+        <div class="readout-default">
+            <h1 class="status-message">${currentMotivationalMessage}</h1>
+            <div class="stats">
+                <span>${windows} window${windows !== 1 ? 's' : ''}</span>
+                <span>•</span>
+                <span>${tabs} tab${tabs !== 1 ? 's' : ''}</span>
             </div>
         </div>
     `;
 
-    readoutContainer.innerHTML = readoutHtml;
+    // Maintain search index
+    tabSearch.buildIndex(categorizedDataCache);
+}
+
+function handleTabSearch(event) {
+    const searchTerm = event.target.value.trim();
     
-    // Set up search handler
-    const searchInput = document.getElementById('tabSearch');
-    if (searchInput) {
-        searchInput.addEventListener('input', handleTabSearch);
+    // Reset all cells if search is empty
+    if (!searchTerm) {
+        d3.selectAll('#treemap g')
+            .style('opacity', 1)
+            .style('transition', 'opacity 0.2s ease-in-out');
+        return;
     }
+
+    const results = tabSearch.search(searchTerm);
+    const matchedIds = new Set(results.map(r => r.tab.id));
+
+    // Update visualization based on search results
+    d3.selectAll('#treemap g').each(function(d) {
+        const tabId = parseInt(d.data.id.replace('tab', ''));
+        const isMatch = matchedIds.has(tabId);
+        const opacity = isMatch ? 1 : 0.3;
+        
+        d3.select(this)
+            .style('opacity', opacity)
+            .style('transition', 'opacity 0.2s ease-in-out');
+    });
 }
 
 // Export both the function and timer reset
