@@ -15,6 +15,8 @@ function getDomain(url) {
     }
 }
 
+const ITEMS_PER_PAGE = 5;
+
 async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
     const readoutContainer = document.getElementById('readout');
     if (!readoutContainer) {
@@ -41,29 +43,40 @@ async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
 
     const domain = getDomain(tabData.url);
     let bookmarkMatches = [];
+    let historyMatches = [];
     
     if (domain) {
         try {
+            // Get bookmarks
             const bookmarks = await chrome.bookmarks.search({});
             bookmarkMatches = bookmarks
                 .filter(bookmark => getDomain(bookmark.url) === domain)
                 .map(bookmark => ({
                     ...bookmark,
-                    // Use the most recent of dateAdded or lastVisited
-                    sortDate: Math.max(
-                        bookmark.dateAdded || 0,
-                        bookmark.lastVisited || 0
-                    )
+                    sortDate: bookmark.dateAdded || 0
                 }))
                 .sort((a, b) => b.sortDate - a.sortDate);
+
+            // Get history
+            const oneWeekAgo = new Date().getTime() - (7 * 24 * 60 * 60 * 1000);
+            const history = await chrome.history.search({
+                text: domain,
+                startTime: oneWeekAgo,
+                maxResults: 100
+            });
+            historyMatches = history
+                .filter(item => getDomain(item.url) === domain)
+                .sort((a, b) => b.lastVisitTime - a.lastVisitTime);
         } catch (error) {
-            console.error('Error searching bookmarks:', error);
+            console.error('Error searching bookmarks/history:', error);
         }
     }
 
     const totalBookmarks = bookmarkMatches.length;
-    const startIndex = currentBookmarkPage * BOOKMARKS_PER_PAGE;
-    const displayedBookmarks = bookmarkMatches.slice(startIndex, startIndex + BOOKMARKS_PER_PAGE);
+    const totalHistory = historyMatches.length;
+    
+    const displayedBookmarks = bookmarkMatches.slice(0, ITEMS_PER_PAGE);
+    const displayedHistory = historyMatches.slice(0, ITEMS_PER_PAGE);
 
     const readoutHtml = `
         <div class="readout-header">
@@ -84,34 +97,41 @@ async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
         </div>
         ${bookmarkMatches.length > 0 ? `
             <div class="bookmarks-section">
-                <h3>Other Bookmarks from ${domain} (${totalBookmarks})</h3>
+                <h3>Bookmarks from ${domain} (${totalBookmarks})</h3>
                 <ul class="bookmark-list">
                     ${displayedBookmarks.map(bookmark => `
                         <li class="bookmark-item">
-                            <a href="${bookmark.url}" target="_blank">
-                                ${bookmark.title || bookmark.url}
-                            </a>
+                            <a href="${bookmark.url}" target="_blank">${bookmark.title || bookmark.url}</a>
                             <span class="bookmark-date">
-                                ${bookmark.dateAdded ? 
-                                    `Bookmarked ${formatDistanceToNow(new Date(bookmark.dateAdded))} ago` : 
-                                    ''}
+                                ${formatDistanceToNow(new Date(bookmark.dateAdded))}
                             </span>
                         </li>
                     `).join('')}
                 </ul>
-                ${totalBookmarks > BOOKMARKS_PER_PAGE ? `
-                    <div class="bookmark-pagination">
-                        ${currentBookmarkPage > 0 ? `
-                            <button class="pagination-btn prev" onclick="window.prevBookmarkPage()">Previous</button>
-                        ` : ''}
-                        <span class="page-info">
-                            ${startIndex + 1}-${Math.min(startIndex + BOOKMARKS_PER_PAGE, totalBookmarks)} 
-                            of ${totalBookmarks}
-                        </span>
-                        ${(currentBookmarkPage + 1) * BOOKMARKS_PER_PAGE < totalBookmarks ? `
-                            <button class="pagination-btn next" onclick="window.nextBookmarkPage()">More</button>
-                        ` : ''}
-                    </div>
+                ${totalBookmarks > ITEMS_PER_PAGE ? `
+                    <button class="show-more-btn">
+                        Show ${Math.min(5, totalBookmarks - ITEMS_PER_PAGE)} more
+                    </button>
+                ` : ''}
+            </div>
+        ` : ''}
+        ${historyMatches.length > 0 ? `
+            <div class="history-section">
+                <h3>History from ${domain} (${totalHistory})</h3>
+                <ul class="history-list">
+                    ${displayedHistory.map(item => `
+                        <li class="history-item">
+                            <a href="${item.url}" target="_blank">${item.title || item.url}</a>
+                            <span class="history-date">
+                                ${formatDistanceToNow(new Date(item.lastVisitTime))}
+                            </span>
+                        </li>
+                    `).join('')}
+                </ul>
+                ${totalHistory > ITEMS_PER_PAGE ? `
+                    <button class="show-more-btn">
+                        Show ${Math.min(5, totalHistory - ITEMS_PER_PAGE)} more
+                    </button>
                 ` : ''}
             </div>
         ` : ''}

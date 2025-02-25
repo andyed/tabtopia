@@ -179,3 +179,52 @@ body {
 .cell-hover rect {
     fill: #ffff99;
 }
+
+/* Unified list styling for readout sections */
+.bookmark-list,
+.history-list {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* Remove duplicate history-specific styles */
+.history-section {
+    margin-top: 1rem;
+    padding: 15px;
+    border-top: 1px solid #eee;
+}
+
+/* Remove these duplicate declarations as they're covered above */
+.bookmark-item,
+.history-item {
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.bookmark-item:last-child,
+.history-item:last-child {
+    border-bottom: none;
+}
+
+.bookmark-date,
+.history-date {
+    display: block;
+    font-size: 0.8em;
+    color: #666;
+}
+
+/* Section styling */
+.bookmarks-section,
+.history-section {
+    margin-top: 1rem;
+    padding: 15px;
+    border-top: 1px solid #eee;
+}
+
+.bookmarks-section h3,
+.history-section h3 {
+    margin: 0 0 10px 0;
+    font-size: 1.1em;
+    color: #333;
+}
