@@ -170,8 +170,12 @@ export function drawTreemap(categorizedData) {
     // Create and configure treemap
     const treemap = d3.treemap()
         .size([width, layout.height])
-        .paddingInner(0)
-        .paddingOuter(0);
+        .paddingTop(5)    // Add padding between windows
+        .paddingRight(5)
+        .paddingBottom(5)
+        .paddingLeft(5)
+        .paddingInner(1)  // Small gap between tabs in same window
+        .round(true);     // Round to whole pixels
 
     // Keep the d3 hierarchy root as 'root'
     const root = d3.hierarchy(hierarchyData)
@@ -219,7 +223,10 @@ export function drawTreemap(categorizedData) {
             .attr('width', windowNode.x1 - windowNode.x0)
             .attr('height', windowNode.y1 - windowNode.y0)
             .attr('fill', d3.color(windowColors.get(parseInt(windowNode.data.name.replace('Window ', ''), 10))).darker(0.5))
-            .attr('stroke', 'none');
+            .attr('stroke', '#999')        // Add border
+            .attr('stroke-width', '2px')   // Border width
+            .attr('rx', '4')              // Rounded corners
+            .attr('ry', '4');
     });
 
     // Create nodes with both keyboard and mouse interactions
