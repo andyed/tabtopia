@@ -224,7 +224,11 @@ async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
         clearTimeout(readoutTimeout);
         readoutTimeout = setTimeout(() => {
             if (!readoutContainer.classList.contains('sticky')) {
-                readoutContainer.innerHTML = '';
+                // Instead of clearing everything, just clear the content container
+                const contentContainer = document.querySelector('.readout-content');
+                if (contentContainer) {
+                    contentContainer.innerHTML = '';
+                }
             }
         }, 3000);
     }
@@ -236,34 +240,11 @@ function hideReadout() {
     const readoutContainer = document.getElementById('readout');
     if (!readoutContainer) return;
 
-    // Preserve any existing search input value
-    const searchInput = document.getElementById('tabSearch');
-    const searchValue = searchInput ? searchInput.value : '';
-
-    // Show default view with just search
-    const readoutHtml = `
-        <div class="readout-container">
-            <div class="search-container">
-                <input type="text" 
-                    id="tabSearch" 
-                    placeholder="Search tabs..." 
-                    class="search-input"
-                    value="${searchValue}"
-                />
-            </div>
-        </div>
-    `;
-
-    readoutContainer.innerHTML = readoutHtml;
-
-    // Reattach search handler
-    const newSearchInput = document.getElementById('tabSearch');
-    if (newSearchInput) {
-        newSearchInput.addEventListener('input', handleTabSearch);
-        // Restore focus if it was focused
-        if (document.activeElement === searchInput) {
-            newSearchInput.focus();
-        }
+    // Instead of replacing the entire container's HTML,
+    // just clear or update the content container
+    const contentContainer = document.querySelector('.readout-content');
+    if (contentContainer) {
+        contentContainer.innerHTML = '';
     }
 
     // Clear sticky state if needed

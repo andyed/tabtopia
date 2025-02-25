@@ -47,9 +47,9 @@ class TabSearch {
     search(query) {
         if (!this.searchIndex) return [];
         if (!query.trim()) return [];
-        
+        query = '*' + query + '*';
         this.lastQuery = query;
-
+        console.log("Searching for " + query);
         try {
             // Perform lunr search
             const results = this.searchIndex.search(query);
