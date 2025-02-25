@@ -327,14 +327,25 @@ export function drawTreemap(categorizedData) {
         .attr('xlink:href', d => {
             if (d.data.url.startsWith('chrome://')) {
                 return 'data:image/svg+xml;base64,' + btoa(`
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${windowColors.get(d.data.windowId)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-settings">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${windowColors.get(d.data.windowId)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-settings">
                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                         <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
                         <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
                     </svg>
                 `);
             } else {
-                return d.data.favIconUrl || `${new URL(d.data.url).origin}/favicon.ico?size=${d.iconSize}`;
+                try {
+                    const url = new URL(d.data.url);
+                    return d.data.favIconUrl || `${url.origin}/favicon.ico?size=${d.iconSize}`;
+                } catch (e) {
+                    console.warn('Invalid URL:', d.data.url);
+                    return 'data:image/svg+xml;base64,' + btoa(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#999999">
+                            <rect width="24" height="24" rx="4" fill="#eeeeee"/>
+                            <text x="12" y="16" font-size="14" text-anchor="middle" fill="#999999">?</text>
+                        </svg>
+                    `);
+                }
             }
         })
         .attr('width', d => d.iconSize)
@@ -342,10 +353,13 @@ export function drawTreemap(categorizedData) {
         .attr('x', d => -d.iconSize/2)
         .attr('y', d => -d.iconSize/2)
         .on('error', function(event, d) {
-            d3.select(this)
-                .attr('xlink:href', `${new URL(d.data.url).origin}/favicon.ico?size=16`)
-                .attr('width', d.iconSize)
-                .attr('height', d.iconSize);
+            try {
+                const url = new URL(d.data.url);
+                d3.select(this)
+                    .attr('xlink:href', `${url.origin}/favicon.ico?size=16`);
+            } catch (e) {
+                console.warn('Invalid URL in error handler:', d.data.url);
+            }
         });
 
     // Centered text below favicon
@@ -585,15 +599,15 @@ function handleKeyNavigation(event, node, data) {
     switch (key) {
         case 'Enter':
             // Navigate to tab on Enter key
-            const windowId = parseInt(data.data.windowId, 10); // Access through data.data
-            const tabId = parseInt(data.data.id.replace(/\D/g, ''), 10); // Access through data.data
-            if (!isNaN(windowId) && !isNaN(tabId)) {
+            const enterTabId = parseInt(data.data.id.replace(/\D/g, ''), 10);
+            const windowId = parseInt(data.data.windowId, 10);
+            if (!isNaN(windowId) && !isNaN(enterTabId)) {
                 chrome.windows.update(windowId, { focused: true }, () => {
-                    chrome.tabs.update(tabId, { active: true });
+                    chrome.tabs.update(enterTabId, { active: true });
                 });
-                console.log(`Navigating to window: ${windowId}, tab: ${tabId}`);
+                console.log(`Navigating to window: ${windowId}, tab: ${enterTabId}`);
             } else {
-                console.warn('Invalid window or tab ID:', { windowId, tabId, data: data.data });
+                console.warn('Invalid window or tab ID:', { windowId, tabId: enterTabId, data: data.data });
             }
             event.preventDefault();
             break;
@@ -617,6 +631,18 @@ function handleKeyNavigation(event, node, data) {
         case 'ArrowDown':
             nextIndex = findClosestNodeInDirection('down', currentIndex);
             event.preventDefault();
+            break;
+        case 'Backspace':
+        case 'Delete':
+            // Close tab when backspace or delete is pressed
+            event.preventDefault();
+            const closeTabId = parseInt(data.data.id.replace(/\D/g, ''), 10);
+            if (!isNaN(closeTabId)) {
+                chrome.tabs.remove(closeTabId);
+                console.log(`Closing tab: ${closeTabId}`);
+            } else {
+                console.warn('Invalid tab ID for deletion:', data.data);
+            }
             break;
     }
 
