@@ -9,6 +9,8 @@ let stickyCell = null;  // Track currently sticky cell
 let inactivityTimer = null;
 const INACTIVITY_TIMEOUT = 5000; // 5 seconds
 
+let currentMotivationalMessage = null;
+
 // Helper function to get domain from URL
 function getDomain(url) {
     try {
@@ -214,24 +216,39 @@ function showDefaultReadout(categorizedDataCache) {
 
     const windows = categorizedDataCache.activeWindows.length;
     const tabs = categorizedDataCache.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
-    const message = getMotivationalMessage(windows, tabs);
-
-    // Debug output
-    console.log('Showing default readout:', { windows, tabs, message });
+    
+    // Only get new message if we don't have one
+    if (!currentMotivationalMessage) {
+        currentMotivationalMessage = getMotivationalMessage(windows, tabs);
+    }
 
     const readoutHtml = `
-        <div class="readout-default">
-            <h1 class="status-message">${message}</h1>
-            <div class="stats">
-                <span>${windows} window${windows !== 1 ? 's' : ''}</span>
-                <span>•</span>
-                <span>${tabs} tab${tabs !== 1 ? 's' : ''}</span>
+        <div class="readout-container">
+            <div class="search-container">
+                <input type="text" 
+                    id="tabSearch" 
+                    placeholder="Search tabs..." 
+                    class="search-input"
+                />
+            </div>
+            <div class="readout-default">
+                <h1 class="status-message">${currentMotivationalMessage}</h1>
+                <div class="stats">
+                    <span>${windows} window${windows !== 1 ? 's' : ''}</span>
+                    <span>•</span>
+                    <span>${tabs} tab${tabs !== 1 ? 's' : ''}</span>
+                </div>
             </div>
         </div>
     `;
 
-    // Actually set the HTML content
     readoutContainer.innerHTML = readoutHtml;
+    
+    // Set up search handler
+    const searchInput = document.getElementById('tabSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', handleTabSearch);
+    }
 }
 
 // Export both the function and timer reset
