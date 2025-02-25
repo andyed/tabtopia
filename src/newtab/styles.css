@@ -127,6 +127,34 @@ body {
     filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
 }
 
+/* Add bookmark button styles */
+.bookmark-button {
+    pointer-events: all;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+
+/* Show bookmark button on hover/focus, matching close button behavior */
+[tabindex]:hover .bookmark-button,
+[tabindex]:focus .bookmark-button {
+    opacity: 1;
+}
+
+.bookmark-button svg {
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+}
+
+/* Add hover effect */
+.bookmark-button:hover svg {
+    stroke: #FFD700;
+}
+
+/* Style for bookmarked state */
+.bookmark-button.bookmarked svg {
+    fill: #FFD700;
+    stroke: #FFD700;
+}
+
 /* Add font-family to existing cell text style */
 .cell-content text {
     font-family: 'Barlow Condensed', sans-serif;

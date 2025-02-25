@@ -1,4 +1,5 @@
 import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './utility.js';
+import { displayReadout, hideReadout } from './readout.js';
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
@@ -228,7 +229,7 @@ export function drawTreemap(categorizedData) {
                 .attr('fill', '#ffff99')
                 .attr('stroke', '#ffff99')
                 .attr('stroke-width', '2px');
-            displayReadout(d.data, false);
+            displayReadout(d.data, false, categorizedDataCache);
         })
         .on('mouseleave', function(event, d) {
             // Restore original color
@@ -248,11 +249,29 @@ export function drawTreemap(categorizedData) {
             });
         })
         .on('click', function(event, d) {
-            displayReadout(d.data, true);
+            event.stopPropagation();
+            displayReadout(d.data, true, categorizedDataCache, this);
+        })
+        .on('mouseenter', function(event, d) {
+            if (!d3.select(this).classed('sticky')) {
+                d3.select(this).attr('data-original-color', d.data.color);
+                d3.select(this).select('rect')
+                    .attr('fill', '#ffff99')
+                    .attr('stroke', '#ffff99');
+                displayReadout(d.data, false, categorizedDataCache, this);
+            }
+        })
+        .on('mouseleave', function(event, d) {
+            if (!d3.select(this).classed('sticky')) {
+                d3.select(this).select('rect')
+                    .attr('fill', d => d.data.color)
+                    .attr('stroke', 'none');
+                hideReadout();
+            }
         })
         .on('focus', function(event, d) {
             currentFocusIndex = parseInt(this.getAttribute('tabindex'));
-            displayReadout(d.data, false);
+            displayReadout(d.data, false, categorizedDataCache);
             d3.select(this).select('rect')
                 .attr('fill', '#ffff99')
                 .attr('stroke', '#ffff99');
@@ -329,8 +348,7 @@ export function drawTreemap(categorizedData) {
                 return 'data:image/svg+xml;base64,' + btoa(`
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${windowColors.get(d.data.windowId)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-settings">
                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                        <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
-                        <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+                        <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
                     </svg>
                 `);
             } else {
@@ -399,6 +417,47 @@ export function drawTreemap(categorizedData) {
             chrome.tabs.remove(tabId);
         });
 
+    // Add after close button creation
+    nodes.append('g')
+        .attr('class', 'bookmark-button')
+        .style('cursor', 'pointer')
+        .attr('transform', d => {
+            const cellWidth = d.x1 - d.x0;
+            return `translate(8, 8)`; // Position in top left
+        })
+        .html(() => `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-star">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
+            </svg>
+        `)
+        .on('click', function(event, d) {
+            event.stopPropagation();
+            // Check if URL is valid before attempting to bookmark
+            if (!d.data.url) {
+                console.warn('No URL to bookmark:', d.data);
+                return;
+            }
+            
+            try {
+                chrome.bookmarks.create({
+                    title: d.data.title || 'Untitled',
+                    url: d.data.url
+                }, (result) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Error creating bookmark:', chrome.runtime.lastError);
+                        return;
+                    }
+                    // Update star to filled state
+                    d3.select(this).select('svg')
+                        .attr('fill', '#FFD700')
+                        .attr('stroke', '#FFD700');
+                });
+            } catch (error) {
+                console.error('Failed to create bookmark:', error);
+            }
+        });
+
     console.log('Treemap drawn'); // Debug
 }
 
@@ -451,65 +510,6 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
 
     // Reduce font size by 1 to fit within the cell
     textElement.attr('font-size', (fontSize - 1) + 'px');
-}
-
-function displayReadout(tabData, sticky) {
-    const readoutContainer = document.getElementById('readout');
-    if (!readoutContainer) {
-        console.error('Readout container not found');
-        return;
-    }
-
-    // Collect history of URLs with the same tabId
-    const history = [];
-    categorizedDataCache.activeWindows.forEach(window => {
-        window.tabs.forEach(tab => {
-            if (tab.id === tabData.id) {
-                history.push({
-                    timestamp: tab.lastAccessed,
-                    url: tab.url,
-                    title: tab.title
-                });
-            }
-        });
-    });
-
-    const readoutHtml = `
-        <h2>${tabData.title}</h2>
-        <p><a href="${tabData.url}" target="_blank">${tabData.url}</a></p>
-        <p>Last accessed: ${formatDistanceToNow(new Date(tabData.lastAccessed))}</p>
-        <p>Time spent: ${tabData.timeSpent ? `${tabData.timeSpent} seconds` : 'N/A'}</p>
-        <h3>History</h3>
-        <ul>
-            ${history.sort((a, b) => b.timestamp - a.timestamp).map(entry => `
-                <li>${new Date(entry.timestamp).toLocaleString()}: <a href="${entry.url}" target="_blank">${entry.title || entry.url}</a></li>
-            `).join('')}
-        </ul>
-    `;
-
-    readoutContainer.innerHTML = readoutHtml;
-
-    if (!sticky) {
-        clearTimeout(readoutTimeout);
-        readoutTimeout = setTimeout(() => {
-            if (!readoutContainer.classList.contains('sticky')) {
-                readoutContainer.innerHTML = '';
-            }
-        }, 3000);
-    }
-
-    if (sticky) {
-        readoutContainer.classList.add('sticky');
-    } else {
-        readoutContainer.classList.remove('sticky');
-    }
-}
-
-function hideReadout() {
-    const readoutContainer = document.getElementById('readout');
-    if (!readoutContainer.classList.contains('sticky')) {
-        readoutContainer.innerHTML = '';
-    }
 }
 
 // Add resize handler
@@ -613,7 +613,7 @@ function handleKeyNavigation(event, node, data) {
             break;
         case ' ':
             // Simulate click behavior
-            displayReadout(data.data, true); // Access through data.data
+            displayReadout(data.data, true, categorizedDataCache); // Access through data.data
             event.preventDefault();
             break;
         case 'ArrowRight':

@@ -12,7 +12,8 @@
     "windows",
     "chrome://favicon/",
     "favicon",
-    "*://*/*"
+    "*://*/*",
+    "bookmarks"
 
   ],  
   "web_accessible_resources": [
