@@ -221,25 +221,6 @@ export function drawTreemap(categorizedData) {
         .attr('role', 'button') // Add ARIA role
         .attr('aria-label', d => d.data.title) // Add ARIA label
         // Add hover effects
-        .on('mouseenter', function(event, d) {
-            // Store original color for restoration
-            d3.select(this).attr('data-original-color', d.data.color);
-            // Update both rectangle and stroke
-            d3.select(this).select('rect')
-                .attr('fill', '#ffff99')
-                .attr('stroke', '#ffff99')
-                .attr('stroke-width', '2px');
-            displayReadout(d.data, false, categorizedDataCache);
-        })
-        .on('mouseleave', function(event, d) {
-            // Restore original color
-            const originalColor = d3.select(this).attr('data-original-color');
-            d3.select(this).select('rect')
-                .attr('fill', originalColor)
-                .attr('stroke', 'none')
-                .attr('stroke-width', null);
-            hideReadout();
-        })
         .on('dblclick', function(event, d) {
             // Navigate to tab on double click
             const windowId = parseInt(d.data.windowId, 10);
@@ -250,22 +231,33 @@ export function drawTreemap(categorizedData) {
         })
         .on('click', function(event, d) {
             event.stopPropagation();
-            displayReadout(d.data, true, categorizedDataCache, this);
+            const isCurrentlySticky = d3.select(this).classed('cell-selected');
+            
+            // Clear previous selection
+            nodes.classed('cell-selected', false)
+                .select('rect')
+                .attr('fill', d => d.data.color)
+                .attr('stroke', 'none');
+        
+            if (!isCurrentlySticky) {
+                // New selection
+                d3.select(this).classed('cell-selected', true);
+                displayReadout(d.data, true, categorizedDataCache, this);
+            } else {
+                // Deselecting
+                hideReadout();
+            }
         })
         .on('mouseenter', function(event, d) {
-            if (!d3.select(this).classed('sticky')) {
-                d3.select(this).attr('data-original-color', d.data.color);
-                d3.select(this).select('rect')
-                    .attr('fill', '#ffff99')
-                    .attr('stroke', '#ffff99');
+            const hasSelectedCell = d3.select('#treemap').select('.cell-selected').size() > 0;
+            if (!hasSelectedCell && !d3.select(this).classed('cell-selected')) {
+                d3.select(this).classed('cell-hover', true);
                 displayReadout(d.data, false, categorizedDataCache, this);
             }
         })
         .on('mouseleave', function(event, d) {
-            if (!d3.select(this).classed('sticky')) {
-                d3.select(this).select('rect')
-                    .attr('fill', d => d.data.color)
-                    .attr('stroke', 'none');
+            d3.select(this).classed('cell-hover', false);
+            if (!d3.select(this).classed('cell-selected')) {
                 hideReadout();
             }
         })
@@ -457,6 +449,17 @@ export function drawTreemap(categorizedData) {
                 console.error('Failed to create bookmark:', error);
             }
         });
+
+    // Add background click handler to clear selection
+    d3.select('#treemap').on('click', function(event) {
+        if (event.target.tagName === 'svg' || event.target.id === 'treemap') {
+            nodes.classed('cell-selected', false)
+                .select('rect')
+                .attr('fill', d => d.data.color)
+                .attr('stroke', 'none');
+            hideReadout();
+        }
+    });
 
     console.log('Treemap drawn'); // Debug
 }
