@@ -1,3 +1,7 @@
+:root {
+    --header-height: 48px;
+}
+
 body {
     margin: 0;
     padding: 0;
@@ -7,8 +11,11 @@ body {
 
 .visualization-container {
     display: flex;
-    width: 100vw;
-    height: 100vh;
+    height: calc(100vh - var(--header-height));
+    overflow: hidden;
+    position: relative;
+    margin-top: 0;
+    padding-top: 0;
 }
 
 #sidebar {
@@ -41,10 +48,12 @@ body {
 #treemap {
     position: relative;
     width: 100%;
-    height: 100vh;
+    height: calc(100vh - var(--header-height));
     overflow-y: auto;
     overflow-x: hidden;
     scroll-behavior: smooth;
+    margin-top: 0;
+    padding-top: 0;
 }
 
 #treemap::-webkit-scrollbar {
@@ -80,6 +89,9 @@ body {
 #readout {
     font-size: 14px;
     color: #333;
+    width: 300px;
+    height: calc(100vh - var(--header-height));
+    overflow-y: auto;
 }
 
 #readout h2 {
@@ -191,12 +203,7 @@ body {
     margin: 0;
 }
 
-/* Remove duplicate history-specific styles */
-.history-section {
-    margin-top: 1rem;
-    padding: 15px;
-    border-top: 1px solid #eee;
-}
+
 
 /* Remove these duplicate declarations as they're covered above */
 .bookmark-item,
@@ -267,8 +274,9 @@ body {
 }
 
 .search-container {
-    padding: 1rem;
-    border-bottom: 1px solid #eee;
+    padding: 0;
+    flex: 1;
+    max-width: 400px;
     background: white;
     position: sticky;
     top: 0;
@@ -282,21 +290,64 @@ body {
 
 .search-input {
     width: 100%;
-    padding: 8px 12px;
-    border: 2px solid #eee;
-    border-radius: 6px;
-    font-size: 1rem;
-    transition: all 0.2s ease-in-out;
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
 }
 
 .search-input:focus {
     outline: none;
     border-color: #4a90e2;
-    box-shadow: 0 0 0 3px rgba(74,144,226,0.1);
+    box-shadow: 0 0 0 2px rgba(74,144,226,0.1);
 }
 
 mark {
     background-color: #fff3b8;
     padding: 0 2px;
     border-radius: 2px;
+}
+
+.app-header {
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem;
+    background: white;
+    height: var(--header-height);
+    position: relative;
+    z-index: 2;
+}
+
+.logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 500;
+    font-size: 1.25rem;
+    color: #333;
+    margin-right: 0.75rem;
+    text-transform: lowercase;
+    letter-spacing: 0.5px;
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+}
+
+.view-toggle {
+    background: none;
+    border: none;
+    padding: 4px;
+    color: #666;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    height: 24px;
+    width: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
