@@ -1,9 +1,13 @@
 import { formatDistanceToNow, formatSessionDuration } from './utility.js';
+import { getMotivationalMessage } from './motivational-posters.js';
 
 let readoutTimeout = null;
 let currentBookmarkPage = 0;
 const BOOKMARKS_PER_PAGE = 10;
 let stickyCell = null;  // Track currently sticky cell
+
+let inactivityTimer = null;
+const INACTIVITY_TIMEOUT = 5000; // 5 seconds
 
 // Helper function to get domain from URL
 function getDomain(url) {
@@ -17,10 +21,36 @@ function getDomain(url) {
 
 const ITEMS_PER_PAGE = 5;
 
+function resetInactivityTimer(categorizedDataCache) {
+    // Don't set timer if we're in sticky state
+    if (stickyCell) {
+        return;
+    }
+
+    clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+        showDefaultReadout(categorizedDataCache);
+    }, INACTIVITY_TIMEOUT);
+}
+
 async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
+    // Clear any existing inactivity timer
+    clearTimeout(inactivityTimer);
+
+    // Only start inactivity timer if not sticky
+    if (!sticky) {
+        resetInactivityTimer(categorizedDataCache);
+    }
+
     const readoutContainer = document.getElementById('readout');
     if (!readoutContainer) {
         console.error('Readout container not found');
+        return;
+    }
+
+    // Show default state if no tab data
+    if (!tabData) {
+        showDefaultReadout(categorizedDataCache);
         return;
     }
 
@@ -164,7 +194,7 @@ async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
 
 function hideReadout() {
     const readoutContainer = document.getElementById('readout');
-    if (readoutContainer && !readoutContainer.classList.contains('sticky')) {
+    if (readoutContainer && !stickyCell) {
         readoutContainer.innerHTML = '';
         if (stickyCell) {
             d3.select(stickyCell).select('rect')
@@ -175,4 +205,34 @@ function hideReadout() {
     }
 }
 
-export { displayReadout, hideReadout };
+function showDefaultReadout(categorizedDataCache) {
+    const readoutContainer = document.getElementById('readout');
+    if (!readoutContainer || !categorizedDataCache?.activeWindows) {
+        console.warn('Readout container or data not available');
+        return;
+    }
+
+    const windows = categorizedDataCache.activeWindows.length;
+    const tabs = categorizedDataCache.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
+    const message = getMotivationalMessage(windows, tabs);
+
+    // Debug output
+    console.log('Showing default readout:', { windows, tabs, message });
+
+    const readoutHtml = `
+        <div class="readout-default">
+            <h1 class="status-message">${message}</h1>
+            <div class="stats">
+                <span>${windows} window${windows !== 1 ? 's' : ''}</span>
+                <span>•</span>
+                <span>${tabs} tab${tabs !== 1 ? 's' : ''}</span>
+            </div>
+        </div>
+    `;
+
+    // Actually set the HTML content
+    readoutContainer.innerHTML = readoutHtml;
+}
+
+// Export both the function and timer reset
+export { displayReadout, hideReadout, showDefaultReadout, resetInactivityTimer };

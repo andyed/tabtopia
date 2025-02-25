@@ -228,3 +228,37 @@ body {
     font-size: 1.1em;
     color: #333;
 }
+
+.readout-default {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 2rem;
+    text-align: center;
+}
+
+.status-message {
+    font-size: 2rem;
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 1rem;
+    line-height: 1.3;
+    max-width: 80%;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.stats {
+    font-size: 1.2rem;
+    color: #666;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    animation: fadeIn 0.3s ease-in-out 0.1s backwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}

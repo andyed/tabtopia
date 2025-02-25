@@ -1,6 +1,7 @@
 import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from './utility.js';
 import { updateStats } from './stats.js';
 import { drawTreemap } from './treemap.js';
+import { showDefaultReadout } from './readout.js';
 
 
 
@@ -9,7 +10,6 @@ const MICROS_SESSION_TIMEOUT = 2 * 60 * 1000; // 2 minutes in milliseconds
 const UPDATE_INTERVAL = 120000; // 2 minutes in milliseconds
 let updateTimer = null;
 let lastUpdate = Date.now();
-let currentData = null;
 let tabEdges = new Map(); // Track edges between tabs
 
 // Add new tracking constants
@@ -22,7 +22,25 @@ const TAB_ACTIVITY = {
 let tabActivityLog = new Map(); // Track tab activity periods
 let navigationEvents = new Map();
 
+let inactivityTimer = null;
+const INACTIVITY_TIMEOUT = 5000; // 5 seconds
 
+let categorizedDataCache = null;
+let currentData = null;
+
+function resetInactivityTimer(categorizedData) {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+        showDefaultReadout(categorizedData);
+    }, INACTIVITY_TIMEOUT);
+}
+
+// Add mousemove listener to the document
+document.addEventListener('mousemove', () => {
+    if (categorizedDataCache && !document.querySelector('.cell-selected')) {
+        resetInactivityTimer(categorizedDataCache);
+    }
+});
 
 function categorizeData(history, windows) {
     console.log('Categorizing data...'); // Debug
@@ -98,7 +116,34 @@ async function initializeApp() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', initializeApp);
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // Initialize data first
+        const [history, windows] = await Promise.all([
+            chrome.history.search({ text: '', maxResults: 10000, startTime: 0 }),
+            chrome.windows.getAll({ populate: true })
+        ]);
+
+        // Create initial categorized data
+        categorizedDataCache = categorizeData(history, windows);
+        currentData = categorizedDataCache;
+
+        // Initialize visualizations
+        if (categorizedDataCache?.activeWindows) {
+            await drawTreemap(categorizedDataCache);
+            showDefaultReadout(categorizedDataCache);
+            
+            // Start inactivity timer only if we have data
+            if (!document.querySelector('.cell-selected')) {
+                resetInactivityTimer(categorizedDataCache);
+            }
+        } else {
+            console.error('Invalid data structure:', categorizedDataCache);
+        }
+    } catch (error) {
+        console.error('Error initializing page:', error);
+    }
+});
 
 async function fetchHistoryData(limit, startTime) {
   return new Promise((resolve) => {
