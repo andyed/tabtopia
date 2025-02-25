@@ -2,6 +2,7 @@ import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from './utility.j
 import { updateStats } from './stats.js';
 import { drawTreemap } from './treemap.js';
 import { showDefaultReadout } from './readout.js';
+import { tabSearch } from './search.js';
 
 
 
@@ -116,6 +117,32 @@ async function initializeApp() {
     }
 }
 
+function handleTabSearch(query) {
+    if (!query) {
+        // Reset all cells if search is empty
+        d3.selectAll('#treemap g')
+            .style('opacity', 1)
+            .style('transition', 'opacity 0.2s ease-in-out');
+        return;
+    }
+
+    const results = tabSearch.search(query);
+    const matchedIds = new Set(results.map(r => r.tab.id));
+
+    // Update visualization based on search results
+    d3.selectAll('#treemap g').each(function(d) {
+        if (!d?.data) return;
+        
+        const tabId = parseInt(d.data.id.replace('tab', ''));
+        const isMatch = matchedIds.has(tabId);
+        const opacity = isMatch ? 1 : 0.3;
+        
+        d3.select(this)
+            .style('opacity', opacity)
+            .style('transition', 'opacity 0.2s ease-in-out');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         // Initialize data first
@@ -127,6 +154,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Create initial categorized data
         categorizedDataCache = categorizeData(history, windows);
         currentData = categorizedDataCache;
+
+        // Initialize search index
+        tabSearch.buildIndex(categorizedDataCache);
+
+        // Set up search handler
+        const searchInput = document.getElementById('tabSearch');
+        if (searchInput) {
+            searchInput.addEventListener('input', (event) => {
+                const query = event.target.value.trim();
+                handleTabSearch(query);
+            });
+        }
 
         // Initialize visualizations
         if (categorizedDataCache?.activeWindows) {

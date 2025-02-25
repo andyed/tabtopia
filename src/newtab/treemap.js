@@ -122,10 +122,21 @@ export function drawTreemap(categorizedData) {
 
     // Create SVG with calculated height
     d3.select('#treemap').selectAll('*').remove();
+    
+    // Update the margin definition
+    const margin = { top: 0, right: 0, bottom: 0, left: 0 };
+
+    // Ensure SVG is created without extra space
     const svg = d3.select('#treemap')
         .append('svg')
+        .style('margin', '0')
+        .style('padding', '0')
         .attr('width', width)
         .attr('height', layout.height);
+
+    // First rename the SVG root group
+    const svgRoot = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
 
     // Create color schemes
     const lightColors = [
@@ -162,6 +173,7 @@ export function drawTreemap(categorizedData) {
         .paddingInner(5)
         .paddingOuter(10);
 
+    // Keep the d3 hierarchy root as 'root'
     const root = d3.hierarchy(hierarchyData)
         .sum(d => d.timeSpent)
         .sort((a, b) => b.value - a.value);
@@ -333,43 +345,50 @@ export function drawTreemap(categorizedData) {
         }
     });
 
-    // Favicon or SVG icon for Chrome URLs
+    // Update the favicon handling section
     cellContent.append('image')
         .attr('xlink:href', d => {
-            if (d.data.url.startsWith('chrome://')) {
-                return 'data:image/svg+xml;base64,' + btoa(`
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${windowColors.get(d.data.windowId)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-settings">
-                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                        <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
-                    </svg>
-                `);
-            } else {
-                try {
-                    const url = new URL(d.data.url);
-                    return d.data.favIconUrl || `${url.origin}/favicon.ico?size=${d.iconSize}`;
-                } catch (e) {
-                    console.warn('Invalid URL:', d.data.url);
+            // Only proceed if we have valid data
+            if (!d.data?.url) return null;
+
+            try {
+                // Use existing favicon if available
+                if (d.data.favIconUrl && d.data.favIconUrl !== 'chrome://favicon/') {
+                    return d.data.favIconUrl;
+                }
+
+                // Handle chrome:// URLs with settings icon
+                if (d.data.url.startsWith('chrome://')) {
                     return 'data:image/svg+xml;base64,' + btoa(`
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#999999">
-                            <rect width="24" height="24" rx="4" fill="#eeeeee"/>
-                            <text x="12" y="16" font-size="14" text-anchor="middle" fill="#999999">?</text>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                            <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+                            <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
                         </svg>
                     `);
                 }
+
+                // For regular URLs, try to get favicon from origin
+                const url = new URL(d.data.url);
+                return `${url.origin}/favicon.ico`;
+
+            } catch (e) {
+                console.warn('Invalid URL or favicon:', d.data.url);
+                return null;
             }
         })
         .attr('width', d => d.iconSize)
         .attr('height', d => d.iconSize)
         .attr('x', d => -d.iconSize/2)
         .attr('y', d => -d.iconSize/2)
-        .on('error', function(event, d) {
-            try {
-                const url = new URL(d.data.url);
-                d3.select(this)
-                    .attr('xlink:href', `${url.origin}/favicon.ico?size=16`);
-            } catch (e) {
-                console.warn('Invalid URL in error handler:', d.data.url);
-            }
+        .on('error', function() {
+            // On error, set to default icon
+            d3.select(this).attr('xlink:href', 'data:image/svg+xml;base64,' + btoa(`
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                    <rect width="24" height="24" rx="4" fill="#eeeeee"/>
+                    <text x="12" y="16" font-size="14" text-anchor="middle" fill="#999999">?</text>
+                </svg>
+            `));
         });
 
     // Centered text below favicon
