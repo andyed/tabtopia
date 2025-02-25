@@ -108,7 +108,7 @@ export function drawTreemap(categorizedData) {
 
     // Update container and SVG setup
     const container = document.getElementById('treemap');
-    const viewportHeight = window.innerHeight;
+    const viewportHeight = window.innerHeight - 48 ;
     const width = container.offsetWidth || 800;
     const totalTabs = categorizedData.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
     
@@ -170,8 +170,8 @@ export function drawTreemap(categorizedData) {
     // Create and configure treemap
     const treemap = d3.treemap()
         .size([width, layout.height])
-        .paddingInner(5)
-        .paddingOuter(10);
+        .paddingInner(0)
+        .paddingOuter(0);
 
     // Keep the d3 hierarchy root as 'root'
     const root = d3.hierarchy(hierarchyData)
