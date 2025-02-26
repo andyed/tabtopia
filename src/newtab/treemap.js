@@ -64,37 +64,46 @@ function calculateOptimalIconSize(root, width, height) {
     return iconSize;
 }
 
+// Update the layout calculation to ensure minimum 4 cells
 function calculateOptimalLayout(totalTabs, width, viewportHeight) {
-    // Start with maximum icon size
     let iconSize = 128;
     const minIconSize = 16;
     const padding = 10;
-    const textHeight = 40; // Approximate height for text
+    const textHeight = 40;
     
-    // Calculate minimum cell size needed for each icon size
+    // Calculate cells needed
+    const minimumCells = Math.max(4, totalTabs);
+    
     while (iconSize > minIconSize) {
         const cellSize = iconSize + padding * 2 + textHeight;
         const cellsPerRow = Math.floor(width / cellSize);
-        const rows = Math.ceil(totalTabs / cellsPerRow);
+        const rows = Math.ceil(minimumCells / cellsPerRow);
         const totalHeight = rows * cellSize;
         
-        // If it fits in viewport, use this size
         if (totalHeight <= viewportHeight) {
             return {
                 iconSize,
-                height: viewportHeight, // Use full viewport
+                height: viewportHeight,
+                cellsPerRow,
+                rows,
+                minimumCells,
                 enableScroll: false
             };
         }
         
-        // Try next smaller icon size
         iconSize -= 16;
     }
     
-    // If we get here, even smallest icons don't fit
+    // If we get here, use minimum size
+    const cellSize = minIconSize + padding * 2 + textHeight;
+    const cellsPerRow = Math.floor(width / cellSize);
+    
     return {
         iconSize: minIconSize,
-        height: Math.max(viewportHeight, (Math.ceil(totalTabs / Math.floor(width / (minIconSize + padding * 2 + textHeight)))) * (minIconSize + padding * 2 + textHeight)),
+        height: Math.max(viewportHeight, Math.ceil(minimumCells / cellsPerRow) * cellSize),
+        cellsPerRow,
+        rows: Math.ceil(minimumCells / cellsPerRow),
+        minimumCells,
         enableScroll: true
     };
 }
@@ -107,6 +116,13 @@ export async function drawTreemap(categorizedData) {
 
     // Calculate optimal layout
     const layout = calculateOptimalLayout(totalTabs, width, viewportHeight);
+
+    console.log('Layout calculation:', {
+        totalTabs,
+        minimumCells: layout.minimumCells,
+        cellsPerRow: layout.cellsPerRow,
+        rows: layout.rows
+    });
 
     // Apply scroll only if necessary
     container.style.height = `${viewportHeight}px`;
@@ -135,9 +151,14 @@ export async function drawTreemap(categorizedData) {
     ];
 
     const windowColors = new Map();
+
+    // First, set colors for active windows
     categorizedData.activeWindows.forEach((window, index) => {
         windowColors.set(window.id, lightColors[index % lightColors.length]);
     });
+
+    // Set a default color for the bookmark window
+    windowColors.set('bookmark', '#f5f5f5'); // Light gray for bookmarks
 
     // Create hierarchy data
     const hierarchyData = {
@@ -157,24 +178,40 @@ export async function drawTreemap(categorizedData) {
         }))
     };
 
-    // Fill empty cells with random bookmarks
-    const tabs = hierarchyData.children.flatMap(window => window.children);
-    const emptyCells = layout.cellsPerRow * layout.rows - tabs.length;
-    const randomBookmarks = await fetchRecentBookmarks();
+    // Calculate empty cells needed
+    const currentTabs = hierarchyData.children.flatMap(window => window.children);
+    const minimumCellCount = 4;
+    const emptyCells = Math.max(0, minimumCellCount - currentTabs.length);
 
-    randomBookmarks.slice(0, emptyCells).forEach(bookmark => {
-        tabs.push({
-            id: `bookmark${bookmark.id}`,
-            windowId: 'bookmark',
-            title: bookmark.title || 'Untitled',
-            url: bookmark.url || '',
-            favIconUrl: bookmark.favIconUrl,
-            lastAccessed: Date.now(),
-            timeSpent: 1,
-            isBookmark: true,
-            children: []
-        });
+    console.log('Empty cells calculation:', {
+        currentTabs: currentTabs.length,
+        minimumCellCount,
+        emptyCells,
+        windowColors: Array.from(windowColors.entries())
     });
+
+    // Fill empty cells with bookmarks
+    if (emptyCells > 0) {
+        const randomBookmarks = await fetchRecentBookmarks();
+        console.log(`Filling ${emptyCells} empty cells with bookmarks`);
+        
+        // Create a new window for bookmarks with the same structure
+        hierarchyData.children.push({
+            name: 'Window bookmark',
+            id: 'bookmark', // Add ID to match windowColors map
+            children: randomBookmarks.slice(0, emptyCells).map(bookmark => ({
+                id: `bookmark${bookmark.id}`,
+                windowId: 'bookmark',
+                title: bookmark.title || 'Untitled',
+                url: bookmark.url || '',
+                favIconUrl: bookmark.favIconUrl,
+                lastAccessed: Date.now(),
+                timeSpent: 1,
+                isBookmark: true,
+                children: []
+            }))
+        });
+    }
 
     // Create and configure treemap
     const treemap = d3.treemap()
@@ -201,9 +238,15 @@ export async function drawTreemap(categorizedData) {
         const maxLastAccessed = d3.max(tabs, d => d.data.lastAccessed);
         const minLastAccessed = d3.min(tabs, d => d.data.lastAccessed);
 
-        const baseColor = d3.color(windowColors.get(parseInt(windowNode.data.name.replace('Window ', ''), 10)));
+        // Get window ID, handling bookmark window correctly
+        const windowId = windowNode.data.name.includes('bookmark') ? 'bookmark' : 
+            parseInt(windowNode.data.name.replace('Window ', ''), 10);
+        
+        const baseColor = d3.color(windowColors.get(windowId));
         if (!baseColor) {
-            console.error('Base color not found for window:', windowNode.data.name);
+            console.warn(`No color found for window ${windowId}, using default`);
+            // Set a default color for unknown windows
+            windowColors.set(windowId, '#f5f5f5');
             return;
         }
 
@@ -212,16 +255,8 @@ export async function drawTreemap(categorizedData) {
             .range([baseColor.darker(0.5), baseColor.brighter(0.2)]);
 
         tabs.forEach(tab => {
-            tab.data.color = colorScale(tab.data.lastAccessed);
+            tab.data.color = tab.data.isBookmark ? '#f5f5f5' : colorScale(tab.data.lastAccessed);
         });
-
-        // Sort tabs by lastAccessed to determine the most recent ones
-        tabs.sort((a, b) => b.data.lastAccessed - a.data.lastAccessed);
-
-        // Ensure the colors for the three most recent items are different
-        if (tabs.length > 0) tabs[0].data.color = baseColor.brighter(0.2);
-        if (tabs.length > 1) tabs[1].data.color = baseColor;
-        if (tabs.length > 2) tabs[2].data.color = baseColor.darker(0.5);
     });
 
     // Add background rectangles for each window
@@ -355,23 +390,9 @@ export async function drawTreemap(categorizedData) {
             d.iconSize = calculateCellIconSize(cellWidth, cellHeight);
         });
 
-    // Add placeholder images first
+    // Keep only this favicon handling section with all attributes
     cellContent.append('image')
-        .attr('xlink:href', '')
-        .attr('width', d => d.iconSize)
-        .attr('height', d => d.iconSize)
-        .attr('x', d => -d.iconSize/2)
-        .attr('y', d => -d.iconSize/2);
-
-    // Update favicons asynchronously
-    cellContent.each(function(d) {
-        if (d.data?.url) {
-            updateCellFavicon(d3.select(this), d.data.url, d.iconSize);
-        }
-    });
-
-    // Update the favicon handling section
-    cellContent.append('image')
+        .attr('class', 'favicon')
         .attr('xlink:href', d => {
             // Only proceed if we have valid data
             if (!d.data?.url) return null;
