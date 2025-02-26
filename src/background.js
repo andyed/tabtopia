@@ -68,12 +68,10 @@ const navigationEvents = new Map(); // Track navigation sequence per tab
 
 // Centralized event dispatcher
 function dispatchTabEvent(eventType, data) {
-    chrome.runtime.sendMessage({
+    sendMessageWithErrorHandling({
         action: eventType,
         data: data,
         timestamp: Date.now()
-    }).catch(err => {
-        console.log('No listeners for event:', eventType);
     });
 }
 
@@ -188,7 +186,7 @@ chrome.history.onVisited.addListener((result) => {
   const faviconUrl = getFaviconUrl(result.url);
   console.log(`New history entry: ${result.url} with favicon: ${faviconUrl}`);
   // Broadcast the new history entry to any listening tabs
-  chrome.runtime.sendMessage({
+  sendMessageWithErrorHandling({
       type: 'newHistoryEntry',
       data: {
           url: result.url,
@@ -211,7 +209,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   chrome.tabs.get(activeInfo.tabId, (tab) => {
       const faviconUrl = getFaviconUrl(tab.url);
       console.log(`New active tab: ${tab.url} with favicon: ${faviconUrl}`);
-      chrome.runtime.sendMessage({
+      sendMessageWithErrorHandling({
           type: 'tabChanged',
           data: {
               url: tab.url,
@@ -315,13 +313,11 @@ function handleContentUpdate(data, sender) {
         browserState.tabs.set(tabId, tabData);
 
         // Notify treemap
-        chrome.runtime.sendMessage({
+        sendMessageWithErrorHandling({
             action: 'tabUpdated',
             tabId,
             changeInfo: { title, url, favIconUrl },
             tab: tabData
-        }).catch(err => {
-            console.log('No listeners for content update');
         });
     }
 }
@@ -438,7 +434,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 const navigationType = detectNavigationType(tabId, changeInfo.url, enhancedChangeInfo);
                 
                 // Send update with navigation type clearly marked
-                chrome.runtime.sendMessage({
+                sendMessageWithErrorHandling({
                     action: 'tabUpdated',
                     tabId,
                     changeInfo: {
@@ -447,8 +443,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                         isUrlBar: navigationType === 'urlBarNavigation'
                     },
                     tab: sanitizeTabData(tab)
-                }).catch(err => {
-                    console.log('No listeners for URL bar navigation event');
                 });
             });
         } else if (changeInfo.status === 'complete') {
@@ -484,13 +478,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         });
         
         // Send message with enhanced info
-        chrome.runtime.sendMessage({
+        sendMessageWithErrorHandling({
             action: 'tabUpdated',
             tabId,
             changeInfo: enhancedChangeInfo,
             tab
-        }).catch(() => {
-            console.log('No active listeners for navigation update');
         });
         
         // Update tab data in the state
@@ -502,7 +494,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         });
         
         // Broadcast to all listeners with detailed info
-        chrome.runtime.sendMessage({
+        sendMessageWithErrorHandling({
             action: 'tabUpdated',
             tabId,
             changeInfo: {
@@ -510,9 +502,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 navigationType
             },
             tab: tabData
-        }).catch(() => {
-            // Expected when no listeners
-            console.log('No active listeners for navigation update');
         });
         
         // Update window structure if needed
@@ -533,13 +522,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             };
             
             // Broadcast the enhanced update
-            chrome.runtime.sendMessage({
+            sendMessageWithErrorHandling({
                 action: 'tabUpdated',
                 tabId,
                 changeInfo: enhancedChangeInfo,
                 tab: tab
-            }).catch(() => {
-                console.log('No listeners for navigation update');
             });
             
             // Update browser state
@@ -599,7 +586,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
 
         // Force treemap update
-        chrome.runtime.sendMessage({
+        sendMessageWithErrorHandling({
             action: 'tabUpdated',
             tabId,
             changeInfo: {
@@ -612,8 +599,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 url: message.data.targetUrl,
                 title: message.data.text
             }
-        }).catch(err => {
-            console.log('No listeners for navigation event');
         });
     }
     return true;
@@ -650,7 +635,7 @@ chrome.tabs.onCreated.addListener((tab) => {
     tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
     lastClickedLink = null; // Clear after use
   }
-  chrome.runtime.sendMessage({
+  sendMessageWithErrorHandling({
     action: 'tabCreated',
     tab: tab
   });
@@ -704,7 +689,7 @@ chrome.windows.onCreated.addListener(async (window) => {
                 });
 
                 // Send update to treemap
-                chrome.runtime.sendMessage({
+                sendMessageWithErrorHandling({
                     action: 'tabCreated',
                     tab: {
                         id: tab.id,
@@ -716,8 +701,6 @@ chrome.windows.onCreated.addListener(async (window) => {
                         lastAccessed: Date.now(),
                         referringTabId: lastClickedLink.sourceTabId
                     }
-                }).catch(err => {
-                    console.log('No active listeners for new window tab');
                 });
 
                 console.log('Created edge for new window:', {
@@ -750,7 +733,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     const relationships = browserState.tabRelationships.get(tabId);
 
     // Send removal event with complete data
-    chrome.runtime.sendMessage({
+    sendMessageWithErrorHandling({
         action: 'tabRemoved',
         tabId,
         data: {
@@ -760,8 +743,6 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
             removeInfo,
             timestamp: Date.now()
         }
-    }).catch(err => {
-        console.log('No listeners for tab removal');
     });
 
     // Clean up all references
@@ -806,7 +787,7 @@ function notifyTreemap(message) {
         // Check if we have any listeners before sending
         chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }, (contexts) => {
             if (contexts.length > 0) {
-                chrome.runtime.sendMessage(message)
+                sendMessageWithErrorHandling(message)
                     .then(() => {
                         console.log('Message sent successfully:', message.action);
                     })
@@ -884,7 +865,7 @@ chrome.webNavigation.onCommitted.addListener((details) => {
                            browserState.recentClicks[tabId] : null;
         
         // Send enhanced message with all navigation data
-        chrome.runtime.sendMessage({
+        sendMessageWithErrorHandling({
             action: 'tabUpdated',
             tabId,
             changeInfo: {
@@ -899,8 +880,6 @@ chrome.webNavigation.onCommitted.addListener((details) => {
                 sourcePage: linkContext?.sourceUrl || null
             },
             tab: tabData
-        }).catch(() => {
-            console.log('No listeners for navigation update');
         });
         
         // Update tab in window structure
@@ -926,13 +905,21 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         });
         
         // Send update
-        chrome.runtime.sendMessage({
+        sendMessageWithErrorHandling({
             action: 'tabUpdated',
             tabId,
             changeInfo,
             tab: tabData
-        }).catch(() => {
-            console.log('No listeners for tab update');
         });
     }
 });
+
+// Replace all instances of direct chrome.runtime.sendMessage with this wrapper
+function sendMessageWithErrorHandling(message) {
+    return chrome.runtime.sendMessage(message)
+        .catch(error => {
+            // This is expected when no listeners exist, just log and continue
+            console.log(`Message not delivered (${message.action}): No receivers`);
+            return null;
+        });
+}
