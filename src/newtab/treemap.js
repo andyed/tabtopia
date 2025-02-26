@@ -10,6 +10,42 @@ let currentFocusIndex = -1;
 let focusableNodes = [];
 let currentTabOrder = []; // Store current tab order IDs
 
+// Add state management at the top of file
+const interactionState = {
+    focusedNode: null,
+    activeNode: null,
+    isKeyboardMode: false,
+    focusableNodes: [],
+    currentTabOrder: []
+};
+
+// State management at top of file
+const state = {
+    data: null,
+    activeWindowCount: 0,
+    get needsBookmarks() {
+        return this.getTotalTabs() < 4;
+    },
+    getTotalTabs() {
+        return this.data?.activeWindows?.reduce((sum, w) => sum + w.tabs.length, 0) || 0;
+    }
+};
+
+// Initialize state from background
+async function initializeState() {
+    try {
+        const initialState = await chrome.runtime.sendMessage({ type: 'getInitialState' });
+        state.data = initialState;
+        console.log('State initialized:', {
+            windows: state.data.activeWindows.length,
+            totalTabs: state.getTotalTabs()
+        });
+    } catch (error) {
+        console.error('Failed to initialize state:', error);
+        state.data = { activeWindows: [] };
+    }
+}
+
 // Update favicon loading function
 async function updateCellFavicon(cell, url, size) {
     try {
@@ -458,6 +494,37 @@ export async function drawTreemap(categorizedData) {
             }
         });
 
+    // In the node creation section, add event listeners
+    nodes
+        .on('dblclick', function(event, d) {
+            event.stopPropagation();
+            if (d.data.isBookmark) {
+                // Handle bookmark double-click
+                chrome.tabs.create({
+                    url: d.data.url,
+                    active: true
+                });
+            } else {
+                // Handle regular tab double-click
+                const windowId = parseInt(d.data.windowId, 10);
+                const tabId = parseInt(d.data.id.replace('tab', ''), 10);
+                chrome.windows.update(windowId, { focused: true }, () => {
+                    chrome.tabs.update(tabId, { active: true });
+                });
+            }
+        })
+        .on('click', function(event, d) {
+            // ... existing click handler ...
+        });
+
+    // Add debug logging
+    console.log('Event listeners attached:', {
+        nodes: nodes.size(),
+        withDblClick: nodes.filter(function() {
+            return d3.select(this).on('dblclick');
+        }).size()
+    });
+
     // Add background click handler to clear selection
     d3.select('#treemap').on('click', function(event) {
         if (event.target.tagName === 'svg' || event.target.id === 'treemap') {
@@ -470,6 +537,47 @@ export async function drawTreemap(categorizedData) {
     });
 
     console.log('Treemap drawn'); // Debug
+
+    // Add event handlers right after node creation
+    nodes
+        .on('mouseenter', function(event, d) {
+            if (!interactionState.activeNode) {
+                focusNode(this, d);
+            }
+        })
+        .on('mouseleave', function(event, d) {
+            if (!interactionState.activeNode && !interactionState.isKeyboardMode) {
+                unfocusNode(this);
+            }
+        })
+        .on('click', function(event, d) {
+            event.stopPropagation();
+            activateNode(this, d);
+        })
+        .on('dblclick', handleNodeDblClick)
+        .on('focus', function(event, d) {
+            interactionState.isKeyboardMode = true;
+            focusNode(this, d);
+        })
+        .on('blur', function(event, d) {
+            if (!interactionState.activeNode) {
+                unfocusNode(this);
+            }
+        })
+        .on('keydown', function(event, d) {
+            handleKeyNavigation(event, this, d, interactionState);
+        });
+
+    // Store nodes for keyboard navigation
+    interactionState.focusableNodes = nodes.nodes();
+    
+    // Debug logging
+    console.log('Event handlers attached:', {
+        nodes: nodes.size(),
+        focusable: interactionState.focusableNodes.length
+    });
+
+    
 }
 
 // Helper function to format title
@@ -584,31 +692,84 @@ function handleTabRemoved(tabId, removeInfo) {
 
 // Update the handleTabCreated function to properly handle bookmarks
 function handleTabCreated(tab) {
-    // Add the new tab to categorizedDataCache
-    categorizedDataCache.activeWindows.forEach(window => {
-        if (window.id === tab.windowId) {
-            window.tabs.push({
-                id: tab.id,
-                windowId: tab.windowId,
-                title: tab.title || 'Untitled',
-                url: tab.url || '',
-                favIconUrl: tab.favIconUrl,
-                lastAccessed: Date.now(),
-                timeSpent: 100,
-                children: []
-            });
-        }
-    });
-
-    // Remove bookmark window if we have enough tabs
-    if (categorizedDataCache.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0) >= 4) {
-        categorizedDataCache.activeWindows = categorizedDataCache.activeWindows
-            .filter(w => w.id !== 'bookmark');
+    if (!state.data?.activeWindows) {
+        console.warn('State not initialized, deferring tab creation');
+        initializeState().then(() => handleTabCreated(tab));
+        return;
     }
 
-    // Redraw the treemap
-    drawTreemap(categorizedDataCache);
+    // Find or create window
+    let targetWindow = state.data.activeWindows.find(w => w.id === tab.windowId);
+    if (!targetWindow) {
+        targetWindow = {
+            id: tab.windowId,
+            tabs: []
+        };
+        state.data.activeWindows.push(targetWindow);
+    }
+
+    // Add new tab
+    targetWindow.tabs.push({
+        id: tab.id,
+        windowId: tab.windowId,
+        title: tab.title || 'Untitled',
+        url: tab.url || '',
+        favIconUrl: tab.favIconUrl,
+        lastAccessed: Date.now(),
+        timeSpent: 100,
+        children: []
+    });
+
+    // Handle bookmark window
+    if (state.needsBookmarks) {
+        fetchRecentBookmarks().then(bookmarks => {
+            const emptyCells = 4 - state.getTotalTabs();
+            if (emptyCells > 0) {
+                addBookmarkWindow(bookmarks.slice(0, emptyCells));
+            }
+            drawTreemap(state.data);
+        });
+    } else {
+        // Remove bookmark window if present
+        state.data.activeWindows = state.data.activeWindows
+            .filter(w => w.id !== 'bookmark');
+        drawTreemap(state.data);
+    }
+
+    console.log('Tab created:', {
+        totalTabs: state.getTotalTabs(),
+        windows: state.data.activeWindows.length,
+        needsBookmarks: state.needsBookmarks
+    });
 }
+
+// Helper function to add bookmark window
+function addBookmarkWindow(bookmarks) {
+    const bookmarkWindow = {
+        name: 'Window bookmark',
+        id: 'bookmark',
+        tabs: bookmarks.map(bookmark => ({
+            id: `bookmark${bookmark.id}`,
+            windowId: 'bookmark',
+            title: bookmark.title || 'Untitled',
+            url: bookmark.url || '',
+            favIconUrl: bookmark.favIconUrl,
+            lastAccessed: Date.now(),
+            timeSpent: 1,
+            isBookmark: true,
+            children: []
+        }))
+    };
+
+    // Remove existing bookmark window if present
+    state.data.activeWindows = state.data.activeWindows
+        .filter(w => w.id !== 'bookmark');
+    
+    state.data.activeWindows.push(bookmarkWindow);
+}
+
+// Initialize state when page loads
+document.addEventListener('DOMContentLoaded', initializeState);
 
 function calculateCellIconSize(cellWidth, cellHeight, maxIconSize = 128, minIconSize = 16) {
     // Account for padding and text height
@@ -632,7 +793,7 @@ function updateTabOrder(searchResults) {
         const sortedNodes = focusableNodes.sort((a, b) => {
             const aData = d3.select(a).datum();
             const bData = d3.select(b).datum();
-            return bData.data.lastAccessed - aData.data.lastAccessed;
+            return b.data.lastAccessed - aData.data.lastAccessed;
         });
         currentTabOrder = sortedNodes.map(node => d3.select(node).datum().data.id);
     } else {
@@ -655,3 +816,77 @@ const calculateEmptyCells = (currentTabCount) => {
     // Add exactly enough bookmarks to reach minimum
     return minimumCellCount - currentTabCount;
 };
+
+
+
+// Helper functions
+function focusNode(node, data) {
+    if (interactionState.focusedNode === node) return;
+    
+    // Clear previous focus
+    if (interactionState.focusedNode) {
+        unfocusNode(interactionState.focusedNode);
+    }
+
+    interactionState.focusedNode = node;
+    d3.select(node)
+        .classed('node-focused', true)
+        .select('rect')
+        .attr('stroke', data.data.isBookmark ? '#4CAF50' : '#2196F3')
+        .attr('stroke-width', '2px');
+
+    displayReadout(data);
+}
+
+function unfocusNode(node) {
+    if (!node) return;
+    
+    interactionState.focusedNode = null;
+    d3.select(node)
+        .classed('node-focused', false)
+        .select('rect')
+        .attr('stroke', d => d.data.isBookmark ? '#ddd' : 'none')
+        .attr('stroke-width', '1px');
+
+    if (!interactionState.activeNode) {
+        hideReadout();
+    }
+}
+
+function handleNodeDblClick(event, d) {
+    event.stopPropagation();
+    if (d.data.isBookmark) {
+        chrome.tabs.create({ url: d.data.url, active: true });
+    } else {
+        const windowId = parseInt(d.data.windowId, 10);
+        const tabId = parseInt(d.data.id.replace('tab', ''), 10);
+        chrome.windows.update(windowId, { focused: true }, () => {
+            chrome.tabs.update(tabId, { active: true });
+        });
+    }
+}
+
+// Add to the interaction helper functions section
+function activateNode(node, data) {
+    if (interactionState.activeNode === node) {
+        // Deactivate if already active
+        interactionState.activeNode = null;
+        unfocusNode(node);
+        return;
+    }
+
+    // Clear previous activation
+    if (interactionState.activeNode) {
+        unfocusNode(interactionState.activeNode);
+    }
+
+    interactionState.activeNode = node;
+    d3.select(node)
+        .classed('node-activated', true)
+        .select('rect')
+        .attr('stroke', '#4CAF50')
+        .attr('stroke-width', '3px');
+
+    // Update readout
+    displayReadout(data);
+}

@@ -23,6 +23,38 @@ const TAB_ACTIVITY = {
   UPDATE_INTERVAL: 5000      // Update active tab time every 5 seconds
 };
 
+// Add state tracking
+const state = {
+    tabs: new Map(),
+    windows: new Map(),
+    lastActive: null
+};
+
+// Centralized event dispatcher
+function dispatchTabEvent(eventType, data) {
+    chrome.runtime.sendMessage({
+        action: eventType,
+        data: data,
+        timestamp: Date.now()
+    }).catch(err => {
+        console.log('No listeners for event:', eventType);
+    });
+}
+
+// Clean tab data before sending
+function sanitizeTabData(tab) {
+    return {
+        id: tab.id,
+        windowId: tab.windowId,
+        title: tab.title || 'Untitled',
+        url: tab.url || '',
+        favIconUrl: tab.favIconUrl,
+        active: tab.active,
+        lastAccessed: Date.now(),
+        timeSpent: state.tabs.get(tab.id)?.timeSpent || 0
+    };
+}
+
 // Add after the TAB_ACTIVITY constant definition
 function findTabById(tabId) {
   return new Promise((resolve) => {
@@ -381,8 +413,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-
-
 // Initial population of history and active tabs
 updateHistory();
 updateActiveTabs();
@@ -397,4 +427,52 @@ chrome.tabs.onCreated.addListener((tab) => {
     };
     updateGraphWithNewEdge(edge);
   }
+});
+
+// Event handlers
+chrome.tabs.onCreated.addListener((tab) => {
+    state.tabs.set(tab.id, sanitizeTabData(tab));
+    dispatchTabEvent('tabCreated', {
+        tab: state.tabs.get(tab.id)
+    });
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    const existingTab = state.tabs.get(tabId);
+    if (existingTab && changeInfo.status === 'complete') {
+        const updatedTab = {
+            ...existingTab,
+            ...sanitizeTabData(tab)
+        };
+        state.tabs.set(tabId, updatedTab);
+        dispatchTabEvent('tabUpdated', {
+            tabId,
+            changeInfo,
+            tab: updatedTab
+        });
+    }
+});
+
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+    const removedTab = state.tabs.get(tabId);
+    if (removedTab) {
+        state.tabs.delete(tabId);
+        dispatchTabEvent('tabRemoved', {
+            tabId,
+            removeInfo: {
+                ...removeInfo,
+                tabData: removedTab
+            }
+        });
+    }
+});
+
+// Track window focus
+chrome.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+        state.lastActive = {
+            windowId,
+            timestamp: Date.now()
+        };
+    }
 });

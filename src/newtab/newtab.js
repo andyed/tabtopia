@@ -807,3 +807,107 @@ function clearSearchStyles() {
         .style('opacity', 1)
         .style('transition', 'opacity 0.2s ease-in-out');
 }
+
+// 1. Add clear state management
+const state = {
+    activeWindows: [],
+    bookmarks: [],
+    minCells: 4,
+    currentTabCount: 0,
+    get needsBookmarks() {
+        return this.currentTabCount < this.minCells;
+    }
+};
+
+// 2. Single update function that handles all state changes
+async function updateTreemapState(changes) {
+    console.log('State update:', {
+        before: {
+            tabCount: state.currentTabCount,
+            hasBookmarks: state.needsBookmarks,
+            windows: state.activeWindows.length
+        }
+    });
+
+    // Apply changes
+    Object.assign(state, changes);
+    state.currentTabCount = state.activeWindows.reduce(
+        (sum, w) => sum + w.tabs.length, 
+        0
+    );
+
+    // Manage bookmarks based on tab count
+    if (state.needsBookmarks) {
+        const bookmarksNeeded = state.minCells - state.currentTabCount;
+        state.bookmarks = await fetchRecentBookmarks(bookmarksNeeded);
+    } else {
+        state.bookmarks = [];
+    }
+
+    console.log('State update:', {
+        after: {
+            tabCount: state.currentTabCount,
+            hasBookmarks: state.needsBookmarks,
+            bookmarks: state.bookmarks.length
+        }
+    });
+
+    // Single point of truth for treemap data
+    const treeData = {
+        name: 'root',
+        children: [
+            ...state.activeWindows.map(window => ({
+                name: `Window ${window.id}`,
+                id: window.id,
+                children: window.tabs.map(tab => ({
+                    id: `tab${tab.id}`,
+                    windowId: window.id,
+                    title: tab.title || 'Untitled',
+                    url: tab.url || '',
+                    favIconUrl: tab.favIconUrl,
+                    lastAccessed: Date.now(),
+                    timeSpent: tab.totalTimeSpent || 100,
+                    isBookmark: false,
+                    children: []
+                }))
+            })),
+            // Only add bookmark window if needed
+            ...(state.needsBookmarks ? [{
+                name: 'Window bookmark',
+                id: 'bookmark',
+                children: state.bookmarks.map(bookmark => ({
+                    id: `bookmark${bookmark.id}`,
+                    windowId: 'bookmark',
+                    title: bookmark.title || 'Untitled',
+                    url: bookmark.url || '',
+                    favIconUrl: bookmark.favIconUrl,
+                    lastAccessed: Date.now(),
+                    timeSpent: 100,
+                    isBookmark: true,
+                    children: []
+                }))
+            }] : [])
+        ]
+    };
+
+    // Update visualization
+    await drawTreemap(treeData);
+}
+
+// 3. Update event handlers to use state management
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') {
+        const window = state.activeWindows.find(w => w.id === tab.windowId);
+        if (window) {
+            const tabIndex = window.tabs.findIndex(t => t.id === tabId);
+            if (tabIndex !== -1) {
+                window.tabs[tabIndex] = {
+                    ...window.tabs[tabIndex],
+                    ...tab,
+                    lastAccessed: Date.now()
+                };
+                updateTreemapState({ activeWindows: state.activeWindows });
+            }
+        }
+    }
+});
