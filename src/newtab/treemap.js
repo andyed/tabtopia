@@ -31,6 +31,13 @@ const state = {
     }
 };
 
+// Add at the top with other state management
+const updateState = {
+    lastUpdate: Date.now(),
+    isUpdating: false,
+    debounceTime: 100 // ms
+};
+
 // Initialize state from background
 async function initializeState() {
     try {
@@ -741,6 +748,9 @@ function handleTabCreated(tab) {
         windows: state.data.activeWindows.length,
         needsBookmarks: state.needsBookmarks
     });
+
+    // Update bookmark state
+    updateBookmarkState(state.getTotalTabs());
 }
 
 // Helper function to add bookmark window
@@ -817,7 +827,56 @@ const calculateEmptyCells = (currentTabCount) => {
     return minimumCellCount - currentTabCount;
 };
 
+// Update the bookmark handling function
+function updateBookmarkState(totalTabs) {
+    // Prevent rapid updates
+    if (updateState.isUpdating) {
+        return;
+    }
 
+    const now = Date.now();
+    if (now - updateState.lastUpdate < updateState.debounceTime) {
+        return;
+    }
+
+    updateState.isUpdating = true;
+    updateState.lastUpdate = now;
+
+    try {
+        if (totalTabs < 4) {
+            const emptyCells = 4 - totalTabs;
+            fetchRecentBookmarks().then(bookmarks => {
+                const bookmarkWindow = state.data.activeWindows.find(w => w.id === 'bookmark');
+                if (!bookmarkWindow) {
+                    addBookmarkWindow(bookmarks.slice(0, emptyCells));
+                } else if (bookmarkWindow.tabs.length !== emptyCells) {
+                    // Only update if count changed
+                    bookmarkWindow.tabs = bookmarks.slice(0, emptyCells).map(bookmark => ({
+                        id: `bookmark${bookmark.id}`,
+                        windowId: 'bookmark',
+                        title: bookmark.title || 'Untitled',
+                        url: bookmark.url || '',
+                        favIconUrl: bookmark.favIconUrl,
+                        lastAccessed: Date.now(),
+                        timeSpent: 1,
+                        isBookmark: true,
+                        children: []
+                    }));
+                }
+                drawTreemap(state.data);
+            });
+        } else {
+            // Remove bookmark window if present
+            const hadBookmarks = state.data.activeWindows.some(w => w.id === 'bookmark');
+            if (hadBookmarks) {
+                state.data.activeWindows = state.data.activeWindows.filter(w => w.id !== 'bookmark');
+                drawTreemap(state.data);
+            }
+        }
+    } finally {
+        updateState.isUpdating = false;
+    }
+};
 
 // Helper functions
 function focusNode(node, data) {
