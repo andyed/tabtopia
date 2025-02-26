@@ -6,6 +6,7 @@ import { tabSearch } from './search.js';
 
 
 
+
 const HISTORY_RESULTS_LIMIT = 20;
 const MICROS_SESSION_TIMEOUT = 2 * 60 * 1000; // 2 minutes in milliseconds
 const UPDATE_INTERVAL = 120000; // 2 minutes in milliseconds
@@ -855,3 +856,23 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 });
 
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    initializeApp();
+
+    const searchInput = document.getElementById('tabSearch');
+    searchInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            searchInput.value = '';
+            tabSearch.search(''); // Clear search results
+            clearSearchStyles(); // Clear search styles from treemap
+        }
+    });
+});
+
+function clearSearchStyles() {
+    d3.selectAll('#treemap g')
+        .style('opacity', 1)
+        .style('transition', 'opacity 0.2s ease-in-out');
+}

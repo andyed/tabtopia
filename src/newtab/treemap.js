@@ -1,5 +1,6 @@
 import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './utility.js';
 import { displayReadout, hideReadout } from './readout.js';
+import { handleKeyNavigation } from './keyboardNav.js';
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
@@ -109,13 +110,13 @@ export function drawTreemap(categorizedData) {
 
     // Update container and SVG setup
     const container = document.getElementById('treemap');
-    const viewportHeight = window.innerHeight - 48 ;
+    const viewportHeight = window.innerHeight - 48;
     const width = container.offsetWidth || 800;
     const totalTabs = categorizedData.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
-    
+
     // Calculate optimal layout
     const layout = calculateOptimalLayout(totalTabs, width, viewportHeight);
-    
+
     // Apply scroll only if necessary
     container.style.height = `${viewportHeight}px`;
     container.style.overflowY = layout.enableScroll ? 'auto' : 'hidden';
@@ -123,11 +124,9 @@ export function drawTreemap(categorizedData) {
 
     // Create SVG with calculated height
     d3.select('#treemap').selectAll('*').remove();
-    
-    // Update the margin definition
+
     const margin = { top: 0, right: 0, bottom: 0, left: 0 };
 
-    // Ensure SVG is created without extra space
     const svg = d3.select('#treemap')
         .append('svg')
         .style('margin', '0')
@@ -135,7 +134,6 @@ export function drawTreemap(categorizedData) {
         .attr('width', width)
         .attr('height', layout.height);
 
-    // First rename the SVG root group
     const svgRoot = svg.append('g')
         .attr('transform', `translate(${margin.left},${margin.top})`);
 
@@ -248,6 +246,7 @@ export function drawTreemap(categorizedData) {
         .attr('tabindex', d => currentTabOrder.indexOf(d.data.id)) // Set tabindex based on order
         .attr('role', 'button') // Add ARIA role
         .attr('aria-label', d => d.data.title) // Add ARIA label
+        .classed('bookmark-cell', d => d.data.isBookmark) // Add class for bookmark cells
         // Add hover effects
         .on('dblclick', function(event, d) {
             // Navigate to tab on double click
@@ -313,7 +312,7 @@ export function drawTreemap(categorizedData) {
                 .style('opacity', 0);
         })
         .on('keydown', function(event, d) {
-            handleKeyNavigation(event, this, d);
+            handleKeyNavigation(event, this, d, focusableNodes, categorizedDataCache);
         });
 
     // Store focusable nodes for navigation
@@ -325,7 +324,7 @@ export function drawTreemap(categorizedData) {
         .attr('width', d => d.x1 - d.x0)
         .attr('height', d => d.y1 - d.y0)
         .attr('fill', d => d.data.color)
-        .attr('opacity', d => d.parent.data.focused ? 1 : 0.7)
+        .attr('opacity', d => d.data.isBookmark ? 0.5 : 1) // Translucent for bookmarks
         .attr('stroke', 'none');
 
     // Use calculated icon size instead of recalculating
@@ -626,130 +625,6 @@ function handleTabCreated(tab) {
 
     // Redraw the treemap
     drawTreemap(categorizedDataCache);
-}
-
-// Update handleKeyNavigation to use the same navigation logic
-function handleKeyNavigation(event, node, data) {
-    const key = event.key;
-    const currentIndex = parseInt(node.getAttribute('tabindex'));
-    let nextIndex = currentIndex;
-
-    switch (key) {
-        case 'Enter':
-            // Navigate to tab on Enter key
-            const enterTabId = parseInt(data.data.id.replace(/\D/g, ''), 10);
-            const windowId = parseInt(data.data.windowId, 10);
-            if (!isNaN(windowId) && !isNaN(enterTabId)) {
-                chrome.windows.update(windowId, { focused: true }, () => {
-                    chrome.tabs.update(enterTabId, { active: true });
-                });
-                console.log(`Navigating to window: ${windowId}, tab: ${enterTabId}`);
-            } else {
-                console.warn('Invalid window or tab ID:', { windowId, tabId: enterTabId, data: data.data });
-            }
-            event.preventDefault();
-            break;
-        case ' ':
-            // Simulate click behavior
-            displayReadout(data.data, true, categorizedDataCache); // Access through data.data
-            event.preventDefault();
-            break;
-        case 'ArrowRight':
-            nextIndex = findClosestNodeInDirection('right', currentIndex);
-            event.preventDefault();
-            break;
-        case 'ArrowLeft':
-            nextIndex = findClosestNodeInDirection('left', currentIndex);
-            event.preventDefault();
-            break;
-        case 'ArrowUp':
-            nextIndex = findClosestNodeInDirection('up', currentIndex);
-            event.preventDefault();
-            break;
-        case 'ArrowDown':
-            nextIndex = findClosestNodeInDirection('down', currentIndex);
-            event.preventDefault();
-            break;
-        case 'Backspace':
-        case 'Delete':
-            // Close tab when backspace or delete is pressed
-            event.preventDefault();
-            const closeTabId = parseInt(data.data.id.replace(/\D/g, ''), 10);
-            if (!isNaN(closeTabId)) {
-                chrome.tabs.remove(closeTabId);
-                console.log(`Closing tab: ${closeTabId}`);
-            } else {
-                console.warn('Invalid tab ID for deletion:', data.data);
-            }
-            break;
-    }
-
-    if (nextIndex !== currentIndex) {
-        focusableNodes[nextIndex].focus();
-    }
-}
-
-function findClosestNodeInDirection(direction, currentIndex) {
-    const currentNode = focusableNodes[currentIndex];
-    const currentRect = currentNode.getBoundingClientRect();
-    const currentCenter = {
-        x: currentRect.left + currentRect.width / 2,
-        y: currentRect.top + currentRect.height / 2
-    };
-
-    const candidates = focusableNodes.map((node, index) => {
-        const rect = node.getBoundingClientRect();
-        return {
-            node,
-            index,
-            rect,
-            center: {
-                x: rect.left + rect.width / 2,
-                y: rect.top + rect.height / 2
-            },
-            distance: 0 // Will be calculated based on direction
-        };
-    });
-
-    // Filter and score candidates based on direction
-    const validCandidates = candidates.filter(c => {
-        switch (direction) {
-            case 'right':
-                return c.center.x > currentCenter.x;
-            case 'left':
-                return c.center.x < currentCenter.x;
-            case 'up':
-                return c.center.y < currentCenter.y;
-            case 'down':
-                return c.center.y > currentCenter.y;
-        }
-    });
-
-    if (!validCandidates.length) return currentIndex;
-
-    // Calculate weighted distances
-    validCandidates.forEach(c => {
-        const dx = c.center.x - currentCenter.x;
-        const dy = c.center.y - currentCenter.y;
-        
-        switch (direction) {
-            case 'right':
-            case 'left':
-                // Prefer nodes that are more horizontally aligned
-                c.distance = Math.abs(dx) + Math.abs(dy) * 3;
-                break;
-            case 'up':
-            case 'down':
-                // Prefer nodes that are more vertically aligned
-                c.distance = Math.abs(dy) + Math.abs(dx) * 3;
-                break;
-        }
-    });
-
-    // Return the index of the closest valid candidate
-    return validCandidates.reduce((prev, curr) => 
-        curr.distance < prev.distance ? curr : prev
-    ).index;
 }
 
 function calculateCellIconSize(cellWidth, cellHeight, maxIconSize = 128, minIconSize = 16) {
