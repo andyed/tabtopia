@@ -35,7 +35,7 @@ async function fetchCategorizedData() {
     });
 }
 
-async function fetchRecentBookmarks() {
+export async function fetchRecentBookmarks() {
     return new Promise((resolve) => {
         chrome.bookmarks.getRecent(50, (bookmarks) => {
             const threeMonthsAgo = Date.now() - (3 * 30 * 24 * 60 * 60 * 1000);

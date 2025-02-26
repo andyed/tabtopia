@@ -1,6 +1,7 @@
 import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './utility.js';
 import { displayReadout, hideReadout } from './readout.js';
 import { handleKeyNavigation } from './keyboardNav.js';
+import { fetchRecentBookmarks } from './init.js';
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
@@ -98,17 +99,7 @@ function calculateOptimalLayout(totalTabs, width, viewportHeight) {
     };
 }
 
-export function drawTreemap(categorizedData) {
-    // Validate input data
-    if (!categorizedData?.activeWindows) {
-        console.warn('Invalid treemap data:', categorizedData);
-        return;
-    }
-
-    categorizedDataCache = categorizedData;
-    currentData = categorizedData;
-
-    // Update container and SVG setup
+export async function drawTreemap(categorizedData) {
     const container = document.getElementById('treemap');
     const viewportHeight = window.innerHeight - 48;
     const width = container.offsetWidth || 800;
@@ -165,6 +156,25 @@ export function drawTreemap(categorizedData) {
             }))
         }))
     };
+
+    // Fill empty cells with random bookmarks
+    const tabs = hierarchyData.children.flatMap(window => window.children);
+    const emptyCells = layout.cellsPerRow * layout.rows - tabs.length;
+    const randomBookmarks = await fetchRecentBookmarks();
+
+    randomBookmarks.slice(0, emptyCells).forEach(bookmark => {
+        tabs.push({
+            id: `bookmark${bookmark.id}`,
+            windowId: 'bookmark',
+            title: bookmark.title || 'Untitled',
+            url: bookmark.url || '',
+            favIconUrl: bookmark.favIconUrl,
+            lastAccessed: Date.now(),
+            timeSpent: 1,
+            isBookmark: true,
+            children: []
+        });
+    });
 
     // Create and configure treemap
     const treemap = d3.treemap()
@@ -242,20 +252,19 @@ export function drawTreemap(categorizedData) {
     // Store the current tab order
     currentTabOrder = allTabs.map(tab => tab.data.id);
 
-    // Create nodes with both keyboard and mouse interactions
+    console.log('Nodes data:', root.leaves());
+
     const nodes = svg.selectAll('g')
         .data(root.leaves())
         .enter()
         .append('g')
         .attr('transform', d => `translate(${d.x0},${d.y0})`)
         .style('cursor', 'pointer')
-        .attr('tabindex', d => currentTabOrder.indexOf(d.data.id)) // Set tabindex based on order
-        .attr('role', 'button') // Add ARIA role
-        .attr('aria-label', d => d.data.title) // Add ARIA label
-        .classed('bookmark-cell', d => d.data.isBookmark) // Add class for bookmark cells
-        // Add hover effects
+        .attr('tabindex', d => currentTabOrder.indexOf(d.data.id))
+        .attr('role', 'button')
+        .attr('aria-label', d => d.data.title)
+        .classed('bookmark-cell', d => d.data.isBookmark)
         .on('dblclick', function(event, d) {
-            // Navigate to tab on double click
             const windowId = parseInt(d.data.windowId, 10);
             const tabId = parseInt(d.data.id.replace('tab', ''), 10);
             chrome.windows.update(windowId, { focused: true }, () => {
@@ -266,18 +275,15 @@ export function drawTreemap(categorizedData) {
             event.stopPropagation();
             const isCurrentlySticky = d3.select(this).classed('cell-selected');
             
-            // Clear previous selection
             nodes.classed('cell-selected', false)
                 .select('rect')
                 .attr('fill', d => d.data.color)
                 .attr('stroke', 'none');
         
             if (!isCurrentlySticky) {
-                // New selection
                 d3.select(this).classed('cell-selected', true);
                 displayReadout(d.data, true, categorizedDataCache, this);
             } else {
-                // Deselecting
                 hideReadout();
             }
         })
@@ -300,7 +306,6 @@ export function drawTreemap(categorizedData) {
             d3.select(this).select('rect')
                 .attr('fill', '#ffff99')
                 .attr('stroke', '#ffff99');
-            // Show close button
             d3.select(this).select('.close-button')
                 .transition()
                 .duration(200)
@@ -311,7 +316,6 @@ export function drawTreemap(categorizedData) {
                 .attr('fill', d.data.color)
                 .attr('stroke', 'none');
             hideReadout();
-            // Hide close button
             d3.select(this).select('.close-button')
                 .transition()
                 .duration(200)
@@ -321,17 +325,17 @@ export function drawTreemap(categorizedData) {
             handleKeyNavigation(event, this, d, focusableNodes, categorizedDataCache);
         });
 
-    // Store focusable nodes for navigation
     focusableNodes = nodes.nodes();
 
-    // Background rectangles
     nodes.append('rect')
         .attr('id', d => d.data.id)
         .attr('width', d => d.x1 - d.x0)
         .attr('height', d => d.y1 - d.y0)
         .attr('fill', d => d.data.color)
-        .attr('opacity', d => d.data.isBookmark ? 0.5 : 1) // Translucent for bookmarks
+        .attr('opacity', d => d.data.isBookmark ? 0.5 : 1)
         .attr('stroke', 'none');
+
+    console.log('Nodes created:', nodes);
 
     // Use calculated icon size instead of recalculating
     const iconSize = layout.iconSize;
@@ -383,8 +387,7 @@ export function drawTreemap(categorizedData) {
                     return 'data:image/svg+xml;base64,' + btoa(`
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                            <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
-                            <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+                            <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
                         </svg>
                     `);
                 }
@@ -572,6 +575,8 @@ chrome.runtime.onMessage.addListener((message) => {
         handleTabCreated(message.tab);
     }
 });
+
+
 
 // Update the handleTabUpdated function with better error handling
 function handleTabUpdated(message) {
