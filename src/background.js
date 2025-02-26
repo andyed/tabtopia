@@ -271,6 +271,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'store_link_context':
             handleLinkContext(message, sender);
             break;
+        case 'linkClicked':
+            console.log('Link click detected:', {
+                fromUrl: sender.tab.url,
+                toUrl: message.url,
+                tabId: sender.tab.id
+            });
+            
+            // Store the click so we can connect it to the subsequent navigation
+            browserState.recentClicks = browserState.recentClicks || {};
+            browserState.recentClicks[sender.tab.id] = {
+                timestamp: Date.now(),
+                sourceUrl: sender.tab.url,
+                targetUrl: message.url
+            };
+            break;
     }
     return true;
 });
@@ -312,130 +327,266 @@ function handleContentUpdate(data, sender) {
 }
 
 // Add this helper function for navigation detection
-function detectNavigationType(tabId, url) {
+function detectNavigationType(tabId, url, changeInfo) {
+    // First check for history-based navigation
     if (!browserState.tabHistory.has(tabId)) {
         browserState.tabHistory.set(tabId, []);
         return 'newNavigation';
     }
 
     const history = browserState.tabHistory.get(tabId);
-    
-    // Find the URL in history
     const urlIndex = history.findIndex(entry => entry.url === url);
     
+    // Check if this is a back/forward navigation
     if (urlIndex >= 0) {
-        // Calculate where this URL is relative to current position
         const currentPos = history.findIndex(entry => entry.isCurrent);
         
-        // Already at this position
+        // Already at this position - likely a refresh
         if (urlIndex === currentPos) return 'refresh';
         
-        // If URL exists in history but at different position
+        // Back or forward navigation
         return urlIndex < currentPos ? 'backNavigation' : 'forwardNavigation';
     }
     
+    // Now distinguish between URL bar navigation and other new navigations
+    
+    // Check if this was from a link click (detected by content script)
+    const isLinkClick = browserState.recentClicks && 
+                        browserState.recentClicks[tabId] &&
+                        (Date.now() - browserState.recentClicks[tabId].timestamp < 2000);
+    
+    // If no active link click in past 2 seconds, it's likely URL bar navigation
+    if (!isLinkClick && changeInfo.transitionType === 'typed') {
+        return 'urlBarNavigation';
+    }
+    
+    // Default to new navigation
     return 'newNavigation';
 }
 
-// Update the tab update listener to better detect back/forward navigation
+// Add this utility function to detect URL bar navigation
+function detectURLBarNavigation(url, tabId) {
+    return new Promise(resolve => {
+        // Look up visit information for this URL
+        chrome.history.getVisits({ url }, visits => {
+            if (!visits || visits.length === 0) {
+                resolve(false);
+                return;
+            }
+            
+            // Get the most recent visit
+            const latestVisit = visits[visits.length - 1];
+            
+            // Check transition type - "typed" means URL bar input
+            const isURLBar = latestVisit.transition === 'typed';
+            
+            console.log('Navigation transition detected:', {
+                url,
+                tabId,
+                transition: latestVisit.transition,
+                isURLBar
+            });
+            
+            resolve(isURLBar);
+        });
+    });
+}
+
+// Enhance tab update handling for direct navigation
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Log all updates with detailed debugging
     console.log('Tab update detected:', { 
         tabId, 
-        changeInfo,
         hasUrl: !!changeInfo.url,
         hasTitle: !!changeInfo.title,
-        status: changeInfo.status
+        status: changeInfo.status,
+        isComplete: changeInfo.status === 'complete'
     });
-
-    // Track all navigation status changes
-    if (changeInfo.status) {
-        if (!navigationEvents.has(tabId)) {
-            navigationEvents.set(tabId, []);
-        }
-        
-        const events = navigationEvents.get(tabId);
-        events.push({
-            status: changeInfo.status,
-            url: tab.url,
-            timestamp: Date.now()
-        });
-        
-        // Limit event history size
-        if (events.length > 20) events.shift();
-    }
-
-    // Always update state and notify for URL changes
+    
+    // Process URL, title, or favicon changes that indicate navigation
     if (changeInfo.url || changeInfo.title || changeInfo.favIconUrl || changeInfo.status === 'complete') {
         const tabData = sanitizeTabData(tab);
         if (!tabData) return;
-
-        // Update state
-        browserState.tabs.set(tabId, tabData);
-
-        // Special handling for URL changes - detect back/forward navigation
+        
+        // Determine navigation type
+        let navigationType = 'unknownNavigation';
+        
         if (changeInfo.url) {
-            const navigationType = detectNavigationType(tabId, changeInfo.url);
-            
-            // Add this URL to history if it's new
-            const history = browserState.tabHistory.get(tabId);
-            
-            // Update current position for all entries
-            history.forEach(entry => entry.isCurrent = false);
-            
-            // Add new entry or update existing
-            if (navigationType === 'newNavigation') {
-                history.push({
+            // URL has changed - this is definite navigation
+            chrome.tabs.get(tabId, (fullTab) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('Tab error:', chrome.runtime.lastError);
+                    return;
+                }
+                
+                // Get transition type if available (Chrome extension only)
+                const transitionType = fullTab.transitionType || 'unknown';
+                
+                console.log('Tab navigation with transition:', { 
+                    tabId, 
                     url: changeInfo.url,
-                    title: tab.title,
-                    timestamp: Date.now(),
-                    isCurrent: true
+                    transitionType
                 });
                 
-                // Keep history at reasonable size
-                if (history.length > 50) history.shift();
-            } else if (navigationType === 'backNavigation' || navigationType === 'forwardNavigation') {
-                // Find and mark the current entry
-                const entryIndex = history.findIndex(entry => entry.url === changeInfo.url);
-                if (entryIndex >= 0) {
-                    history[entryIndex].isCurrent = true;
-                    history[entryIndex].lastVisited = Date.now();
+                // Add transition type to changeInfo
+                const enhancedChangeInfo = {
+                    ...changeInfo,
+                    transitionType
+                };
+                
+                // Determine navigation type with enhanced information
+                const navigationType = detectNavigationType(tabId, changeInfo.url, enhancedChangeInfo);
+                
+                // Send update with navigation type clearly marked
+                chrome.runtime.sendMessage({
+                    action: 'tabUpdated',
+                    tabId,
+                    changeInfo: {
+                        ...enhancedChangeInfo,
+                        navigationType,
+                        isUrlBar: navigationType === 'urlBarNavigation'
+                    },
+                    tab: sanitizeTabData(tab)
+                }).catch(err => {
+                    console.log('No listeners for URL bar navigation event');
+                });
+            });
+        } else if (changeInfo.status === 'complete') {
+            // Page finished loading - likely same URL but content changed
+            navigationType = 'contentLoaded';
+            
+            // If in history, mark as refreshed
+            if (browserState.tabHistory.has(tabId)) {
+                const history = browserState.tabHistory.get(tabId);
+                const currentIndex = history.findIndex(entry => entry.url === tab.url);
+                if (currentIndex >= 0) {
+                    history[currentIndex].lastLoaded = Date.now();
                 }
             }
-            
-            // Include navigation type in the update
-            console.log(`Tab navigation: ${navigationType}`, {
-                tabId, 
-                url: changeInfo.url
-            });
-            
-            // Send message with navigation type info
-            chrome.runtime.sendMessage({
-                action: 'tabUpdated',
-                tabId,
-                changeInfo: {
-                    ...changeInfo,
-                    navigationType
-                },
-                tab: sanitizeTabData(tab),
-                type: navigationType
-            }).catch(() => {
-                // Expected when no listeners
-                console.log('No active listeners for navigation update');
-            });
-        } else {
-            // For non-URL changes, just send regular updates
-            chrome.runtime.sendMessage({
-                action: 'tabUpdated',
-                tabId,
-                changeInfo,
-                tab: tabData
-            }).catch(err => {
-                // Expected when no listeners
-                console.log('No active listeners for tab update');
-            });
         }
+        
+        const isLinkClick = browserState.recentClicks && 
+                            browserState.recentClicks[tabId] &&
+                            (Date.now() - browserState.recentClicks[tabId].timestamp < 2000);
+        
+        // Include link click info in the message
+        const enhancedChangeInfo = {
+            ...changeInfo,
+            isLinkClick: isLinkClick,
+            navigationType: isLinkClick ? 'linkClick' : 
+                            (changeInfo.url ? 'urlChange' : 'contentUpdate')
+        };
+        
+        console.log(`Enhanced navigation detected:`, {
+            tabId,
+            navigationType: enhancedChangeInfo.navigationType,
+            url: changeInfo.url || tab.url
+        });
+        
+        // Send message with enhanced info
+        chrome.runtime.sendMessage({
+            action: 'tabUpdated',
+            tabId,
+            changeInfo: enhancedChangeInfo,
+            tab
+        }).catch(() => {
+            console.log('No active listeners for navigation update');
+        });
+        
+        // Update tab data in the state
+        browserState.tabs.set(tabId, {
+            ...browserState.tabs.get(tabId) || {},
+            ...tabData,
+            lastUpdate: Date.now(),
+            navigationType
+        });
+        
+        // Broadcast to all listeners with detailed info
+        chrome.runtime.sendMessage({
+            action: 'tabUpdated',
+            tabId,
+            changeInfo: {
+                ...changeInfo,
+                navigationType
+            },
+            tab: tabData
+        }).catch(() => {
+            // Expected when no listeners
+            console.log('No active listeners for navigation update');
+        });
+        
+        // Update window structure if needed
+        updateTabInWindows(tabId, tabData);
     }
 });
+
+// Enhance tab update listener to identify URL bar navigation
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url) {
+        // Check if this was URL bar navigation
+        detectURLBarNavigation(changeInfo.url, tabId).then(isURLBar => {
+            // Enhance changeInfo with navigation type
+            const enhancedChangeInfo = {
+                ...changeInfo,
+                navigationType: isURLBar ? 'urlBarNavigation' : 'otherNavigation',
+                isURLBar
+            };
+            
+            // Broadcast the enhanced update
+            chrome.runtime.sendMessage({
+                action: 'tabUpdated',
+                tabId,
+                changeInfo: enhancedChangeInfo,
+                tab: tab
+            }).catch(() => {
+                console.log('No listeners for navigation update');
+            });
+            
+            // Update browser state
+            if (browserState.tabs.has(tabId)) {
+                const tabData = browserState.tabs.get(tabId);
+                browserState.tabs.set(tabId, {
+                    ...tabData,
+                    url: changeInfo.url,
+                    title: tab.title || tabData.title,
+                    navigationType: isURLBar ? 'urlBarNavigation' : 'otherNavigation',
+                    lastUpdate: Date.now()
+                });
+            }
+        });
+    }
+});
+
+// Helper to update tab in window structure
+function updateTabInWindows(tabId, tabData) {
+    if (!tabData || !tabData.windowId) return;
+    
+    let windowFound = false;
+    
+    // Update in windows collection
+    browserState.windows.forEach((windowData, windowId) => {
+        if (windowId === tabData.windowId) {
+            windowFound = true;
+            // Check if tab exists in this window
+            const tabIndex = windowData.tabs.indexOf(tabId);
+            if (tabIndex < 0) {
+                // Add tab to window
+                windowData.tabs.push(tabId);
+                console.log(`Added tab ${tabId} to window ${windowId}`);
+            }
+        }
+    });
+    
+    // If window not found, create it
+    if (!windowFound) {
+        browserState.windows.set(tabData.windowId, {
+            id: tabData.windowId,
+            tabs: [tabId],
+            lastUpdate: Date.now()
+        });
+        console.log(`Created new window ${tabData.windowId} for tab ${tabId}`);
+    }
+}
 
 // Add listener for content script updates
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -669,3 +820,119 @@ function notifyTreemap(message) {
         console.error('Error in notifyTreemap:', error);
     }
 }
+
+// Add the webNavigation listener for accurate transition detection
+chrome.webNavigation.onCommitted.addListener((details) => {
+    // Only process main frame navigations
+    if (details.frameId !== 0) return;
+    
+    const { tabId, url, transitionType, transitionQualifiers } = details;
+    
+    console.log('WebNavigation event detected:', {
+        tabId,
+        url,
+        transitionType,         // 'link', 'typed', 'auto_bookmark', 'reload', etc.
+        transitionQualifiers,   // ['from_address_bar', 'forward_back', etc.]
+        timestamp: Date.now()
+    });
+    
+    // Determine precise navigation type
+    let navigationType = 'unknown';
+    
+    if (transitionType === 'typed' || transitionQualifiers.includes('from_address_bar')) {
+        navigationType = 'urlBarNavigation';
+    } else if (transitionType === 'link') {
+        // We might have link text from our content script
+        navigationType = 'linkClick';
+        
+        // Check if we have stored link info from the content script
+        const linkInfo = browserState.recentClicks && browserState.recentClicks[tabId];
+        const linkText = linkInfo?.text || '';
+        
+        console.log('Link navigation with potential text:', {
+            tabId,
+            hasStoredInfo: !!linkInfo,
+            linkText
+        });
+    } else if (transitionType === 'reload') {
+        navigationType = 'refresh';
+    } else if (transitionQualifiers.includes('forward_back')) {
+        navigationType = transitionQualifiers.includes('forward') ? 'forwardNavigation' : 'backNavigation';
+    } else {
+        navigationType = transitionType; // Use the raw type for other cases
+    }
+    
+    // Update tab data with this navigation info
+    chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) return;
+        
+        const tabData = sanitizeTabData(tab);
+        if (!tabData) return;
+        
+        // Update browser state with this new navigation
+        const existingTab = browserState.tabs.get(tabId) || {};
+        browserState.tabs.set(tabId, {
+            ...existingTab,
+            ...tabData,
+            navigationType,
+            transitionType,
+            lastNavigationTime: Date.now()
+        });
+        
+        // Get link context if it exists
+        const linkContext = browserState.recentClicks ? 
+                           browserState.recentClicks[tabId] : null;
+        
+        // Send enhanced message with all navigation data
+        chrome.runtime.sendMessage({
+            action: 'tabUpdated',
+            tabId,
+            changeInfo: {
+                url,
+                navigationType,
+                transitionType,
+                transitionQualifiers,
+                isUrlBar: navigationType === 'urlBarNavigation',
+                isLinkClick: navigationType === 'linkClick',
+                isBackForward: ['backNavigation', 'forwardNavigation'].includes(navigationType),
+                linkText: linkContext?.text || null,
+                sourcePage: linkContext?.sourceUrl || null
+            },
+            tab: tabData
+        }).catch(() => {
+            console.log('No listeners for navigation update');
+        });
+        
+        // Update tab in window structure
+        updateTabInWindows(tabId, tabData);
+    });
+});
+
+// Keep only one simplified tab update listener for non-navigation updates
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Skip URL changes (handled by webNavigation)
+    if (changeInfo.url) return;
+    
+    // Only process meaningful updates
+    if (changeInfo.title || changeInfo.favIconUrl || changeInfo.status === 'complete') {
+        const tabData = sanitizeTabData(tab);
+        if (!tabData) return;
+        
+        // Update state
+        browserState.tabs.set(tabId, {
+            ...browserState.tabs.get(tabId) || {},
+            ...tabData,
+            lastUpdate: Date.now()
+        });
+        
+        // Send update
+        chrome.runtime.sendMessage({
+            action: 'tabUpdated',
+            tabId,
+            changeInfo,
+            tab: tabData
+        }).catch(() => {
+            console.log('No listeners for tab update');
+        });
+    }
+});

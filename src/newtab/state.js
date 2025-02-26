@@ -40,23 +40,23 @@ export const browserState = {
    * @returns {Promise} Promise resolving to treemap-ready data
    */
   async getTreemapData() {
-    const state = await this.getState();
-    return this.formatDataForTreemap(state);
+    const stateSnapshot = await this.getState();
+    return this.formatDataForTreemap(stateSnapshot);
   },
   
   /**
    * Format state data for treemap visualization
    */
-  formatDataForTreemap(state) {
+  formatDataForTreemap(stateSnapshot) {
     // Convert windows map to array if needed
-    const windows = Array.isArray(state.windows) 
-      ? state.windows.map(w => w[1]) // If array of entries [id, window]
-      : Array.from(state.windows?.values() || []);
+    const windows = Array.isArray(stateSnapshot.windows) 
+      ? stateSnapshot.windows.map(w => w[1]) // If array of entries [id, window]
+      : Array.from(stateSnapshot.windows?.values() || []);
     
     // Convert tabs map to array if needed
-    const tabs = state.tabs instanceof Map 
-      ? state.tabs 
-      : new Map(state.tabs || []);
+    const tabs = stateSnapshot.tabs instanceof Map 
+      ? stateSnapshot.tabs 
+      : new Map(stateSnapshot.tabs || []);
     
     return {
       name: 'root',

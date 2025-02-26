@@ -674,50 +674,70 @@ window.onresize = () => {
 
 // Move listener setup to initialization
 function initializeMessageHandling() {
-    console.log('Setting up message handlers...');
-    
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        console.log('Treemap received message:', {
-            action: message?.action,
-            type: message?.type,
-            tabId: message?.tabId,
-            url: message?.tab?.url,
-            changeInfo: message?.changeInfo
-        });
-
-        try {
-            // Handle both action and type-based messages
-            switch (message.action) {
-                case 'tabUpdated':
-                    handleTabUpdated(message);
-                    break;
-                case 'tabRemoved':
-                    handleTabRemoved(message.tabId, message.removeInfo);
-                    break;
-                case 'windowRemoved':
-                    handleWindowRemoved(message.windowId);
-                    break;
-                case 'tabCreated':
-                    handleTabCreated(message.tab);
-                    break;
-                default:
-                    if (message.type === 'navigation_event') {
-                        handleTabUpdated({
-                            tabId: sender.tab.id,
-                            changeInfo: { url: message.data.targetUrl },
-                            tab: {
-                                id: sender.tab.id,
-                                url: message.data.targetUrl,
-                                windowId: sender.tab.windowId
-                            }
-                        });
-                    }
-            }
-        } catch (error) {
-            console.error('Error handling message:', error);
+        // Check for URL bar navigation specifically
+        if (message.action === 'tabUpdated' && 
+            message.changeInfo?.navigationType === 'urlBarNavigation') {
+            
+            console.log('URL bar navigation detected - updating treemap');
+            
+            // For URL bar navigation, we want to ensure we have the latest data
+            chrome.runtime.sendMessage({ type: 'getInitialState' }, (freshState) => {
+                treemapState.data = freshState;
+                drawTreemap(treemapState.data);
+            });
+            
+            return true;
         }
         
-        return true; // Important: keeps message port open for async response
+        // Handle other message types as before...
+        console.log('Treemap received message:', {
+            type: message?.type,
+            action: message?.action,
+            hasData: !!message?.data,
+            linkText: message?.data?.text || 'No text'
+        });
+
+        // Handle navigation_event specifically to capture link text
+        if (message.type === 'navigation_event' && message.data) {
+            console.log('Link navigation detected with text:', message.data.text);
+            
+            // Store the clicked link text data in our state to preserve it
+            if (!treemapState.linkTextCache) {
+                treemapState.linkTextCache = {};
+            }
+            
+            // Cache the link text by URL so we can use it later
+            treemapState.linkTextCache[message.data.targetUrl] = {
+                text: message.data.text,
+                timestamp: message.data.timestamp
+            };
+            
+            // Use the data for immediate update
+            const updateData = {
+                tabId: sender.tab.id,
+                changeInfo: { 
+                    url: message.data.targetUrl,
+                    linkText: message.data.text, // Add this for the handler to use
+                    navigationType: 'linkClick'
+                },
+                tab: {
+                    id: sender.tab.id,
+                    url: message.data.targetUrl,
+                    windowId: sender.tab.windowId,
+                    // Use link text as initial title until page loads
+                    title: message.data.text || 'Loading...',
+                    lastAccessed: Date.now()
+                }
+            };
+            
+            // Update treemap immediately
+            handleTabUpdated(updateData);
+            return true;
+        }
+        
+        // Handle other message types...
+        return true;
     });
 }
 
@@ -760,9 +780,31 @@ function handleTabUpdated(message) {
         const updatedTabs = window.tabs.map(t => {
             if (t.id === tabId) {
                 updated = true;
+                
+                // Determine the best title to use
+                let bestTitle = null;
+                
+                // If this is a link click with text, prefer that
+                if (changeInfo.linkText) {
+                    bestTitle = changeInfo.linkText;
+                }
+                // Otherwise try the tab title
+                else if (tab.title && tab.title !== 'New Tab') {
+                    bestTitle = tab.title;
+                }
+                // If we have cached link text for this URL, use that
+                else if (treemapState.linkTextCache && 
+                         treemapState.linkTextCache[tab.url || changeInfo.url]) {
+                    bestTitle = treemapState.linkTextCache[tab.url || changeInfo.url].text;
+                }
+                // Fall back to the existing title
+                else {
+                    bestTitle = tab.title || t.title;
+                }
+                
                 const updatedTab = {
                     ...t,
-                    title: tab.title || t.title,
+                    title: bestTitle,
                     url: changeInfo.url || tab.url || t.url,
                     favIconUrl: tab.favIconUrl || t.favIconUrl,
                     lastAccessed: Date.now()
