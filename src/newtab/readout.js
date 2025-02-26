@@ -14,11 +14,13 @@ let currentMotivationalMessage = null;
 
 // Helper function to get domain from URL
 function getDomain(url) {
+    if (!url) return 'Unknown';
     try {
-        return new URL(url).hostname;
+        const parsedUrl = new URL(url);
+        return parsedUrl.hostname;
     } catch (e) {
         console.warn('Invalid URL:', url);
-        return null;
+        return 'Unknown';
     }
 }
 

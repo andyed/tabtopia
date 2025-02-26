@@ -216,12 +216,18 @@ export function drawTreemap(categorizedData) {
 
     // Add background rectangles for each window
     root.children.forEach(windowNode => {
+        const baseColor = d3.color(windowColors.get(parseInt(windowNode.data.name.replace('Window ', ''), 10)));
+        if (!baseColor) {
+            console.error('Base color not found for window:', windowNode.data.name);
+            return;
+        }
+
         svg.append('rect')
             .attr('x', windowNode.x0)
             .attr('y', windowNode.y0)
             .attr('width', windowNode.x1 - windowNode.x0)
             .attr('height', windowNode.y1 - windowNode.y0)
-            .attr('fill', d3.color(windowColors.get(parseInt(windowNode.data.name.replace('Window ', ''), 10))).darker(0.5))
+            .attr('fill', baseColor.darker(0.5))
             .attr('stroke', '#999')        // Add border
             .attr('stroke-width', '2px')   // Border width
             .attr('rx', '4')              // Rounded corners

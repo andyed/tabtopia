@@ -1,11 +1,9 @@
 import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from './utility.js';
 import { updateStats } from './stats.js';
-import { drawTreemap } from './treemap.js';
 import { showDefaultReadout } from './readout.js';
+import { initializeApp } from './init.js';
 import { tabSearch } from './search.js';
-
-
-
+import { drawTreemap } from './treemap.js';
 
 const HISTORY_RESULTS_LIMIT = 20;
 const MICROS_SESSION_TIMEOUT = 2 * 60 * 1000; // 2 minutes in milliseconds
@@ -94,28 +92,6 @@ function categorizeData(history, windows) {
     console.log('Categorized data:', categorizedData); // Debug
 
     return categorizedData;
-}
-
-async function initializeApp() {
-    try {
-        const [history, windows] = await Promise.all([
-            chrome.history.search({ text: '', maxResults: 10000, startTime: 0 }),
-            chrome.windows.getAll({ populate: true })
-        ]);
-
-        const categorizedData = categorizeData(history, windows);
-        console.log('Categorized Data:', categorizedData); // Debug
-
-        if (categorizedData && categorizedData.activeWindows) {
-            console.log('Calling drawTreemap...'); // Debug
-            drawTreemap(categorizedData);
-        } else {
-            console.error('Invalid categorized data structure:', categorizedData);
-        }
-
-    } catch (error) {
-        console.error('Initialization error:', error);
-    }
 }
 
 function handleTabSearch(query) {
@@ -855,8 +831,6 @@ document.addEventListener('DOMContentLoaded', function () {
         drawTreemap(window.windowData);
     }
 });
-
-
 
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
