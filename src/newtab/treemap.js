@@ -289,79 +289,20 @@ export async function drawTreemap(categorizedData) {
 
     console.log('Nodes data:', root.leaves());
 
-    const nodes = svg.selectAll('g')
+    // 1. Create base node structure
+    const nodes = svg.selectAll('.cell')
         .data(root.leaves())
         .enter()
         .append('g')
+        .attr('class', 'cell')
         .attr('transform', d => `translate(${d.x0},${d.y0})`)
         .style('cursor', 'pointer')
         .attr('tabindex', d => currentTabOrder.indexOf(d.data.id))
         .attr('role', 'button')
         .attr('aria-label', d => d.data.title)
-        .classed('bookmark-cell', d => d.data.isBookmark)
-        .on('dblclick', function(event, d) {
-            const windowId = parseInt(d.data.windowId, 10);
-            const tabId = parseInt(d.data.id.replace('tab', ''), 10);
-            chrome.windows.update(windowId, { focused: true }, () => {
-                chrome.tabs.update(tabId, { active: true });
-            });
-        })
-        .on('click', function(event, d) {
-            event.stopPropagation();
-            const isCurrentlySticky = d3.select(this).classed('cell-selected');
-            
-            nodes.classed('cell-selected', false)
-                .select('rect')
-                .attr('fill', d => d.data.color)
-                .attr('stroke', 'none');
-        
-            if (!isCurrentlySticky) {
-                d3.select(this).classed('cell-selected', true);
-                displayReadout(d.data, true, categorizedDataCache, this);
-            } else {
-                hideReadout();
-            }
-        })
-        .on('mouseenter', function(event, d) {
-            const hasSelectedCell = d3.select('#treemap').select('.cell-selected').size() > 0;
-            if (!hasSelectedCell && !d3.select(this).classed('cell-selected')) {
-                d3.select(this).classed('cell-hover', true);
-                displayReadout(d.data, false, categorizedDataCache, this);
-            }
-        })
-        .on('mouseleave', function(event, d) {
-            d3.select(this).classed('cell-hover', false);
-            if (!d3.select(this).classed('cell-selected')) {
-                hideReadout();
-            }
-        })
-        .on('focus', function(event, d) {
-            currentFocusIndex = parseInt(this.getAttribute('tabindex'));
-            displayReadout(d.data, false, categorizedDataCache);
-            d3.select(this).select('rect')
-                .attr('fill', '#ffff99')
-                .attr('stroke', '#ffff99');
-            d3.select(this).select('.close-button')
-                .transition()
-                .duration(200)
-                .style('opacity', 1);
-        })
-        .on('blur', function(event, d) {
-            d3.select(this).select('rect')
-                .attr('fill', d.data.color)
-                .attr('stroke', 'none');
-            hideReadout();
-            d3.select(this).select('.close-button')
-                .transition()
-                .duration(200)
-                .style('opacity', 0);
-        })
-        .on('keydown', function(event, d) {
-            handleKeyNavigation(event, this, d, focusableNodes, categorizedDataCache);
-        });
+        .classed('bookmark-cell', d => d.data.isBookmark);
 
-    focusableNodes = nodes.nodes();
-
+    // 2. Add background rectangles for each node
     nodes.append('rect')
         .attr('id', d => d.data.id)
         .attr('width', d => d.x1 - d.x0)
@@ -370,12 +311,7 @@ export async function drawTreemap(categorizedData) {
         .attr('opacity', d => d.data.isBookmark ? 0.5 : 1)
         .attr('stroke', 'none');
 
-    console.log('Nodes created:', nodes);
-
-    // Use calculated icon size instead of recalculating
-    const iconSize = layout.iconSize;
-
-    // Create centered container for content
+    // 3. Add cell content container
     const cellContent = nodes.append('g')
         .attr('class', 'cell-content')
         .attr('transform', d => {
@@ -390,7 +326,7 @@ export async function drawTreemap(categorizedData) {
             d.iconSize = calculateCellIconSize(cellWidth, cellHeight);
         });
 
-    // Keep only this favicon handling section with all attributes
+    // 4. Add favicon and text to content container
     cellContent.append('image')
         .attr('class', 'favicon')
         .attr('xlink:href', d => {
