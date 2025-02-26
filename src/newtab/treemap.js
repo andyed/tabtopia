@@ -180,12 +180,11 @@ export async function drawTreemap(categorizedData) {
 
     // Calculate empty cells needed
     const currentTabs = hierarchyData.children.flatMap(window => window.children);
-    const minimumCellCount = 4;
-    const emptyCells = Math.max(0, minimumCellCount - currentTabs.length);
+    const emptyCells = calculateEmptyCells(currentTabs.length);
 
     console.log('Empty cells calculation:', {
         currentTabs: currentTabs.length,
-        minimumCellCount,
+        minimumCellCount: 4,
         emptyCells,
         windowColors: Array.from(windowColors.entries())
     });
@@ -307,9 +306,12 @@ export async function drawTreemap(categorizedData) {
         .attr('id', d => d.data.id)
         .attr('width', d => d.x1 - d.x0)
         .attr('height', d => d.y1 - d.y0)
-        .attr('fill', d => d.data.color)
-        .attr('opacity', d => d.data.isBookmark ? 0.5 : 1)
-        .attr('stroke', 'none');
+        .attr('fill', d => d.data.isBookmark ? '#f8f9fa' : d.data.color)
+        .attr('opacity', d => d.data.isBookmark ? 0.4 : 1) // More translucent for bookmarks
+        .attr('stroke', d => d.data.isBookmark ? '#ddd' : 'none')
+        .attr('stroke-dasharray', d => d.data.isBookmark ? '4,4' : 'none') // Dashed border for bookmarks
+        .attr('rx', d => d.data.isBookmark ? '8' : '4') // More rounded corners for bookmarks
+        .attr('ry', d => d.data.isBookmark ? '8' : '4');
 
     // 3. Add cell content container
     const cellContent = nodes.append('g')
@@ -390,7 +392,8 @@ export async function drawTreemap(categorizedData) {
     console.log('Text adjusted to fit cell'); // Debug
 
     // Add after cell content creation
-    nodes.append('g')  // Append to nodes instead of cellContent
+    nodes.filter(d => !d.data.isBookmark) // Only add close button to non-bookmarks
+        .append('g')
         .attr('class', 'close-button')
         .style('cursor', 'pointer')
         .attr('transform', d => {
@@ -417,7 +420,12 @@ export async function drawTreemap(categorizedData) {
             const cellWidth = d.x1 - d.x0;
             return `translate(8, 8)`; // Position in top left
         })
-        .html(() => `
+        .html(d => d.data.isBookmark ? `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-filled icon-tabler-star">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
+            </svg>
+        ` : `
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-star">
                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                 <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
@@ -574,6 +582,7 @@ function handleTabRemoved(tabId, removeInfo) {
     drawTreemap(categorizedDataCache);
 }
 
+// Update the handleTabCreated function to properly handle bookmarks
 function handleTabCreated(tab) {
     // Add the new tab to categorizedDataCache
     categorizedDataCache.activeWindows.forEach(window => {
@@ -590,6 +599,12 @@ function handleTabCreated(tab) {
             });
         }
     });
+
+    // Remove bookmark window if we have enough tabs
+    if (categorizedDataCache.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0) >= 4) {
+        categorizedDataCache.activeWindows = categorizedDataCache.activeWindows
+            .filter(w => w.id !== 'bookmark');
+    }
 
     // Redraw the treemap
     drawTreemap(categorizedDataCache);
@@ -629,3 +644,14 @@ function updateTabOrder(searchResults) {
     d3.selectAll('#treemap g[role="button"]')
         .attr('tabindex', d => currentTabOrder.indexOf(d.data.id));
 }
+
+// Update the empty cells calculation
+const calculateEmptyCells = (currentTabCount) => {
+    const minimumCellCount = 4;
+    // Only add bookmarks if we're under the minimum
+    if (currentTabCount >= minimumCellCount) {
+        return 0;
+    }
+    // Add exactly enough bookmarks to reach minimum
+    return minimumCellCount - currentTabCount;
+};
