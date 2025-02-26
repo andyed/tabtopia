@@ -43,6 +43,11 @@ function dispatchTabEvent(eventType, data) {
 
 // Clean tab data before sending
 function sanitizeTabData(tab) {
+    if (!tab || !tab.id) {
+        console.warn('Invalid tab data:', tab);
+        return null;
+    }
+
     return {
         id: tab.id,
         windowId: tab.windowId,
@@ -207,33 +212,172 @@ chrome.webRequest.onBeforeRequest.addListener(
   { urls: ["*://*/*"] }
 );
 
-// Add to existing background.js
+// Consolidate message listeners into one handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'GET_TAB_ACTIVITY') {
-    sendResponse({
-      tabActivityLog: Array.from(tabActivityLog.entries()),
-      navigationEvents: Array.from(navigationEvents.entries())
+    console.log('Background received message:', {
+        type: message.type,
+        action: message.action,
+        sender: sender.tab?.id
     });
-    return true; // Keep message channel open for async response
-  }
+
+    switch (message.type) {
+        case 'contentUpdate':
+            handleContentUpdate(message.data, sender);
+            break;
+        case 'getTabId':
+            sendResponse({ tabId: sender.tab.id });
+            break;
+        case 'getTabHistory':
+            const history = tabHistory.get(message.tabId) || [];
+            const relationship = tabRelationships.get(message.tabId);
+            sendResponse({ history, relationship });
+            break;
+        case 'store_link_context':
+            handleLinkContext(message, sender);
+            break;
+    }
+    return true;
+});
+
+// Add dedicated content update handler
+function handleContentUpdate(data, sender) {
+    const { tabId, title, url, favIconUrl } = data;
+    
+    console.log('Processing content update:', {
+        tabId,
+        title,
+        url,
+        sender: sender.tab?.id
+    });
+
+    // Update internal state
+    const tabData = sanitizeTabData({
+        id: tabId,
+        windowId: sender.tab.windowId,
+        title,
+        url,
+        favIconUrl,
+        active: sender.tab.active
+    });
+
+    if (tabData) {
+        state.tabs.set(tabId, tabData);
+
+        // Notify treemap
+        chrome.runtime.sendMessage({
+            action: 'tabUpdated',
+            tabId,
+            changeInfo: { title, url, favIconUrl },
+            tab: tabData
+        }).catch(err => {
+            console.log('No listeners for content update');
+        });
+    }
+}
+
+// Update tab update listener to handle all change types
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    console.log('Tab update detected:', { 
+        tabId, 
+        changeInfo,
+        hasUrl: !!changeInfo.url,
+        hasTitle: !!changeInfo.title,
+        status: changeInfo.status
+    });
+
+    // Always update state and notify for URL changes
+    if (changeInfo.url || changeInfo.title || changeInfo.favIconUrl) {
+        const tabData = sanitizeTabData(tab);
+        if (!tabData) return;
+
+        // Update state
+        state.tabs.set(tabId, tabData);
+
+        // Force notification for URL changes
+        chrome.runtime.sendMessage({
+            action: 'tabUpdated',
+            tabId,
+            changeInfo,
+            tab: tabData
+        }).catch(err => {
+            // Expected when no listeners
+            console.log('No active listeners for tab update');
+        });
+
+        // Track navigation
+        if (changeInfo.url) {
+            if (!tabHistory.has(tabId)) {
+                tabHistory.set(tabId, []);
+            }
+            const history = tabHistory.get(tabId);
+            history.push({
+                url: changeInfo.url,
+                title: tab.title,
+                timestamp: Date.now()
+            });
+
+            // Force content script update
+            chrome.tabs.sendMessage(tabId, {
+                action: 'contentUpdate',
+                url: changeInfo.url
+            }).catch(() => {
+                // Content script may not be ready yet
+            });
+        }
+
+        console.log('Sent tab update notification:', {
+            tabId,
+            url: changeInfo.url || tab.url,
+            title: tab.title
+        });
+    }
+});
+
+// Add listener for content script updates
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'navigation_event') {
+        const { tabId, windowId } = sender.tab;
+        console.log('Navigation event:', {
+            tabId,
+            windowId,
+            url: message.data.targetUrl
+        });
+
+        // Force treemap update
+        chrome.runtime.sendMessage({
+            action: 'tabUpdated',
+            tabId,
+            changeInfo: {
+                url: message.data.targetUrl,
+                title: message.data.text
+            },
+            tab: {
+                id: tabId,
+                windowId,
+                url: message.data.targetUrl,
+                title: message.data.text
+            }
+        }).catch(err => {
+            console.log('No listeners for navigation event');
+        });
+    }
+    return true;
 });
 
 // Store context for potential new tab/window opens
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message.type === 'store_link_context') {
+function handleLinkContext(message, sender) {
     lastClickedLink = {
-      ...message.data,
-      sourceTabId: sender.tab.id,
-      sourceWindowId: sender.tab.windowId
+        ...message.data,
+        sourceTabId: sender.tab.id,
+        sourceWindowId: sender.tab.windowId
     };
     // Clear after 5 seconds if not used
     setTimeout(() => {
-      if (lastClickedLink?.timestamp === message.data.timestamp) {
-        lastClickedLink = null;
-      }
+        if (lastClickedLink?.timestamp === message.data.timestamp) {
+            lastClickedLink = null;
+        }
     }, 5000);
-  }
-});
+}
 
 // Track new tabs from context menu
 chrome.tabs.onCreated.addListener((tab) => {
@@ -259,212 +403,131 @@ chrome.tabs.onCreated.addListener((tab) => {
 
 // Track new windows from context menu
 chrome.windows.onCreated.addListener(async (window) => {
-  if (!lastClickedLink) return;
+    if (!lastClickedLink) return;
 
-  // Wait for the tab to be fully loaded
-  const checkTab = async (attempts = 0) => {
-    if (attempts > 10) {
-      console.log('Max attempts reached waiting for window tab');
-      return;
-    }
-
-    const [tab] = await chrome.tabs.query({ windowId: window.id });
-    
-    if (!tab || (!tab.url && !tab.pendingUrl)) {
-      // Wait 100ms and try again
-      await new Promise(resolve => setTimeout(resolve, 100));
-      return checkTab(attempts + 1);
-    }
-
-    const targetUrl = tab.pendingUrl || tab.url;
-    if (targetUrl === lastClickedLink.targetUrl) {
-      const edge = {
-        source: lastClickedLink.sourceTabId,
-        target: tab.id,
-        type: 'link-click',
-        text: lastClickedLink.text,
-        sourceUrl: lastClickedLink.sourceUrl,
-        targetUrl: targetUrl,
-        timestamp: lastClickedLink.timestamp,
-        openContext: 'new_window'
-      };
-      tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
-      lastClickedLink = null; // Clear after use
-    }
-  };
-
-  await checkTab();
-});
-
-// Add cleanup for closed tabs
-chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-  tabActivityLog.delete(tabId);
-  // Cleanup any navigation events
-  navigationEvents.delete(tabId);
-  tabRelationships.delete(tabId);
-  tabHistory.delete(tabId);
-  console.log(`Cleaned up history for tab ${tabId}`);
-  chrome.runtime.sendMessage({
-    action: 'tabRemoved',
-    tabId: tabId,
-    removeInfo: removeInfo
-  });
-});
-
-// Add tab update listener
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  try {
-    if (!tabEdges) {
-      tabEdges = new Map(); // Initialize if undefined
-    }
-    
-    if (changeInfo.status === 'complete') {
-      console.log('Tab updated:', tab);
-    }
-    
-    // Rest of your handler code...
-  } catch (error) {
-    console.error('Error in tab update handler:', error);
-  }
-  if (changeInfo.url || changeInfo.title) {
-    chrome.runtime.sendMessage({
-      action: 'tabUpdated',
-      tabId: tabId,
-      changeInfo: changeInfo,
-      tab: tab
+    console.log('New window created:', {
+        windowId: window.id,
+        context: lastClickedLink
     });
-  }
-});
 
-// Track tab updates to ensure edges are tracked
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.openerTabId) {
-    const edge = {
-      source: tab.openerTabId,
-      target: tab.id,
-      type: 'new-tab'
-    };
-    console.log("Tab updated, new edge:", edge);
-    tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
-    updateGraphWithNewEdge(edge);
-  }
-  chrome.runtime.sendMessage({
-    action: 'tabUpdated',
-    tabId: tabId,
-    changeInfo: changeInfo,
-    tab: tab
-  });
-});
+    // Wait for the tab to be fully loaded
+    const checkTab = async (attempts = 0) => {
+        if (attempts > 10) {
+            console.log('Max attempts reached waiting for window tab');
+            return;
+        }
 
-// Example usage in a tab update handler
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete') {
         try {
-            const tabData = await findTabById(tabId);
-            if (tabData) {
-                console.log(`Tab data for updated tab:`, tabData);
-                // Handle the tab update with the found tab data
+            const [tab] = await chrome.tabs.query({ windowId: window.id });
+            
+            if (!tab || (!tab.url && !tab.pendingUrl)) {
+                // Wait 100ms and try again
+                await new Promise(resolve => setTimeout(resolve, 100));
+                return checkTab(attempts + 1);
+            }
+
+            const targetUrl = tab.pendingUrl || tab.url;
+            if (targetUrl === lastClickedLink.targetUrl) {
+                const edge = {
+                    source: lastClickedLink.sourceTabId,
+                    target: tab.id,
+                    type: 'link-click',
+                    text: lastClickedLink.text,
+                    sourceUrl: lastClickedLink.sourceUrl,
+                    targetUrl: targetUrl,
+                    timestamp: lastClickedLink.timestamp,
+                    openContext: 'new_window'
+                };
+                
+                tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
+                
+                // Update relationships
+                tabRelationships.set(tab.id, {
+                    referringTabId: lastClickedLink.sourceTabId,
+                    referringURL: lastClickedLink.sourceUrl,
+                    timestamp: Date.now()
+                });
+
+                // Send update to treemap
+                chrome.runtime.sendMessage({
+                    action: 'tabCreated',
+                    tab: {
+                        id: tab.id,
+                        windowId: window.id,
+                        title: tab.title || 'New Tab',
+                        url: targetUrl,
+                        favIconUrl: tab.favIconUrl,
+                        active: tab.active,
+                        lastAccessed: Date.now(),
+                        referringTabId: lastClickedLink.sourceTabId
+                    }
+                }).catch(err => {
+                    console.log('No active listeners for new window tab');
+                });
+
+                console.log('Created edge for new window:', {
+                    edge,
+                    tab: tab.id,
+                    window: window.id
+                });
+
+                lastClickedLink = null; // Clear after use
             }
         } catch (error) {
-            console.error('Error finding tab:', error);
+            console.error('Error checking new window tab:', error);
         }
-    }
-});
-
-// Example usage in a tab removal handler
-chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
-    try {
-        const tabData = await findTabById(tabId);
-        if (tabData) {
-            console.log(`Tab data for removed tab:`, tabData);
-            // Handle the tab removal with the found tab data
-        }
-    } catch (error) {
-        console.error('Error finding tab:', error);
-    }
-});
-
-// Track tab URL changes
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url) {
-    if (!tabHistory.has(tabId)) {
-      tabHistory.set(tabId, []);
-    }
-    const history = tabHistory.get(tabId);
-    history.push({
-      url: changeInfo.url,
-      timestamp: Date.now(),
-      referringTabId: tabRelationships.get(tabId)?.referringTabId
-    });
-    console.log(`Added URL to tab ${tabId} history:`, history);
-  }
-});
-
-// Add message handler to get history for a tab
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'getTabHistory') {
-    const history = tabHistory.get(message.tabId) || [];
-    const relationship = tabRelationships.get(message.tabId);
-    sendResponse({
-      history,
-      relationship
-    });
-    return true;
-  }
-});
-
-// Initial population of history and active tabs
-updateHistory();
-updateActiveTabs();
-
-// Listen for tab creation
-chrome.tabs.onCreated.addListener((tab) => {
-  if (tab.openerTabId) {
-    const edge = {
-      source: tab.openerTabId,
-      target: tab.id,
-      type: 'new-tab'
     };
-    updateGraphWithNewEdge(edge);
-  }
+
+    await checkTab();
 });
 
-// Event handlers
-chrome.tabs.onCreated.addListener((tab) => {
-    state.tabs.set(tab.id, sanitizeTabData(tab));
-    dispatchTabEvent('tabCreated', {
-        tab: state.tabs.get(tab.id)
-    });
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    const existingTab = state.tabs.get(tabId);
-    if (existingTab && changeInfo.status === 'complete') {
-        const updatedTab = {
-            ...existingTab,
-            ...sanitizeTabData(tab)
-        };
-        state.tabs.set(tabId, updatedTab);
-        dispatchTabEvent('tabUpdated', {
-            tabId,
-            changeInfo,
-            tab: updatedTab
-        });
-    }
-});
-
+// Main tab removal listener
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+    console.log('Tab being removed:', {
+        tabId,
+        removeInfo,
+        hasState: state.tabs.has(tabId)
+    });
+
+    // Get tab data before cleanup
     const removedTab = state.tabs.get(tabId);
-    if (removedTab) {
-        state.tabs.delete(tabId);
-        dispatchTabEvent('tabRemoved', {
-            tabId,
-            removeInfo: {
-                ...removeInfo,
-                tabData: removedTab
-            }
-        });
+    const tabHistory = tabHistory.get(tabId);
+    const relationships = tabRelationships.get(tabId);
+
+    // Send removal event with complete data
+    chrome.runtime.sendMessage({
+        action: 'tabRemoved',
+        tabId,
+        data: {
+            tab: removedTab,
+            history: tabHistory,
+            relationships,
+            removeInfo,
+            timestamp: Date.now()
+        }
+    }).catch(err => {
+        console.log('No listeners for tab removal');
+    });
+
+    // Clean up all references
+    state.tabs.delete(tabId);
+    tabActivityLog.delete(tabId);
+    navigationEvents.delete(tabId);
+    tabRelationships.delete(tabId);
+    tabHistory.delete(tabId);
+
+    // Clean up any edges where this tab was source or target
+    for (const [key, edge] of tabEdges) {
+        if (edge.source === tabId || edge.target === tabId) {
+            tabEdges.delete(key);
+        }
     }
+
+    console.log('Tab cleanup complete:', {
+        tabId,
+        remainingTabs: state.tabs.size,
+        remainingEdges: tabEdges.size
+    });
 });
 
 // Track window focus
@@ -476,3 +539,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
         };
     }
 });
+
+// Initial population of history and active tabs
+updateHistory();
+updateActiveTabs();

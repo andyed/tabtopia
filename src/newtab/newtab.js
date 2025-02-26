@@ -94,31 +94,44 @@ function categorizeData(history, windows) {
     return categorizedData;
 }
 
-function handleTabSearch(query) {
-    if (!query) {
-        // Reset all cells if search is empty
-        d3.selectAll('#treemap g')
+function handleTabSearch(event) {
+    const searchTerm = event.target.value.trim();
+    
+    console.log('Search input:', searchTerm);
+
+    // Reset all cells if search is empty
+    if (!searchTerm) {
+        d3.selectAll('.cell')
             .style('opacity', 1)
-            .style('transition', 'opacity 0.2s ease-in-out');
+            .classed('cell-search-match', false)
+            .classed('cell-search-nomatch', false);
         return;
     }
 
-    const results = tabSearch.search(query);
-    const matchedIds = new Set(results.map(r => r.tab.id));
+    const results = tabSearch.search(searchTerm);
+    console.log('Search results:', {
+        term: searchTerm,
+        count: results.length,
+        firstResult: results[0]
+    });
 
     // Update visualization based on search results
-    d3.selectAll('#treemap g').each(function(d) {
-        if (!d?.data) return;
-        
-        const tabId = parseInt(d.data.id.replace('tab', ''));
-        const isMatch = matchedIds.has(tabId);
-        const opacity = isMatch ? 1 : 0.3;
-        
-        d3.select(this)
-            .style('opacity', opacity)
-            .style('transition', 'opacity 0.2s ease-in-out');
-    });
+    d3.selectAll('.cell')
+        .each(function(d) {
+            if (!d || !d.data) return;
+            
+            const isMatch = results.some(r => r.id === d.data.id);
+            
+            d3.select(this)
+                .classed('cell-search-match', isMatch)
+                .classed('cell-search-nomatch', !isMatch)
+                .style('opacity', isMatch ? 1 : 0.3)
+                .style('transition', 'opacity 0.2s ease-in-out');
+        });
 }
+
+// Add tab search event listener
+document.getElementById('tabSearch').addEventListener('input', debounce(handleTabSearch, 200));
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {

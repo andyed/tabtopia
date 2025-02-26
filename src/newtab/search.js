@@ -1,106 +1,96 @@
-class TabSearch {
+export class TabSearch {
     constructor() {
         this.searchIndex = null;
         this.documentLookup = new Map();
-        this.lastQuery = '';
     }
 
-    buildIndex(categorizedDataCache) {
+    buildIndex(state) {
+        console.log('Building search index:', {
+            hasState: !!state,
+            windows: state?.activeWindows?.length,
+            firstWindow: state?.activeWindows?.[0]
+        });
+
         const documents = [];
-        
-        // Flatten all tabs into searchable documents
-        categorizedDataCache.activeWindows.forEach(window => {
-            window.tabs.forEach(tab => {
-                try {
-                    const domain = new URL(tab.url).hostname;
-                    const doc = {
-                        id: `tab${tab.id}`,
-                        title: tab.title || '',
-                        url: tab.url || '',
-                        domain: domain,
-                        windowId: window.id
-                    };
-                    documents.push(doc);
-                    this.documentLookup.set(doc.id, tab);
-                } catch (e) {
-                    console.warn('Invalid URL in tab:', tab.url);
-                }
+
+        // Index tabs from each window
+        state?.activeWindows?.forEach(window => {
+            window.tabs?.forEach(tab => {
+                const doc = {
+                    id: `tab${tab.id}`,
+                    title: tab.title || 'Untitled',
+                    url: tab.url || '',
+                    windowId: window.id,
+                    isBookmark: false,
+                    data: tab
+                };
+                documents.push(doc);
+                this.documentLookup.set(doc.id, doc);
+                /*console.log('Indexed tab:', {
+                    id: doc.id,
+                    title: doc.title,
+                    url: doc.url
+                });*/
             });
         });
 
-        // Build lunr index
+        // Create Lunr index
         this.searchIndex = lunr(function() {
-            // Boost factors for different fields
             this.field('title', { boost: 10 });
             this.field('url', { boost: 5 });
-            this.field('domain', { boost: 3 });
-            
             this.ref('id');
 
-            // Add documents to index
             documents.forEach(doc => this.add(doc));
+        });
+
+        console.log('Search index built:', {
+            documentsIndexed: documents.length,
+            hasSearchIndex: !!this.searchIndex
         });
     }
 
     search(query) {
-        if (!this.searchIndex) return [];
-        if (!query.trim()) return [];
-        query = '*' + query + '*';
-        this.lastQuery = query;
-        console.log("Searching for " + query);
+        if (!query?.trim()) return [];
+        if (!this.searchIndex) {
+            console.warn('No search index available');
+            return [];
+        }
+
+        console.log('Searching for:', query);
+
         try {
-            // Perform lunr search
-            const results = this.searchIndex.search(query);
+            const searchQuery = `*${query.trim()}*`;
+            const results = this.searchIndex.search(searchQuery);
             
-            // Map results to tabs with scores
-            return results.map(result => ({
-                score: result.score,
-                tab: this.documentLookup.get(result.ref),
-                matches: result.matchData.metadata
-            }));
+            console.log('Search results:', {
+                query: searchQuery,
+                resultCount: results.length,
+                firstResult: results[0]
+            });
+
+            return results.map(result => {
+                const doc = this.documentLookup.get(result.ref);
+                return {
+                    score: result.score,
+                    id: doc.id,
+                    title: doc.title,
+                    url: doc.url,
+                    windowId: doc.windowId,
+                    isBookmark: doc.isBookmark,
+                    data: doc.data
+                };
+            });
         } catch (e) {
-            console.warn('Search error, falling back to basic search:', e);
-            
-            // Fallback to basic substring search
-            const searchTerm = query.toLowerCase();
+            console.warn('Search error:', e);
+            // Fallback to basic search
             return Array.from(this.documentLookup.values())
-                .filter(tab => 
-                    tab.title?.toLowerCase().includes(searchTerm) ||
-                    tab.url?.toLowerCase().includes(searchTerm)
-                )
-                .map(tab => ({ 
-                    score: 1, 
-                    tab,
-                    matches: {} 
-                }));
+                .filter(doc => 
+                    doc.title.toLowerCase().includes(query.toLowerCase()) ||
+                    doc.url.toLowerCase().includes(query.toLowerCase())
+                );
         }
     }
-
-    highlightMatches(text, matches) {
-        if (!matches || Object.keys(matches).length === 0) return text;
-        
-        // Create array of positions where highlighting should occur
-        const positions = [];
-        Object.values(matches).forEach(match => {
-            Object.keys(match).forEach(field => {
-                const positions = match[field].position || [];
-                positions.forEach(([start, length]) => {
-                    positions.push({ start, length });
-                });
-            });
-        });
-
-        // Sort positions and apply highlighting
-        return positions
-            .sort((a, b) => b.start - a.start)
-            .reduce((str, pos) => {
-                const before = str.slice(0, pos.start);
-                const match = str.slice(pos.start, pos.start + pos.length);
-                const after = str.slice(pos.start + pos.length);
-                return `${before}<mark>${match}</mark>${after}`;
-            }, text);
-    }
-}
+}   
 
 export const tabSearch = new TabSearch();
 
@@ -137,18 +127,29 @@ function exitSearchMode() {
 }
 
 export function handleSearchResults(results) {
-    // Update visual state for search results
+    console.log('Processing search results:', results.length);
+
     d3.selectAll('.cell')
-        .classed('cell-search-match', d => results.some(r => r.id === d.data.id))
+        .classed('cell-search-match', d => {
+            const isMatch = results.some(r => r.id === d.data.id);
+            if (isMatch) {
+                d.searchData = results.find(r => r.id === d.data.id);
+            }
+            return isMatch;
+        })
         .classed('cell-search-nomatch', d => !results.some(r => r.id === d.data.id))
         .style('opacity', d => results.some(r => r.id === d.data.id) ? 1 : 0.3);
 
-    // Update tab order for keyboard navigation
+    // Update keyboard navigation order
+    updateSearchTabOrder(results);
+}
+
+function updateSearchTabOrder(results) {
     const searchOrder = results.map(r => r.id);
     d3.selectAll('.cell')
         .attr('tabindex', d => {
             const index = searchOrder.indexOf(d.data.id);
-            return index >= 0 ? index : -1;
+            return index >= 0 ? 0 : -1;
         });
 }
 
@@ -156,14 +157,69 @@ export function handleSearchResults(results) {
 let searchIndex = new Map();
 
 export function indexNode(id, data) {
-    searchIndex.set(id, {
-        id,
-        title: data.title || '',
+    // Validate input data
+    if (!data) {
+        console.warn('No data provided for indexing');
+        return;
+    }
+
+    // Extract tab ID from either the id parameter or data.id
+    let tabId;
+    if (typeof id === 'string' && id.startsWith('tab')) {
+        tabId = id.replace('tab', '');
+    } else if (data.id) {
+        tabId = data.id;
+    } else {
+        console.warn('Invalid or missing tab ID:', { id, data });
+        return;
+    }
+
+    // Ensure we have a valid numeric ID
+    if (isNaN(parseInt(tabId))) {
+        console.warn('Non-numeric tab ID:', { tabId, originalId: id, data });
+        return;
+    }
+
+    const indexData = {
+        id: `tab${tabId}`,
+        title: data.title || 'Untitled',
         url: data.url || '',
-        isBookmark: data.isBookmark || false,
+        isBookmark: !!data.isBookmark,
         windowId: data.windowId
+    };
+
+    console.log('Indexing node with validated ID:', {
+        id: indexData.id,
+        title: indexData.title,
+        url: indexData.url
     });
-    console.log('Indexed:', { id, type: data.isBookmark ? 'bookmark' : 'tab' });
+
+    searchIndex.set(indexData.id, indexData);
+}
+
+// Add helper function to validate tab data
+function isValidTabData(data) {
+    return data && 
+           typeof data.id !== 'undefined' && 
+           data.id !== null &&
+           !isNaN(parseInt(data.id));
+}
+
+// Update the search index management
+export function updateSearchIndex(tabs) {
+    console.log('Updating search index with tabs:', tabs.length);
+    
+    // Clear existing index
+    searchIndex.clear();
+    
+    // Index only valid tabs
+    tabs.forEach(tab => {
+        if (isValidTabData(tab)) {
+            indexNode(`tab${tab.id}`, tab);
+        } else {
+            console.warn('Skipping invalid tab data:', tab);
+        }
+    });
 }
 
 export function removeFromIndex(id) {

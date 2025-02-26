@@ -65,6 +65,15 @@ function initializeSearchBox() {
 }
 
 async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
+    console.log('Readout data:', {
+        raw: tabData,
+        title: tabData?.title,
+        url: tabData?.url,
+        id: tabData?.id,
+        sticky,
+        hasCache: !!categorizedDataCache
+    });
+
     // Clear any existing inactivity timer
     clearTimeout(inactivityTimer);
 

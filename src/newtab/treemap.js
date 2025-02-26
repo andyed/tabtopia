@@ -28,6 +28,12 @@ const state = {
     },
     getTotalTabs() {
         return this.data?.activeWindows?.reduce((sum, w) => sum + w.tabs.length, 0) || 0;
+    },
+    hasWindows() {
+        return this.data?.activeWindows?.length > 0;
+    },
+    getWindowById(windowId) {
+        return this.data?.activeWindows?.find(w => w.id === windowId);
     }
 };
 
@@ -42,14 +48,27 @@ const updateState = {
 async function initializeState() {
     try {
         const initialState = await chrome.runtime.sendMessage({ type: 'getInitialState' });
+        if (!initialState?.activeWindows) {
+            console.warn('Invalid initial state:', initialState);
+            return;
+        }
+
         state.data = initialState;
         console.log('State initialized:', {
             windows: state.data.activeWindows.length,
-            totalTabs: state.getTotalTabs()
+            totalTabs: state.getTotalTabs(),
+            windowsList: state.data.activeWindows.map(w => w.id)
         });
+
+        // Draw initial treemap if we have windows
+        if (state.hasWindows()) {
+            drawTreemap(state.data);
+        } else {
+            showEmptyState();
+        }
     } catch (error) {
         console.error('Failed to initialize state:', error);
-        state.data = { activeWindows: [] };
+        showEmptyState();
     }
 }
 
@@ -151,11 +170,21 @@ function calculateOptimalLayout(totalTabs, width, viewportHeight) {
     };
 }
 
-export async function drawTreemap(categorizedData) {
+export async function drawTreemap(data) {
+    if (!data?.activeWindows) {
+        console.warn('Invalid data for treemap:', data);
+        return;
+    }
+
+    console.log('Drawing treemap with:', {
+        windows: data.activeWindows.length,
+        totalTabs: data.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0)
+    });
+
     const container = document.getElementById('treemap');
     const viewportHeight = window.innerHeight - 48;
     const width = container.offsetWidth || 800;
-    const totalTabs = categorizedData.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
+    const totalTabs = data.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
 
     // Calculate optimal layout
     const layout = calculateOptimalLayout(totalTabs, width, viewportHeight);
@@ -196,7 +225,7 @@ export async function drawTreemap(categorizedData) {
     const windowColors = new Map();
 
     // First, set colors for active windows
-    categorizedData.activeWindows.forEach((window, index) => {
+    data.activeWindows.forEach((window, index) => {
         windowColors.set(window.id, lightColors[index % lightColors.length]);
     });
 
@@ -206,7 +235,7 @@ export async function drawTreemap(categorizedData) {
     // Create hierarchy data
     const hierarchyData = {
         name: 'root',
-        children: categorizedData.activeWindows.map(window => ({
+        children: data.activeWindows.map(window => ({
             name: `Window ${window.id}`,
             children: window.tabs.map(tab => ({
                 id: `tab${tab.id}`,
@@ -432,10 +461,16 @@ export async function drawTreemap(categorizedData) {
                 <path d="M12 2c5.523 0 10 4.477 10 10s-4.477 10 -10 10s-10 -4.477 -10 -10s4.477 -10 10 -10m3.6 5.2a1 1 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
             </svg>
         `)
-        .on('click', function(event, d) {
+        .on('click', async function(event, d) {
             event.stopPropagation();
             const tabId = parseInt(d.data.id.replace('tab', ''), 10);
-            chrome.tabs.remove(tabId);
+            try {
+                await chrome.tabs.remove(tabId);
+                // Let the onRemoved handler deal with the UI update
+                console.log('Tab removal requested:', tabId);
+            } catch (error) {
+                console.error('Error removing tab:', error);
+            }
         });
 
     // Add after close button creation
@@ -531,6 +566,14 @@ export async function drawTreemap(categorizedData) {
     // Add event handlers right after node creation
     nodes
         .on('mouseenter', function(event, d) {
+            console.log('Node hover:', {
+                data: d.data,
+                id: d.data.id,
+                title: d.data.title,
+                url: d.data.url,
+                fullNode: d
+            });
+            
             if (!interactionState.activeNode) {
                 focusNode(this, d);
             }
@@ -628,60 +671,180 @@ window.onresize = () => {
     }
 };
 
-// Listen for messages from background.js
-chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === 'tabUpdated') {
-        handleTabUpdated(message);
-    } else if (message.action === 'tabRemoved') {
-        handleTabRemoved(message.tabId, message.removeInfo);
-    } else if (message.action === 'tabCreated') {
-        handleTabCreated(message.tab);
+// Move listener setup to initialization
+function initializeMessageHandling() {
+    console.log('Setting up message handlers...');
+    
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        console.log('Treemap received message:', {
+            action: message?.action,
+            type: message?.type,
+            tabId: message?.tabId,
+            url: message?.tab?.url,
+            changeInfo: message?.changeInfo
+        });
+
+        try {
+            // Handle both action and type-based messages
+            switch (message.action) {
+                case 'tabUpdated':
+                    handleTabUpdated(message);
+                    break;
+                case 'tabRemoved':
+                    handleTabRemoved(message.tabId, message.removeInfo);
+                    break;
+                case 'windowRemoved':
+                    handleWindowRemoved(message.windowId);
+                    break;
+                case 'tabCreated':
+                    handleTabCreated(message.tab);
+                    break;
+                default:
+                    if (message.type === 'navigation_event') {
+                        handleTabUpdated({
+                            tabId: sender.tab.id,
+                            changeInfo: { url: message.data.targetUrl },
+                            tab: {
+                                id: sender.tab.id,
+                                url: message.data.targetUrl,
+                                windowId: sender.tab.windowId
+                            }
+                        });
+                    }
+            }
+        } catch (error) {
+            console.error('Error handling message:', error);
+        }
+        
+        return true; // Important: keeps message port open for async response
+    });
+}
+
+// Update the DOMContentLoaded handler to initialize message handling
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await initializeState();
+        initializeMessageHandling();  // Add this line
+        console.log('Treemap initialization complete');
+    } catch (error) {
+        console.error('Failed to initialize treemap:', error);
     }
 });
-
-
 
 // Update the handleTabUpdated function with better error handling
 function handleTabUpdated(message) {
     const { tabId, changeInfo, tab } = message;
     
-    if (!currentData?.activeWindows) {
-        console.warn('No active windows data available:', currentData);
-        return;
-    }
-
-    const window = currentData.activeWindows.find(w => w.id === tab.windowId);
-    if (!window) {
-        console.warn(`Window ${tab.windowId} not found in active windows:`, currentData.activeWindows);
-        return;
-    }
-
-    const tabIndex = window.tabs.findIndex(t => t.id === tabId);
-    if (tabIndex !== -1) {
-        window.tabs[tabIndex] = {
-            ...window.tabs[tabIndex],
-            ...tab,
-            lastUpdated: Date.now()
-        };
-        console.log(`Updated tab ${tabId} in window ${tab.windowId}:`, window.tabs[tabIndex]);
-        
-        // Redraw treemap with updated data
-        drawTreemap(currentData);
-    }
-}
-
-function handleTabRemoved(tabId, removeInfo) {
-    // Remove the tab from categorizedDataCache
-    categorizedDataCache.activeWindows.forEach(window => {
-        window.tabs = window.tabs.filter(t => t.id !== tabId);
+    console.log('Processing tab update:', {
+        tabId,
+        changeInfo,
+        currentUrl: tab?.url,
+        hasState: !!state.data,
+        stateWindows: state.data?.activeWindows?.length
     });
 
-    // Redraw the treemap
-    drawTreemap(categorizedDataCache);
+    if (!state.data?.activeWindows) {
+        console.warn('No state data available');
+        return;
+    }
+
+    // Only process meaningful updates
+    if (!changeInfo.url && !changeInfo.title && !changeInfo.favIconUrl) {
+        console.log('Skipping non-content update');
+        return;
+    }
+
+    let updated = false;
+    state.data.activeWindows = state.data.activeWindows.map(window => {
+        const updatedTabs = window.tabs.map(t => {
+            if (t.id === tabId) {
+                updated = true;
+                const updatedTab = {
+                    ...t,
+                    title: tab.title || t.title,
+                    url: changeInfo.url || tab.url || t.url,
+                    favIconUrl: tab.favIconUrl || t.favIconUrl,
+                    lastAccessed: Date.now()
+                };
+                console.log('Updating tab in window:', {
+                    windowId: window.id,
+                    tabId,
+                    oldUrl: t.url,
+                    newUrl: updatedTab.url
+                });
+                return updatedTab;
+            }
+            return t;
+        });
+        return { ...window, tabs: updatedTabs };
+    });
+
+    if (updated) {
+        console.log('Redrawing treemap after URL change');
+        drawTreemap(state.data);
+    } else {
+        console.warn('Tab not found in any window:', tabId);
+    }
 }
 
-// Update the handleTabCreated function to properly handle bookmarks
+// Add a helper to log state changes
+function logStateChange(action, details) {
+    console.log('State update:', {
+        action,
+        windowCount: state.data?.activeWindows?.length,
+        tabCount: state.getTotalTabs(),
+        details
+    });
+}
+
+// Update handleTabRemoved to be more robust
+function handleTabRemoved(tabId, removeInfo) {
+    console.log('Tab removed:', { tabId, removeInfo });
+
+    if (!state.data?.activeWindows) {
+        console.warn('No state data for tab removal');
+        return;
+    }
+
+    // Remove the tab from each window's tabs array
+    state.data.activeWindows = state.data.activeWindows.map(window => ({
+        ...window,
+        tabs: window.tabs.filter(t => t.id !== tabId)
+    }));
+
+    // Remove empty windows (except bookmark window)
+    state.data.activeWindows = state.data.activeWindows.filter(window => 
+        window.tabs.length > 0 || window.id === 'bookmark'
+    );
+
+    const totalTabs = state.getTotalTabs();
+    console.log('After tab removal:', { totalTabs, windows: state.data.activeWindows });
+
+    // Update bookmark state if needed
+    if (state.needsBookmarks) {
+        updateBookmarkState(totalTabs);
+    } else {
+        // Remove bookmark window if we have enough tabs
+        state.data.activeWindows = state.data.activeWindows
+            .filter(w => w.id !== 'bookmark');
+    }
+
+    // Remove from search index
+    removeFromIndex(`tab${tabId}`);
+
+    // Redraw immediately
+    drawTreemap(state.data);
+}
+
+// Update handleTabCreated for better state management
 function handleTabCreated(tab) {
+    console.log('Tab created:', tab);
+
+    if (!tab?.id) {
+        console.warn('Invalid tab data:', tab);
+        return;
+    }
+
     if (!state.data?.activeWindows) {
         console.warn('State not initialized, deferring tab creation');
         initializeState().then(() => handleTabCreated(tab));
@@ -698,67 +861,31 @@ function handleTabCreated(tab) {
         state.data.activeWindows.push(targetWindow);
     }
 
-    // Add new tab
-    targetWindow.tabs.push({
+    // Add new tab with validated ID
+    const newTab = {
         id: tab.id,
         windowId: tab.windowId,
-        title: tab.title || 'Untitled',
+        title: tab.title || 'New Tab',
         url: tab.url || '',
         favIconUrl: tab.favIconUrl,
         lastAccessed: Date.now(),
         timeSpent: 100,
         children: []
-    });
-
-    // Handle bookmark window
-    if (state.needsBookmarks) {
-        fetchRecentBookmarks().then(bookmarks => {
-            const emptyCells = 4 - state.getTotalTabs();
-            if (emptyCells > 0) {
-                addBookmarkWindow(bookmarks.slice(0, emptyCells));
-            }
-            drawTreemap(state.data);
-        });
-    } else {
-        // Remove bookmark window if present
-        state.data.activeWindows = state.data.activeWindows
-            .filter(w => w.id !== 'bookmark');
-        drawTreemap(state.data);
-    }
-
-    console.log('Tab created:', {
-        totalTabs: state.getTotalTabs(),
-        windows: state.data.activeWindows.length,
-        needsBookmarks: state.needsBookmarks
-    });
-
-    // Update bookmark state
-    updateBookmarkState(state.getTotalTabs());
-}
-
-// Helper function to add bookmark window
-function addBookmarkWindow(bookmarks) {
-    const bookmarkWindow = {
-        name: 'Window bookmark',
-        id: 'bookmark',
-        tabs: bookmarks.map(bookmark => ({
-            id: `bookmark${bookmark.id}`,
-            windowId: 'bookmark',
-            title: bookmark.title || 'Untitled',
-            url: bookmark.url || '',
-            favIconUrl: bookmark.favIconUrl,
-            lastAccessed: Date.now(),
-            timeSpent: 1,
-            isBookmark: true,
-            children: []
-        }))
     };
 
-    // Remove existing bookmark window if present
-    state.data.activeWindows = state.data.activeWindows
-        .filter(w => w.id !== 'bookmark');
-    
-    state.data.activeWindows.push(bookmarkWindow);
+    targetWindow.tabs.push(newTab);
+
+    // Add to search index with validated data
+    indexNode(`tab${tab.id}`, newTab);
+
+    console.log('Tab added to state:', {
+        tabId: tab.id,
+        windowId: tab.windowId,
+        totalTabs: state.getTotalTabs()
+    });
+
+    // Update UI
+    drawTreemap(state.data);
 }
 
 // Initialize state when page loads
@@ -863,7 +990,12 @@ function updateBookmarkState(totalTabs) {
 
 // Helper functions
 function focusNode(node, data) {
-    if (interactionState.focusedNode === node) return;
+    console.log('Focus node:', {
+        nodeElement: node,
+        data: data.data,
+        title: data.data?.title,
+        url: data.data?.url
+    });
     
     // Clear previous focus
     if (interactionState.focusedNode) {
@@ -877,7 +1009,7 @@ function focusNode(node, data) {
         .attr('stroke', data.data.isBookmark ? '#4CAF50' : '#2196F3')
         .attr('stroke-width', '2px');
 
-    displayReadout(data);
+    displayReadout(data.data); // Make sure we're passing the correct data structure
 }
 
 function unfocusNode(node) {
@@ -964,4 +1096,56 @@ async function fillEmptyCellsWithBookmarks(emptyCells) {
             children: []
         }))
     };
+}
+
+function handleWindowRemoved(windowId) {
+    console.log('Window removal detected:', {
+        windowId,
+        currentWindows: state.data?.activeWindows?.length,
+        windowsList: state.data?.activeWindows?.map(w => w.id)
+    });
+
+    if (!state.data?.activeWindows) {
+        console.warn('No state data for window removal');
+        return;
+    }
+
+    // Remove the window
+    state.data.activeWindows = state.data.activeWindows.filter(w => w.id !== windowId);
+
+    console.log('After window removal:', {
+        remainingWindows: state.data.activeWindows.length,
+        windowsList: state.data.activeWindows.map(w => w.id)
+    });
+
+    // If we still have windows, update the treemap
+    if (state.data.activeWindows.length > 0) {
+        console.log('Updating treemap with remaining windows');
+        drawTreemap(state.data);
+    } else {
+        // Clear treemap if no windows remain (but keep state)
+        console.log('No remaining windows, clearing treemap');
+        showEmptyState();
+    }
+}
+
+function showEmptyState() {
+    const container = document.getElementById('treemap');
+    d3.select('#treemap').selectAll('*').remove();
+
+    const svg = d3.select('#treemap')
+        .append('svg')
+        .attr('width', container.offsetWidth)
+        .attr('height', window.innerHeight - 48);
+
+    svg.append('text')
+        .attr('x', container.offsetWidth / 2)
+        .attr('y', (window.innerHeight - 48) / 2)
+        .attr('text-anchor', 'middle')
+        .attr('class', 'empty-state-text')
+        .text('No open windows')
+        .append('tspan')
+        .attr('x', container.offsetWidth / 2)
+        .attr('dy', '1.5em')
+        .text('Open a new window to get started');
 }
