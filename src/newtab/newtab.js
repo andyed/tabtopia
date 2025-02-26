@@ -919,8 +919,260 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                     ...tab,
                     lastAccessed: Date.now()
                 };
-                updateTreemapState({ activeWindows: state.activeWindows });
+                refreshTreemapState({ activeWindows: state.activeWindows });
             }
         }
     }
 });
+
+// Add a central state update handler
+function handleStateUpdate(update) {
+    console.log('State update received:', {
+        type: update.type,
+        tabId: update.tabId,
+        url: update.tab?.url,
+        title: update.tab?.title
+    });
+    
+    // Update timeline
+    if (update.action === 'tabUpdated' || update.type === 'tabUpdate') {
+        updateTimelineWithNavigation(update.tab);
+    }
+    
+    // Force treemap redraw on URL or title changes
+    if (update.tab && (update.changeInfo?.url || update.changeInfo?.title)) {
+        console.log('Tab content changed, updating treemap:', {
+            tabId: update.tabId,
+            url: update.tab.url,
+            title: update.tab.title
+        });
+        
+        // Force immediate treemap update with fresh data
+        updateTreemap();
+    }
+}
+
+// Add centralized treemap update function
+async function updateTreemap() {
+    try {
+        if (typeof drawTreemap !== 'function') {
+            console.warn('drawTreemap function not available');
+            return;
+        }
+
+        console.log('Updating treemap with fresh data');
+        
+        // Get fresh data for all tabs in all windows
+        const windows = await chrome.windows.getAll({ populate: true });
+        
+        // Update categorizedDataCache with new data
+        categorizedDataCache = {
+            ...categorizedDataCache,
+            activeWindows: windows.map(window => ({
+                id: window.id,
+                focused: window.focused,
+                tabs: window.tabs.map(tab => ({
+                    id: tab.id,
+                    windowId: tab.windowId,
+                    url: tab.url,
+                    title: tab.title,
+                    active: tab.active,
+                    favIconUrl: tab.favIconUrl || getFaviconUrl(tab.url),
+                    lastAccessed: Date.now()
+                }))
+            }))
+        };
+        
+        console.log('Updated categorizedDataCache with fresh window data:', {
+            windows: categorizedDataCache.activeWindows.length,
+            totalTabs: categorizedDataCache.activeWindows.reduce(
+                (sum, w) => sum + w.tabs.length, 0
+            )
+        });
+        
+        // Now draw with updated data
+        await drawTreemap(categorizedDataCache);
+    } catch (error) {
+        console.error('Error updating treemap:', error);
+    }
+}
+
+// Update the message listener to properly handle responses
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Log incoming message
+    console.log('Newtab received message:', {
+        type: message.type,
+        action: message.action
+    });
+    
+    // Handle different message types
+    if (message.action === 'tabUpdated' || message.type === 'tabUpdate') {
+        try {
+            handleStateUpdate(message);
+            // Send immediate response
+            sendResponse({ success: true });
+        } catch (error) {
+            console.error('Error handling state update:', error);
+            sendResponse({ success: false, error: error.message });
+        }
+        return false; // We're not using an async response
+    }
+    
+    // For async handlers, manage the sendResponse properly
+    if (message.type === 'getTabHistory') {
+        // Handle asynchronously
+        chrome.storage.local.get(`history_${message.tabId}`)
+            .then(result => {
+                sendResponse(result);
+            })
+            .catch(error => {
+                console.error('Error fetching tab history:', error);
+                sendResponse({ error: error.message });
+            });
+        return true; // Keep the message channel open
+    }
+    
+    // Default response for unhandled messages
+    sendResponse({ received: true });
+    return false;
+});
+
+// Update window removal handler
+chrome.windows.onRemoved.addListener(async (windowId) => {
+    try {
+        console.log('Window removal detected:', {
+            windowId,
+            existingWindows: state.activeWindows.length,
+            cachedWindows: categorizedDataCache?.activeWindows?.length
+        });
+
+        if (!categorizedDataCache?.activeWindows) {
+            console.warn('No cache data available for window removal');
+            return;
+        }
+
+        // Update state properly
+        state.activeWindows = state.activeWindows.filter(w => w.id !== windowId);
+        
+        // Update cache
+        categorizedDataCache.activeWindows = categorizedDataCache.activeWindows.filter(w => w.id !== windowId);
+        
+        // Remove from swimlanes too
+        if (categorizedDataCache.windowSwimlanes) {
+            delete categorizedDataCache.windowSwimlanes[windowId];
+        }
+
+        console.log('Window counts after removal:', {
+            stateWindows: state.activeWindows.length,
+            cachedWindows: categorizedDataCache.activeWindows.length,
+            remainingWindows: await getWindowCount()
+        });
+
+        // Handle empty state or update visualization
+        if (categorizedDataCache.activeWindows.length === 0) {
+            // No windows left, show empty state
+            document.getElementById('treemap').innerHTML = 
+                '<div class="empty-state"><h2>No windows open</h2><p>Open a new window to see your tabs</p></div>';
+            console.log('No windows remaining, showing empty state');
+        } else {
+            // Update visualization
+            await updateTreemap();
+            console.log('Treemap updated after window removal');
+        }
+    } catch (error) {
+        console.error('Error handling window removal:', error);
+    }
+});
+
+// Add window creation handler
+chrome.windows.onCreated.addListener(async (window) => {
+    try {
+        console.log('New window created:', {
+            windowId: window.id,
+            currentWindows: state.activeWindows.length
+        });
+        
+        // Wait for window to be fully initialized with tabs
+        setTimeout(async () => {
+            // Force refresh of all window data
+            await updateTreemap();
+            
+            console.log('Window counts after creation:', {
+                stateWindows: state.activeWindows.length,
+                cachedWindows: categorizedDataCache.activeWindows.length,
+                actualWindows: await getWindowCount()
+            });
+        }, 500);
+    } catch (error) {
+        console.error('Error handling window creation:', error);
+    }
+});
+
+// Add helper function to get accurate window count
+async function getWindowCount() {
+    try {
+        const windows = await chrome.windows.getAll();
+        return windows.length;
+    } catch (error) {
+        console.error('Error getting window count:', error);
+        return 0;
+    }
+}
+
+// Update treemap state management to ensure window counts sync properly
+async function refreshTreemapState(changes) {
+    console.log('State update:', {
+        before: {
+            windows: state.activeWindows.length,
+            tabCount: state.currentTabCount
+        }
+    });
+
+    // Apply changes
+    Object.assign(state, changes);
+    state.currentTabCount = state.activeWindows.reduce(
+        (sum, w) => sum + w.tabs.length, 
+        0
+    );
+
+    // Sync with actual window count to ensure accuracy
+    const actualWindowCount = await getWindowCount();
+    if (actualWindowCount !== state.activeWindows.length) {
+        console.warn('Window count mismatch:', {
+            stateCount: state.activeWindows.length,
+            actualCount: actualWindowCount
+        });
+        
+        // Refresh all window data
+        const windows = await chrome.windows.getAll({ populate: true });
+        state.activeWindows = windows.map(window => ({
+            id: window.id,
+            focused: window.focused,
+            tabs: window.tabs.map(tab => ({
+                id: tab.id,
+                windowId: tab.windowId,
+                url: tab.url,
+                title: tab.title,
+                active: tab.active,
+                favIconUrl: tab.favIconUrl || getFaviconUrl(tab.url),
+                lastAccessed: Date.now()
+            }))
+        }));
+        
+        state.currentTabCount = state.activeWindows.reduce(
+            (sum, w) => sum + w.tabs.length, 
+            0
+        );
+    }
+
+    console.log('State after update:', {
+        windows: state.activeWindows.length,
+        tabCount: state.currentTabCount
+    });
+
+    // Create treemap data structure
+    const treeData = createTreemapData(state);
+    
+    // Update visualization
+    await drawTreemap(treeData);
+}

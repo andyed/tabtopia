@@ -10,11 +10,14 @@ chrome.runtime.onInstalled.addListener(() => {
 let historyEntries = [];
 let activeTabs = [];
 let lastClickedLink = null;
-let tabActivityLog = new Map();
-let navigationEvents = new Map();
 let tabEdges = new Map(); // Initialize tabEdges as a Map
+
+// State variables
+const state = { tabs: new Map() };
+const tabHistory = new Map();
 const tabRelationships = new Map();
-const tabHistory = new Map();  // Add this to track URLs per tab
+const tabActivityLog = new Map();
+// ...any other state variables
 
 // Add tracking constants
 const TAB_ACTIVITY = {
@@ -491,7 +494,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
     // Get tab data before cleanup
     const removedTab = state.tabs.get(tabId);
-    const tabHistory = tabHistory.get(tabId);
+    const tabHistoryData = tabHistory.get(tabId); // Renamed to avoid collision
     const relationships = tabRelationships.get(tabId);
 
     // Send removal event with complete data
@@ -500,7 +503,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
         tabId,
         data: {
             tab: removedTab,
-            history: tabHistory,
+            history: tabHistoryData,
             relationships,
             removeInfo,
             timestamp: Date.now()
@@ -511,6 +514,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
     // Clean up all references
     state.tabs.delete(tabId);
+    tabHistory.delete(tabId);
     tabActivityLog.delete(tabId);
     navigationEvents.delete(tabId);
     tabRelationships.delete(tabId);
@@ -543,3 +547,24 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 // Initial population of history and active tabs
 updateHistory();
 updateActiveTabs();
+
+// Update message sending functions to handle errors properly
+function notifyTreemap(message) {
+    try {
+        // Check if we have any listeners before sending
+        chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }, (contexts) => {
+            if (contexts.length > 0) {
+                chrome.runtime.sendMessage(message)
+                    .then(() => {
+                        console.log('Message sent successfully:', message.action);
+                    })
+                    .catch(err => {
+                        // Expected when no active listeners
+                        console.log('No active listeners for message (expected)');
+                    });
+            }
+        });
+    } catch (error) {
+        console.error('Error in notifyTreemap:', error);
+    }
+}

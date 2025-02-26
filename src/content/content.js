@@ -61,35 +61,51 @@ document.addEventListener('contextmenu', (event) => {
 }, true);
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'getTabData') {
-        // Get current tab info from sender
-        const tabId = sender.tab?.id;
-        const windowId = sender.tab?.windowId;
+    if (!request.type && !request.action) {
+        console.warn('Invalid message format:', request);
+        return true;
+    }
 
+    console.log('Content script received message:', {
+        type: request.type,
+        action: request.action,
+        sender: sender?.tab?.id
+    });
+
+    if (request.type === 'getTabData' || request.action === 'getTabData') {
         const tabData = {
-            title: document.title,
+            title: document.title || '',
             url: window.location.href,
-            favIconUrl: document.querySelector('link[rel~="icon"]') ? document.querySelector('link[rel~="icon"]').href : '',
+            favIconUrl: getFavIconUrl(),
             lastAccessed: Date.now(),
-            tabId: tabId,
-            windowId: windowId
+            tabId: sender?.tab?.id,
+            windowId: sender?.tab?.windowId
         };
         sendResponse(tabData);
     }
+
+    return true;
 });
 
 // Add MutationObserver for URL and title changes
 let currentTabId;
 
-chrome.runtime.sendMessage({ type: 'getTabId' }, (response) => {
-    if (response && response.tabId) {
+// Update initialization message
+chrome.runtime.sendMessage({
+    type: 'getTabId',
+    action: 'initialize',
+    timestamp: Date.now()
+}, (response) => {
+    if (response?.tabId) {
         currentTabId = response.tabId;
         initializeObservers();
+    } else {
+        console.warn('Failed to get tab ID:', response);
     }
 });
 
 function handleUrlChange() {
-    const url = location.href;
+    const url = window.location.href;
     const title = document.title;
     const favIconUrl = getFavIconUrl();
     const timestamp = Date.now();
@@ -101,15 +117,33 @@ function handleUrlChange() {
         timestamp
     });
 
-    // Send a single consolidated update message
+    // Send navigation event with required fields
     chrome.runtime.sendMessage({
+        type: 'navigation_event',
+        action: 'updateNavigation',  // Add explicit action
+        data: {
+            tabId: currentTabId,     // Add explicit tabId
+            windowId: chrome.windows?.WINDOW_ID_CURRENT,
+            type: 'navigation',
+            sourceUrl: document.referrer,
+            targetUrl: url,
+            text: title,
+            timestamp: Date.now()
+        }
+    }).catch(err => {
+        console.warn('Failed to send navigation event:', err);
+    });
+
+    // Also send direct tab update
+    chrome.runtime.sendMessage({
+        type: 'tabUpdate',
         action: 'tabUpdated',
         tabId: currentTabId,
         changeInfo: {
             url,
             title,
             favIconUrl,
-            status: 'complete'  // Important for treemap update trigger
+            status: 'complete'
         },
         tab: {
             id: currentTabId,
@@ -119,29 +153,9 @@ function handleUrlChange() {
             windowId: chrome.windows?.WINDOW_ID_CURRENT,
             active: true,
             timestamp
-        },
-        source: 'content_script'  // Add source for debugging
-    }).then(() => {
-        console.log('Tab update sent successfully:', {
-            url,
-            title,
-            tabId: currentTabId
-        });
-    }).catch(error => {
-        console.warn('Failed to send tab update:', error);
-    });
-
-    // Also track in history
-    chrome.runtime.sendMessage({
-        type: 'navigation_event',
-        data: {
-            type: 'navigation',
-            sourceUrl: document.referrer,
-            targetUrl: url,
-            text: title,
-            timestamp,
-            tabId: currentTabId
         }
+    }).catch(err => {
+        console.warn('Failed to send tab update:', err);
     });
 }
 
@@ -178,18 +192,31 @@ function sendContentUpdate() {
 }
 
 function initializeObservers() {
-    // Send initial state immediately
-    handleUrlChange();
-
-    // Set up URL change detection with debounce
+    // Track URL changes with navigation timing
+    let lastNavigationStart = 0;
     let lastUrl = location.href;
     let lastTitle = document.title;
-    let updateTimeout = null;
 
-    const debouncedUpdate = () => {
-        if (updateTimeout) {
-            clearTimeout(updateTimeout);
+    // Performance observer for navigation timing
+    const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+            if (entry.entryType === 'navigation') {
+                const currentTime = Date.now();
+                // Only trigger if more than 100ms since last navigation
+                if (currentTime - lastNavigationStart > 100) {
+                    lastNavigationStart = currentTime;
+                    handleUrlChange();
+                }
+            }
         }
+    });
+
+    observer.observe({ entryTypes: ['navigation'] });
+
+    // Watch for DOM changes with debounce
+    let updateTimeout = null;
+    const domObserver = new MutationObserver(() => {
+        if (updateTimeout) clearTimeout(updateTimeout);
         updateTimeout = setTimeout(() => {
             const currentUrl = location.href;
             const currentTitle = document.title;
@@ -199,12 +226,10 @@ function initializeObservers() {
                 lastTitle = currentTitle;
                 handleUrlChange();
             }
-        }, 250); // Debounce time
-    };
+        }, 250);
+    });
 
-    // Watch for DOM changes that might indicate navigation
-    const observer = new MutationObserver(debouncedUpdate);
-    observer.observe(document, {
+    domObserver.observe(document, {
         subtree: true,
         childList: true,
         characterData: true
@@ -216,17 +241,17 @@ function initializeObservers() {
 
     history.pushState = function() {
         originalPushState.apply(this, arguments);
-        debouncedUpdate();
+        handleUrlChange();
     };
 
     history.replaceState = function() {
         originalReplaceState.apply(this, arguments);
-        debouncedUpdate();
+        handleUrlChange();
     };
 
     // Navigation events
-    window.addEventListener('popstate', debouncedUpdate);
-    window.addEventListener('hashchange', debouncedUpdate);
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
     window.addEventListener('load', handleUrlChange);
 }
 
