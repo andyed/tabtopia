@@ -781,50 +781,7 @@ document.addEventListener('DOMContentLoaded', function () {
         .size([width, height])
         .padding(1);
 
-    function drawTreemap(data) {
-        const root = d3.hierarchy(data)
-            .sum(d => d.totalTimeSpent)
-            .sort((a, b) => b.value - a.value);
-
-        treemap(root);
-
-        const nodes = svg.selectAll('g')
-            .data(root.leaves())
-            .enter()
-            .append('g')
-            .attr('transform', d => `translate(${d.x0},${d.y0})`)
-            .style('cursor', 'pointer')
-            .on('dblclick', (event, d) => {
-                // Focus the tab
-                chrome.windows.update(d.data.windowId, { focused: true }, () => {
-                    chrome.tabs.update(d.data.id.replace('tab', ''), { active: true });
-                });
-            });
-
-        // Make the rect and text both clickable
-        nodes.append('rect')
-            .attr('id', d => d.data.id)
-            .attr('width', d => d.x1 - d.x0)
-            .attr('height', d => d.y1 - d.y0)
-            .attr('fill', d => d.parent.data.focused ? '#4a9eff' : '#69b3a2')
-            .attr('opacity', 0.7);
-
-        nodes.append('image')
-            .attr('xlink:href', d => d.data.favIconUrl)
-            .attr('x', 3)
-            .attr('y', 3)
-            .attr('width', 16)
-            .attr('height', 16);
-
-        nodes.append('text')
-            .attr('x', 22)
-            .attr('y', 15)
-            .text(d => d.data.title)
-            .attr('font-size', '10px')
-            .attr('fill', 'white')
-            .attr('text-anchor', 'start')
-            .attr('dominant-baseline', 'hanging');
-    }
+   
 
     // Example usage with windowData
     if (window.windowData) {
