@@ -234,25 +234,8 @@ export async function drawTreemap(categorizedData) {
 
     // Fill empty cells with bookmarks
     if (emptyCells > 0) {
-        const randomBookmarks = await fetchRecentBookmarks();
-        console.log(`Filling ${emptyCells} empty cells with bookmarks`);
-        
-        // Create a new window for bookmarks with the same structure
-        hierarchyData.children.push({
-            name: 'Window bookmark',
-            id: 'bookmark', // Add ID to match windowColors map
-            children: randomBookmarks.slice(0, emptyCells).map(bookmark => ({
-                id: `bookmark${bookmark.id}`,
-                windowId: 'bookmark',
-                title: bookmark.title || 'Untitled',
-                url: bookmark.url || '',
-                favIconUrl: bookmark.favIconUrl,
-                lastAccessed: Date.now(),
-                timeSpent: 1,
-                isBookmark: true,
-                children: []
-            }))
-        });
+        const bookmarkWindow = await fillEmptyCellsWithBookmarks(emptyCells);
+        hierarchyData.children.push(bookmarkWindow);
     }
 
     // Create and configure treemap
@@ -948,4 +931,37 @@ function activateNode(node, data) {
 
     // Update readout
     displayReadout(data);
+}
+
+// Add this helper function
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
+// Update the bookmark filling logic
+async function fillEmptyCellsWithBookmarks(emptyCells) {
+    const bookmarks = await fetchRecentBookmarks();
+    const randomizedBookmarks = shuffleArray([...bookmarks]);
+    
+    console.log(`Filling ${emptyCells} empty cells with random bookmarks from ${bookmarks.length} total`);
+    
+    return {
+        name: 'Window bookmark',
+        id: 'bookmark',
+        children: randomizedBookmarks.slice(0, emptyCells).map(bookmark => ({
+            id: `bookmark${bookmark.id}`,
+            windowId: 'bookmark',
+            title: bookmark.title || 'Untitled',
+            url: bookmark.url || '',
+            favIconUrl: bookmark.favIconUrl,
+            lastAccessed: Date.now(),
+            timeSpent: 1,
+            isBookmark: true,
+            children: []
+        }))
+    };
 }
