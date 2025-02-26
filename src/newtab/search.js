@@ -1,5 +1,3 @@
-
-
 class TabSearch {
     constructor() {
         this.searchIndex = null;
@@ -105,3 +103,100 @@ class TabSearch {
 }
 
 export const tabSearch = new TabSearch();
+
+export function initializeSearch() {
+    const searchInput = document.getElementById('tabSearch');
+    
+    searchInput.addEventListener('keydown', (event) => {
+        switch (event.key) {
+            case 'Enter':
+            case 'Tab':
+                event.preventDefault();
+                focusFirstSearchResult();
+                break;
+            case 'Escape':
+                event.preventDefault();
+                exitSearchMode();
+                break;
+        }
+    });
+}
+
+function focusFirstSearchResult() {
+    const firstResult = d3.select('.cell-search-match').node();
+    if (firstResult) {
+        firstResult.focus();
+    }
+}
+
+function exitSearchMode() {
+    const searchInput = document.getElementById('tabSearch');
+    searchInput.value = '';
+    searchInput.blur();
+    clearSearchResults();
+}
+
+export function handleSearchResults(results) {
+    // Update visual state for search results
+    d3.selectAll('.cell')
+        .classed('cell-search-match', d => results.some(r => r.id === d.data.id))
+        .classed('cell-search-nomatch', d => !results.some(r => r.id === d.data.id))
+        .style('opacity', d => results.some(r => r.id === d.data.id) ? 1 : 0.3);
+
+    // Update tab order for keyboard navigation
+    const searchOrder = results.map(r => r.id);
+    d3.selectAll('.cell')
+        .attr('tabindex', d => {
+            const index = searchOrder.indexOf(d.data.id);
+            return index >= 0 ? index : -1;
+        });
+}
+
+// Add search index management
+let searchIndex = new Map();
+
+export function indexNode(id, data) {
+    searchIndex.set(id, {
+        id,
+        title: data.title || '',
+        url: data.url || '',
+        isBookmark: data.isBookmark || false,
+        windowId: data.windowId
+    });
+    console.log('Indexed:', { id, type: data.isBookmark ? 'bookmark' : 'tab' });
+}
+
+export function removeFromIndex(id) {
+    searchIndex.delete(id);
+    console.log('Removed from index:', id);
+}
+
+export function clearBookmarksFromIndex() {
+    // Remove all bookmark entries
+    for (const [id, data] of searchIndex.entries()) {
+        if (data.isBookmark) {
+            searchIndex.delete(id);
+        }
+    }
+    console.log('Cleared bookmarks from index');
+}
+
+// Update search function to use index
+export function searchTabs(query) {
+    if (!query) return [];
+    
+    const normalizedQuery = query.toLowerCase();
+    return Array.from(searchIndex.values())
+        .filter(item => {
+            return item.title.toLowerCase().includes(normalizedQuery) ||
+                   item.url.toLowerCase().includes(normalizedQuery);
+        })
+        .sort((a, b) => {
+            // Prioritize exact matches
+            const aExact = a.title.toLowerCase() === normalizedQuery;
+            const bExact = b.title.toLowerCase() === normalizedQuery;
+            if (aExact && !bExact) return -1;
+            if (!aExact && bExact) return 1;
+            return 0;
+        });
+}

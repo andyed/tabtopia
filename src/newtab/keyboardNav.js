@@ -1,30 +1,38 @@
 export function handleKeyNavigation(event, node, data, state) {
-    const key = event.key;
-
-    // Prevent default arrow key scrolling
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) {
-        event.preventDefault();
-    }
-
-    switch (key) {
-        case 'Enter':
-        case ' ':
+    switch (event.key) {
+        case ' ': // Space
             event.preventDefault();
-            handleNodeDblClick(event, data);
+            activateNode(node, data);
+            break;
+        case 'Enter':
+            event.preventDefault();
+            if (data.data.isBookmark) {
+                chrome.tabs.create({ url: data.data.url, active: true });
+            } else {
+                const windowId = parseInt(data.data.windowId, 10);
+                const tabId = parseInt(data.data.id.replace('tab', ''), 10);
+                chrome.windows.update(windowId, { focused: true }, () => {
+                    chrome.tabs.update(tabId, { active: true });
+                });
+            }
+            break;
+        case 'Tab':
+            // Only handle Tab if we're in search mode
+            if (document.querySelector('.cell-search-match')) {
+                event.preventDefault();
+                navigateSearchResults(event.shiftKey ? 'prev' : 'next');
+            }
+            break;
+        case 'Escape':
+            exitSearchMode();
             break;
         case 'ArrowRight':
         case 'ArrowLeft':
         case 'ArrowUp':
         case 'ArrowDown':
-            const nextNode = findClosestNodeInDirection(node, key, state.focusableNodes);
+            const nextNode = findClosestNodeInDirection(node, event.key, state.focusableNodes);
             if (nextNode) {
                 nextNode.focus();
-            }
-            break;
-        case 'Escape':
-            if (state.activeNode) {
-                unfocusNode(state.activeNode);
-                state.activeNode = null;
             }
             break;
     }
@@ -87,4 +95,21 @@ function findClosestNodeInDirection(currentNode, direction, allNodes) {
         
         return distance < closestDistance ? node : closest;
     }, null);
+}
+
+function navigateSearchResults(direction) {
+    const matches = Array.from(document.querySelectorAll('.cell-search-match'));
+    if (!matches.length) return;
+
+    const currentFocus = document.activeElement;
+    const currentIndex = matches.indexOf(currentFocus);
+    
+    let nextIndex;
+    if (direction === 'next') {
+        nextIndex = currentIndex < matches.length - 1 ? currentIndex + 1 : 0;
+    } else {
+        nextIndex = currentIndex > 0 ? currentIndex - 1 : matches.length - 1;
+    }
+
+    matches[nextIndex].focus();
 }

@@ -357,3 +357,17 @@ mark {
     align-items: center;
     justify-content: center;
 }
+
+.cell-search-match {
+    transition: opacity 0.2s ease-in-out;
+}
+
+.cell-search-nomatch {
+    transition: opacity 0.2s ease-in-out;
+    pointer-events: none;
+}
+
+#tabSearch:focus {
+    outline: 2px solid #2196F3;
+    outline-offset: -2px;
+}
