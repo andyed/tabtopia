@@ -13,11 +13,48 @@ let lastClickedLink = null;
 let tabEdges = new Map(); // Initialize tabEdges as a Map
 
 // State variables
-const state = { tabs: new Map() };
-const tabHistory = new Map();
-const tabRelationships = new Map();
-const tabActivityLog = new Map();
-// ...any other state variables
+const browserState = {
+    tabs: new Map(),
+    windows: new Map(),
+    tabHistory: new Map(), // Moved from separate declaration 
+    tabRelationships: new Map(), // Moved from separate declaration
+    tabActivityLog: new Map(), // Moved from separate declaration
+    lastActive: null,
+    listeners: [],
+    
+    // Add notification method
+    notifyChange(changeType, data) {
+        console.log(`State change: ${changeType}`, data);
+        this.listeners.forEach(listener => {
+            try {
+                listener(changeType, data);
+            } catch (error) {
+                console.error('Error in state listener:', error);
+            }
+        });
+    },
+    
+    // Add subscription method
+    subscribe(callback) {
+        this.listeners.push(callback);
+        return () => {
+            this.listeners = this.listeners.filter(cb => cb !== callback);
+        };
+    },
+    
+    // Helper to get tab data with all related info
+    getTabData(tabId) {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return null;
+        
+        return {
+            ...tab,
+            history: this.tabHistory.get(tabId) || [],
+            relationship: this.tabRelationships.get(tabId),
+            activity: this.tabActivityLog.get(tabId)
+        };
+    }
+};
 
 // Add tracking constants
 const TAB_ACTIVITY = {
@@ -26,12 +63,8 @@ const TAB_ACTIVITY = {
   UPDATE_INTERVAL: 5000      // Update active tab time every 5 seconds
 };
 
-// Add state tracking
-const state = {
-    tabs: new Map(),
-    windows: new Map(),
-    lastActive: null
-};
+// Add this new tracking Map after the browserState declaration
+const navigationEvents = new Map(); // Track navigation sequence per tab
 
 // Centralized event dispatcher
 function dispatchTabEvent(eventType, data) {
@@ -59,7 +92,7 @@ function sanitizeTabData(tab) {
         favIconUrl: tab.favIconUrl,
         active: tab.active,
         lastAccessed: Date.now(),
-        timeSpent: state.tabs.get(tab.id)?.timeSpent || 0
+        timeSpent: browserState.tabs.get(tab.id)?.timeSpent || 0
     };
 }
 
@@ -87,12 +120,12 @@ async function updateGraphWithNewEdge(edge) {
     const targetTab = await findTabById(edge.target);
     
     if (sourceTab && targetTab) {
-      tabRelationships.set(targetTab.id, {
+      browserState.tabRelationships.set(targetTab.id, {
         referringTabId: sourceTab.id,
         referringURL: sourceTab.url,
         timestamp: Date.now()
       });
-      console.log('Added tab relationship:', tabRelationships.get(targetTab.id));
+      console.log('Added tab relationship:', browserState.tabRelationships.get(targetTab.id));
     }
   } catch (error) {
     console.error('Error creating edge:', error);
@@ -102,7 +135,7 @@ async function updateGraphWithNewEdge(edge) {
 // Add time tracking function
 function updateTabActivity(tabId, isActive) {
   const now = Date.now();
-  const activity = tabActivityLog.get(tabId) || {
+  const activity = browserState.tabActivityLog.get(tabId) || {
     totalTimeSpent: 0,
     firstSeen: now,
     lastTouch: null
@@ -118,7 +151,7 @@ function updateTabActivity(tabId, isActive) {
     activity.lastTouch = now;
   }
 
-  tabActivityLog.set(tabId, activity);
+  browserState.tabActivityLog.set(tabId, activity);
 }
 
 // Function to update history entries
@@ -231,8 +264,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ tabId: sender.tab.id });
             break;
         case 'getTabHistory':
-            const history = tabHistory.get(message.tabId) || [];
-            const relationship = tabRelationships.get(message.tabId);
+            const history = browserState.tabHistory.get(message.tabId) || [];
+            const relationship = browserState.tabRelationships.get(message.tabId);
             sendResponse({ history, relationship });
             break;
         case 'store_link_context':
@@ -264,7 +297,7 @@ function handleContentUpdate(data, sender) {
     });
 
     if (tabData) {
-        state.tabs.set(tabId, tabData);
+        browserState.tabs.set(tabId, tabData);
 
         // Notify treemap
         chrome.runtime.sendMessage({
@@ -278,7 +311,33 @@ function handleContentUpdate(data, sender) {
     }
 }
 
-// Update tab update listener to handle all change types
+// Add this helper function for navigation detection
+function detectNavigationType(tabId, url) {
+    if (!browserState.tabHistory.has(tabId)) {
+        browserState.tabHistory.set(tabId, []);
+        return 'newNavigation';
+    }
+
+    const history = browserState.tabHistory.get(tabId);
+    
+    // Find the URL in history
+    const urlIndex = history.findIndex(entry => entry.url === url);
+    
+    if (urlIndex >= 0) {
+        // Calculate where this URL is relative to current position
+        const currentPos = history.findIndex(entry => entry.isCurrent);
+        
+        // Already at this position
+        if (urlIndex === currentPos) return 'refresh';
+        
+        // If URL exists in history but at different position
+        return urlIndex < currentPos ? 'backNavigation' : 'forwardNavigation';
+    }
+    
+    return 'newNavigation';
+}
+
+// Update the tab update listener to better detect back/forward navigation
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     console.log('Tab update detected:', { 
         tabId, 
@@ -288,51 +347,93 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         status: changeInfo.status
     });
 
+    // Track all navigation status changes
+    if (changeInfo.status) {
+        if (!navigationEvents.has(tabId)) {
+            navigationEvents.set(tabId, []);
+        }
+        
+        const events = navigationEvents.get(tabId);
+        events.push({
+            status: changeInfo.status,
+            url: tab.url,
+            timestamp: Date.now()
+        });
+        
+        // Limit event history size
+        if (events.length > 20) events.shift();
+    }
+
     // Always update state and notify for URL changes
-    if (changeInfo.url || changeInfo.title || changeInfo.favIconUrl) {
+    if (changeInfo.url || changeInfo.title || changeInfo.favIconUrl || changeInfo.status === 'complete') {
         const tabData = sanitizeTabData(tab);
         if (!tabData) return;
 
         // Update state
-        state.tabs.set(tabId, tabData);
+        browserState.tabs.set(tabId, tabData);
 
-        // Force notification for URL changes
-        chrome.runtime.sendMessage({
-            action: 'tabUpdated',
-            tabId,
-            changeInfo,
-            tab: tabData
-        }).catch(err => {
-            // Expected when no listeners
-            console.log('No active listeners for tab update');
-        });
-
-        // Track navigation
+        // Special handling for URL changes - detect back/forward navigation
         if (changeInfo.url) {
-            if (!tabHistory.has(tabId)) {
-                tabHistory.set(tabId, []);
+            const navigationType = detectNavigationType(tabId, changeInfo.url);
+            
+            // Add this URL to history if it's new
+            const history = browserState.tabHistory.get(tabId);
+            
+            // Update current position for all entries
+            history.forEach(entry => entry.isCurrent = false);
+            
+            // Add new entry or update existing
+            if (navigationType === 'newNavigation') {
+                history.push({
+                    url: changeInfo.url,
+                    title: tab.title,
+                    timestamp: Date.now(),
+                    isCurrent: true
+                });
+                
+                // Keep history at reasonable size
+                if (history.length > 50) history.shift();
+            } else if (navigationType === 'backNavigation' || navigationType === 'forwardNavigation') {
+                // Find and mark the current entry
+                const entryIndex = history.findIndex(entry => entry.url === changeInfo.url);
+                if (entryIndex >= 0) {
+                    history[entryIndex].isCurrent = true;
+                    history[entryIndex].lastVisited = Date.now();
+                }
             }
-            const history = tabHistory.get(tabId);
-            history.push({
-                url: changeInfo.url,
-                title: tab.title,
-                timestamp: Date.now()
-            });
-
-            // Force content script update
-            chrome.tabs.sendMessage(tabId, {
-                action: 'contentUpdate',
+            
+            // Include navigation type in the update
+            console.log(`Tab navigation: ${navigationType}`, {
+                tabId, 
                 url: changeInfo.url
+            });
+            
+            // Send message with navigation type info
+            chrome.runtime.sendMessage({
+                action: 'tabUpdated',
+                tabId,
+                changeInfo: {
+                    ...changeInfo,
+                    navigationType
+                },
+                tab: sanitizeTabData(tab),
+                type: navigationType
             }).catch(() => {
-                // Content script may not be ready yet
+                // Expected when no listeners
+                console.log('No active listeners for navigation update');
+            });
+        } else {
+            // For non-URL changes, just send regular updates
+            chrome.runtime.sendMessage({
+                action: 'tabUpdated',
+                tabId,
+                changeInfo,
+                tab: tabData
+            }).catch(err => {
+                // Expected when no listeners
+                console.log('No active listeners for tab update');
             });
         }
-
-        console.log('Sent tab update notification:', {
-            tabId,
-            url: changeInfo.url || tab.url,
-            title: tab.title
-        });
     }
 });
 
@@ -445,7 +546,7 @@ chrome.windows.onCreated.addListener(async (window) => {
                 tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
                 
                 // Update relationships
-                tabRelationships.set(tab.id, {
+                browserState.tabRelationships.set(tab.id, {
                     referringTabId: lastClickedLink.sourceTabId,
                     referringURL: lastClickedLink.sourceUrl,
                     timestamp: Date.now()
@@ -489,13 +590,13 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     console.log('Tab being removed:', {
         tabId,
         removeInfo,
-        hasState: state.tabs.has(tabId)
+        hasState: browserState.tabs.has(tabId)
     });
 
     // Get tab data before cleanup
-    const removedTab = state.tabs.get(tabId);
-    const tabHistoryData = tabHistory.get(tabId); // Renamed to avoid collision
-    const relationships = tabRelationships.get(tabId);
+    const removedTab = browserState.tabs.get(tabId);
+    const tabHistoryData = browserState.tabHistory.get(tabId); // Renamed to avoid collision
+    const relationships = browserState.tabRelationships.get(tabId);
 
     // Send removal event with complete data
     chrome.runtime.sendMessage({
@@ -513,12 +614,12 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     });
 
     // Clean up all references
-    state.tabs.delete(tabId);
-    tabHistory.delete(tabId);
-    tabActivityLog.delete(tabId);
+    browserState.tabs.delete(tabId);
+    browserState.tabHistory.delete(tabId);
+    browserState.tabActivityLog.delete(tabId);
     navigationEvents.delete(tabId);
-    tabRelationships.delete(tabId);
-    tabHistory.delete(tabId);
+    browserState.tabRelationships.delete(tabId);
+    browserState.tabHistory.delete(tabId);
 
     // Clean up any edges where this tab was source or target
     for (const [key, edge] of tabEdges) {
@@ -529,7 +630,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
     console.log('Tab cleanup complete:', {
         tabId,
-        remainingTabs: state.tabs.size,
+        remainingTabs: browserState.tabs.size,
         remainingEdges: tabEdges.size
     });
 });
@@ -537,7 +638,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 // Track window focus
 chrome.windows.onFocusChanged.addListener((windowId) => {
     if (windowId !== chrome.windows.WINDOW_ID_NONE) {
-        state.lastActive = {
+        browserState.lastActive = {
             windowId,
             timestamp: Date.now()
         };
