@@ -391,40 +391,80 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url) {
     console.log("Tab updated:", tab); // Debug
     updateTimelineWithNavigation(tab);
+
+    const window = state.activeWindows.find(w => w.id === tab.windowId);
+    if (window) {
+        const tabIndex = window.tabs.findIndex(t => t.id === tabId);
+        if (tabIndex !== -1) {
+            window.tabs[tabIndex] = {
+                ...window.tabs[tabIndex],
+                ...tab,
+                lastAccessed: Date.now()
+            };
+        } else {
+            // Add the tab if it doesn't exist
+            window.tabs.push({
+                id: tabId,
+                windowId: tab.windowId,
+                url: tab.url,
+                title: tab.title,
+                active: tab.active,
+                favIconUrl: tab.favIconUrl,
+                lastAccessed: Date.now()
+            });
+        }
+        refreshTreemapState({ activeWindows: state.activeWindows });
+    } else {
+        // Add the window if it doesn't exist
+        state.activeWindows.push({
+            id: tab.windowId,
+            focused: false,
+            tabs: [{
+                id: tabId,
+                windowId: tab.windowId,
+                url: tab.url,
+                title: tab.title,
+                active: tab.active,
+                favIconUrl: tab.favIconUrl,
+                lastAccessed: Date.now()
+            }]
+        });
+        refreshTreemapState({ activeWindows: state.activeWindows });
+    }
   }
 });
 
 async function updateTimelineWithNavigation(tab) {
-  try {
-    if (!currentData) {
-      // If no current data, reinitialize
-      await initializeApp();
-      return;
-    }
-    console.log("Updating timeline with navigation:", tab); // Debug
+    try {
+        if (!currentData) {
+            // If no current data, reinitialize
+            await initializeApp();
+            return;
+        }
+        console.log("Updating timeline with navigation:", tab); // Debug
 
-    const newNavigation = {
-      url: tab.url,
-      title: tab.title,
-      lastVisitTime: Date.now(),
-      windowId: tab.windowId,
-      tabId: tab.id,
-      favIconUrl: tab.favIconUrl,
-      isCurrentTab: true
-    };
+        const newNavigation = {
+            url: tab.url,
+            title: tab.title,
+            lastVisitTime: Date.now(),
+            windowId: tab.windowId,
+            tabId: tab.id,
+            favIconUrl: tab.favIconUrl,
+            isCurrentTab: true
+        };
 
-    // Add to appropriate window swimlane
-    if (!currentData.windowSwimlanes[tab.windowId]) {
-      currentData.windowSwimlanes[tab.windowId] = [];
+        // Add to appropriate window swimlane
+        if (!currentData.windowSwimlanes[tab.windowId]) {
+            currentData.windowSwimlanes[tab.windowId] = [];
+        }
+        currentData.windowSwimlanes[tab.windowId].push(newNavigation);
+        console.log('Updated window swimlanes:', currentData.windowSwimlanes); // Debug
+
+        // Update the visualizations
+        updateTreemap();
+    } catch (error) {
+        console.error('Error updating timeline with navigation:', error);
     }
-    currentData.windowSwimlanes[tab.windowId].push(newNavigation);
-    console.log('Updated window swimlanes:', currentData.windowSwimlanes); // Debug
-    // Update the visualizations
-    //updateTimeline(currentData);
-    //updateGraph(currentData);
-  } catch (error) {
-    console.error('Error updating timeline with navigation:', error);
-  }
 }
 
 // Add window event listeners
@@ -623,7 +663,9 @@ function updateGraphWithNewEdge(edge) {
   }
   
   const { windowSwimlanes } = currentData;
+  console.log("Looking up source tab:", edge.source); // Debug
   const sourceTab = findTabById(windowSwimlanes, edge.source);
+  console.log("Looking up target tab:", edge.target); // Debug
   const targetTab = findTabById(windowSwimlanes, edge.target);
   
   if (sourceTab && targetTab && shouldCreateNavigationEdge(targetTab, sourceTab)) {
@@ -761,6 +803,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (!currentData?.windowSwimlanes) return;
     
     if (changeInfo.status === 'complete') {
+        console.log("Looking up tab history for tabId:", tabId); // Debug
         chrome.runtime.sendMessage({
             type: 'getTabHistory',
             tabId: tabId
@@ -952,12 +995,12 @@ function handleStateUpdate(stateUpdate) {
     }
 
     // Add this new condition to handle link navigation events
-    // This should go inside the existing function before the end
     if (stateUpdate.type === 'STATE_UPDATED' && 
         stateUpdate.event && 
         stateUpdate.event.type === 'LINK_NAVIGATION') {
       
       const event = stateUpdate.event;
+      console.log("Looking up node for URL:", event.url); // Debug
       const nodeId = getNodeIdForUrl(event.url);
       
       if (nodeId) {
@@ -973,6 +1016,7 @@ function handleStateUpdate(stateUpdate) {
           
           // If you have a redraw or update function, call it here
           // For example: updateVisualization();
+          updateTreemap();
         }
       }
     }
