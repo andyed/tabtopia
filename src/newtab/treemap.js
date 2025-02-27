@@ -539,9 +539,7 @@ export async function drawTreemap(data) {
                 });
             }
         })
-        .on('click', function(event, d) {
-            // ... existing click handler ...
-        });
+        .on('click', handleNodeClick);
 
     // Add debug logging
     console.log('Event listeners attached:', {
@@ -1210,4 +1208,21 @@ async function initializeTreemap() {
       drawTreemap(freshData);
     });
   });
+}
+
+// Fix click handler for readout display
+function handleNodeClick(event, d) {
+    // Make sure we extract data correctly and pass both parameters
+    const nodeData = d?.data || d || d3.select(event.currentTarget).datum()?.data;
+    
+    if (nodeData) {
+        // Pass both the data and the event
+        displayReadout(nodeData, event);
+        
+        // Open the URL if it's a real tab
+        if (nodeData.url && !nodeData.isBookmark) {
+            chrome.tabs.update(nodeData.id, { active: true });
+            chrome.windows.update(nodeData.windowId, { focused: true });
+        }
+    }
 }

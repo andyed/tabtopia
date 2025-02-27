@@ -64,187 +64,119 @@ function initializeSearchBox() {
     }
 }
 
-async function displayReadout(tabData, sticky, categorizedDataCache, cellNode) {
-    console.log('Readout data:', {
-        raw: tabData,
-        title: tabData?.title,
-        url: tabData?.url,
-        id: tabData?.id,
-        sticky,
-        hasCache: !!categorizedDataCache
-    });
-
-    // Clear any existing inactivity timer
-    clearTimeout(inactivityTimer);
-
-    // Only start inactivity timer if not sticky
-    if (!sticky) {
-        resetInactivityTimer(categorizedDataCache);
-    }
-
-    const readoutContainer = document.getElementById('readout');
-    if (!readoutContainer) {
-        console.error('Readout container not found');
-        return;
-    }
-
-    // Initialize search box if needed
-    initializeSearchBox();
-
-    // Get or create content container
-    let contentContainer = document.querySelector('.readout-content');
-    if (!contentContainer) {
-        contentContainer = document.createElement('div');
-        contentContainer.className = 'readout-content';
-        readoutContainer.appendChild(contentContainer);
-    }
-
-    // Show default state if no tab data
-    if (!tabData) {
-        showDefaultReadout(categorizedDataCache);
-        return;
-    }
-
-    // Handle sticky state changes
-    if (sticky) {
-        if (stickyCell === cellNode) {
-            // Clicking same cell again - remove sticky
-            stickyCell = null;
-            sticky = false;
-        } else if (stickyCell) {
-            // Clear previous sticky cell highlight
-            d3.select(stickyCell).select('rect')
-                .attr('fill', d => d.data.color)
-                .attr('stroke', 'none');
-            stickyCell = cellNode;
-        } else {
-            stickyCell = cellNode;
-        }
-    }
-
-    const domain = getDomain(tabData.url);
-    let bookmarkMatches = [];
-    let historyMatches = [];
-    
-    if (domain) {
-        try {
-            // Get bookmarks
-            const bookmarks = await chrome.bookmarks.search({});
-            bookmarkMatches = bookmarks
-                .filter(bookmark => getDomain(bookmark.url) === domain)
-                .map(bookmark => ({
-                    ...bookmark,
-                    sortDate: bookmark.dateAdded || 0
-                }))
-                .sort((a, b) => b.sortDate - a.sortDate);
-
-            // Get history
-            const oneWeekAgo = new Date().getTime() - (7 * 24 * 60 * 60 * 1000);
-            const history = await chrome.history.search({
-                text: domain,
-                startTime: oneWeekAgo,
-                maxResults: 100
-            });
-            historyMatches = history
-                .filter(item => getDomain(item.url) === domain)
-                .sort((a, b) => b.lastVisitTime - a.lastVisitTime);
-        } catch (error) {
-            console.error('Error searching bookmarks/history:', error);
-        }
-    }
-
-    const totalBookmarks = bookmarkMatches.length;
-    const totalHistory = historyMatches.length;
-    
-    const displayedBookmarks = bookmarkMatches.slice(0, ITEMS_PER_PAGE);
-    const displayedHistory = historyMatches.slice(0, ITEMS_PER_PAGE);
-
-    const readoutHtml = `
-        <div class="readout-header">
-            <h2>${tabData.title}</h2>
-            <div class="url-container">
-                <a href="${tabData.url}" target="_blank" class="tab-url">
-                    ${domain || tabData.url}
-                </a>
-            </div>
-            <div class="tab-meta">
-                <span>Last visited: ${formatDistanceToNow(new Date(tabData.lastAccessed))}</span>
-                ${tabData.timeSpent ? `
-                    <span class="time-spent">
-                        Time spent: ${formatSessionDuration(tabData.timeSpent)}
-                    </span>
-                ` : ''}
-            </div>
-        </div>
-        ${bookmarkMatches.length > 0 ? `
-            <div class="bookmarks-section">
-                <h3>Bookmarks from ${domain} (${totalBookmarks})</h3>
-                <ul class="bookmark-list">
-                    ${displayedBookmarks.map(bookmark => `
-                        <li class="bookmark-item">
-                            <a href="${bookmark.url}" target="_blank">${bookmark.title || bookmark.url}</a>
-                            <span class="bookmark-date">
-                                ${formatDistanceToNow(new Date(bookmark.dateAdded))}
-                            </span>
-                        </li>
-                    `).join('')}
-                </ul>
-                ${totalBookmarks > ITEMS_PER_PAGE ? `
-                    <button class="show-more-btn">
-                        Show ${Math.min(5, totalBookmarks - ITEMS_PER_PAGE)} more
-                    </button>
-                ` : ''}
-            </div>
-        ` : ''}
-        ${historyMatches.length > 0 ? `
-            <div class="history-section">
-                <h3>History from ${domain} (${totalHistory})</h3>
-                <ul class="history-list">
-                    ${displayedHistory.map(item => `
-                        <li class="history-item">
-                            <a href="${item.url}" target="_blank">${item.title || item.url}</a>
-                            <span class="history-date">
-                                ${formatDistanceToNow(new Date(item.lastVisitTime))}
-                            </span>
-                        </li>
-                    `).join('')}
-                </ul>
-                ${totalHistory > ITEMS_PER_PAGE ? `
-                    <button class="show-more-btn">
-                        Show ${Math.min(5, totalHistory - ITEMS_PER_PAGE)} more
-                    </button>
-                ` : ''}
-            </div>
-        ` : ''}
-    `;
-
-    contentContainer.innerHTML = readoutHtml;
-
-    // Set up pagination handlers
-    window.nextBookmarkPage = () => {
-        currentBookmarkPage++;
-        displayReadout(tabData, sticky, categorizedDataCache);
-    };
-
-    window.prevBookmarkPage = () => {
-        currentBookmarkPage = Math.max(0, currentBookmarkPage - 1);
-        displayReadout(tabData, sticky, categorizedDataCache);
-    };
-
-    if (!sticky) {
+// Update the bookmark detection in displayReadout
+export function displayReadout(d, event) {
+    // Clear existing timeout
+    if (readoutTimeout) {
         clearTimeout(readoutTimeout);
-        readoutTimeout = setTimeout(() => {
-            if (!readoutContainer.classList.contains('sticky')) {
-                // Instead of clearing everything, just clear the content container
-                const contentContainer = document.querySelector('.readout-content');
-                if (contentContainer) {
-                    contentContainer.innerHTML = '';
-                }
-            }
-        }, 3000);
     }
+    
+    // Debug what we received
+    console.log('Readout data:', d);
+    
+    // Normalize data structure
+    const nodeData = d.data || d;
+    console.log('Normalized data:', nodeData);
+    
+    // Basic properties
+    const title = nodeData.title || 'Untitled';
+    const url = nodeData.url || '';
+    
+    // More robust type detection
+    const isBookmark = Boolean(
+        nodeData.isBookmark || 
+        nodeData.type === 'bookmark' || 
+        nodeData.dateAdded ||
+        (nodeData.id && String(nodeData.id).startsWith('bookmark'))
+    );
+    
+    console.log('Is bookmark?', isBookmark);
+    
+    // Format date for display if present
+    let bookmarkDate = '';
+    if (nodeData.dateAdded) {
+        try {
+            bookmarkDate = formatDistanceToNow(nodeData.dateAdded);
+        } catch (e) {
+            bookmarkDate = 'Unknown date';
+            console.error('Error formatting date:', e);
+        }
+    }
+    
+    // Build readout HTML
+    const readout = document.getElementById('readout');
+    readout.innerHTML = `
+        <div class="readout-header ${isBookmark ? 'bookmark' : ''}">
+            <div class="readout-title">${title}</div>
+            <div class="readout-url">${url}</div>
+        </div>
+        <div class="readout-details">
+            ${isBookmark ? `
+                <div class="readout-item bookmark-info">
+                    <span class="label">Type:</span>
+                    <span class="value">Bookmark</span>
+                </div>
+                ${bookmarkDate ? `
+                    <div class="readout-item">
+                        <span class="label">Bookmarked:</span>
+                        <span class="value">${bookmarkDate}</span>
+                    </div>
+                ` : ''}
+            ` : `
+                <div class="readout-item">
+                    <span class="label">Last accessed:</span>
+                    <span class="value">${nodeData.lastAccessed ? formatDistanceToNow(nodeData.lastAccessed) : 'Unknown'}</span>
+                </div>
+            `}
+        </div>
+    `;
+    
+    // Show readout
+    readout.style.display = 'block';
+    
+    // Position
+    if (event) {
+        positionReadout(event);
+    }
+}
 
-    readoutContainer.classList.toggle('sticky', sticky);
+// Update the positioning logic to handle undefined event
+function positionReadout(event) {
+    const readout = document.getElementById('readout');
+    
+    if (!event) {
+        // Center in viewport if no event is provided
+        readout.style.left = '50%';
+        readout.style.top = '50%';
+        readout.style.transform = 'translate(-50%, -50%)';
+        return;
+    }
+    
+    // Rest of your positioning logic...
+    const container = document.querySelector('.treemap-container') || document.body;
+    
+    // Default positioning near cursor
+    const padding = 15;
+    let x = event.pageX + padding;
+    let y = event.pageY + padding;
+    
+    // Get dimensions
+    const readoutWidth = readout.offsetWidth;
+    const readoutHeight = readout.offsetHeight;
+    const containerRect = container.getBoundingClientRect();
+    
+    // Ensure readout stays within container bounds
+    if (x + readoutWidth > window.innerWidth) {
+        x = Math.max(0, event.pageX - readoutWidth - padding);
+    }
+    
+    if (y + readoutHeight > window.innerHeight) {
+        y = Math.max(0, event.pageY - readoutHeight - padding);
+    }
+    
+    // Apply positioning
+    readout.style.left = `${x}px`;
+    readout.style.top = `${y}px`;
 }
 
 function hideReadout() {
@@ -334,4 +266,4 @@ function handleTabSearch(event) {
 }
 
 // Export both the function and timer reset
-export { displayReadout, hideReadout, showDefaultReadout, resetInactivityTimer };
+export { hideReadout, showDefaultReadout, resetInactivityTimer };

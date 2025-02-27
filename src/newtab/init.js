@@ -35,15 +35,33 @@ async function fetchCategorizedData() {
     });
 }
 
-export async function fetchRecentBookmarks() {
-    return new Promise((resolve) => {
-        chrome.bookmarks.getRecent(50, (bookmarks) => {
-            const threeMonthsAgo = Date.now() - (3 * 30 * 24 * 60 * 60 * 1000);
-            const recentBookmarks = bookmarks.filter(bookmark => bookmark.dateAdded >= threeMonthsAgo);
-            console.log('Recent bookmarks:', recentBookmarks);
-            resolve(recentBookmarks);
-        });
-    });
+export async function fetchRecentBookmarks(count = 10) {
+    try {
+        const bookmarks = await chrome.bookmarks.getRecent(count);
+        
+        console.log('Raw bookmark data:', bookmarks); // Debug raw data
+        
+        // Map bookmarks to ensure all required fields for display
+        const enhancedBookmarks = bookmarks.map(bookmark => ({
+            ...bookmark,  // Keep all original properties
+            id: bookmark.id,
+            title: bookmark.title || 'Untitled Bookmark',
+            url: bookmark.url || '',
+            type: 'bookmark',  // Add explicit type
+            isBookmark: true,  // Add explicit flag
+            dateAdded: bookmark.dateAdded,  // Chrome provides this in milliseconds
+            lastAccessed: bookmark.dateAdded || Date.now(),
+            // Generate favicon URL if not present
+            favIconUrl: bookmark.favIconUrl || (bookmark.url ? `chrome://favicon/size/16@1x/${bookmark.url}` : '')
+        }));
+        
+        console.log('Enhanced bookmark data:', enhancedBookmarks); // Debug enhanced data
+        
+        return enhancedBookmarks;
+    } catch (error) {
+        console.error('Error fetching bookmarks:', error);
+        return [];
+    }
 }
 
 function ensureMinimumCells(data, bookmarks) {
