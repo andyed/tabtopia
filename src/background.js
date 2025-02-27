@@ -284,6 +284,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 targetUrl: message.url
             };
             break;
+        case 'LINK_TEXT_CAPTURED':
+            if (sender.tab) {
+                const tabId = sender.tab.id;
+                console.debug(`Link text captured in tab ${tabId}:`, message.data);
+                
+                // Store for correlation with navigation events
+                pendingLinkData[tabId] = message.data;
+                
+                // Clean up after timeout to prevent memory leaks
+                setTimeout(() => {
+                  if (pendingLinkData[tabId]) {
+                    delete pendingLinkData[tabId];
+                  }
+                }, 5000);
+              }
+              break;
     }
     return true;
 });
@@ -922,4 +938,62 @@ function sendMessageWithErrorHandling(message) {
             console.log(`Message not delivered (${message.action}): No receivers`);
             return null;
         });
+}
+
+// Add temporary storage for link data
+let pendingLinkData = {};
+
+// Listen for captured link text from content script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'LINK_TEXT_CAPTURED' && sender.tab) {
+    const tabId = sender.tab.id;
+    console.debug(`Link text captured in tab ${tabId}:`, message.data);
+    
+    // Store for correlation with navigation events
+    pendingLinkData[tabId] = message.data;
+    
+    // Clean up after timeout to prevent memory leaks
+    setTimeout(() => {
+      if (pendingLinkData[tabId]) {
+        delete pendingLinkData[tabId];
+      }
+    }, 5000);
+  }
+  return true;
+});
+
+// Add or modify the navigation event listener
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  // Ignore subframe navigations
+  if (details.frameId !== 0) return;
+  
+  const linkData = pendingLinkData[details.tabId];
+  if (linkData && linkData.href === details.url) {
+    console.debug(`Navigation matched with link data for tab ${details.tabId}`);
+    
+    // Update state with combined data
+    updateBrowserState({
+      type: 'LINK_NAVIGATION',
+      tabId: details.tabId,
+      url: details.url,
+      linkText: linkData.text,
+      title: linkData.title || '',
+      timestamp: linkData.timestamp
+    });
+    
+    // Clean up after using
+    delete pendingLinkData[details.tabId];
+  }
+});
+
+// Make sure this function exists or modify your existing state update function
+function updateBrowserState(eventData) {
+  // Update your unified state model with the navigation event
+  // This will need to integrate with your existing state management logic
+  
+  // Then notify state.js about the change
+  broadcastStateChange({
+    type: 'STATE_UPDATED',
+    event: eventData
+  });
 }

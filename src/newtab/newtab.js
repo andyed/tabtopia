@@ -926,29 +926,55 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 // Add a central state update handler
-function handleStateUpdate(update) {
+function handleStateUpdate(stateUpdate) {
     console.log('State update received:', {
-        type: update.type,
-        tabId: update.tabId,
-        url: update.tab?.url,
-        title: update.tab?.title
+        type: stateUpdate.type,
+        tabId: stateUpdate.tabId,
+        url: stateUpdate.tab?.url,
+        title: stateUpdate.tab?.title
     });
     
     // Update timeline
-    if (update.action === 'tabUpdated' || update.type === 'tabUpdate') {
-        updateTimelineWithNavigation(update.tab);
+    if (stateUpdate.action === 'tabUpdated' || stateUpdate.type === 'tabUpdate') {
+        updateTimelineWithNavigation(stateUpdate.tab);
     }
     
     // Force treemap redraw on URL or title changes
-    if (update.tab && (update.changeInfo?.url || update.changeInfo?.title)) {
+    if (stateUpdate.tab && (stateUpdate.changeInfo?.url || stateUpdate.changeInfo?.title)) {
         console.log('Tab content changed, updating treemap:', {
-            tabId: update.tabId,
-            url: update.tab.url,
-            title: update.tab.title
+            tabId: stateUpdate.tabId,
+            url: stateUpdate.tab.url,
+            title: stateUpdate.tab.title
         });
         
         // Force immediate treemap update with fresh data
         updateTreemap();
+    }
+
+    // Add this new condition to handle link navigation events
+    // This should go inside the existing function before the end
+    if (stateUpdate.type === 'STATE_UPDATED' && 
+        stateUpdate.event && 
+        stateUpdate.event.type === 'LINK_NAVIGATION') {
+      
+      const event = stateUpdate.event;
+      const nodeId = getNodeIdForUrl(event.url);
+      
+      if (nodeId) {
+        // Update the node with link text
+        const node = getNode(nodeId);
+        if (node) {
+          node.linkText = event.linkText;
+          node.linkTitle = event.title;
+          node.clickTimestamp = event.timestamp;
+          
+          // Notify about updated node - use your existing notification mechanism
+          console.debug(`Updated node ${nodeId} with link text: ${event.linkText}`);
+          
+          // If you have a redraw or update function, call it here
+          // For example: updateVisualization();
+        }
+      }
     }
 }
 
@@ -1176,3 +1202,23 @@ async function refreshTreemapState(changes) {
     // Update visualization
     await drawTreemap(treeData);
 }
+
+// Add tab removal listener
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+    console.log(`Tab ${tabId} removed`);
+
+    // Update state to remove the tab
+    const windowId = removeInfo.windowId;
+    if (currentData && currentData.windowSwimlanes && currentData.windowSwimlanes[windowId]) {
+        currentData.windowSwimlanes[windowId] = currentData.windowSwimlanes[windowId].filter(tab => tab.id !== tabId);
+        
+        // If the window has no more tabs, remove the window
+        if (currentData.windowSwimlanes[windowId].length === 0) {
+            delete currentData.windowSwimlanes[windowId];
+            currentData.activeWindows = currentData.activeWindows.filter(window => window.id !== windowId);
+        }
+
+        // Update the visualization
+        await updateTreemap();
+    }
+});

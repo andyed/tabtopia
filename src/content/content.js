@@ -1,24 +1,25 @@
-// Track link clicks and form submissions
-document.addEventListener('click', (event) => {
-  let target = event.target;
-  while (target && target !== document.body) {
-    if (target.tagName === 'A') {
-      const linkInfo = {
-        type: 'navigation',
-        sourceUrl: window.location.href,
-        targetUrl: target.href,
-        text: target.innerText.trim() || target.title || target.href,
-        timestamp: Date.now()
-      };
-      chrome.runtime.sendMessage({
-        type: 'navigation_event',
-        data: linkInfo
-      });
-      break;
-    }
-    target = target.parentElement;
-  }
-});
+// Modify the link click handler to use event capturing and avoid interference
+document.addEventListener('click', function(event) {
+  // Find closest anchor in case we clicked on a child element
+  const target = event.target.closest('a');
+  if (!target || !target.href) return;
+  
+  // Collect essential link data
+  const linkData = {
+    href: target.href,
+    text: target.innerText || target.textContent || '',
+    title: target.title || '',
+    timestamp: Date.now()
+  };
+  
+  // Send data to background script without blocking
+  chrome.runtime.sendMessage({
+    type: 'LINK_TEXT_CAPTURED',
+    data: linkData
+  });
+  
+  // Don't interfere with normal event flow
+}, true); // true = use capturing phase to get event first
 
 // Track form submissions
 document.addEventListener('submit', (event) => {
