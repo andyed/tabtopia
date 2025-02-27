@@ -1,3 +1,6 @@
+
+import {  exitSearchMode, clearSearchResults } from './search.js';
+
 export function handleKeyNavigation(event, node, data, state) {
     switch (event.key) {
         case ' ': // Space

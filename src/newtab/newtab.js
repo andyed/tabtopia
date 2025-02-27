@@ -128,10 +128,66 @@ function handleTabSearch(event) {
                 .style('opacity', isMatch ? 1 : 0.3)
                 .style('transition', 'opacity 0.2s ease-in-out');
         });
+
+    // Change tab order to jump between matching cells
+    if (results.length > 0) {
+        const firstMatch = results[0];
+        const matchingCell = d3.selectAll('.cell-search-match').node();
+        if (matchingCell) {
+            matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
 }
 
-// Add tab search event listener
-document.getElementById('tabSearch').addEventListener('input', debounce(handleTabSearch, 200));
+function exitSearchMode() {
+    const searchInput = document.getElementById('tabSearch');
+    searchInput.value = '';
+    handleTabSearch({ target: { value: '' } }); // Clear search results
+    clearSearchStyles(); // Clear search styles from treemap
+}
+
+export function clearSearchStyles() {
+    d3.selectAll('.cell')
+        .style('opacity', 1)
+        .classed('cell-search-match', false)
+        .classed('cell-search-nomatch', false)
+        .classed('cell-selected', false)
+        .style('transition', 'opacity 0.2s ease-in-out');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('tabSearch');
+    let searchResults = [];
+    let currentIndex = -1;
+
+    searchInput.addEventListener('input', debounce((event) => {
+        handleTabSearch(event);
+        searchResults = tabSearch.search(event.target.value.trim());
+        currentIndex = -1;
+    }, 200));
+
+    searchInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            exitSearchMode();
+            searchResults = [];
+            currentIndex = -1;
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            if (searchResults.length > 0) {
+                if (event.key === 'ArrowDown') {
+                    currentIndex = (currentIndex + 1) % searchResults.length;
+                } else if (event.key === 'ArrowUp') {
+                    currentIndex = (currentIndex - 1 + searchResults.length) % searchResults.length;
+                }
+                const matchingCell = d3.selectAll('.cell-search-match').nodes()[currentIndex];
+                if (matchingCell) {
+                    matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    d3.selectAll('.cell-search-match').classed('cell-selected', false);
+                    d3.select(matchingCell).classed('cell-selected', true);
+                }
+            }
+        }
+    });
+});
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -151,9 +207,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Set up search handler
         const searchInput = document.getElementById('tabSearch');
         if (searchInput) {
-            searchInput.addEventListener('input', (event) => {
-                const query = event.target.value.trim();
-                handleTabSearch(query);
+            searchInput.addEventListener('input', debounce(handleTabSearch, 200));
+            searchInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    exitSearchMode();
+                }
             });
         }
 
@@ -858,11 +916,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-function clearSearchStyles() {
-    d3.selectAll('#treemap g')
-        .style('opacity', 1)
-        .style('transition', 'opacity 0.2s ease-in-out');
-}
 
 // 1. Add clear state management
 const state = {
@@ -1266,3 +1319,113 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
         await updateTreemap();
     }
 });
+
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('tabSearch');
+    let searchResults = [];
+    let currentIndex = -1;
+
+    searchInput.addEventListener('input', debounce((event) => {
+        handleTabSearch(event);
+        searchResults = tabSearch.search(event.target.value.trim());
+        currentIndex = -1;
+    }, 200));
+
+    searchInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            exitSearchMode();
+            searchResults = [];
+            currentIndex = -1;
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            if (searchResults.length > 0) {
+                if (event.key === 'ArrowDown') {
+                    currentIndex = (currentIndex + 1) % searchResults.length;
+                } else if (event.key === 'ArrowUp') {
+                    currentIndex = (currentIndex - 1 + searchResults.length) % searchResults.length;
+                }
+                const matchingCell = d3.selectAll('.cell-search-match').nodes()[currentIndex];
+                if (matchingCell) {
+                    matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    d3.selectAll('.cell-search-match').classed('cell-selected', false);
+                    d3.select(matchingCell).classed('cell-selected', true);
+                }
+            }
+        }
+    });
+});
+
+function createTreemapData(state) {
+    return {
+        name: 'root',
+        children: [
+            ...state.activeWindows.map(window => ({
+                name: `Window ${window.id}`,
+                id: window.id,
+                children: window.tabs.map(tab => ({
+                    id: `tab${tab.id}`,
+                    windowId: window.id,
+                    title: tab.title || 'Untitled',
+                    url: tab.url || '',
+                    favIconUrl: tab.favIconUrl,
+                    lastAccessed: Date.now(),
+                    timeSpent: tab.totalTimeSpent || 100,
+                    isBookmark: false,
+                    children: []
+                }))
+            })),
+            // Only add bookmark window if needed
+            ...(state.needsBookmarks ? [{
+                name: 'Window bookmark',
+                id: 'bookmark',
+                children: state.bookmarks.map(bookmark => ({
+                    id: `bookmark${bookmark.id}`,
+                    windowId: 'bookmark',
+                    title: bookmark.title || 'Untitled',
+                    url: bookmark.url || '',
+                    favIconUrl: bookmark.favIconUrl,
+                    lastAccessed: Date.now(),
+                    timeSpent: 100,
+                    isBookmark: true,
+                    children: []
+                }))
+            }] : [])
+        ]
+    };
+}
+
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('tabSearch');
+    let searchResults = [];
+    let currentIndex = -1;
+
+    searchInput.addEventListener('input', debounce((event) => {
+        handleTabSearch(event);
+        searchResults = tabSearch.search(event.target.value.trim());
+        currentIndex = -1;
+    }, 200));
+
+    searchInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            exitSearchMode();
+            searchResults = [];
+            currentIndex = -1;
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            if (searchResults.length > 0) {
+                if (event.key === 'ArrowDown') {
+                    currentIndex = (currentIndex + 1) % searchResults.length;
+                } else if (event.key === 'ArrowUp') {
+                    currentIndex = (currentIndex - 1 + searchResults.length) % searchResults.length;
+                }
+                const matchingCell = d3.selectAll('.cell-search-match').nodes()[currentIndex];
+                if (matchingCell) {
+                    matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    d3.selectAll('.cell-search-match').classed('cell-selected', false);
+                    d3.select(matchingCell).classed('cell-selected', true);
+                }
+            }
+        }
+    });
+});
+

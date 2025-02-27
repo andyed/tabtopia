@@ -119,7 +119,7 @@ function focusFirstSearchResult() {
     }
 }
 
-function exitSearchMode() {
+export function exitSearchMode() {
     const searchInput = document.getElementById('tabSearch');
     searchInput.value = '';
     searchInput.blur();
@@ -255,4 +255,13 @@ export function searchTabs(query) {
             if (!aExact && bExact) return 1;
             return 0;
         });
+}
+
+export function clearSearchResults() {
+    d3.selectAll('.cell')
+        .style('opacity', 1)
+        .classed('cell-search-match', false)
+        .classed('cell-search-nomatch', false)
+        .classed('cell-selected', false)
+        .style('transition', 'opacity 0.2s ease-in-out');
 }
