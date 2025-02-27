@@ -751,42 +751,51 @@ function findTabById(windowSwimlanes, tabId) {
 
 // Add tab activity tracking listeners
 chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
-  const now = Date.now();
-  
-  // Update previous tab
-  const previousTab = Array.from(tabActivityLog.entries())
-    .find(([_, data]) => data.lastTouch === Math.max(...Array.from(tabActivityLog.values())
-      .map(d => d.lastTouch || 0)));
+    const now = Date.now();
+    
+    // Update previous tab
+    const previousTab = Array.from(tabActivityLog.entries())
+        .find(([_, data]) => data.lastTouch === Math.max(...Array.from(tabActivityLog.values())
+            .map(d => d.lastTouch || 0)));
 
-  if (previousTab) {
-    const [prevTabId, prevData] = previousTab;
-    if (prevData.lastTouch) {
-      const timeSpent = now - prevData.lastTouch;
-      if (timeSpent > TAB_ACTIVITY.ACTIVE_THRESHOLD) {
-        prevData.totalTimeSpent += timeSpent;
-        // Persist updated time
-        await chrome.storage.local.set({
-          [`tab_${prevTabId}`]: prevData
-        });
-      }
+    if (previousTab) {
+        const [prevTabId, prevData] = previousTab;
+        if (prevData.lastTouch) {
+            const timeSpent = now - prevData.lastTouch;
+            if (timeSpent > TAB_ACTIVITY.ACTIVE_THRESHOLD) {
+                prevData.totalTimeSpent += timeSpent;
+                // Persist updated time
+                await chrome.storage.local.set({
+                    [`tab_${prevTabId}`]: prevData
+                });
+            }
+        }
     }
-  }
 
-  // Update current tab
-  const storedActivity = await chrome.storage.local.get(`tab_${tabId}`);
-  const currentActivity = storedActivity[`tab_${tabId}`] || {
-    totalTimeSpent: 0,
-    firstSeen: now
-  };
-  currentActivity.lastTouch = now;
-  
-  // Persist current tab data
-  await chrome.storage.local.set({
-    [`tab_${tabId}`]: currentActivity
-  });
-  
-  tabActivityLog.set(tabId, currentActivity);
-  console.log('Tab activity log updated:', tabActivityLog);
+    // Update current tab
+    const storedActivity = await chrome.storage.local.get(`tab_${tabId}`);
+    const currentActivity = storedActivity[`tab_${tabId}`] || {
+        totalTimeSpent: 0,
+        firstSeen: now
+    };
+    currentActivity.lastTouch = now;
+    currentActivity.lastAccessed = now; // Update last accessed time
+    
+    // Persist current tab data
+    await chrome.storage.local.set({
+        [`tab_${tabId}`]: currentActivity
+    });
+    
+    tabActivityLog.set(tabId, currentActivity);
+    console.log('Tab activity log updated:', tabActivityLog);
+
+    // Update the last accessed time in the current data
+    if (currentData && currentData.windowSwimlanes[windowId]) {
+        const tab = currentData.windowSwimlanes[windowId].find(t => t.id === tabId);
+        if (tab) {
+            tab.lastAccessed = now;
+        }
+    }
 });
 
 // Add cleanup for stored data when tab is closed
