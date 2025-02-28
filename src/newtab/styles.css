@@ -481,4 +481,8 @@ mark {
     .motivational-poster {
         display: none !important;
     }
+
+    .hide-text {
+        display: none;
+    }
 }
