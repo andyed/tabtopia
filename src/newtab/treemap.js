@@ -252,6 +252,32 @@ export async function drawTreemap(data) {
         }))
     };
 
+    // Calculate color scale for each window
+    hierarchyData.children.forEach(windowNode => {
+        const tabs = windowNode.children;
+        const maxLastAccessed = d3.max(tabs, d => d.lastAccessed);
+        const minLastAccessed = d3.min(tabs, d => d.lastAccessed);
+
+        console.log(`Window ${windowNode.name} - Min: ${minLastAccessed}, Max: ${maxLastAccessed}`); // Debugging
+
+        const windowId = windowNode.name.includes('bookmark') ? 'bookmark' : 
+            parseInt(windowNode.name.replace('Window ', ''), 10);
+
+        const baseColor = d3.color(lightColors[windowId % lightColors.length]);
+        if (!baseColor) {
+            console.warn(`No color found for window ${windowId}, using default`);
+            return;
+        }
+
+        const colorScale = d3.scaleLinear()
+            .domain([minLastAccessed, maxLastAccessed])
+            .range([baseColor.darker(0.5), baseColor.brighter(0.2)]);
+
+        tabs.forEach(tab => {
+            tab.color = tab.isBookmark ? '#f5f5f5' : colorScale(tab.lastAccessed);
+        });
+    });
+
     // Calculate empty cells needed
     const currentTabs = hierarchyData.children.flatMap(window => window.children);
     const emptyCells = calculateEmptyCells(currentTabs.length);
@@ -288,72 +314,7 @@ export async function drawTreemap(data) {
 
     console.log('Treemap layout applied:', root); // Debug
 
-   // Create a color scale for recency of visit within each window
-   root.children.forEach(windowNode => {
-        const tabs = windowNode.children;
-        const maxLastAccessed = d3.max(tabs, d => d.data.lastAccessed);
-        const minLastAccessed = d3.min(tabs, d => d.data.lastAccessed);
-
-        // Get window ID, handling bookmark window correctly
-        const windowId = windowNode.data.name.includes('bookmark') ? 'bookmark' : 
-            parseInt(windowNode.data.name.replace('Window ', ''), 10);
-        
-        const baseColor = d3.color(windowColors.get(windowId));
-        if (!baseColor) {
-            console.warn(`No color found for window ${windowId}, using default`);
-            // Set a default color for unknown windows
-            windowColors.set(windowId, '#f5f5f5');
-            return;
-        }
-
-        const colorScale = d3.scaleLinear()
-            .domain([minLastAccessed, maxLastAccessed])
-            .range([baseColor.darker(0.5), baseColor.brighter(0.2)]);
-
-        tabs.forEach(tab => {
-            tab.data.color = tab.data.isBookmark ? '#f5f5f5' : colorScale(tab.data.lastAccessed);
-        });
-    });
-
-        // Create sorted tab order based on lastAccessed
-        const sortedTabs = root.leaves().sort((a, b) => {
-            return b.data.lastAccessed - a.data.lastAccessed;
-        });
-    
-        // Apply special colors to the first, second, and third most recently accessed tabs
-        applyColorCoding(sortedTabs, windowColors);
-
-    // Add background rectangles for each window
-    root.children.forEach(windowNode => {
-        const baseColor = d3.color(windowColors.get(parseInt(windowNode.data.name.replace('Window ', ''), 10)));
-        if (!baseColor) {
-            console.error('Base color not found for window:', windowNode.data.name);
-            return;
-        }
-
-        svg.append('rect')
-            .attr('x', windowNode.x0)
-            .attr('y', windowNode.y0)
-            .attr('width', windowNode.x1 - windowNode.x0)
-            .attr('height', windowNode.y1 - windowNode.y0)
-            .attr('fill', baseColor.darker(0.5))
-            .attr('stroke', '#999')        // Add border
-            .attr('stroke-width', '2px')   // Border width
-            .attr('rx', '4')              // Rounded corners
-            .attr('ry', '4');
-    });
-
-    // Create sorted tab order based on lastAccessed
-    const allTabs = root.leaves().sort((a, b) => {
-        return b.data.lastAccessed - a.data.lastAccessed;
-    });
-
-    // Store the current tab order
-    currentTabOrder = allTabs.map(tab => tab.data.id);
-
-    console.log('Nodes data:', root.leaves());
-
-    // 1. Create base node structure
+    // Apply colors to nodes
     const nodes = svg.selectAll('.cell')
         .data(root.leaves())
         .enter()
@@ -366,16 +327,15 @@ export async function drawTreemap(data) {
         .attr('aria-label', d => d.data.title)
         .classed('bookmark-cell', d => d.data.isBookmark);
 
-    // 2. Add background rectangles for each node
     nodes.append('rect')
         .attr('id', d => d.data.id)
         .attr('width', d => d.x1 - d.x0)
         .attr('height', d => d.y1 - d.y0)
-        .attr('fill', d => d.data.isBookmark ? '#f8f9fa' : d.data.color)
-        .attr('opacity', d => d.data.isBookmark ? 0.4 : 1) // More translucent for bookmarks
+        .attr('fill', d => d.data.color)
+        .attr('opacity', d => d.data.isBookmark ? 0.4 : 1)
         .attr('stroke', d => d.data.isBookmark ? '#ddd' : 'none')
-        .attr('stroke-dasharray', d => d.data.isBookmark ? '4,4' : 'none') // Dashed border for bookmarks
-        .attr('rx', d => d.data.isBookmark ? '8' : '4') // More rounded corners for bookmarks
+        .attr('stroke-dasharray', d => d.data.isBookmark ? '4,4' : 'none')
+        .attr('rx', d => d.data.isBookmark ? '8' : '4')
         .attr('ry', d => d.data.isBookmark ? '8' : '4');
 
     // 3. Add cell content container
@@ -617,8 +577,6 @@ export async function drawTreemap(data) {
         nodes: nodes.size(),
         focusable: interactionState.focusableNodes.length
     });
-
-    
 }
 
 // Helper function to format title
@@ -672,13 +630,7 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
     textElement.attr('font-size', (fontSize - 1) + 'px');
 }
 
-// Add resize handler
-window.onresize = async () => {
-    console.log("Resizing treemap...");
-    if (categorizedDataCache) {
-        await drawTreemap(categorizedDataCache);
-    }
-};
+
 
 // Move listener setup to initialization
 function initializeMessageHandling() {

@@ -1269,10 +1269,10 @@ async function refreshTreemapState(changes) {
 
     // Sync with actual window count to ensure accuracy
     const actualWindowCount = await getWindowCount();
-    if (actualWindowCount !== state.activeWindows.length) {
+    if (actualCount !== state.activeWindows.length) {
         console.warn('Window count mismatch:', {
             stateCount: state.activeWindows.length,
-            actualCount: actualWindowCount
+            actualCount: actualCount
         });
         
         // Refresh all window data
@@ -1437,4 +1437,82 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+async function handleTabUpdated(message) {
+    const { tabId, changeInfo, tab } = message;
+    
+    console.log('Processing tab update:', {
+        tabId,
+        changeInfo,
+        currentUrl: tab?.url,
+        hasState: !!treemapState.data,
+        stateWindows: treemapState.data?.activeWindows?.length
+    });
+
+    if (!treemapState.data?.activeWindows) {
+        console.warn('No state data available');
+        return;
+    }
+
+    // Only process meaningful updates
+    if (!changeInfo.url && !changeInfo.title && !changeInfo.favIconUrl) {
+        console.log('Skipping non-content update');
+        return;
+    }
+
+    let updated = false;
+    treemapState.data.activeWindows = treemapState.data.activeWindows.map(window => {
+        const updatedTabs = window.tabs.map(t => {
+            if (t.id === tabId) {
+                updated = true;
+                
+                // Determine the best title to use
+                let bestTitle = null;
+                
+                // If this is a link click with text, prefer that
+                if (changeInfo.linkText) {
+                    bestTitle = changeInfo.linkText;
+                }
+                // Otherwise try the tab title
+                else if (tab.title && tab.title !== 'New Tab') {
+                    bestTitle = tab.title;
+                }
+                // If we have cached link text for this URL, use that
+                else if (treemapState.linkTextCache && 
+                         treemapState.linkTextCache[tab.url || changeInfo.url]) {
+                    bestTitle = treemapState.linkTextCache[tab.url || changeInfo.url].text;
+                }
+                // Fall back to the existing title
+                else {
+                    bestTitle = tab.title || t.title;
+                }
+                
+                const updatedTab = {
+                    ...t,
+                    title: bestTitle,
+                    url: changeInfo.url || tab.url || t.url,
+                    favIconUrl: tab.favIconUrl || t.favIconUrl,
+                    lastAccessed: Date.now() // Ensure lastAccessed is updated at the tab level
+                };
+                console.log('Updating tab in window:', {
+                    windowId: window.id,
+                    tabId,
+                    oldUrl: t.url,
+                    newUrl: updatedTab.url,
+                    lastAccessed: updatedTab.lastAccessed // Log the updated lastAccessed
+                });
+                return updatedTab;
+            }
+            return t;
+        });
+        return { ...window, tabs: updatedTabs };
+    });
+
+    if (updated) {
+        console.log('Redrawing treemap after URL change');
+        await drawTreemap(treemapState.data); // Ensure this is awaited
+    } else {
+        console.warn('Tab not found in any window:', tabId);
+    }
+}
 

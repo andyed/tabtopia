@@ -10,6 +10,19 @@ export async function initializeApp() {
     ensureMinimumCells(categorizedDataCache, bookmarks);
 
     drawTreemap(categorizedDataCache);
+        // Add resize handler
+    window.onresize = async () => {
+        console.log("Resizing treemap...");
+        if (categorizedDataCache) {
+            await drawTreemap(categorizedDataCache);
+        }
+    };
+
+    // Add blur handler to refresh the app
+    window.onblur = async () => {
+        console.log("Window lost focus, refreshing app...");
+        await initializeApp(); // Reinitialize the app
+    };
 }
 
 async function fetchCategorizedData() {
