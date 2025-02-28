@@ -140,6 +140,7 @@ export function formatSessionDuration(start, end) {
 }
 
 export function applyColorCoding(tabs, windowColors) {
+    return;
     tabs.forEach((tab, index) => {
         const windowId = tab.data.windowId;
         const baseColor = d3.color(windowColors.get(windowId));
@@ -150,7 +151,7 @@ export function applyColorCoding(tabs, windowColors) {
         }
 
         if (index === 0) {
-            tab.data.color = baseColor.brighter(0.4); // Lightest
+            tab.data.color = baseColor.brighter(0.3); // Lightest
         } else if (index === 1) {
             tab.data.color = baseColor.brighter(0.2); // Lighter
         } else if (index === 2) {
@@ -158,3 +159,5 @@ export function applyColorCoding(tabs, windowColors) {
         }
     });
 }
+
+

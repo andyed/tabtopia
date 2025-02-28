@@ -64,7 +64,7 @@ async function initializeState() {
 
         // Draw initial treemap if we have windows
         if (treemapState.hasWindows()) {
-            drawTreemap(treemapState.data);
+            await drawTreemap(treemapState.data);
         } else {
             showEmptyState();
         }
@@ -673,15 +673,16 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
 }
 
 // Add resize handler
-window.onresize = () => {
+window.onresize = async () => {
+    console.log("Resizing treemap...");
     if (categorizedDataCache) {
-        drawTreemap(categorizedDataCache);
+        await drawTreemap(categorizedDataCache);
     }
 };
 
 // Move listener setup to initialization
 function initializeMessageHandling() {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
         // Check for URL bar navigation specifically
         if (message.action === 'tabUpdated' && 
             message.changeInfo?.navigationType === 'urlBarNavigation') {
@@ -689,9 +690,9 @@ function initializeMessageHandling() {
             console.log('URL bar navigation detected - updating treemap');
             
             // For URL bar navigation, we want to ensure we have the latest data
-            chrome.runtime.sendMessage({ type: 'getInitialState' }, (freshState) => {
+            chrome.runtime.sendMessage({ type: 'getInitialState' }, async (freshState) => {
                 treemapState.data = freshState;
-                drawTreemap(treemapState.data);
+                await drawTreemap(treemapState.data);
             });
             
             return true;
@@ -739,7 +740,7 @@ function initializeMessageHandling() {
             };
             
             // Update treemap immediately
-            handleTabUpdated(updateData);
+            await handleTabUpdated(updateData);
             return true;
         }
         
@@ -988,7 +989,7 @@ const calculateEmptyCells = (currentTabCount) => {
 };
 
 // Update the bookmark handling function
-function updateBookmarkState(totalTabs) {
+async function updateBookmarkState(totalTabs) {
     // Prevent rapid updates
     if (updateState.isUpdating) {
         return;
@@ -1005,38 +1006,38 @@ function updateBookmarkState(totalTabs) {
     try {
         if (totalTabs < 4) {
             const emptyCells = 4 - totalTabs;
-            fetchRecentBookmarks().then(bookmarks => {
-                const bookmarkWindow = treemapState.data.activeWindows.find(w => w.id === 'bookmark');
-                if (!bookmarkWindow) {
-                    addBookmarkWindow(bookmarks.slice(0, emptyCells));
-                } else if (bookmarkWindow.tabs.length !== emptyCells) {
-                    // Only update if count changed
-                    bookmarkWindow.tabs = bookmarks.slice(0, emptyCells).map(bookmark => ({
-                        id: `bookmark${bookmark.id}`,
-                        windowId: 'bookmark',
-                        title: bookmark.title || 'Untitled',
-                        url: bookmark.url || '',
-                        favIconUrl: bookmark.favIconUrl,
-                        lastAccessed: Date.now(),
-                        timeSpent: 1,
-                        isBookmark: true,
-                        children: []
-                    }));
-                }
-                drawTreemap(treemapState.data);
-            });
+            const bookmarks = await fetchRecentBookmarks();
+            const bookmarkWindow = treemapState.data.activeWindows.find(w => w.id === 'bookmark');
+            if (!bookmarkWindow) {
+                addBookmarkWindow(bookmarks.slice(0, emptyCells));
+            } else if (bookmarkWindow.tabs.length !== emptyCells) {
+                // Only update if count changed
+                bookmarkWindow.tabs = bookmarks.slice(0, emptyCells).map(bookmark => ({
+                    id: `bookmark${bookmark.id}`,
+                    windowId: 'bookmark',
+                    title: bookmark.title || 'Untitled',
+                    url: bookmark.url || '',
+                    favIconUrl: bookmark.favIconUrl,
+                    lastAccessed: Date.now(),
+                    timeSpent: 1,
+                    isBookmark: true,
+                    children: []
+                }));
+            }
+            await drawTreemap(treemapState.data);
         } else {
             // Remove bookmark window if present
             const hadBookmarks = treemapState.data.activeWindows.some(w => w.id === 'bookmark');
             if (hadBookmarks) {
                 treemapState.data.activeWindows = treemapState.data.activeWindows.filter(w => w.id !== 'bookmark');
-                drawTreemap(treemapState.data);
+                await drawTreemap(treemapState.data);
             }
         }
     } finally {
         updateState.isUpdating = false;
     }
-};
+}
+
 
 // Helper functions
 function focusNode(node, data) {
@@ -1148,7 +1149,7 @@ async function fillEmptyCellsWithBookmarks(emptyCells) {
     };
 }
 
-function handleWindowRemoved(windowId) {
+async function handleWindowRemoved(windowId) {
     console.log('Window removal detected:', {
         windowId,
         currentWindows: treemapState.data?.activeWindows?.length,
@@ -1171,7 +1172,7 @@ function handleWindowRemoved(windowId) {
     // If we still have windows, update the treemap
     if (treemapState.data.activeWindows.length > 0) {
         console.log('Updating treemap with remaining windows');
-        drawTreemap(treemapState.data);
+        await drawTreemap(treemapState.data);
     } else {
         // Clear treemap if no windows remain (but keep state)
         console.log('No remaining windows, clearing treemap');
@@ -1202,22 +1203,21 @@ function showEmptyState() {
 
 // Update your initialization
 async function initializeTreemap() {
-  // Get initial data
-  const treeData = await browserState.getTreemapData();
-  
-  // Draw initial treemap
-  drawTreemap(treeData);
-  
-  // Subscribe to changes
-  browserState.subscribe((update) => {
-    console.log('State update received:', update);
+    // Get initial data
+    const treeData = await browserState.getTreemapData();
     
-    // Request fresh data and update the visualization
-    browserState.getTreemapData().then(freshData => {
-      drawTreemap(freshData);
+    // Draw initial treemap
+    await drawTreemap(treeData);
+    
+    // Subscribe to changes
+    browserState.subscribe(async (update) => {
+      console.log('State update received:', update);
+      
+      // Request fresh data and update the visualization
+      const freshData = await browserState.getTreemapData();
+      await drawTreemap(freshData);
     });
-  });
-}
+  }
 
 // Fix click handler for readout display
 function handleNodeClick(event, d) {
