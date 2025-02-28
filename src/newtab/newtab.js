@@ -28,6 +28,16 @@ const INACTIVITY_TIMEOUT = 5000; // 5 seconds
 let categorizedDataCache = null;
 let currentData = null;
 
+// Define treemapState at the top of your file or in an appropriate scope
+const treemapState = {
+    data: null,
+    linkTextCache: {},
+    needsBookmarks: false,
+    getTotalTabs: function() {
+        return this.data?.activeWindows?.reduce((sum, w) => sum + w.tabs.length, 0) || 0;
+    }
+};
+
 function resetInactivityTimer(categorizedData) {
     clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
@@ -1083,40 +1093,13 @@ function handleStateUpdate(stateUpdate) {
       }
     }
 }
-function updateTreemap(tabId, changeInfo) {
-    console.log('Updating treemap for tab:', tabId);
 
-    // Ensure we have valid data
-    if (!treemapState.data?.activeWindows) {
-        console.warn('No active windows in treemap state');
+async function updateTreemap() {
+    if (!treemapState.data) {
+        console.warn('No treemap data available');
         return;
     }
-
-    let updated = false;
-
-    // Update the specific tab's lastAccessed
-    treemapState.data.activeWindows = treemapState.data.activeWindows.map(window => {
-        const updatedTabs = window.tabs.map(tab => {
-            if (tab.id === tabId) {
-                updated = true;
-                const updatedTab = {
-                    ...tab,
-                    lastAccessed: Date.now() // Update only the accessed tab
-                };
-                console.log('Updated lastAccessed for tab:', updatedTab);
-                return updatedTab;
-            }
-            return tab;
-        });
-        return { ...window, tabs: updatedTabs };
-    });
-
-    if (updated) {
-        console.log('Redrawing treemap with updated data');
-        drawTreemap(treemapState.data);
-    } else {
-        console.warn('Tab not found in any window:', tabId);
-    }
+    await drawTreemap(treemapState.data);
 }
 
 // Update the message listener to properly handle responses
@@ -1259,10 +1242,10 @@ async function refreshTreemapState(changes) {
 
     // Sync with actual window count to ensure accuracy
     const actualWindowCount = await getWindowCount();
-    if (actualCount !== state.activeWindows.length) {
+    if (actualWindowCount !== state.activeWindows.length) {
         console.warn('Window count mismatch:', {
             stateCount: state.activeWindows.length,
-            actualCount: actualCount
+            actualCount: actualWindowCount
         });
         
         // Refresh all window data
@@ -1500,7 +1483,7 @@ async function handleTabUpdated(message) {
 
     if (updated) {
         console.log('Redrawing treemap after URL change');
-        await drawTreemap(treemapState.data); // Ensure this is awaited
+        await updateTreemap(); // Ensure this is awaited
     } else {
         console.warn('Tab not found in any window:', tabId);
     }

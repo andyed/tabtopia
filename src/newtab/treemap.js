@@ -438,7 +438,7 @@ export async function drawTreemap(data) {
             try {
                 await chrome.tabs.remove(tabId);
                 // Let the onRemoved handler deal with the UI update
-                console.log('Tab removal requested:', tabId);
+                console.log('Tab removal requested:', tabId, event);
             } catch (error) {
                 console.error('Error removing tab:', error);
             }
@@ -802,8 +802,8 @@ function logStateChange(action, details) {
 }
 
 // Update handleTabRemoved to be more robust
-async function handleTabRemoved(tabId, removeInfo) {
-    console.log('Tab removed:', { tabId, removeInfo });
+async function handleTabRemoved(tabId) {
+    console.log('Tab removal requested:', tabId);
 
     if (!treemapState.data?.activeWindows) {
         console.warn('No state data for tab removal');
@@ -821,23 +821,19 @@ async function handleTabRemoved(tabId, removeInfo) {
         window.tabs.length > 0 || window.id === 'bookmark'
     );
 
-    const totalTabs = treemapState.getTotalTabs();
-    console.log('After tab removal:', { totalTabs, windows: treemapState.data.activeWindows });
+    // Debugging: Log the state after removal
+    console.log('After tab removal:', {
+        totalTabs: treemapState.getTotalTabs(),
+        windows: treemapState.data.activeWindows
+    });
 
-    // Update bookmark state if needed
-    if (treemapState.needsBookmarks) {
-        updateBookmarkState(totalTabs);
-    } else {
-        // Remove bookmark window if we have enough tabs
-        treemapState.data.activeWindows = treemapState.data.activeWindows
-            .filter(w => w.id !== 'bookmark');
+    // Redraw the treemap with updated data
+    try {
+        await drawTreemap(treemapState.data);
+        console.log('Treemap redrawn successfully');
+    } catch (error) {
+        console.error('Error redrawing treemap:', error);
     }
-
-    // Remove from search index
-    removeFromIndex(`tab${tabId}`);
-
-    // Redraw immediately
-    await drawTreemap(treemapState.data); // Ensure this is awaited
 }
 
 // Update handleTabCreated for better state management
