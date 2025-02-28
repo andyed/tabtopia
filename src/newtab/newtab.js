@@ -1022,7 +1022,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 window.tabs[tabIndex] = {
                     ...window.tabs[tabIndex],
                     ...tab,
-                    lastAccessed: Date.now()
+                    lastAccessed: Date.now() // Update last accessed time
                 };
                 refreshTreemapState({ activeWindows: state.activeWindows });
             }

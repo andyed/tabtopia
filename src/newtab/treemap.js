@@ -3,6 +3,7 @@ import { displayReadout, hideReadout } from './readout.js';
 import { handleKeyNavigation } from './keyboardNav.js';
 import { fetchRecentBookmarks } from './init.js';
 import { browserState } from './state.js';
+import { applyColorCoding } from './utility.js';
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
@@ -287,8 +288,8 @@ export async function drawTreemap(data) {
 
     console.log('Treemap layout applied:', root); // Debug
 
-    // Create a color scale for recency of visit within each window
-    root.children.forEach(windowNode => {
+   // Create a color scale for recency of visit within each window
+   root.children.forEach(windowNode => {
         const tabs = windowNode.children;
         const maxLastAccessed = d3.max(tabs, d => d.data.lastAccessed);
         const minLastAccessed = d3.min(tabs, d => d.data.lastAccessed);
@@ -313,6 +314,14 @@ export async function drawTreemap(data) {
             tab.data.color = tab.data.isBookmark ? '#f5f5f5' : colorScale(tab.data.lastAccessed);
         });
     });
+
+        // Create sorted tab order based on lastAccessed
+        const sortedTabs = root.leaves().sort((a, b) => {
+            return b.data.lastAccessed - a.data.lastAccessed;
+        });
+    
+        // Apply special colors to the first, second, and third most recently accessed tabs
+        applyColorCoding(sortedTabs, windowColors);
 
     // Add background rectangles for each window
     root.children.forEach(windowNode => {
@@ -751,7 +760,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Update the handleTabUpdated function with better error handling
-function handleTabUpdated(message) {
+async function handleTabUpdated(message) {
     const { tabId, changeInfo, tab } = message;
     
     console.log('Processing tab update:', {
@@ -822,7 +831,7 @@ function handleTabUpdated(message) {
 
     if (updated) {
         console.log('Redrawing treemap after URL change');
-        drawTreemap(treemapState.data);
+        await drawTreemap(treemapState.data); // Ensure this is awaited
     } else {
         console.warn('Tab not found in any window:', tabId);
     }
@@ -839,7 +848,7 @@ function logStateChange(action, details) {
 }
 
 // Update handleTabRemoved to be more robust
-function handleTabRemoved(tabId, removeInfo) {
+async function handleTabRemoved(tabId, removeInfo) {
     console.log('Tab removed:', { tabId, removeInfo });
 
     if (!treemapState.data?.activeWindows) {
@@ -874,11 +883,11 @@ function handleTabRemoved(tabId, removeInfo) {
     removeFromIndex(`tab${tabId}`);
 
     // Redraw immediately
-    drawTreemap(treemapState.data);
+    await drawTreemap(treemapState.data); // Ensure this is awaited
 }
 
 // Update handleTabCreated for better state management
-function handleTabCreated(tab) {
+async function handleTabCreated(tab) {
     console.log('Tab created:', tab);
 
     if (!tab?.id) {
@@ -926,7 +935,7 @@ function handleTabCreated(tab) {
     });
 
     // Update UI
-    drawTreemap(treemapState.data);
+    await drawTreemap(treemapState.data); // Ensure this is awaited
 }
 
 // Initialize state when page loads

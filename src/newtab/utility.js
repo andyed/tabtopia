@@ -138,3 +138,23 @@ export function formatSessionDuration(start, end) {
   if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''}`;
   return `${seconds} second${seconds > 1 ? 's' : ''}`;
 }
+
+export function applyColorCoding(tabs, windowColors) {
+    tabs.forEach((tab, index) => {
+        const windowId = tab.data.windowId;
+        const baseColor = d3.color(windowColors.get(windowId));
+        if (!baseColor) {
+            console.warn(`No color found for window ${windowId}, using default`);
+            tab.data.color = '#f5f5f5'; // Default color
+            return;
+        }
+
+        if (index === 0) {
+            tab.data.color = baseColor.brighter(0.4); // Lightest
+        } else if (index === 1) {
+            tab.data.color = baseColor.brighter(0.2); // Lighter
+        } else if (index === 2) {
+            tab.data.color = baseColor.brighter(0.1); // Light
+        }
+    });
+}
