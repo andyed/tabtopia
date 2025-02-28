@@ -1083,49 +1083,39 @@ function handleStateUpdate(stateUpdate) {
       }
     }
 }
+function updateTreemap(tabId, changeInfo) {
+    console.log('Updating treemap for tab:', tabId);
 
-// Add centralized treemap update function
-async function updateTreemap() {
-    try {
-        if (typeof drawTreemap !== 'function') {
-            console.warn('drawTreemap function not available');
-            return;
-        }
+    // Ensure we have valid data
+    if (!treemapState.data?.activeWindows) {
+        console.warn('No active windows in treemap state');
+        return;
+    }
 
-        console.log('Updating treemap with fresh data');
-        
-        // Get fresh data for all tabs in all windows
-        const windows = await chrome.windows.getAll({ populate: true });
-        
-        // Update categorizedDataCache with new data
-        categorizedDataCache = {
-            ...categorizedDataCache,
-            activeWindows: windows.map(window => ({
-                id: window.id,
-                focused: window.focused,
-                tabs: window.tabs.map(tab => ({
-                    id: tab.id,
-                    windowId: tab.windowId,
-                    url: tab.url,
-                    title: tab.title,
-                    active: tab.active,
-                    favIconUrl: tab.favIconUrl || getFaviconUrl(tab.url),
-                    lastAccessed: Date.now()
-                }))
-            }))
-        };
-        
-        console.log('Updated categorizedDataCache with fresh window data:', {
-            windows: categorizedDataCache.activeWindows.length,
-            totalTabs: categorizedDataCache.activeWindows.reduce(
-                (sum, w) => sum + w.tabs.length, 0
-            )
+    let updated = false;
+
+    // Update the specific tab's lastAccessed
+    treemapState.data.activeWindows = treemapState.data.activeWindows.map(window => {
+        const updatedTabs = window.tabs.map(tab => {
+            if (tab.id === tabId) {
+                updated = true;
+                const updatedTab = {
+                    ...tab,
+                    lastAccessed: Date.now() // Update only the accessed tab
+                };
+                console.log('Updated lastAccessed for tab:', updatedTab);
+                return updatedTab;
+            }
+            return tab;
         });
-        
-        // Now draw with updated data
-        await drawTreemap(categorizedDataCache);
-    } catch (error) {
-        console.error('Error updating treemap:', error);
+        return { ...window, tabs: updatedTabs };
+    });
+
+    if (updated) {
+        console.log('Redrawing treemap with updated data');
+        drawTreemap(treemapState.data);
+    } else {
+        console.warn('Tab not found in any window:', tabId);
     }
 }
 

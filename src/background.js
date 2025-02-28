@@ -132,6 +132,7 @@ async function updateGraphWithNewEdge(edge) {
 
 // Add time tracking function
 function updateTabActivity(tabId, isActive) {
+  console.log("upating tab timespent", tabId);
   const now = Date.now();
   const activity = browserState.tabActivityLog.get(tabId) || {
     totalTimeSpent: 0,
@@ -464,7 +465,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         } else if (changeInfo.status === 'complete') {
             // Page finished loading - likely same URL but content changed
             navigationType = 'contentLoaded';
-            
+            console.log('Content update complete:', { tabId, navigationType });
             // If in history, mark as refreshed
             if (browserState.tabHistory.has(tabId)) {
                 const history = browserState.tabHistory.get(tabId);

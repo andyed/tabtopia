@@ -179,6 +179,7 @@ export async function drawTreemap(data) {
     }
 
     console.log('Drawing treemap with:', {
+        data: data,
         windows: data.activeWindows.length,
         totalTabs: data.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0)
     });
