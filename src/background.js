@@ -998,3 +998,211 @@ function updateBrowserState(eventData) {
     event: eventData
   });
 }
+
+// Track which navigations have already been processed
+const processedNavigations = new Map();
+
+// Primary navigation handler using webNavigation
+chrome.webNavigation.onCommitted.addListener((details) => {
+    // Only process main frame navigations
+    if (details.frameId !== 0) return;
+    
+    const { tabId, url, transitionType, transitionQualifiers } = details;
+    
+    // Skip chrome:// URLs and extension pages
+    if (url.startsWith('chrome://') || url.startsWith(chrome.runtime.getURL(''))) return;
+    
+    console.log(`Navigation committed: ${url} (${transitionType})`, transitionQualifiers);
+    
+    // Store a unique identifier for this navigation to avoid duplicate processing
+    const navigationId = `${tabId}-${url}-${Date.now()}`;
+    processedNavigations.set(navigationId, {
+        timestamp: Date.now(),
+        handled: true,
+        type: transitionType
+    });
+    
+    // Clean old entries from processedNavigations map
+    cleanProcessedNavigations();
+    
+    // Get tab data
+    chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) {
+            console.error('Error getting tab:', chrome.runtime.lastError);
+            return;
+        }
+        
+        // Record the navigation with detailed transition information
+        recordNavigation({
+            tabId,
+            url,
+            title: tab.title || '',
+            transitionType,
+            transitionQualifiers,
+            timestamp: Date.now(),
+            navigationId
+        });
+    });
+});
+
+// Secondary handler for non-navigation tab updates
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Handle URL changes only if they weren't already handled by webNavigation
+    if (changeInfo.url) {
+        // Check if this URL change was already processed by webNavigation
+        const recentNavigations = Array.from(processedNavigations.values())
+            .filter(nav => nav.timestamp > Date.now() - 1000); // Within the last second
+        
+        if (recentNavigations.length > 0) {
+            console.log('URL change already handled by webNavigation', changeInfo.url);
+            return; // Skip processing if already handled
+        }
+        
+        // This is a URL change not caught by webNavigation (rare but possible)
+        console.log('URL change detected through tabs.onUpdated (unusual):', changeInfo.url);
+        recordNavigation({
+            tabId,
+            url: changeInfo.url,
+            title: tab.title || '',
+            transitionType: 'unknown', // We don't have transition info here
+            timestamp: Date.now()
+        });
+    } 
+    
+    // Handle non-URL changes (title, favicon, loading status)
+    if ((changeInfo.title || changeInfo.favIconUrl || changeInfo.status === 'complete') && 
+        !changeInfo.url) {
+        
+        updateTabMetadata(tabId, {
+            title: changeInfo.title,
+            favIconUrl: changeInfo.favIconUrl,
+            status: changeInfo.status
+        });
+    }
+});
+
+// Record a navigation event and update state
+function recordNavigation(details) {
+    const { tabId, url, title, transitionType, timestamp, navigationId } = details;
+    
+    // Get existing tab data or create new entry
+    let tabData = browserState.tabs.get(tabId) || {
+        id: tabId,
+        history: [],
+        created: timestamp
+    };
+    
+    // Update tab data
+    tabData = {
+        ...tabData,
+        url,
+        title: title || tabData.title || '',
+        lastNavigation: {
+            url,
+            timestamp,
+            type: transitionType
+        },
+        lastUpdate: timestamp
+    };
+    
+    // Add to history (with size limit)
+    if (!tabData.history) tabData.history = [];
+    tabData.history.unshift({ url, timestamp, type: transitionType });
+    
+    // Limit history size
+    if (tabData.history.length > 50) {
+        tabData.history = tabData.history.slice(0, 50);
+    }
+    
+    // Save updated tab data
+    browserState.tabs.set(tabId, tabData);
+    
+    // Only send one message for this navigation
+    sendMessageWithErrorHandling({
+        action: 'tabNavigated',
+        tabId,
+        url,
+        title,
+        transitionType,
+        timestamp
+    });
+    
+    // Additional processing for specific navigation types
+    processNavigationByType(tabData, details);
+}
+
+// Update tab metadata without recording a new navigation
+function updateTabMetadata(tabId, changes) {
+    // Get existing tab data
+    const tabData = browserState.tabs.get(tabId);
+    if (!tabData) return;
+    
+    // Update fields that changed
+    let hasChanges = false;
+    
+    if (changes.title && changes.title !== tabData.title) {
+        tabData.title = changes.title;
+        hasChanges = true;
+    }
+    
+    if (changes.favIconUrl && changes.favIconUrl !== tabData.favIconUrl) {
+        tabData.favIconUrl = changes.favIconUrl;
+        hasChanges = true;
+    }
+    
+    if (changes.status === 'complete' && tabData.status !== 'complete') {
+        tabData.status = 'complete';
+        tabData.loadCompleted = Date.now();
+        hasChanges = true;
+    }
+    
+    if (hasChanges) {
+        tabData.lastUpdate = Date.now();
+        browserState.tabs.set(tabId, tabData);
+        
+        // Only notify for significant changes to reduce message traffic
+        sendMessageWithErrorHandling({
+            action: 'tabMetadataUpdated',
+            tabId,
+            changes
+        });
+    }
+}
+
+// Process different navigation types
+function processNavigationByType(tabData, details) {
+    const { transitionType, transitionQualifiers } = details;
+    
+    // Handle different navigation types
+    if (transitionType === 'link') {
+        // Link click navigation
+        processLinkNavigation(tabData, details);
+    } 
+    else if (transitionType === 'typed' || transitionType === 'generated') {
+        // URL bar navigation or address entered
+        processDirectNavigation(tabData, details);
+    }
+    else if (transitionType === 'reload') {
+        // Page reload
+        processReload(tabData, details);
+    }
+    else if (transitionType === 'auto_bookmark') {
+        // Navigation from bookmark
+        processBookmarkNavigation(tabData, details);
+    }
+    else if (transitionQualifiers.includes('forward_back')) {
+        // Back/forward navigation
+        processHistoryNavigation(tabData, details);
+    }
+}
+
+// Clean up old entries from the processed navigations map
+function cleanProcessedNavigations() {
+    const now = Date.now();
+    for (const [id, data] of processedNavigations) {
+        // Remove entries older than 5 seconds
+        if (now - data.timestamp > 5000) {
+            processedNavigations.delete(id);
+        }
+    }
+}

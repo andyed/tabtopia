@@ -22,3 +22,10 @@
 - Focused tabs are highlighted in yellow
 - Recently accessed tabs are shown in brighter colors
 - Each window's tabs are grouped together with a distinct color scheme
+
+
+
+## Other Chrome Extensions
+- Searchbox overlay for tab switching
+  - https://github.com/kamranahmedse/tab-switcher
+- 
