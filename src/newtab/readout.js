@@ -243,11 +243,6 @@ export async function displayReadout(d, event) {
                         </li>
                     `).join('')}
                 </ul>
-                ${bookmarks.length > 5 ? `
-                    <button class="show-more-btn">
-                        Show ${Math.min(5, bookmarks.length - 5)} more
-                    </button>
-                ` : ''}
             </div>
         ` : ''}
         
@@ -264,11 +259,6 @@ export async function displayReadout(d, event) {
                         </li>
                     `).join('')}
                 </ul>
-                ${history.length > 5 ? `
-                    <button class="show-more-btn">
-                        Show ${Math.min(5, history.length - 5)} more
-                    </button>
-                ` : ''}
             </div>
         ` : ''}
     `;
@@ -333,7 +323,8 @@ function showDefaultReadout(categorizedDataCache) {
         console.warn('Readout container or data not available');
         return;
     }
-
+   // First, clear any existing content
+   readoutContainer.innerHTML = '';
     // Initialize search box if needed
     initializeSearchBox();
 
