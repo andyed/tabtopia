@@ -1,7 +1,7 @@
 import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './utility.js';
 import { displayReadout, hideReadout } from './readout.js';
 import { handleKeyNavigation } from './keyboardNav.js';
-import { fetchRecentBookmarks } from './init.js';
+import { fetchRecentBookmarks, fetchRecentHistory } from './init.js';
 import { browserState } from './state.js';
 import { applyColorCoding } from './utility.js';
 
@@ -1009,7 +1009,7 @@ function focusNode(node, data) {
         .select('rect')
         .attr('stroke', data.data.isBookmark ? '#4CAF50' : '#2196F3')
         .attr('stroke-width', '2px');
-
+    console.log('passing to readout', data.data)
     displayReadout(data.data); // Make sure we're passing the correct data structure
 }
 
@@ -1063,6 +1063,7 @@ function activateNode(node, data) {
         .attr('stroke-width', '3px');
 
     // Update readout
+    console.log("passing to readout", data)
     displayReadout(data);
 }
 
@@ -1175,13 +1176,22 @@ function handleNodeClick(event, d) {
     const nodeData = d?.data || d || d3.select(event.currentTarget).datum()?.data;
     
     if (nodeData) {
-        // Pass both the data and the event
-        displayReadout(nodeData, event);
-        
-        // Open the URL if it's a real tab
-        if (nodeData.url && !nodeData.isBookmark) {
-            chrome.tabs.update(nodeData.id, { active: true });
-            chrome.windows.update(nodeData.windowId, { focused: true });
-        }
+        // Fetch bookmarks and history items
+        Promise.all([
+            fetchRecentBookmarks(5),
+            fetchRecentHistory(5)
+        ]).then(([bookmarks, history]) => {
+            // Pass both the data and the fetched bookmarks and history
+            console.log("Passing to displayReadout", nodeData, bookmarks, history);
+            displayReadout(nodeData, bookmarks, history);
+            
+            // Open the URL if it's a real tab
+            if (nodeData.url && !nodeData.isBookmark) {
+                chrome.tabs.update(nodeData.id, { active: true });
+                chrome.windows.update(nodeData.windowId, { focused: true });
+            }
+        }).catch(error => {
+            console.error('Error fetching bookmarks or history:', error);
+        });
     }
 }

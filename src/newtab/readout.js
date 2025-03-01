@@ -1,6 +1,7 @@
 import { formatDistanceToNow, formatSessionDuration } from './utility.js';
 import { getMotivationalMessage } from './motivational-posters.js';
 import { tabSearch } from './search.js';
+import { fetchRecentBookmarks, fetchRecentHistory } from './init.js';
 
 let readoutTimeout = null;
 let currentBookmarkPage = 0;
@@ -64,24 +65,115 @@ function initializeSearchBox() {
     }
 }
 
+// Function to search bookmarks for a specific domain
+async function searchBookmarksForTab(url) {
+    try {
+        // Extract domain from the URL
+        const domain = getDomain(url);
+        if (domain === 'Unknown') {
+            return [];
+        }
+
+        // Search by domain instead of tab ID
+        const bookmarks = await new Promise((resolve, reject) => {
+            chrome.bookmarks.search({ query: domain }, (results) => {
+                if (chrome.runtime.lastError) {
+                    return reject(chrome.runtime.lastError);
+                }
+                resolve(results);
+            });
+        });
+
+        // Further filter to ensure domain match
+        const filteredBookmarks = bookmarks.filter(bookmark => {
+            try {
+                return getDomain(bookmark.url) === domain;
+            } catch (e) {
+                return false;
+            }
+        });
+
+        console.log('Bookmarks for domain:', domain, filteredBookmarks); 
+        return filteredBookmarks;
+    } catch (error) {
+        console.error('Error searching bookmarks for domain:', url, error);
+        return [];
+    }
+}
+
+// Function to search history for a specific domain
+async function searchHistoryForTab(url) {
+    try {
+        // Extract domain from the URL
+        const domain = getDomain(url);
+        if (domain === 'Unknown') {
+            return [];
+        }
+
+        // Search by domain instead of tab ID
+        const historyItems = await new Promise((resolve, reject) => {
+            chrome.history.search({
+                text: domain,
+                maxResults: 10,
+                startTime: 0
+            }, (results) => {
+                if (chrome.runtime.lastError) {
+                    return reject(chrome.runtime.lastError);
+                }
+                resolve(results);
+            });
+        });
+
+        // Further filter to ensure domain match
+        const filteredHistory = historyItems.filter(item => {
+            try {
+                return getDomain(item.url) === domain;
+            } catch (e) {
+                return false;
+            }
+        });
+
+        console.log('History for domain:', domain, filteredHistory);
+        return filteredHistory;
+    } catch (error) {
+        console.error('Error searching history for domain:', url, error);
+        return [];
+    }
+}
+
 // Update the bookmark detection in displayReadout
-export function displayReadout(d, event) {
+export async function displayReadout(d, event) {
     // Clear existing timeout
     if (readoutTimeout) {
         clearTimeout(readoutTimeout);
     }
-    
+
     // Debug what we received
     console.log('Readout data:', d);
-    
+
     // Normalize data structure
-    const nodeData = d.data || d;
+    const nodeData = d?.data || d;
+    if (!nodeData) {
+        console.error('Node data is undefined or null');
+        return;
+    }
+
     console.log('Normalized data:', nodeData);
     
+    // Make sure we have a URL to work with
+    const url = nodeData.url || '';
+    if (!url) {
+        console.error('No URL available to search');
+        return;
+    }
+
+    // Fetch bookmarks and history for the domain
+    const bookmarks = await searchBookmarksForTab(url);
+    const history = await searchHistoryForTab(url);
+
     // Basic properties
     const title = nodeData.title || 'Untitled';
-    const url = nodeData.url || '';
-    
+
     // More robust type detection
     const isBookmark = Boolean(
         nodeData.isBookmark || 
@@ -89,9 +181,9 @@ export function displayReadout(d, event) {
         nodeData.dateAdded ||
         (nodeData.id && String(nodeData.id).startsWith('bookmark'))
     );
-    
+
     console.log('Is bookmark?', isBookmark);
-    
+
     // Format date for display if present
     let bookmarkDate = '';
     if (nodeData.dateAdded) {
@@ -102,9 +194,17 @@ export function displayReadout(d, event) {
             console.error('Error formatting date:', e);
         }
     }
-    
+
+    // Get domain for display
+    const domain = getDomain(url);
+
     // Build readout HTML
     const readout = document.getElementById('readout');
+    if (!readout) {
+        console.error('Readout panel element not found');
+        return;
+    }
+
     readout.innerHTML = `
         <div class="readout-header ${isBookmark ? 'bookmark' : ''}">
             <div class="readout-title">${title}</div>
@@ -129,11 +229,53 @@ export function displayReadout(d, event) {
                 </div>
             `}
         </div>
+        
+        ${bookmarks.length > 0 ? `
+            <div class="bookmarks-section">
+                <h3>Bookmarks from ${domain} (${bookmarks.length})</h3>
+                <ul class="bookmark-list">
+                    ${bookmarks.slice(0, 5).map(bookmark => `
+                        <li class="bookmark-item">
+                            <a href="${bookmark.url}" target="_blank">${bookmark.title || bookmark.url}</a>
+                            <span class="bookmark-date">
+                                ${formatDistanceToNow(new Date(bookmark.dateAdded))}
+                            </span>
+                        </li>
+                    `).join('')}
+                </ul>
+                ${bookmarks.length > 5 ? `
+                    <button class="show-more-btn">
+                        Show ${Math.min(5, bookmarks.length - 5)} more
+                    </button>
+                ` : ''}
+            </div>
+        ` : ''}
+        
+        ${history.length > 0 ? `
+            <div class="history-section">
+                <h3>History from ${domain} (${history.length})</h3>
+                <ul class="history-list">
+                    ${history.slice(0, 5).map(item => `
+                        <li class="history-item">
+                            <a href="${item.url}" target="_blank">${item.title || item.url}</a>
+                            <span class="history-date">
+                                ${formatDistanceToNow(new Date(item.lastVisitTime))}
+                            </span>
+                        </li>
+                    `).join('')}
+                </ul>
+                ${history.length > 5 ? `
+                    <button class="show-more-btn">
+                        Show ${Math.min(5, history.length - 5)} more
+                    </button>
+                ` : ''}
+            </div>
+        ` : ''}
     `;
-    
+
     // Show readout
     readout.style.display = 'block';
-    
+
     // Position
     if (event) {
         positionReadout(event);
@@ -179,24 +321,10 @@ function positionReadout(event) {
     readout.style.top = `${y}px`;
 }
 
-function hideReadout() {
+export function hideReadout() {
     const readoutContainer = document.getElementById('readout');
-    if (!readoutContainer) return;
-
-    // Instead of replacing the entire container's HTML,
-    // just clear or update the content container
-    const contentContainer = document.querySelector('.readout-content');
-    if (contentContainer) {
-        contentContainer.innerHTML = '';
-    }
-
-    // Clear sticky state if needed
-    if (stickyCell) {
-        d3.select(stickyCell).select('rect')
-            .attr('fill', d => d.data.color)
-            .attr('stroke', 'none');
-        stickyCell = null;
-    }
+    readoutContainer.style.display = 'none';
+    readoutContainer.innerHTML = '';
 }
 
 function showDefaultReadout(categorizedDataCache) {
@@ -266,4 +394,4 @@ function handleTabSearch(event) {
 }
 
 // Export both the function and timer reset
-export { hideReadout, showDefaultReadout, resetInactivityTimer };
+export {  showDefaultReadout, resetInactivityTimer };

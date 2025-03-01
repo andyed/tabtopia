@@ -1,4 +1,5 @@
 import { drawTreemap } from './treemap.js';
+import { displayReadout } from './readout.js';
 
 export async function initializeApp() {
     console.log('Initializing app...');
@@ -6,6 +7,8 @@ export async function initializeApp() {
     console.log('Categorized data fetched:', categorizedDataCache);
     const bookmarks = await fetchRecentBookmarks();
     console.log('Bookmarks fetched:', bookmarks);
+    const history = await fetchRecentHistory();
+    console.log('History fetched:', history);
 
     ensureMinimumCells(categorizedDataCache, bookmarks);
 
@@ -23,6 +26,9 @@ export async function initializeApp() {
         console.log("Window lost focus, refreshing app...");
         await initializeApp(); // Reinitialize the app
     };
+
+    // Pass data to readout
+    //displayReadout({ bookmarks, history });
 }
 
 async function fetchCategorizedData() {
@@ -73,6 +79,38 @@ export async function fetchRecentBookmarks(count = 10) {
         return enhancedBookmarks;
     } catch (error) {
         console.error('Error fetching bookmarks:', error);
+        return [];
+    }
+}
+
+export async function fetchRecentHistory(count = 10) {
+    try {
+        const historyItems = await chrome.history.search({
+            text: '',
+            maxResults: count,
+            startTime: 0
+        });
+
+        console.log('Raw history data:', historyItems); // Debug raw data
+
+        // Map history items to ensure all required fields for display
+        const enhancedHistory = historyItems.map(item => ({
+            ...item,  // Keep all original properties
+            id: item.id,
+            title: item.title || 'Untitled History Item',
+            url: item.url || '',
+            type: 'history',  // Add explicit type
+            isHistory: true,  // Add explicit flag
+            lastVisitTime: item.lastVisitTime || Date.now(),
+            // Generate favicon URL if not present
+            favIconUrl: item.favIconUrl || (item.url ? `chrome://favicon/size/16@1x/${item.url}` : '')
+        }));
+
+        console.log('Enhanced history data:', enhancedHistory); // Debug enhanced data
+
+        return enhancedHistory;
+    } catch (error) {
+        console.error('Error fetching history:', error);
         return [];
     }
 }
