@@ -25,6 +25,16 @@ function getDomain(url) {
     }
 }
 
+// Add this helper function for formatting URLs
+function formatUrlForDisplay(url) {
+    if (!url) return '';
+    
+    // Remove http://, https://, and www.
+    return url
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '');
+}
+
 const ITEMS_PER_PAGE = 5;
 
 function resetInactivityTimer(categorizedDataCache) {
@@ -170,9 +180,15 @@ export async function displayReadout(d, event) {
     // Fetch bookmarks and history for the domain
     const bookmarks = await searchBookmarksForTab(url);
     const history = await searchHistoryForTab(url);
+    
+    // Sort history by recency (most recent first)
+    const sortedHistory = history.sort((a, b) => b.lastVisitTime - a.lastVisitTime);
 
     // Basic properties
     const title = nodeData.title || 'Untitled';
+    
+    // Format URL for display (remove http:// and www.)
+    const displayUrl = formatUrlForDisplay(url);
 
     // More robust type detection
     const isBookmark = Boolean(
@@ -208,7 +224,7 @@ export async function displayReadout(d, event) {
     readout.innerHTML = `
         <div class="readout-header ${isBookmark ? 'bookmark' : ''}">
             <div class="readout-title">${title}</div>
-            <div class="readout-url">${url}</div>
+            <div class="readout-url">${displayUrl}</div>
         </div>
         <div class="readout-details">
             ${isBookmark ? `
@@ -230,15 +246,16 @@ export async function displayReadout(d, event) {
             `}
         </div>
         
-        ${bookmarks.length > 0 ? `
-            <div class="bookmarks-section">
-                <h3>Bookmarks from ${domain} (${bookmarks.length})</h3>
-                <ul class="bookmark-list">
-                    ${bookmarks.slice(0, 5).map(bookmark => `
-                        <li class="bookmark-item">
-                            <a href="${bookmark.url}" target="_blank">${bookmark.title || bookmark.url}</a>
-                            <span class="bookmark-date">
-                                ${formatDistanceToNow(new Date(bookmark.dateAdded))}
+        <!-- History section first -->
+        ${sortedHistory.length > 0 ? `
+            <div class="history-section">
+                <h3>History from ${domain} (${sortedHistory.length})</h3>
+                <ul class="history-list">
+                    ${sortedHistory.slice(0, 5).map(item => `
+                        <li class="history-item">
+                            <a href="${item.url}" target="_blank">${item.title || formatUrlForDisplay(item.url)}</a>
+                            <span class="history-date">
+                                ${formatDistanceToNow(new Date(item.lastVisitTime))}
                             </span>
                         </li>
                     `).join('')}
@@ -246,15 +263,16 @@ export async function displayReadout(d, event) {
             </div>
         ` : ''}
         
-        ${history.length > 0 ? `
-            <div class="history-section">
-                <h3>History from ${domain} (${history.length})</h3>
-                <ul class="history-list">
-                    ${history.slice(0, 5).map(item => `
-                        <li class="history-item">
-                            <a href="${item.url}" target="_blank">${item.title || item.url}</a>
-                            <span class="history-date">
-                                ${formatDistanceToNow(new Date(item.lastVisitTime))}
+        <!-- Bookmarks section second -->
+        ${bookmarks.length > 0 ? `
+            <div class="bookmarks-section">
+                <h3>Bookmarks from ${domain} (${bookmarks.length})</h3>
+                <ul class="bookmark-list">
+                    ${bookmarks.slice(0, 5).map(bookmark => `
+                        <li class="bookmark-item">
+                            <a href="${bookmark.url}" target="_blank">${bookmark.title || formatUrlForDisplay(bookmark.url)}</a>
+                            <span class="bookmark-date">
+                                ${formatDistanceToNow(new Date(bookmark.dateAdded))}
                             </span>
                         </li>
                     `).join('')}

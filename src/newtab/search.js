@@ -94,12 +94,54 @@ export class TabSearch {
 
 export const tabSearch = new TabSearch();
 
+// Update the initializeSearch function to ensure it's connecting properly
+
 export function initializeSearch() {
     const searchInput = document.getElementById('tabSearch');
     
+    if (!searchInput) {
+        console.error('Search input element not found!');
+        return;
+    }
+    
+    // Log to confirm initialization
+    console.log('Initializing search input listeners');
+    
+    // Add input event to trigger search as user types
+    searchInput.addEventListener('input', (event) => {
+        const query = event.target.value.trim();
+        
+        if (query.length === 0) {
+            clearSearchResults();
+            return;
+        }
+        
+        // Use your existing search method
+        let results;
+        if (tabSearch && tabSearch.searchIndex) {
+            // Use Lunr search if available
+            results = tabSearch.search(query);
+        } else {
+            // Fallback to simple search
+            results = searchTabs(query);
+        }
+        
+        // Display results
+        handleSearchResults(results);
+    });
+    
+    // Enhance the keydown handler to debug
     searchInput.addEventListener('keydown', (event) => {
+        console.log('Search keydown:', event.key);
+        
         switch (event.key) {
             case 'Enter':
+                event.preventDefault();
+                console.log('Enter key pressed in search, finding results...');
+                const results = document.querySelectorAll('.cell-search-match');
+                console.log(`Found ${results.length} matching results`);
+                focusFirstSearchResult();
+                break;
             case 'Tab':
                 event.preventDefault();
                 focusFirstSearchResult();
@@ -110,12 +152,89 @@ export function initializeSearch() {
                 break;
         }
     });
+    
+    console.log('Search initialization complete');
 }
 
+// Update the focusFirstSearchResult function with more logging
 function focusFirstSearchResult() {
+    console.log('Attempting to focus first search result');
+    
+    // Find the first search match
     const firstResult = d3.select('.cell-search-match').node();
+    console.log('First result found:', !!firstResult);
+    
     if (firstResult) {
+        // Log the data
+        const nodeData = d3.select(firstResult).datum();
+        console.log('First result data:', nodeData?.data);
+        
+        // Clear any previous selections
+        d3.selectAll('.cell').classed('cell-selected', false);
+        
+        // Add selected class to highlight this cell
+        d3.select(firstResult).classed('cell-selected', true);
+        
+        // Make sure the cell is focusable and focus it
+        firstResult.setAttribute('tabindex', '0');
         firstResult.focus();
+        
+        if (nodeData && nodeData.data) {
+            console.log('Activating tab/bookmark from search result');
+            
+            // Implement the same behavior as the dblclick handler in treemap.js
+            if (nodeData.data.isBookmark) {
+                // Handle bookmark - open in a new tab
+                console.log('Opening bookmark in new tab:', nodeData.data.url);
+                chrome.tabs.create({
+                    url: nodeData.data.url,
+                    active: true
+                });
+            } else {
+                // Parse tab and window IDs carefully
+                let windowId, tabId;
+                
+                try {
+                    windowId = typeof nodeData.data.windowId === 'number' ? 
+                        nodeData.data.windowId : parseInt(nodeData.data.windowId, 10);
+                    
+                    tabId = typeof nodeData.data.id === 'number' ? 
+                        nodeData.data.id : parseInt(nodeData.data.id.replace(/\D/g, ''), 10);
+                    
+                    console.log('Activating tab:', tabId, 'in window:', windowId);
+                    
+                    // First focus the window
+                    chrome.windows.update(windowId, { focused: true }, () => {
+                        if (chrome.runtime.lastError) {
+                            console.error('Error focusing window:', chrome.runtime.lastError);
+                            return;
+                        }
+                        
+                        // Then activate the tab
+                        chrome.tabs.update(tabId, { active: true }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.error('Error activating tab:', chrome.runtime.lastError);
+                            }
+                        });
+                    });
+                } catch (err) {
+                    console.error('Error parsing IDs:', err, 'Data:', nodeData.data);
+                }
+            }
+        } else {
+            console.warn('No data found for search result');
+        }
+    } else {
+        console.log('No search match found, focusing treemap');
+        
+        // If no results found, focus the treemap instead
+        const treemap = document.getElementById('treemap');
+        if (treemap) {
+            treemap.setAttribute('tabindex', '0'); 
+            treemap.focus();
+        } else {
+            console.error('Treemap element not found');
+        }
     }
 }
 
