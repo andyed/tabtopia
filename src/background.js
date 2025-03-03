@@ -218,28 +218,45 @@ chrome.history.onVisited.addListener((result) => {
   });
 });
 
-// Listen for tab changes
+// Modify this handler to be more efficient
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  updateTabActivity(activeInfo.tabId, true);
-  updateActiveTabs();
-  try {
-    const tab = await chrome.tabs.get(activeInfo.tabId);
-    console.log('Tab activated:', tab);
-  } catch (error) {
-    console.error('Error getting tab info:', error);
-  }
-  chrome.tabs.get(activeInfo.tabId, (tab) => {
-      const faviconUrl = getFaviconUrl(tab.url);
-      console.log(`New active tab: ${tab.url} with favicon: ${faviconUrl}`);
-      sendMessageWithErrorHandling({
-          type: 'tabChanged',
-          data: {
-              url: tab.url,
-              faviconUrl: faviconUrl,
-              timestamp: new Date().getTime()
-          }
-      });
-  });
+    try {
+        // Get the tab data directly without additional async operations
+        updateTabActivity(activeInfo.tabId, true);
+        
+        // Avoid making redundant tab queries - we only need the ID here
+        // since chrome.tabs.get can be slow with many tabs
+        sendMessageWithRateLimit({
+            type: 'tabChanged',
+            data: {
+                tabId: activeInfo.tabId,
+                timestamp: Date.now()
+            }
+        });
+        
+        // Debounce the full update
+        if (window.tabActivationTimeout) {
+            clearTimeout(window.tabActivationTimeout);
+        }
+        
+        window.tabActivationTimeout = setTimeout(() => {
+            chrome.tabs.get(activeInfo.tabId, tab => {
+                if (chrome.runtime.lastError) return;
+                
+                const faviconUrl = getFaviconUrl(tab.url);
+                sendMessageWithRateLimit({
+                    type: 'tabFullyChanged',
+                    data: {
+                        url: tab.url,
+                        faviconUrl: faviconUrl,
+                        timestamp: Date.now()
+                    }
+                });
+            });
+        }, 250); // Delay full processing
+    } catch (error) {
+        console.error('Error in tab activation handler:', error);
+    }
 });
 
 // Listen for favicon requests
@@ -739,91 +756,6 @@ function notifyTreemap(message) {
     }
 }
 
-// Add the webNavigation listener for accurate transition detection
-chrome.webNavigation.onCommitted.addListener((details) => {
-    // Only process main frame navigations
-    if (details.frameId !== 0) return;
-    
-    const { tabId, url, transitionType, transitionQualifiers } = details;
-    
-    console.log('WebNavigation event detected:', {
-        tabId,
-        url,
-        transitionType,         // 'link', 'typed', 'auto_bookmark', 'reload', etc.
-        transitionQualifiers,   // ['from_address_bar', 'forward_back', etc.]
-        timestamp: Date.now()
-    });
-    
-    // Determine precise navigation type
-    let navigationType = 'unknown';
-    
-    if (transitionType === 'typed' || transitionQualifiers.includes('from_address_bar')) {
-        navigationType = 'urlBarNavigation';
-    } else if (transitionType === 'link') {
-        // We might have link text from our content script
-        navigationType = 'linkClick';
-        
-        // Check if we have stored link info from the content script
-        const linkInfo = browserState.recentClicks && browserState.recentClicks[tabId];
-        const linkText = linkInfo?.text || '';
-        
-        console.log('Link navigation with potential text:', {
-            tabId,
-            hasStoredInfo: !!linkInfo,
-            linkText
-        });
-    } else if (transitionType === 'reload') {
-        navigationType = 'refresh';
-    } else if (transitionQualifiers.includes('forward_back')) {
-        navigationType = transitionQualifiers.includes('forward') ? 'forwardNavigation' : 'backNavigation';
-    } else {
-        navigationType = transitionType; // Use the raw type for other cases
-    }
-    
-    // Update tab data with this navigation info
-    chrome.tabs.get(tabId, (tab) => {
-        if (chrome.runtime.lastError) return;
-        
-        const tabData = sanitizeTabData(tab);
-        if (!tabData) return;
-        
-        // Update browser state with this new navigation
-        const existingTab = browserState.tabs.get(tabId) || {};
-        browserState.tabs.set(tabId, {
-            ...existingTab,
-            ...tabData,
-            navigationType,
-            transitionType,
-            lastNavigationTime: Date.now()
-        });
-        
-        // Get link context if it exists
-        const linkContext = browserState.recentClicks ? 
-                           browserState.recentClicks[tabId] : null;
-        
-        // Send enhanced message with all navigation data
-        sendMessageWithErrorHandling({
-            action: 'tabUpdated',
-            tabId,
-            changeInfo: {
-                url,
-                navigationType,
-                transitionType,
-                transitionQualifiers,
-                isUrlBar: navigationType === 'urlBarNavigation',
-                isLinkClick: navigationType === 'linkClick',
-                isBackForward: ['backNavigation', 'forwardNavigation'].includes(navigationType),
-                linkText: linkContext?.text || null,
-                sourcePage: linkContext?.sourceUrl || null
-            },
-            tab: tabData
-        });
-        
-        // Update tab in window structure
-        updateTabInWindows(tabId, tabData);
-    });
-});
-
 
 
 // Replace all instances of direct chrome.runtime.sendMessage with this wrapper
@@ -1050,7 +982,23 @@ function processNavigationByType(tabData, details) {
     } 
     else if (transitionType === 'typed' || transitionType === 'generated') {
         // URL bar navigation or address entered
-        processDirectNavigation(tabData, details, baseEdge);
+        // DON'T create an edge from prior URL for typed URLs
+        // Just record the navigation without creating an edge
+        const activity = browserState.tabActivityLog.get(tabId) || { navigations: [] };
+        if (!activity.navigations) activity.navigations = [];
+        
+        activity.navigations.push({
+            type: 'typed_navigation',
+            url: url,
+            timestamp: Date.now(),
+            transitionType: transitionType,
+            transitionQualifiers: transitionQualifiers || []
+        });
+        
+        browserState.tabActivityLog.set(tabId, activity);
+        
+        // Skip processDirectNavigation which would create an unwanted edge
+        // processDirectNavigation(tabData, details, baseEdge); 
     }
     else if (transitionType === 'reload') {
         // Page reload
