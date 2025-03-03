@@ -275,7 +275,10 @@ export async function drawTreemap(data) {
             .range([baseColor.darker(0.5), baseColor.brighter(0.2)]);
 
         tabs.forEach(tab => {
-            tab.color = tab.isBookmark ? '#f5f5f5' : colorScale(tab.lastAccessed);
+            // Check both the tab's isBookmark property AND if it belongs to the bookmark window
+            tab.color = (tab.isBookmark || windowNode.name === 'Window bookmark' || windowId === 'bookmark') 
+                ? '#e8f4f8'  // Light blue for bookmarks (more distinct than light gray)
+                : colorScale(tab.lastAccessed);
         });
     });
 
@@ -320,24 +323,55 @@ export async function drawTreemap(data) {
         .data(root.leaves())
         .enter()
         .append('g')
-        .attr('class', 'cell')
+        .attr('class', d => {
+            // Use the same comprehensive check for bookmarks as the color assignment
+            const isBookmark = d.data.isBookmark || 
+                              (d.parent && d.parent.data.name === 'Window bookmark') || 
+                              (d.parent && d.parent.data.id === 'bookmark');
+            return isBookmark ? 'cell bookmark-cell' : 'cell';
+        })
         .attr('transform', d => `translate(${d.x0},${d.y0})`)
         .style('cursor', 'pointer')
         .attr('tabindex', d => currentTabOrder.indexOf(d.data.id))
         .attr('role', 'button')
-        .attr('aria-label', d => d.data.title)
-        .classed('bookmark-cell', d => d.data.isBookmark);
+        .attr('aria-label', d => d.data.title);
 
     nodes.append('rect')
         .attr('id', d => d.data.id)
         .attr('width', d => d.x1 - d.x0)
         .attr('height', d => d.y1 - d.y0)
         .attr('fill', d => d.data.color)
-        .attr('opacity', d => d.data.isBookmark ? 0.4 : 1)
-        .attr('stroke', d => d.data.isBookmark ? '#ddd' : 'none')
-        .attr('stroke-dasharray', d => d.data.isBookmark ? '4,4' : 'none')
-        .attr('rx', d => d.data.isBookmark ? '8' : '4')
-        .attr('ry', d => d.data.isBookmark ? '8' : '4');
+        .attr('opacity', d => {
+            // Use the same comprehensive check for bookmarks
+            const isBookmark = d.data.isBookmark || 
+                              (d.parent && d.parent.data.name === 'Window bookmark') || 
+                              (d.parent && d.parent.data.id === 'bookmark');
+            return isBookmark ? 0.9 : 1;
+        })
+        .attr('stroke', d => {
+            const isBookmark = d.data.isBookmark || 
+                              (d.parent && d.parent.data.name === 'Window bookmark') || 
+                              (d.parent && d.parent.data.id === 'bookmark');
+            return isBookmark ? '#99c2d7' : 'none';
+        })
+        .attr('stroke-dasharray', d => {
+            const isBookmark = d.data.isBookmark || 
+                              (d.parent && d.parent.data.name === 'Window bookmark') || 
+                              (d.parent && d.parent.data.id === 'bookmark');
+            return isBookmark ? '4,4' : 'none';
+        })
+        .attr('rx', d => {
+            const isBookmark = d.data.isBookmark || 
+                              (d.parent && d.parent.data.name === 'Window bookmark') || 
+                              (d.parent && d.parent.data.id === 'bookmark');
+            return isBookmark ? '8' : '4';
+        })
+        .attr('ry', d => {
+            const isBookmark = d.data.isBookmark || 
+                              (d.parent && d.parent.data.name === 'Window bookmark') || 
+                              (d.parent && d.parent.data.id === 'bookmark');
+            return isBookmark ? '8' : '4';
+        });
 
     // 3. Add cell content container
     const cellContent = nodes.append('g')
@@ -370,7 +404,7 @@ export async function drawTreemap(data) {
                 // Handle chrome:// URLs with settings icon
                 if (d.data.url.startsWith('chrome://')) {
                     return 'data:image/svg+xml;base64,' + btoa(`
-                       <svg  xmlns="http://www.w3.org/2000/svg"  width="24"  height="24"  viewBox="0 0 24 24"  fill="none"  stroke="currentColor"  stroke-width="2"  stroke-linecap="round"  stroke-linejoin="round"  class="icon icon-tabler icons-tabler-outline icon-tabler-settings"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg>
+                       <svg  xmlns="http://www.w3.org/2000/svg"  width="24"  height="24"  viewBox="0 0 24 24"  fill="none"  stroke="currentColor"  stroke-width="2"  stroke-linecap="round"  stroke-linejoin="round"  class="icon icon-tabler icons-tabler-outline icon-tabler-settings"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
                     `);
                 }
 
