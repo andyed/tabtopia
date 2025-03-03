@@ -936,11 +936,37 @@ function updateTabMetadata(tabId, changes) {
     if (changes.title && changes.title !== tabData.title) {
         tabData.title = changes.title;
         hasChanges = true;
+        
+        // NEW CODE: If title updates but no favicon, try to fetch favicon
+        // This helps with typed navigation where title comes first
+        if (!tabData.favIconUrl && tabData.url) {
+            // Schedule a favicon check when we get a title update
+            setTimeout(() => {
+                chrome.tabs.get(tabId, (tab) => {
+                    if (chrome.runtime.lastError) return;
+                    
+                    if (tab.favIconUrl) {
+                        updateTabMetadata(tabId, { favIconUrl: tab.favIconUrl });
+                    } else {
+                        // Use fallback favicon if needed
+                        const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(tabData.url)}`;
+                        updateTabMetadata(tabId, { favIconUrl: fallbackFavicon });
+                    }
+                });
+            }, 300); // Shorter delay since title already updated
+        }
     }
     
     if (changes.favIconUrl && changes.favIconUrl !== tabData.favIconUrl) {
         tabData.favIconUrl = changes.favIconUrl;
         hasChanges = true;
+        
+        // Specifically notify about favicon changes
+        sendMessageWithErrorHandling({
+            action: 'tabFaviconUpdated',
+            tabId,
+            favIconUrl: changes.favIconUrl
+        });
     }
     
     if (changes.status === 'complete' && tabData.status !== 'complete') {
@@ -1237,5 +1263,112 @@ chrome.webNavigation.onCommitted.addListener((details) => {
             // Clear used data
             delete pendingLinkData[tabId];
         }
+    });
+});
+
+// Add this function if it doesn't exist already, or modify your existing one
+function handleLoadComplete(tabId, tab) {
+    // When a page load completes, check for favicon
+    if (!tab.favIconUrl && tab.url) {
+        // For typed navigation, favicon might not be available immediately
+        // Set a delayed check to fetch it
+        setTimeout(() => {
+            chrome.tabs.get(tabId, (updatedTab) => {
+                if (chrome.runtime.lastError) return;
+                
+                if (updatedTab.favIconUrl) {
+                    // Now we have the favicon, update it
+                    updateTabMetadata(tabId, { favIconUrl: updatedTab.favIconUrl });
+                    
+                    // Also ensure the tab object in browserState has the favicon
+                    const tabData = browserState.tabs.get(tabId);
+                    if (tabData) {
+                        tabData.favIconUrl = updatedTab.favIconUrl;
+                        browserState.tabs.set(tabId, tabData);
+                        
+                        // Explicitly notify about favicon update
+                        sendMessageWithErrorHandling({
+                            action: 'tabFaviconUpdated',
+                            tabId,
+                            favIconUrl: updatedTab.favIconUrl
+                        });
+                    }
+                } else if (tab.url) {
+                    // If still no favicon, use a chrome://favicon URL as fallback
+                    const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(tab.url)}`;
+                    updateTabMetadata(tabId, { favIconUrl: fallbackFavicon });
+                    
+                    const tabData = browserState.tabs.get(tabId);
+                    if (tabData) {
+                        tabData.favIconUrl = fallbackFavicon;
+                        browserState.tabs.set(tabId, tabData);
+                        
+                        sendMessageWithErrorHandling({
+                            action: 'tabFaviconUpdated',
+                            tabId,
+                            favIconUrl: fallbackFavicon
+                        });
+                    }
+                }
+            });
+        }, 500); // Delay to give the browser time to fetch the favicon
+    }
+}
+
+// Add this after your chrome.tabs.onUpdated listener
+chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+    console.log(`Tab ${removedTabId} was replaced by ${addedTabId}`);
+    
+    // Get the new tab data
+    chrome.tabs.get(addedTabId, (tab) => {
+        if (chrome.runtime.lastError) return;
+        
+        // Check if favicon was lost during replacement
+        if (!tab.favIconUrl && tab.url) {
+            // First try immediately with a fallback
+            const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(tab.url)}`;
+            updateTabMetadata(addedTabId, { favIconUrl: fallbackFavicon });
+            
+            // Then try again after a delay to get the real favicon
+            setTimeout(() => {
+                chrome.tabs.get(addedTabId, (updatedTab) => {
+                    if (chrome.runtime.lastError) return;
+                    
+                    if (updatedTab.favIconUrl) {
+                        updateTabMetadata(addedTabId, { favIconUrl: updatedTab.favIconUrl });
+                    }
+                });
+            }, 500);
+        } else if (tab.favIconUrl) {
+            // Make sure we update the favicon if available
+            updateTabMetadata(addedTabId, { favIconUrl: tab.favIconUrl });
+        }
+        
+        // Update browserState to reflect the replaced tab
+        const tabData = browserState.tabs.get(removedTabId);
+        if (tabData) {
+            // Transfer any relevant history/data from the removed tab to the added tab
+            browserState.tabs.set(addedTabId, {
+                ...tabData,
+                id: addedTabId,
+                url: tab.url,
+                title: tab.title || tabData.title || '',
+                favIconUrl: tab.favIconUrl || tabData.favIconUrl,
+                windowId: tab.windowId,
+                active: tab.active,
+                lastUpdate: Date.now()
+            });
+            
+            // Clean up the old tab
+            browserState.tabs.delete(removedTabId);
+        }
+        
+        // Notify that tab was replaced
+        sendMessageWithErrorHandling({
+            action: 'tabReplaced',
+            oldTabId: removedTabId,
+            newTabId: addedTabId,
+            tab: tab
+        });
     });
 });
