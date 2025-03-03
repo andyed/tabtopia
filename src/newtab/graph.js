@@ -589,33 +589,78 @@ function hideTooltip() {
     d3.select('#tooltip').style('opacity', 0);
 }
 
+// 3. Update the setupSearch function with a try/catch to handle potential issues
 function setupSearch() {
     const searchInput = document.getElementById('graphSearch');
+    if (!searchInput) return;
     
     searchInput.addEventListener('input', () => {
-        const searchTerm = searchInput.value.toLowerCase();
+        const query = searchInput.value.toLowerCase().trim();
         
-        if (!searchTerm) {
-            // Reset all nodes
-            d3.selectAll('.node circle').style('opacity', 1);
+        // If search is cleared, show all nodes
+        if (!query) {
+            resetVisibility();
             return;
         }
         
-        // Filter nodes
-        d3.selectAll('.node')
-            .style('opacity', d => {
-                const titleMatch = d.title && d.title.toLowerCase().includes(searchTerm);
-                const urlMatch = d.url && d.url.toLowerCase().includes(searchTerm);
-                return titleMatch || urlMatch ? 1 : 0.2;
-            });
-    });
-    
-    searchInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-            searchInput.value = '';
-            d3.selectAll('.node circle').style('opacity', 1);
+        try {
+            // Try to use the imported tabSearch function
+            const matchedNodes = typeof tabSearch === 'function' 
+                ? tabSearch(query, nodes) 
+                : localSearch(query, nodes);
+            
+            const matchedIds = new Set(matchedNodes.map(node => node.id));
+            
+            // Update visibility of nodes and links
+            updateVisibility(matchedIds);
+        } catch (error) {
+            console.error("Search error:", error);
+            // Fallback to showing everything
+            resetVisibility();
         }
     });
+}
+
+// Add this function to reset all nodes and links to visible
+function resetVisibility() {
+    // Make all nodes visible
+    d3.selectAll('.node')
+        .style('opacity', 1)
+        .style('pointer-events', 'all');
+    
+    // Make all links visible but maintain their original opacity
+    d3.selectAll('.links line')
+        .style('opacity', function() {
+            // Get the original opacity, or use default if not set
+            const originalOpacity = d3.select(this).attr('stroke-opacity') || 0.6;
+            return originalOpacity;
+        })
+        .style('pointer-events', 'all');
+}
+
+// Update the function that changes visibility based on search
+function updateVisibility(matchedIds) {
+    // Update node visibility
+    d3.selectAll('.node')
+        .style('opacity', d => matchedIds.has(d.id) ? 1 : 0.2)
+        .style('pointer-events', d => matchedIds.has(d.id) ? 'all' : 'none');
+    
+    // Update link visibility - only show links between matched nodes
+    d3.selectAll('.links line')
+        .style('opacity', d => {
+            const sourceMatched = matchedIds.has(d.source.id);
+            const targetMatched = matchedIds.has(d.target.id);
+            if (sourceMatched && targetMatched) {
+                // Use the original opacity for matched links
+                return d3.select(this).attr('stroke-opacity') || 0.6;
+            }
+            return 0.05; // Very low opacity for non-matched links
+        })
+        .style('pointer-events', d => {
+            const sourceMatched = matchedIds.has(d.source.id);
+            const targetMatched = matchedIds.has(d.target.id);
+            return (sourceMatched && targetMatched) ? 'all' : 'none';
+        });
 }
 
 function setupViewModes() {
@@ -812,7 +857,7 @@ function focusOnRecentNodes() {
         
         // Apply the transform to center and zoom into recent nodes
         svg.transition()
-           .duration(50)
+           .duration(50 )
            .call(
                zoom.transform,
                d3.zoomIdentity

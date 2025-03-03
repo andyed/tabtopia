@@ -460,6 +460,8 @@ mark {
     position: sticky;
     top: 0;
     z-index: 1000;
+    display: flex;
+    align-items: center;
 }
 
 .readout-content {
@@ -496,6 +498,8 @@ mark {
     height: var(--header-height);
     position: relative;
     z-index: 2;
+    justify-content: space-between;
+    padding: 0 15px;
 }
 
 .logo {
@@ -507,6 +511,11 @@ mark {
     text-transform: lowercase;
     letter-spacing: 0.5px;
     line-height: var(--header-height);
+    display: flex;
+    align-items: center;
+    font-size: 22px;
+    font-weight: 500;
+    margin-right: 15px;
 }
 
 .header-controls {
@@ -515,6 +524,8 @@ mark {
     gap: 0.75rem;
     flex: 1;
     height: var(--header-height);
+    display: flex;
+    align-items: center;
 }
 
 .view-toggle {
@@ -530,6 +541,19 @@ mark {
     display: flex;
     align-items: center;
     justify-content: center;
+    display: flex;
+    align-items: center;
+    margin-right: 15px;
+}
+
+.view-toggle a {
+    display: flex;
+    align-items: center;
+    margin-right: 10px; /* Add spacing between icons */
+}
+
+.view-toggle svg {
+    vertical-align: middle;
 }
 
 .cell-search-match {
@@ -548,7 +572,6 @@ mark {
 
 #tabSearch:focus {
     outline: 2px solid #2196F3;
-    outline-offset: -2px;
 }
 
 /* Add these styles to enhance the cell visuals */
@@ -701,4 +724,76 @@ mark {
 .treemap-container,
 .app-content {
   background-color: #2a2520;
+}
+
+/* View modes alignment */
+.view-modes {
+    display: flex;
+    align-items: center;
+    margin-left: 15px;
+}
+
+/* Header layout fixes */
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 15px;
+    height: var(--header-height);
+}
+
+/* Logo styling */
+.logo {
+    font-size: 22px;
+    font-weight: 500;
+    flex-shrink: 0;
+    margin-right: 20px;
+}
+
+/* Controls container */
+.header-controls {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+}
+
+/* Fix view toggle button layout */
+.view-toggle {
+    display: flex;
+    align-items: center;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-right: 15px;
+    height: 30px;
+}
+
+/* Fix icon links display */
+.view-toggle a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    color: currentColor;
+    width: 30px;
+    height: 30px;
+}
+
+.view-toggle a:last-child {
+    margin-right: 0;
+}
+
+/* Search container */
+.search-container {
+    flex-grow: 1;
+    max-width: 500px;
+    display: flex;
+    align-items: center;
+}
+
+/* View modes section */
+.view-modes {
+    display: flex;
+    align-items: center;
+    margin-left: 15px;
 }
