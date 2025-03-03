@@ -105,6 +105,20 @@ chrome.runtime.sendMessage({
     }
 });
 
+// Fix chrome.runtime.sendMessage calls by removing .catch() and adding proper error handling
+function safelySendMessage(message) {
+    try {
+        chrome.runtime.sendMessage(message, response => {
+            if (chrome.runtime.lastError) {
+                console.warn('Error sending message:', chrome.runtime.lastError);
+            }
+        });
+    } catch (err) {
+        console.warn('Failed to send message:', err);
+    }
+}
+
+// Fix handleUrlChange function
 function handleUrlChange() {
     const url = window.location.href;
     const title = document.title;
@@ -118,45 +132,22 @@ function handleUrlChange() {
         timestamp
     });
 
-    // Send navigation event with required fields
-    chrome.runtime.sendMessage({
+    // Send a single consolidated message instead of multiple ones
+    safelySendMessage({
         type: 'navigation_event',
-        action: 'updateNavigation',  // Add explicit action
+        action: 'updateNavigation',
         data: {
-            tabId: currentTabId,     // Add explicit tabId
-            windowId: chrome.windows?.WINDOW_ID_CURRENT,
+            tabId: currentTabId,
+            windowId: null, // Don't reference chrome.windows here
             type: 'navigation',
             sourceUrl: document.referrer,
             targetUrl: url,
+            title: title,
             text: title,
-            timestamp: Date.now()
-        }
-    }).catch(err => {
-        console.warn('Failed to send navigation event:', err);
-    });
-
-    // Also send direct tab update
-    chrome.runtime.sendMessage({
-        type: 'tabUpdate',
-        action: 'tabUpdated',
-        tabId: currentTabId,
-        changeInfo: {
-            url,
-            title,
-            favIconUrl,
+            favIconUrl: favIconUrl,
+            timestamp: timestamp,
             status: 'complete'
-        },
-        tab: {
-            id: currentTabId,
-            url,
-            title,
-            favIconUrl,
-            windowId: chrome.windows?.WINDOW_ID_CURRENT,
-            active: true,
-            timestamp
         }
-    }).catch(err => {
-        console.warn('Failed to send tab update:', err);
     });
 }
 
@@ -172,7 +163,7 @@ function sendContentUpdate() {
     const timestamp = Date.now();
 
     // Send direct tab update
-    chrome.runtime.sendMessage({
+    safelySendMessage({
         action: 'tabUpdated',
         tabId: currentTabId,
         changeInfo: {
@@ -187,77 +178,119 @@ function sendContentUpdate() {
             favIconUrl,
             timestamp
         }
-    }).catch(error => {
-        console.warn('Failed to send tab update:', error);
     });
 }
 
+// Fix initializeObservers function
 function initializeObservers() {
     // Track URL changes with navigation timing
     let lastNavigationStart = 0;
     let lastUrl = location.href;
     let lastTitle = document.title;
+    let lastFavicon = getFavIconUrl();
 
-    // Performance observer for navigation timing
-    const observer = new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-            if (entry.entryType === 'navigation') {
-                const currentTime = Date.now();
-                // Only trigger if more than 100ms since last navigation
-                if (currentTime - lastNavigationStart > 100) {
-                    lastNavigationStart = currentTime;
-                    handleUrlChange();
+    // Performance observer with error handling
+    try {
+        const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+                if (entry.entryType === 'navigation') {
+                    const currentTime = Date.now();
+                    // Only trigger if more than 100ms since last navigation
+                    if (currentTime - lastNavigationStart > 100) {
+                        lastNavigationStart = currentTime;
+                        handleUrlChange();
+                    }
                 }
             }
-        }
-    });
+        });
+        
+        observer.observe({ entryTypes: ['navigation'] });
+    } catch (err) {
+        console.warn('PerformanceObserver error:', err);
+    }
 
-    observer.observe({ entryTypes: ['navigation'] });
-
-    // Watch for DOM changes with debounce
+    // Add a flag to avoid recursive triggers from DOM observer
+    let isHandlingUpdate = false;
+    
+    // Watch for DOM changes with better debouncing
     let updateTimeout = null;
     const domObserver = new MutationObserver(() => {
+        if (isHandlingUpdate) return; // Prevent recursive triggers
+        
         if (updateTimeout) clearTimeout(updateTimeout);
         updateTimeout = setTimeout(() => {
             const currentUrl = location.href;
             const currentTitle = document.title;
+            const currentFavicon = getFavIconUrl();
 
-            if (currentUrl !== lastUrl || currentTitle !== lastTitle) {
+            if (currentUrl !== lastUrl || 
+                currentTitle !== lastTitle || 
+                (currentFavicon && currentFavicon !== lastFavicon)) {
+                
+                isHandlingUpdate = true;
                 lastUrl = currentUrl;
                 lastTitle = currentTitle;
+                lastFavicon = currentFavicon;
+                
                 handleUrlChange();
+                
+                // Reset flag after a short delay to allow DOM to settle
+                setTimeout(() => {
+                    isHandlingUpdate = false;
+                }, 50);
             }
         }, 250);
     });
 
-    domObserver.observe(document, {
-        subtree: true,
-        childList: true,
-        characterData: true
-    });
+    // Only observe body to reduce excessive triggers
+    if (document.body) {
+        domObserver.observe(document.body, {
+            subtree: true,
+            childList: true,
+            characterData: true
+        });
+    } else {
+        // If body isn't available yet, wait for it
+        window.addEventListener('load', () => {
+            domObserver.observe(document.body, {
+                subtree: true,
+                childList: true,
+                characterData: true
+            });
+        }, { once: true });
+    }
 
-    // History API monitoring
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function() {
-        originalPushState.apply(this, arguments);
-        handleUrlChange();
-    };
-
-    history.replaceState = function() {
-        originalReplaceState.apply(this, arguments);
-        handleUrlChange();
-    };
-
-    // Navigation events
-    window.addEventListener('popstate', handleUrlChange);
-    window.addEventListener('hashchange', handleUrlChange);
-    window.addEventListener('load', handleUrlChange);
+    // More robust favicon detection
+    function checkForFaviconChanges() {
+        const currentFavicon = getFavIconUrl();
+        if (currentFavicon && currentFavicon !== lastFavicon) {
+            lastFavicon = currentFavicon;
+            safelySendMessage({
+                type: 'favicon_updated',
+                tabId: currentTabId,
+                favIconUrl: currentFavicon
+            });
+        }
+    }
+    
+    // Check periodically for favicon changes
+    setInterval(checkForFaviconChanges, 1000);
 }
 
+// Improve getFavIconUrl to get more favicon sources
 function getFavIconUrl() {
-    const favicon = document.querySelector('link[rel="shortcut icon"]') ||
-                   document.querySelector('link[rel="icon"]');
-    return favicon ? favicon.href : '';
+    // Try multiple selectors in order of preference
+    const favicon = document.querySelector('link[rel="icon"][sizes="32x32"]') || 
+                   document.querySelector('link[rel="icon"][sizes="16x16"]') ||
+                   document.querySelector('link[rel="shortcut icon"]') ||
+                   document.querySelector('link[rel="icon"]') ||
+                   document.querySelector('link[rel="apple-touch-icon"]');
+                   
+    if (favicon && favicon.href) {
+        return favicon.href;
+    }
+    
+    // Fallback to default location
+    const defaultIcon = new URL('/favicon.ico', window.location.origin).href;
+    return defaultIcon;
 }

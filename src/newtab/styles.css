@@ -516,6 +516,7 @@ mark {
     font-size: 22px;
     font-weight: 500;
     margin-right: 15px;
+    padding-right:24px;
 }
 
 .header-controls {
@@ -796,4 +797,9 @@ mark {
     display: flex;
     align-items: center;
     margin-left: 15px;
+}
+
+.icon {
+    padding-left:8px;
+    padding-right:8px;
 }
