@@ -7,11 +7,14 @@ let links = [];
 let simulation;
 let svg;
 let zoom;
+let timeScale; // Add timeScale as a global variable
+let width, height; // Add near the top of your file with other globals
 
 // State tracking
 let currentlyOpenTabs = new Map();
 let bookmarkedUrls = new Set();
 let filterState = 'all';  // 'all', 'active', 'bookmarks'
+let currentViewMode = 'time'; // 'time' or 'domain'
 
 // Initialize the visualization
 async function init() {
@@ -26,13 +29,11 @@ async function init() {
     
     // Track currently open tabs
     windows.forEach(window => {
-        window.tabs.forEach(tab => {
-            currentlyOpenTabs.set(tab.id, tab);
-            if (tab.url) {
-                // Mark bookmarked URLs
-                bookmarkedUrls.add(tab.url);
-            }
-        });
+        if (window.tabs) {
+            window.tabs.forEach(tab => {
+                currentlyOpenTabs.set(tab.id, tab);
+            });
+        }
     });
 
     // Build graph data
@@ -43,9 +44,11 @@ async function init() {
 
     // Set up search functionality
     setupSearch();
-
-    // Set up controls
-    setupControls();
+    
+    // Set up view mode switching
+    setupViewModes();
+    
+    // REMOVE THIS LINE: setupControls();
 }
 
 async function fetchBookmarks() {
@@ -238,9 +241,48 @@ function processHistoryData(historyItems, bookmarks, windows) {
     links = Array.from(edgeMap.values());
 }
 
+// Add this function to handle window resize events
+function handleResize() {
+    if (!svg) return;
+    
+    // Get container dimensions
+    width = document.getElementById('graph').clientWidth;
+    height = document.getElementById('graph').clientHeight;
+    
+    // Update SVG size
+    svg.attr('width', width)
+       .attr('height', height);
+    
+    // Update simulation center force
+    if (simulation) {
+        simulation.force('center', d3.forceCenter(width / 2, height / 2).strength(0.05));
+        
+        // Update any height-dependent forces
+        if (currentViewMode === 'time') {
+            simulation.force('y', d3.forceY(d => {
+                if (d.isActive) {
+                    return height * (0.2 + Math.random() * 0.2);
+                }
+                const domainHash = hashString(d.domain);
+                return height * 0.35 + domainHash * height * 0.5;
+            }).strength(0.1));
+        }
+        
+        // Update time scale if needed
+        if (timeScale) {
+            timeScale.range([150, width - 150]);
+        }
+        
+        // Restart simulation gently
+        simulation.alpha(0.1).restart();
+    }
+}
+
+// Modify the createForceGraph function to use the global width/height
 function createForceGraph() {
-    const width = document.getElementById('graph').clientWidth;
-    const height = document.getElementById('graph').clientHeight;
+    // Get container dimensions
+    width = document.getElementById('graph').clientWidth;
+    height = document.getElementById('graph').clientHeight;
     
     // Create SVG
     svg = d3.select('#graph')
@@ -260,6 +302,35 @@ function createForceGraph() {
     // Create container group for zoom
     const g = svg.append('g');
     
+    // Calculate temporal scale - only define once
+    // Find min and max timestamps for normalization
+    const timeExtent = d3.extent(nodes, d => d.lastVisitTime);
+    timeScale = d3.scaleLinear()
+        .domain(timeExtent)
+        .range([150, width - 150]); // More padding on sides
+
+    // REVERSE the time direction so recent items are on the left (more visible initially)
+    // This is a simple change with big impact
+    timeScale = d3.scaleLinear()
+        .domain([timeExtent[1], timeExtent[0]]) // Reverse the domain
+        .range([150, width - 150]);
+
+    // Assign initial positions with more randomness to avoid stacking
+    nodes.forEach(node => {
+        // Position x based on time plus random jitter
+        const jitterX = Math.random() * 80 - 40; // Random offset between -40 and 40
+        node.x = timeScale(node.lastVisitTime) + jitterX;
+        
+        // Position y with more spread
+        const domainHash = hashString(node.domain);
+        // More vertical spread
+        const heightSpread = height * 0.7;
+        const centerY = height * 0.5;
+        // Add some randomness to y-position
+        const jitterY = Math.random() * 50 - 25; // Random offset between -25 and 25
+        node.y = centerY + (domainHash * heightSpread - heightSpread/2) + jitterY;
+    });
+
     // Create links with appropriate styling based on confidence
     const link = g.append('g')
         .attr('class', 'links')
@@ -301,22 +372,55 @@ function createForceGraph() {
             }
         });
     
-    // Create nodes
+    // Create nodes with proper class assignment
     const node = g.append('g')
         .attr('class', 'nodes')
         .selectAll('.node')
         .data(nodes)
         .enter()
         .append('g')
-        .attr('class', 'node')
+        .attr('class', d => {
+            // Set appropriate CSS class based on node type
+            const classes = ['node'];
+            if (d.isActive) classes.push('node-active');
+            if (d.type === 'bookmark') classes.push('node-bookmark');
+            if (!d.isActive && d.type !== 'bookmark') classes.push('node-history');
+            return classes.join(' ');
+        })
         .call(d3.drag()
             .on('start', dragstarted)
             .on('drag', dragged)
             .on('end', dragended));
     
-    // Add circles to nodes
+    // Add this function to calculate node size using both visit count and time spent
+    function calculateNodeSize(node) {
+        // Handle special cases first
+        if (node.isActive) return 12; // Fixed size for active tabs
+        if (node.type === 'bookmark') return 10; // Fixed size for bookmarks
+        
+        // Base size for all nodes
+        const baseSize = 5;
+        
+        // Visit count component (using log scale)
+        const visitFactor = Math.log(node.visitCount + 1) / Math.log(10); // log10(visits + 1)
+        const visitComponent = visitFactor * 3; // Scale factor for visits
+        
+        // Time spent component - if we had it (using log scale)
+        // For now we'll just use visit count, but this can be expanded later
+        const timeSpent = node.timeSpent || (node.visitCount * 30000); // Estimate 30 seconds per visit if no data
+        const timeFactor = Math.log(timeSpent / 1000 + 1) / Math.log(10); // log10(seconds + 1)
+        const timeComponent = timeFactor * 2; // Scale factor for time spent
+        
+        // Combine components with appropriate weighting
+        const combinedSize = baseSize + (visitComponent * 0.6) + (timeComponent * 0.4);
+        
+        // Apply min/max constraints
+        return Math.max(4, Math.min(combinedSize, 16));
+    }
+
+    // Then modify your circle creation code:
     node.append('circle')
-        .attr('r', d => Math.sqrt(d.visitCount) * 2 + 5)
+        .attr('r', d => calculateNodeSize(d))
         .attr('class', d => {
             if (d.isActive) return 'node-active';
             if (d.type === 'bookmark') return 'node-bookmark';
@@ -374,18 +478,36 @@ function createForceGraph() {
         chrome.tabs.create({ url: d.url });
     });
 
-    // Create force simulation - apply forces to ALL links regardless of visibility
+    // Create force simulation with forces based on current view mode
     simulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(links)  // Use all links for force calculation
+        .force('link', d3.forceLink(links)
             .id(d => d.id)
-            .distance(100)
-            .strength(d => d.strength || 0.1))
-        .force('charge', d3.forceManyBody().strength(-100))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(d => Math.sqrt(d.visitCount) * 2 + 10))
-        .force('x', d3.forceX(width / 2).strength(0.05))
-        .force('y', d3.forceY(height / 2).strength(0.05))
-        .on('tick', ticked);
+            .distance(80)
+            .strength(d => d.strength * 0.5 || 0.05))
+        .force('collision', d3.forceCollide().radius(d => calculateNodeSize(d) + 2))
+        .force('center', d3.forceCenter(width / 2, height / 2).strength(0.05));
+        
+    // Apply the appropriate forces based on view mode
+    if (currentViewMode === 'time') {
+        simulation
+            .force('charge', d3.forceManyBody().strength(-80))
+            .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.2))
+            .force('y', d3.forceY(d => {
+                if (d.isActive) {
+                    return height * (0.2 + Math.random() * 0.2);
+                }
+                const domainHash = hashString(d.domain);
+                return height * 0.35 + domainHash * height * 0.5;
+            }).strength(0.1));
+    } else {
+        simulation
+            .force('charge', d3.forceManyBody().strength(-60))
+            .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.05))
+            .force('y', d3.forceY(height / 2).strength(0.05))
+            .force('domain', createDomainClusterForce());
+    }
+    
+    simulation.on('tick', ticked);
 
     // Tick function to update positions
     function ticked() {
@@ -416,6 +538,34 @@ function createForceGraph() {
         d.fx = null;
         d.fy = null;
     }
+
+    // Add this to the end of the function
+    // Set up resize event listener
+    window.addEventListener('resize', handleResize);
+
+    // Call the focus function after simulation stabilizes
+    simulation.on('end', focusOnRecentNodes);
+
+    // Also add a button to jump to recent content
+    // This can be added as a floating action button in the corner
+    const actionButtons = d3.select('#graph')
+        .append('div')
+        .attr('class', 'action-buttons')
+        .style('position', 'absolute')
+        .style('bottom', '20px')
+        .style('right', '20px')
+        .style('z-index', '100');
+
+    actionButtons.append('button')
+        .attr('class', 'recent-button')
+        .text('Recent')
+        .on('click', focusOnRecentNodes);
+}
+
+// When the simulation is no longer needed (e.g., when navigating away)
+function cleanupGraph() {
+    // Remove resize event listener to prevent memory leaks
+    window.removeEventListener('resize', handleResize);
 }
 
 function showTooltip(event, d) {
@@ -468,90 +618,117 @@ function setupSearch() {
     });
 }
 
-function setupControls() {
-    // Zoom controls
-    document.getElementById('zoomIn').addEventListener('click', () => {
-        zoom.scaleBy(svg.transition().duration(750), 1.5);
-    });
-    
-    document.getElementById('zoomOut').addEventListener('click', () => {
-        zoom.scaleBy(svg.transition().duration(750), 0.75);
-    });
-    
-    document.getElementById('resetView').addEventListener('click', () => {
-        const width = document.getElementById('graph').clientWidth;
-        const height = document.getElementById('graph').clientHeight;
-        
-        svg.transition().duration(750).call(
-            zoom.transform,
-            d3.zoomIdentity.translate(width / 2, height / 2).scale(1)
-        );
-    });
-    
-    // Filter controls
-    document.getElementById('filterActive').addEventListener('click', () => {
-        filterState = 'active';
-        applyFilters();
-    });
-    
-    document.getElementById('filterBookmarks').addEventListener('click', () => {
-        filterState = 'bookmarks';
-        applyFilters();
-    });
-    
-    document.getElementById('filterAll').addEventListener('click', () => {
-        filterState = 'all';
-        applyFilters();
-    });
-    
-    // Add domain links toggle
-    let domainLinksVisible = false;
-    document.getElementById('toggleDomainLinks').addEventListener('click', () => {
-        domainLinksVisible = !domainLinksVisible;
-        
-        // Update button text
-        document.getElementById('toggleDomainLinks').textContent = 
-            domainLinksVisible ? 'Hide Domain Links' : 'Show Domain Links';
-            
-        // Update link visibility
-        if (domainLinksVisible) {
-            // Add domain links with lighter color
-            const domainLinks = g.select('.links')
-                .selectAll('line.domain-link')
-                .data(links.filter(d => d.type === 'domain'))
-                .enter()
-                .append('line')
-                .attr('class', 'domain-link')
-                .attr('stroke-width', 0.5)
-                .attr('stroke-opacity', 0.4) // Slightly higher opacity
-                .attr('stroke', '#b0b0b0') // Light gray color
-                .attr('stroke-dasharray', '2,2');
-                
-            // Update the tick function to include these links
-            simulation.on('tick', () => {
-                // Update regular links
-                g.selectAll('.links line:not(.domain-link)')
-                    .attr('x1', d => d.source.x)
-                    .attr('y1', d => d.source.y)
-                    .attr('x2', d => d.target.x)
-                    .attr('y2', d => d.target.y);
-                    
-                // Update domain links if visible
-                g.selectAll('.domain-link')
-                    .attr('x1', d => d.source.x)
-                    .attr('y1', d => d.source.y)
-                    .attr('x2', d => d.target.x)
-                    .attr('y2', d => d.target.y);
-                
-                // Update nodes
-                g.selectAll('.node')
-                    .attr('transform', d => `translate(${d.x},${d.y})`);
-            });
-        } else {
-            // Remove domain links
-            g.selectAll('.domain-link').remove();
+function setupViewModes() {
+    document.getElementById('timeViewBtn').addEventListener('click', () => {
+        if (currentViewMode !== 'time') {
+            currentViewMode = 'time';
+            updateViewMode();
+            setActiveButton('timeViewBtn');
         }
     });
+    
+    document.getElementById('domainViewBtn').addEventListener('click', () => {
+        if (currentViewMode !== 'domain') {
+            currentViewMode = 'domain';
+            updateViewMode();
+            setActiveButton('domainViewBtn');
+        }
+    });
+}
+
+// Helper function to update button appearance
+function setActiveButton(activeId) {
+    document.querySelectorAll('.view-mode-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(activeId).classList.add('active');
+}
+
+// Function to update the force layout based on current view mode
+function updateViewMode() {
+    if (!simulation) return;
+    
+    // Get width and height
+    const width = document.getElementById('graph').clientWidth;
+    const height = document.getElementById('graph').clientHeight;
+    
+    // Make sure timeScale exists
+    if (!timeScale) {
+        const timeExtent = d3.extent(nodes, d => d.lastVisitTime);
+        timeScale = d3.scaleLinear()
+            .domain(timeExtent)
+            .range([150, width - 150]);
+    }
+    
+    // Stop the current simulation
+    simulation.stop();
+    
+    if (currentViewMode === 'time') {
+        // Time view - Strong x-positioning based on time, looser domain clustering
+        simulation
+            .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.2))
+            .force('y', d3.forceY(d => {
+                if (d.isActive) {
+                    return height * (0.2 + Math.random() * 0.2);
+                }
+                const domainHash = hashString(d.domain);
+                return height * 0.35 + domainHash * height * 0.5;
+            }).strength(0.1))
+            .force('charge', d3.forceManyBody().strength(-80));
+            
+        // Remove any domain-specific forces
+        simulation.force('domain', null);
+    } 
+    else if (currentViewMode === 'domain') {
+        // Domain view - Weaker x time positioning, stronger domain clustering
+        simulation
+            .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.05))
+            .force('y', d3.forceY(height / 2).strength(0.05))
+            .force('charge', d3.forceManyBody().strength(-60))
+            // Add a new force to cluster by domain
+            .force('domain', createDomainClusterForce());
+    }
+    
+    // Restart the simulation with a gentle alpha
+    simulation.alpha(0.3).restart();
+}
+
+// Create a custom force that attracts nodes of the same domain
+function createDomainClusterForce() {
+    // Group nodes by domain
+    const domainGroups = {};
+    nodes.forEach(node => {
+        if (!domainGroups[node.domain]) {
+            domainGroups[node.domain] = [];
+        }
+        domainGroups[node.domain].push(node);
+    });
+    
+    // Return the custom force function
+    return function(alpha) {
+        const clusterStrength = 0.5; // Strength of domain clustering
+        
+        // For each domain group, pull nodes toward their domain center
+        Object.values(domainGroups).forEach(domainNodes => {
+            // Skip tiny groups
+            if (domainNodes.length <= 1) return;
+            
+            // Find the centroid of this domain group
+            let centerX = 0, centerY = 0;
+            domainNodes.forEach(node => {
+                centerX += node.x;
+                centerY += node.y;
+            });
+            centerX /= domainNodes.length;
+            centerY /= domainNodes.length;
+            
+            // Pull each node toward the center of its domain
+            domainNodes.forEach(node => {
+                node.vx += (centerX - node.x) * alpha * clusterStrength;
+                node.vy += (centerY - node.y) * alpha * clusterStrength;
+            });
+        });
+    };
 }
 
 function applyFilters() {
@@ -590,3 +767,58 @@ function hashString(str) {
 
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', init);
+
+// After the simulation creation and initialization, 
+// Add this at the end of createForceGraph():
+function focusOnRecentNodes() {
+    // Find nodes from the last 24 hours
+    const last24Hours = Date.now() - (24 * 60 * 60 * 1000);
+    const recentNodes = nodes.filter(d => d.lastVisitTime > last24Hours);
+    
+    if (recentNodes.length === 0) return; // No recent nodes
+    
+    // Allow the simulation to settle briefly before focusing
+    setTimeout(() => {
+        // Find the bounding box of recent nodes
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+        
+        recentNodes.forEach(node => {
+            minX = Math.min(minX, node.x);
+            minY = Math.min(minY, node.y);
+            maxX = Math.max(maxX, node.x);
+            maxY = Math.max(maxY, node.y);
+        });
+        
+        // Add some padding
+        const padding = 50;
+        minX -= padding;
+        minY -= padding;
+        maxX += padding;
+        maxY += padding;
+        
+        // Calculate the center and size of the bounding box
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const boxWidth = maxX - minX;
+        const boxHeight = maxY - minY;
+        
+        // Calculate zoom scale to fit the bounding box
+        const scale = Math.min(
+            width / boxWidth,
+            height / boxHeight,
+            2 // Cap at 2x zoom
+        );
+        
+        // Apply the transform to center and zoom into recent nodes
+        svg.transition()
+           .duration(50)
+           .call(
+               zoom.transform,
+               d3.zoomIdentity
+                 .translate(width / 2, height / 2)
+                 .scale(scale * 0.9) // Slightly less than max to leave margin
+                 .translate(-centerX, -centerY)
+           );
+    }, 100); // Wait for the graph to stabilize a bit
+}

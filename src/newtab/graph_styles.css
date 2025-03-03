@@ -25,14 +25,53 @@
     fill: #64b5f6 !important; /* Bright blue for active tabs */
 }
 
+/* Enhanced active tab styling */
+.node-active circle {
+    fill: #64b5f6 !important; /* Bright blue for active tabs */
+    stroke: #ffffff;
+    stroke-width: 2px;
+    filter: drop-shadow(0 0 4px rgba(100, 181, 246, 0.8)); /* Glow effect */
+}
+
+/* Add a pulsing animation to active tabs */
+@keyframes pulse {
+    0% { stroke-width: 2px; stroke-opacity: 1; }
+    50% { stroke-width: 3px; stroke-opacity: 0.8; }
+    100% { stroke-width: 2px; stroke-opacity: 1; }
+}
+
+.node-active circle {
+    animation: pulse 2s infinite ease-in-out;
+}
+
+/* Increase the size of active tab nodes */
+.node-active circle {
+    r: 12; /* Override the radius calculation with a larger fixed size */
+}
+
 .node-bookmark {
     fill: #66bb6a !important; /* Green for bookmarks */
     stroke: #e8f4f8;
     stroke-width: 2px;
 }
 
+/* Make bookmark nodes distinct but slightly smaller than active tabs */
+.node-bookmark circle {
+    fill: #66bb6a !important; /* Green for bookmarks */
+    stroke: #e8f4f8;
+    stroke-width: 2px;
+    r: 10; /* Fixed size for bookmarks */
+}
+
 .node-history {
     fill: #9e9e9e; /* Gray for history items */
+}
+
+/* Regular history nodes */
+.node-history circle {
+    fill: #9e9e9e; /* Gray for history items */
+    stroke: #ffffff;
+    stroke-width: 1px;
 }
 
 .node text {
@@ -95,8 +134,90 @@
     background-color: #5a5550;
 }
 
+/* View mode buttons */
+.view-modes {
+    display: flex;
+    margin-left: 15px;
+}
+
+.view-mode-btn {
+    background: transparent;
+    border: 1px solid #666;
+    color: #ccc;
+    padding: 4px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+    margin-right: 5px;
+}
+
+.view-mode-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.view-mode-btn.active {
+    background: #64b5f6;
+    color: #000;
+    border-color: #64b5f6;
+}
+
 #graph {
     width: 100%;
     height: calc(100vh - var(--header-height));
     background-color: #2a2520;
+    flex-grow: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+#graph svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Full-height graph container */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+.app-header {
+    flex-shrink: 0;
+}
+
+/* Recent button styling */
+.action-buttons {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 100;
+}
+
+.recent-button {
+    background: rgba(100, 181, 246, 0.8);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    transition: all 0.2s ease;
+}
+
+.recent-button:hover {
+    background: rgba(100, 181, 246, 1);
+    transform: scale(1.05);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.4);
 }
