@@ -1,0 +1,102 @@
+/* Graph-specific styles */
+.links line {
+    stroke: #a0a0a0; /* Light gray for regular links */
+    stroke-opacity: 0.6;
+    stroke-width: 1px;
+}
+
+.links line.sequence-link {
+    stroke: #90caf9; /* Light blue for sequence links */
+    stroke-opacity: 0.9;
+}
+
+.links line.domain-link {
+    stroke: #b0b0b0; /* Light gray for domain links */
+    stroke-opacity: 0.4;
+    stroke-dasharray: 2, 2;
+}
+
+.nodes circle {
+    stroke: #fff;
+    stroke-width: 1px;
+}
+
+.node-active {
+    fill: #64b5f6 !important; /* Bright blue for active tabs */
+}
+
+.node-bookmark {
+    fill: #66bb6a !important; /* Green for bookmarks */
+    stroke: #e8f4f8;
+    stroke-width: 2px;
+}
+
+.node-history {
+    fill: #9e9e9e; /* Gray for history items */
+}
+
+.node text {
+    font-family: 'Barlow Condensed', sans-serif;
+    fill: #ffffff;
+    font-size: 10px;
+    text-anchor: middle;
+    pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+.tooltip {
+    position: absolute;
+    background-color: #33302b;
+    border: 1px solid #403c36;
+    border-radius: 6px;
+    padding: 10px;
+    color: #e0e0e0;
+    font-size: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    max-width: 300px;
+}
+
+.tooltip-title {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.tooltip-url {
+    color: #b0bec5;
+    font-size: 10px;
+    word-break: break-all;
+}
+
+.controls {
+    position: fixed;
+    top: 60px;
+    left: 10px;
+    background-color: #33302b;
+    border: 1px solid #403c36;
+    padding: 10px;
+    border-radius: 4px;
+    color: #e0e0e0;
+}
+
+.controls button {
+    background-color: #4a4540;
+    border: none;
+    color: #e0e0e0;
+    padding: 5px 10px;
+    margin: 5px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.controls button:hover {
+    background-color: #5a5550;
+}
+
+#graph {
+    width: 100%;
+    height: calc(100vh - var(--header-height));
+    background-color: #2a2520;
+}

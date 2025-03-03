@@ -109,7 +109,7 @@ function findTabById(tabId) {
   });
 }
 
-// Update the existing edge creation code to use the Promise-based findTabById
+// Enhanced edge creation with more detailed navigation information
 async function updateGraphWithNewEdge(edge) {
   console.log('Creating new edge:', edge);
   
@@ -118,12 +118,33 @@ async function updateGraphWithNewEdge(edge) {
     const targetTab = await findTabById(edge.target);
     
     if (sourceTab && targetTab) {
+      // Enhanced relationship model with detailed navigation metadata
       browserState.tabRelationships.set(targetTab.id, {
         referringTabId: sourceTab.id,
         referringURL: sourceTab.url,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        transitionType: edge.transitionType || 'unknown',
+        transitionQualifiers: edge.transitionQualifiers || [],
+        linkText: edge.linkText || null,
+        isFormSubmission: edge.isFormSubmission || false,
+        previousTab: browserState.lastActive?.tabId !== sourceTab.id ? browserState.lastActive?.tabId : null,
+        interactionData: edge.interactionData || null
       });
-      console.log('Added tab relationship:', browserState.tabRelationships.get(targetTab.id));
+      
+      // Store bidirectional reference - also track this on source tab
+      const sourceRelationships = browserState.tabRelationships.get(sourceTab.id) || {};
+      if (!sourceRelationships.childTabs) {
+        sourceRelationships.childTabs = [];
+      }
+      sourceRelationships.childTabs.push({
+        tabId: targetTab.id,
+        url: targetTab.url,
+        timestamp: Date.now(),
+        transitionType: edge.transitionType
+      });
+      browserState.tabRelationships.set(sourceTab.id, sourceRelationships);
+      
+      console.log('Added enhanced tab relationship:', browserState.tabRelationships.get(targetTab.id));
     }
   } catch (error) {
     console.error('Error creating edge:', error);
@@ -466,13 +487,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
 });
 
-// Store context for potential new tab/window opens
+// Enhanced function to handle link context with more detailed information
 function handleLinkContext(message, sender) {
     lastClickedLink = {
         ...message.data,
         sourceTabId: sender.tab.id,
-        sourceWindowId: sender.tab.windowId
+        sourceWindowId: sender.tab.windowId,
+        // Enhanced with more metadata
+        linkText: message.data.text || null,
+        sourceTitle: sender.tab.title || null,
+        interactionType: message.data.interactionType || 'click',
+        isFormSubmission: !!message.data.formData,
+        formData: message.data.formData || null,
+        sourceElementType: message.data.elementType || 'link'
     };
+    
+    // Store in tab activity log for correlation
+    const tabActivity = browserState.tabActivityLog.get(sender.tab.id) || { events: [] };
+    if (!tabActivity.events) tabActivity.events = [];
+    
+    tabActivity.events.push({
+        type: 'link_interaction',
+        timestamp: Date.now(),
+        data: lastClickedLink
+    });
+    
+    browserState.tabActivityLog.set(sender.tab.id, tabActivity);
+    
     // Clear after 5 seconds if not used
     setTimeout(() => {
         if (lastClickedLink?.timestamp === message.data.timestamp) {
@@ -483,21 +524,55 @@ function handleLinkContext(message, sender) {
 
 // Track new tabs from context menu
 chrome.tabs.onCreated.addListener((tab) => {
+  // Get the last active tab before this creation
+  const previousActiveTab = browserState.lastActive?.tabId;
+  
   if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
     const edge = {
       source: lastClickedLink.sourceTabId,
       target: tab.id,
       type: 'link-click',
       text: lastClickedLink.text,
+      linkText: lastClickedLink.linkText,
       sourceUrl: lastClickedLink.sourceUrl,
       targetUrl: tab.pendingUrl,
       timestamp: lastClickedLink.timestamp,
-      openContext: 'new_tab'
+      openContext: 'new_tab',
+      transitionType: 'link',
+      isFormSubmission: lastClickedLink.isFormSubmission,
+      formData: lastClickedLink.formData,
+      previousTab: previousActiveTab !== lastClickedLink.sourceTabId ? previousActiveTab : null,
+      sourceElementType: lastClickedLink.sourceElementType,
+      interactionData: {
+        interactionType: lastClickedLink.interactionType,
+        sourceTitle: lastClickedLink.sourceTitle
+      }
     };
+    
     tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
+    updateGraphWithNewEdge(edge);
     lastClickedLink = null; // Clear after use
+  } else {
+    // For tabs created without a detected link click
+    // (e.g. Ctrl+T or New Tab button)
+    const edge = {
+      target: tab.id,
+      type: 'new_tab_command',
+      timestamp: Date.now(),
+      openContext: 'user_command',
+      transitionType: 'generated',
+      previousTab: previousActiveTab
+    };
+    
+    // If we have a last active tab, consider it the source
+    if (previousActiveTab) {
+      edge.source = previousActiveTab;
+      tabEdges.set(`${previousActiveTab}-${tab.id}`, edge);
+      updateGraphWithNewEdge(edge);
+    }
   }
-  sendMessageWithErrorHandling({
+  
+  sendMessageWithRateLimit({
     action: 'tabCreated',
     tab: tab
   });
@@ -955,31 +1030,103 @@ function updateTabMetadata(tabId, changes) {
     }
 }
 
-// Process different navigation types
+// Enhanced function to process navigation events by type
 function processNavigationByType(tabData, details) {
-    const { transitionType, transitionQualifiers } = details;
+    const { tabId, transitionType, transitionQualifiers, url } = details;
+    
+    // Create a base edge object for all navigation types
+    const baseEdge = {
+        target: tabId,
+        targetUrl: url,
+        timestamp: Date.now(),
+        transitionType: transitionType,
+        transitionQualifiers: transitionQualifiers || []
+    };
     
     // Handle different navigation types
     if (transitionType === 'link') {
         // Link click navigation
-        processLinkNavigation(tabData, details);
+        processLinkNavigation(tabData, details, baseEdge);
     } 
     else if (transitionType === 'typed' || transitionType === 'generated') {
         // URL bar navigation or address entered
-        processDirectNavigation(tabData, details);
+        processDirectNavigation(tabData, details, baseEdge);
     }
     else if (transitionType === 'reload') {
         // Page reload
-        processReload(tabData, details);
+        processReload(tabData, details, baseEdge);
     }
     else if (transitionType === 'auto_bookmark') {
         // Navigation from bookmark
-        processBookmarkNavigation(tabData, details);
+        processBookmarkNavigation(tabData, details, baseEdge);
     }
-    else if (transitionQualifiers.includes('forward_back')) {
+    else if (transitionQualifiers?.includes('forward_back')) {
         // Back/forward navigation
-        processHistoryNavigation(tabData, details);
+        processHistoryNavigation(tabData, details, baseEdge);
     }
+}
+
+// New function to process link navigations
+function processLinkNavigation(tabData, details, baseEdge) {
+    const { tabId, url } = details;
+    
+    // Check for pending link data from content scripts
+    const linkData = pendingLinkData[tabId];
+    const recentClick = browserState.recentClicks?.[tabId];
+    
+    // If we have pending link data that matches this navigation
+    if (linkData && (linkData.href === url || linkData.targetUrl === url)) {
+        const edge = {
+            ...baseEdge,
+            type: 'link-click',
+            linkText: linkData.text,
+            sourceElementType: linkData.elementType || 'link',
+            isFormSubmission: !!linkData.formData,
+            formData: linkData.formData
+        };
+        
+        // If we know the source tab, create an edge
+        if (linkData.sourceTabId && linkData.sourceTabId !== tabId) {
+            edge.source = linkData.sourceTabId;
+            edge.sourceUrl = linkData.sourceUrl;
+            
+            tabEdges.set(`${linkData.sourceTabId}-${tabId}-${Date.now()}`, edge);
+            updateGraphWithNewEdge(edge);
+        }
+        
+        // Clear used data
+        delete pendingLinkData[tabId];
+    } 
+    // Use recentClicks as fallback
+    else if (recentClick && (recentClick.targetUrl === url || url.includes(recentClick.targetUrl))) {
+        const edge = {
+            ...baseEdge,
+            type: 'link-click',
+            linkText: recentClick.text,
+            source: recentClick.sourceTabId,
+            sourceUrl: recentClick.sourceUrl
+        };
+        
+        tabEdges.set(`${recentClick.sourceTabId}-${tabId}-${Date.now()}`, edge);
+        updateGraphWithNewEdge(edge);
+        
+        // Clear used data
+        delete browserState.recentClicks[tabId];
+    }
+    
+    // Update tab activity log with this navigation
+    const activity = browserState.tabActivityLog.get(tabId) || { navigations: [] };
+    if (!activity.navigations) activity.navigations = [];
+    
+    activity.navigations.push({
+        type: 'link_navigation',
+        url: url,
+        timestamp: Date.now(),
+        transitionType: details.transitionType,
+        transitionQualifiers: details.transitionQualifiers || []
+    });
+    
+    browserState.tabActivityLog.set(tabId, activity);
 }
 
 // Clean up old entries from the processed navigations map
@@ -1069,3 +1216,78 @@ function handleUrlChange(tabId, changeInfo, tab) {
         }
     }, 0);
 }
+
+// Enhanced handler for web navigation events
+chrome.webNavigation.onCommitted.addListener((details) => {
+    // Only process main frame navigations
+    if (details.frameId !== 0) return;
+    
+    const { tabId, url, transitionType, transitionQualifiers } = details;
+    
+    // Skip chrome:// URLs and extension pages
+    if (url.startsWith('chrome://') || url.startsWith(chrome.runtime.getURL(''))) return;
+    
+    // Store a unique identifier for this navigation to avoid duplicate processing
+    const navigationId = `${tabId}-${url}-${Date.now()}`;
+    processedNavigations.set(navigationId, {
+        timestamp: Date.now(),
+        handled: true,
+        type: transitionType,
+        qualifiers: transitionQualifiers
+    });
+    
+    // Get tab data
+    chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) {
+            console.error('Error getting tab:', chrome.runtime.lastError);
+            return;
+        }
+        
+        // Check for pending link data that might be associated with this navigation
+        const linkData = pendingLinkData[tabId];
+        let enhancedDetails = {
+            ...details,
+            linkText: linkData?.text,
+            formData: linkData?.formData,
+            isFormSubmission: !!linkData?.formData
+        };
+        
+        // Record the navigation with detailed transition information
+        recordNavigation({
+            tabId,
+            url,
+            title: tab.title || '',
+            transitionType,
+            transitionQualifiers,
+            timestamp: Date.now(),
+            navigationId,
+            linkData: enhancedDetails
+        });
+        
+        // If this is a link transition, create an edge
+        if (transitionType === 'link' && linkData) {
+            const edge = {
+                target: tabId,
+                targetUrl: url,
+                linkText: linkData.text,
+                timestamp: Date.now(),
+                transitionType: transitionType,
+                transitionQualifiers: transitionQualifiers || [],
+                isFormSubmission: !!linkData.formData,
+                formData: linkData.formData
+            };
+            
+            // If we know the source, create an edge
+            if (linkData.sourceTabId) {
+                edge.source = linkData.sourceTabId;
+                edge.sourceUrl = linkData.sourceUrl;
+                
+                tabEdges.set(`${linkData.sourceTabId}-${tabId}-${Date.now()}`, edge);
+                updateGraphWithNewEdge(edge);
+            }
+            
+            // Clear used data
+            delete pendingLinkData[tabId];
+        }
+    });
+});

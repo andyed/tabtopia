@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Histospire - History Graph</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="graph_styles.css">
+</head>
+<body>
+    <div class="app-header">
+        <div class="logo">Histospire Graph</div>
+        <div class="header-controls">
+            <input type="text" id="graphSearch" class="search-input" placeholder="Search history graph...">
+            <a href="newtab.html" class="view-toggle">Treemap View</a>
+        </div>
+    </div>
+    <div id="graph"></div>
+    <div class="controls">
+        <div>
+            <button id="zoomIn">Zoom In</button>
+            <button id="zoomOut">Zoom Out</button>
+            <button id="resetView">Reset</button>
+        </div>
+        <div>
+            <button id="filterActive">Show Active Tabs</button>
+            <button id="filterBookmarks">Show Bookmarks</button>
+            <button id="filterAll">Show All</button>
+        </div>
+        <div>
+            <button id="toggleDomainLinks">Show Domain Links</button>
+        </div>
+    </div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script src="../lib/d3.min.js"></script>
+    <script type="module" src="graph.js"></script>
+</body>
+</html>
