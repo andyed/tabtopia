@@ -879,3 +879,76 @@ mark {
     padding-left:8px;
     padding-right:8px;
 }
+
+/* Media query to hide readout on narrow screens */
+@media screen and (max-width: 450px) {
+    #readout {
+        display: none; /* Hide the readout panel */
+    }
+    
+    /* Prevent popup readout on hover for small screens */
+    .readout {
+        display: none !important; /* Force hide even if JavaScript tries to show it */
+    }
+    
+    /* Only show readout when explicitly triggered via the toggle button */
+    .readout.force-show {
+        display: block !important; 
+        position: fixed !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        max-width: 90% !important;
+        width: 90% !important;
+        max-height: 80vh !important;
+        overflow-y: auto !important;
+        z-index: 2000 !important;
+    }
+    
+    /* Make the treemap take full width */
+    #treemap {
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    /* Make header more compact */
+    .logo {
+        font-size: 18px;
+        margin-right: 10px;
+        padding-right: 10px;
+    }
+    
+    /* Adjust search container size */
+    .search-container {
+        max-width: 200px;
+    }
+    
+    /* Make the view toggle buttons smaller */
+    .view-toggle a {
+        width: 32px;
+        height: 32px;
+    }
+    
+    /* Show a toggle button to display readout as overlay when needed */
+    .readout-toggle {
+        display: flex !important;
+    }
+}
+
+/* Add a toggle button that's hidden by default but shown in mobile view */
+.readout-toggle {
+    display: none;
+    position: absolute;
+    bottom: 15px;
+    right: 15px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #1976d2;
+    color: white;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    z-index: 1000;
+    cursor: pointer;
+}

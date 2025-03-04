@@ -685,12 +685,21 @@ function notifyTreemap(message) {
 
 // Replace all instances of direct chrome.runtime.sendMessage with this wrapper
 function sendMessageWithErrorHandling(message) {
+  if (!message || !message.action) return Promise.resolve();
+  
+  try {
+    // Add a timestamp to every message for debugging
+    message.timestamp = message.timestamp || Date.now();
+    
     return chrome.runtime.sendMessage(message)
-        .catch(error => {
-            // This is expected when no listeners exist, just log and continue
-            console.log(`Message not delivered (${message.action}): No receivers`);
-            return null;
-        });
+      .catch(error => {
+        // Expected when no active listeners
+        return null;
+      });
+  } catch (error) {
+    console.log('Error sending message:', error);
+    return Promise.resolve(null);
+  }
 }
 
 // Add temporary storage for link data
@@ -1041,7 +1050,7 @@ function handleUrlChange(tabId, changeInfo, tab) {
     }, 0);
 }
 
-// Enhanced handler for web navigation events
+// Clean, focused implementation for web navigation events
 chrome.webNavigation.onCommitted.addListener((details) => {
     // Only process main frame navigations
     if (details.frameId !== 0) return;
@@ -1051,7 +1060,7 @@ chrome.webNavigation.onCommitted.addListener((details) => {
     // Skip chrome:// URLs and extension pages
     if (url.startsWith('chrome://') || url.startsWith(chrome.runtime.getURL(''))) return;
     
-    // Store a unique identifier for this navigation to avoid duplicate processing
+    // Create a unique ID for this navigation and mark as processed
     const navigationId = `${tabId}-${url}-${Date.now()}`;
     processedNavigations.set(navigationId, {
         timestamp: Date.now(),
@@ -1060,23 +1069,14 @@ chrome.webNavigation.onCommitted.addListener((details) => {
         qualifiers: transitionQualifiers
     });
     
-    // Get tab data
+    // Get tab data then record the navigation
     chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError) {
             console.error('Error getting tab:', chrome.runtime.lastError);
             return;
         }
         
-        // Check for pending link data that might be associated with this navigation
-        const linkData = pendingLinkData[tabId];
-        let enhancedDetails = {
-            ...details,
-            linkText: linkData?.text,
-            formData: linkData?.formData,
-            isFormSubmission: !!linkData?.formData
-        };
-        
-        // Record the navigation with detailed transition information
+        // Record the navigation - no edge creation here
         recordNavigation({
             tabId,
             url,
@@ -1084,35 +1084,8 @@ chrome.webNavigation.onCommitted.addListener((details) => {
             transitionType,
             transitionQualifiers,
             timestamp: Date.now(),
-            navigationId,
-            linkData: enhancedDetails
+            navigationId
         });
-        
-        // If this is a link transition, create an edge
-        if (transitionType === 'link' && linkData) {
-            const edge = {
-                target: tabId,
-                targetUrl: url,
-                linkText: linkData.text,
-                timestamp: Date.now(),
-                transitionType: transitionType,
-                transitionQualifiers: transitionQualifiers || [],
-                isFormSubmission: !!linkData.formData,
-                formData: linkData.formData
-            };
-            
-            // If we know the source, create an edge
-            if (linkData.sourceTabId) {
-                edge.source = linkData.sourceTabId;
-                edge.sourceUrl = linkData.sourceUrl;
-                
-                tabEdges.set(`${linkData.sourceTabId}-${tabId}-${Date.now()}`, edge);
-                updateGraphWithNewEdge(edge);
-            }
-            
-            // Clear used data
-            delete pendingLinkData[tabId];
-        }
     });
 });
 
@@ -1413,4 +1386,131 @@ function cleanupDataStructures() {
 
 // Run cleanup every 5 minutes
 setInterval(cleanupDataStructures, 5 * 60 * 1000);
+
+// Fix for process navigation function - implement missing methods
+function processDirectNavigation(tabData, details, baseEdge) {
+  // Implementation for direct navigation
+  const activity = browserState.tabActivityLog.get(details.tabId) || { navigations: [] };
+  if (!activity.navigations) activity.navigations = [];
+  
+  activity.navigations.push({
+    type: 'direct_navigation',
+    url: details.url,
+    timestamp: Date.now(),
+    transitionType: details.transitionType || 'unknown',
+    transitionQualifiers: details.transitionQualifiers || []
+  });
+  
+  browserState.tabActivityLog.set(details.tabId, activity);
+}
+
+// Focused navigation recorder that only updates state - no edge creation
+function recordNavigation(details) {
+    const { tabId, url, title, transitionType, transitionQualifiers, timestamp } = details;
+    
+    try {
+        // Update the tab history collection
+        const history = browserState.tabHistory.get(tabId) || [];
+        
+        // Add this navigation to the start (most recent)
+        history.unshift({
+            url,
+            title: title || '',
+            timestamp,
+            transitionType,
+            transitionQualifiers: transitionQualifiers || []
+        });
+        
+        // Limit history size
+        if (history.length > 50) {
+            history.splice(50); // Remove old entries
+        }
+        
+        // Update collection
+        browserState.tabHistory.set(tabId, history);
+        
+        // Update the current tab data
+        let tabData = browserState.tabs.get(tabId);
+        if (tabData) {
+            tabData.url = url;
+            tabData.title = title || tabData.title || '';
+            tabData.lastUpdate = timestamp;
+            tabData.lastNavigation = {
+                url,
+                timestamp,
+                type: transitionType
+            };
+            
+            browserState.tabs.set(tabId, tabData);
+        }
+        
+        // Notify about the navigation
+        sendMessageWithErrorHandling({
+            action: 'tabNavigated',
+            tabId,
+            url,
+            title,
+            transitionType,
+            timestamp
+        });
+        
+        // Handle different navigation types
+        processNavigationType(tabId, url, transitionType, transitionQualifiers);
+    } catch (error) {
+        console.error('Error recording navigation:', error);
+    }
+}
+
+// Process navigation type and conditionally create edges
+function processNavigationType(tabId, url, transitionType, transitionQualifiers) {
+    // Create a base data object for all navigation types
+    const baseData = {
+        tabId,
+        url,
+        timestamp: Date.now(),
+        transitionType,
+        transitionQualifiers: transitionQualifiers || []
+    };
+    
+    // Handle different types of navigation
+    switch (transitionType) {
+        case 'link':
+            // Process link navigation - this can create edges
+            processLinkNavigation(tabId, url, baseData);
+            break;
+            
+        case 'typed':
+            // Direct URL bar entry - no edge creation
+            logNavigation(tabId, 'typed_navigation', baseData);
+            break;
+            
+        case 'auto_bookmark':
+            // Bookmark navigation - might create edge if we track bookmarks
+            logNavigation(tabId, 'bookmark_navigation', baseData);
+            break;
+            
+        case 'generated':
+            // Auto-generated navigation - no edge needed usually
+            logNavigation(tabId, 'generated_navigation', baseData);
+            break;
+            
+        default:
+            // Other types - just log
+            logNavigation(tabId, 'other_navigation', baseData);
+    }
+}
+
+// Helper to consistently log navigations
+function logNavigation(tabId, type, data) {
+    const activity = browserState.tabActivityLog.get(tabId) || { navigations: [] };
+    if (!activity.navigations) activity.navigations = [];
+    
+    activity.navigations.push({
+        type,
+        ...data,
+        timestamp: Date.now()
+    });
+    
+    browserState.tabActivityLog.set(tabId, activity);
+}
 
