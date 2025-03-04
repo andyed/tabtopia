@@ -387,6 +387,9 @@ function createForceGraph() {
             if (!d.isActive && d.type !== 'bookmark') classes.push('node-history');
             return classes.join(' ');
         })
+        // ADD THESE LINES to store title and URL data on DOM nodes
+        .attr('data-title', d => d.title || '')
+        .attr('data-url', d => d.url || '')
         .call(d3.drag()
             .on('start', dragstarted)
             .on('drag', dragged)
@@ -867,3 +870,60 @@ function focusOnRecentNodes() {
            );
     }, 100); // Wait for the graph to stabilize a bit
 }
+
+// Reattach search functionality
+document.addEventListener('DOMContentLoaded', () => {
+  const searchInput = document.getElementById('tabSearch');
+  if (searchInput) {
+    // Clear any existing listeners (if any)
+    searchInput.removeEventListener('input', handleSearchInput);
+    
+    // Add the listener back
+    searchInput.addEventListener('input', handleSearchInput);
+    
+    // Restore any previous search value if it exists
+    if (window.sessionStorage.getItem('tabSearchQuery')) {
+      searchInput.value = window.sessionStorage.getItem('tabSearchQuery');
+      // Trigger the search with the restored value
+      handleSearchInput({target: searchInput});
+    }
+  }
+  
+  function handleSearchInput(event) {
+    const query = event.target.value.toLowerCase().trim();
+    
+    // Store search query in session storage for persistence between page changes
+    window.sessionStorage.setItem('tabSearchQuery', query);
+    
+    // Filter nodes in the graph based on the query
+    filterGraphBySearch(query);
+  }
+  
+  function filterGraphBySearch(query) {
+    // This needs to match the filtering function used in your graph visualization
+    const nodes = document.querySelectorAll('.node');
+    
+    if (!query) {
+      // If query is empty, show all nodes
+      nodes.forEach(node => {
+        node.style.opacity = 1;
+        node.style.pointerEvents = 'all';
+      });
+      return;
+    }
+    
+    // Otherwise filter nodes
+    nodes.forEach(node => {
+      const nodeText = node.getAttribute('data-title')?.toLowerCase() || '';
+      const nodeUrl = node.getAttribute('data-url')?.toLowerCase() || '';
+      
+      if (nodeText.includes(query) || nodeUrl.includes(query)) {
+        node.style.opacity = 1;
+        node.style.pointerEvents = 'all';
+      } else {
+        node.style.opacity = 0.2;
+        node.style.pointerEvents = 'none';
+      }
+    });
+  }
+});

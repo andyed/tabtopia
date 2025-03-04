@@ -530,27 +530,65 @@ mark {
 }
 
 .view-toggle {
-    background: none;
+    display: flex;
+    align-items: center;
+    background: transparent;
     border: none;
-    padding: 4px;
-    color: #666;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-    height: 24px;
-    width: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    display: flex;
-    align-items: center;
+    padding: 0;
     margin-right: 15px;
 }
 
 .view-toggle a {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    margin-right: 10px; /* Add spacing between icons */
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin: 0 5px;
+    border-radius: 6px;
+    color: #666666;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+/* Hover effect for non-selected icon */
+.view-toggle a:hover {
+    transform: scale(1.1);
+    color: #333333;
+    background-color: rgba(0, 0, 0, 0.05);
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Selected icon with blue glow */
+.view-toggle a.active {
+    color: #1976d2; /* Blue for active state */
+    background-color: rgba(25, 118, 210, 0.08);
+    box-shadow: 0 0 12px rgba(25, 118, 210, 0.4);
+}
+
+/* Underline for active icon */
+.view-toggle a.active::after {
+    content: '';
+    position: absolute;
+    bottom: -3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 2px;
+    background-color: #1976d2;
+    border-radius: 1px;
+}
+
+/* Active icon color and inner glow */
+.view-toggle a.active svg {
+    filter: drop-shadow(0 0 2px rgba(25, 118, 210, 0.6));
+}
+
+/* Improve icon sizing */
+.icon {
+    padding: 0;
+    width: 24px;
+    height: 24px;
 }
 
 .view-toggle svg {
@@ -766,10 +804,48 @@ mark {
     border: none;
     padding: 0;
     margin-right: 15px;
-    height: 30px;
 }
 
-/* Fix icon links display */
+.view-toggle a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin: 0 5px;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+/* Hover effect for non-selected icon */
+.view-toggle a:hover {
+    transform: scale(1.1);
+    color: #333333;
+    background-color: rgba(0, 0, 0, 0.05);
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Selected icon with blue glow */
+.view-toggle a.active {
+    color: #1976d2; /* Blue for active state */
+    background-color: rgba(25, 118, 210, 0.08);
+    box-shadow: 0 0 12px rgba(25, 118, 210, 0.4);
+}
+
+
+/* Active icon color and inner glow */
+.view-toggle a.active svg {
+    filter: drop-shadow(0 0 2px rgba(25, 118, 210, 0.6));
+}
+
+/* Improve icon sizing */
+.icon {
+    padding: 0;
+    width: 24px;
+    height: 24px;
+}
+
+
 .view-toggle a {
     display: inline-flex;
     align-items: center;
