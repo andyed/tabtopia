@@ -1514,3 +1514,28 @@ function logNavigation(tabId, type, data) {
     browserState.tabActivityLog.set(tabId, activity);
 }
 
+// Add this listener if it doesn't exist yet
+chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
+  console.log(`Tab ${tabId} moved:`, moveInfo);
+  
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError) return;
+    
+    // Update browserState to reflect tab move
+    const tabData = browserState.tabs.get(tabId);
+    if (tabData) {
+      tabData.windowId = tab.windowId;
+      tabData.index = tab.index;
+      browserState.tabs.set(tabId, tabData);
+    }
+    
+    // Notify UI about the move
+    sendMessageWithErrorHandling({
+      action: 'tabMoved',
+      tabId,
+      moveInfo,
+      tab
+    });
+  });
+});
+

@@ -46,6 +46,15 @@ const updateState = {
     debounceTime: 100 // ms
 };
 
+// Add drag-and-drop functionality to the treemap view
+
+// Add these variables at the top of your file to track drag state
+let isDragging = false;
+let dragTab = null;
+let dragElement = null;
+let dropTarget = null;
+let dragGhost = null;
+
 // Initialize state from background
 async function initializeState() {
     try {
@@ -609,6 +618,15 @@ export async function drawTreemap(data) {
         nodes: nodes.size(),
         focusable: interactionState.focusableNodes.length
     });
+
+    // Call initDragDrop after the treemap is initialized
+    setTimeout(initDragDrop, 500); // Initialize drag after treemap is fully rendered
+
+    // Add this to the end of the function
+    setTimeout(() => {
+        // Focus moved tab if needed
+        focusMovedTabAfterReload();
+    }, 500); // Short delay to ensure nodes are fully rendered
 }
 
 // Helper function to format title
@@ -660,6 +678,7 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
 
     // Reduce font size by 1 to fit within the cell
     textElement.attr('font-size', (fontSize - 1) + 'px');
+    setTimeout(initDragDrop, 500); 
 }
 
 
@@ -1229,3 +1248,442 @@ function handleNodeClick(event, d) {
         });
     }
 }
+
+// Improved drag implementation that works with your specific treemap structure
+
+// Track drag state
+let draggedTab = null;
+
+// Initialize D3 drag behavior
+function initDragDrop() {
+  console.log("Initializing drag and drop functionality");
+  
+  // Create the D3 drag behavior first - this was working before
+  const drag = d3.drag()
+    .subject(d => d)
+    .on('start', function(event, d) { dragStarted(event, d, this); })
+    .on('drag', function(event, d) { dragging(event, d, this); })
+    .on('end', function(event, d) { dragEnded(event, d, this); });
+  
+  // Apply to all tab cells (not window cells or bookmarks)
+  d3.selectAll('.cell')
+    .filter(function(d) {
+      return d && d.data && d.data.id && 
+             d.data.id.toString().startsWith('tab') && 
+             !d.data.isBookmark;
+    })
+    .classed('draggable', true)
+    .attr('title', 'Drag to move tab between windows')
+    .call(drag); // Apply drag behavior
+  
+  console.log(`Applied drag behavior to ${d3.selectAll('.cell.draggable').size()} cells`);
+  
+  // Identify window groups - keep this simple but effective
+  d3.selectAll('.cell').each(function(d) {
+    if (!d || !d.data || !d.data.windowId) return;
+    
+    // Use simple parent element as window group
+    const windowId = d.data.windowId;
+    const parent = this.parentElement;
+    
+    if (parent && !parent.hasAttribute('data-window-id')) {
+      d3.select(parent)
+        .classed('window-group', true)
+        .attr('data-window-id', windowId);
+    }
+  });
+  
+  console.log(`Identified ${d3.selectAll('.window-group').size()} window groups`);
+}
+
+// Keep the original working dragStarted function
+function dragStarted(event, d, node) {
+  console.log("Drag started for:", d);
+  
+  // Extract tab ID and window ID
+  let tabId = null;
+  if (d && d.data && d.data.id) {
+    tabId = parseInt(d.data.id.toString().replace('tab', ''));
+  }
+  
+  const windowId = d && d.data ? d.data.windowId : null;
+  
+  if (!tabId || !windowId) {
+    console.log("Missing tab or window ID, can't start drag");
+    return;
+  }
+  
+  // Store the dragged tab info
+  draggedTab = {
+    id: tabId,
+    windowId: windowId,
+    element: node,
+    data: d
+  };
+  
+  // Highlight the dragged element
+  d3.select(node).classed('being-dragged', true);
+  
+  // Create drag ghost
+  const ghost = document.createElement('div');
+  ghost.className = 'dragging-tab';
+  ghost.textContent = 'Moving: ' + (d.data.title || ('Tab ' + tabId));
+  ghost.style.position = 'fixed';
+  ghost.style.left = event.sourceEvent.clientX + 'px';
+  ghost.style.top = event.sourceEvent.clientY + 'px';
+  ghost.style.zIndex = 10000;
+  ghost.style.pointerEvents = 'none';
+  document.body.appendChild(ghost);
+  
+  draggedTab.ghost = ghost;
+  
+  // Highlight potential drop targets (other windows)
+  d3.selectAll('.window-group')
+    .each(function() {
+      const targetWindowId = parseInt(this.getAttribute('data-window-id'));
+      if (targetWindowId && targetWindowId !== windowId) {
+        d3.select(this).classed('valid-drop-target', true);
+      }
+    });
+    
+  console.log("Drag started successfully");
+}
+
+// Improved dragging function with better drop target detection
+function dragging(event, d, node) {
+  if (!draggedTab || !draggedTab.ghost) return;
+  
+  // Update ghost position
+  draggedTab.ghost.style.left = (event.sourceEvent.clientX + 10) + 'px';
+  draggedTab.ghost.style.top = (event.sourceEvent.clientY + 10) + 'px';
+  
+  // Find what's under the cursor
+  const elemBelow = document.elementFromPoint(
+    event.sourceEvent.clientX,
+    event.sourceEvent.clientY
+  );
+  
+  if (!elemBelow) return;
+  
+  // Find if we're over a window group
+  let windowGroup = null;
+  let current = elemBelow;
+  
+  // Look up the DOM tree for a window group
+  while (current && current !== document.body) {
+    if (current.classList && current.classList.contains('window-group')) {
+      windowGroup = current;
+      break;
+    }
+    current = current.parentElement;
+  }
+  
+  // If we found a window group, check if it's a valid drop target
+  if (windowGroup) {
+    const targetWindowId = parseInt(windowGroup.getAttribute('data-window-id'));
+    
+    // If it's a different window than source, highlight as drop target
+    if (targetWindowId && targetWindowId !== draggedTab.windowId) {
+      // Remove active class from all windows
+      d3.selectAll('.window-group').classed('drop-target-active', false);
+      
+      // Add active class to current window
+      d3.select(windowGroup).classed('drop-target-active', true);
+      
+      // Store as current drop target
+      draggedTab.dropTarget = {
+        element: windowGroup,
+        windowId: targetWindowId
+      };
+    } else {
+      // Not a valid target
+      d3.select(windowGroup).classed('drop-target-active', false);
+      
+      if (draggedTab.dropTarget && 
+          draggedTab.dropTarget.element === windowGroup) {
+        draggedTab.dropTarget = null;
+      }
+    }
+  } else {
+    // Not over a valid drop target
+    d3.selectAll('.window-group').classed('drop-target-active', false);
+    draggedTab.dropTarget = null;
+  }
+}
+
+function dragEnded(event, d, node) {
+    if (!draggedTab) return;
+    
+    console.log("Drag ended, drop target:", draggedTab.dropTarget);
+    
+    // If we have a valid drop target, move the tab
+    if (draggedTab.dropTarget && draggedTab.dropTarget.windowId) {
+      const targetWindowId = draggedTab.dropTarget.windowId;
+      const tabId = draggedTab.id;
+      
+      console.log(`Attempting to move tab ${tabId} to window ${targetWindowId}`);
+      
+      if (targetWindowId && targetWindowId !== draggedTab.windowId) {
+        // Use standard callback format for older Chrome versions
+        chrome.tabs.move(tabId, { windowId: targetWindowId, index: -1 }, function(movedTab) {
+          if (chrome.runtime.lastError) {
+            console.error('Move failed:', chrome.runtime.lastError);
+            showNotification('Failed to move tab: ' + chrome.runtime.lastError.message, 'error');
+            return;
+          }
+          
+          console.log('Tab moved successfully:', movedTab);
+          showNotification('Tab moved successfully', 'success');
+          
+          // Store the moved tab ID in sessionStorage to focus after reload
+          sessionStorage.setItem('focusTabAfterMove', tabId.toString());
+          
+          // Reload the page after a short delay to update the visualization
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        });
+      }
+    }
+    
+    // Clean up
+    d3.select(draggedTab.element).classed('being-dragged', false);
+    d3.selectAll('.window-group')
+      .classed('valid-drop-target', false)
+      .classed('drop-target-active', false);
+    
+    if (draggedTab.ghost) {
+      draggedTab.ghost.remove();
+    }
+    
+    draggedTab = null;
+  }
+
+// Add message listener to update treemap when tabs are moved
+
+// Add this function at the top of your file
+function setupTabMoveListener() {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Listen for tab movement notifications
+    if (message.action === 'tabMoved') {
+      console.log('Tab move detected in UI:', message);
+      
+      // Refresh the data and redraw the treemap
+      refreshTreemapAfterTabMove(message.tabId, message.tab.windowId);
+    }
+  });
+  
+  console.log("Tab move listener initialized");
+}
+
+// Call this during initialization
+setupTabMoveListener();
+
+
+
+// Replace or update your existing fetchDataAndBuildTreemap function
+function fetchDataAndBuildTreemap() {
+  console.log("Fetching fresh data for treemap");
+  
+  // Get fresh data from background page
+  chrome.runtime.sendMessage({ action: 'getTreemapData' }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error fetching treemap data:', chrome.runtime.lastError);
+      return;
+    }
+    
+    console.log("Received fresh treemap data:", response);
+    
+    // Draw treemap with new data
+    if (response && response.data) {
+      drawTreemap(response.data);
+    }
+  });
+}
+
+// Update your moveTabToWindow function to handle the update better
+function moveTabToWindow(tabId, windowId) {
+  console.log(`Moving tab ${tabId} to window ${windowId}`);
+  
+  chrome.tabs.move(tabId, { windowId, index: -1 })
+    .then(tab => {
+      console.log('Tab moved successfully:', tab);
+      showNotification('Tab moved successfully', 'success');
+      
+      // No need to manually refresh - the event listener will handle it
+    })
+    .catch(error => {
+      console.error('Error moving tab:', error);
+      showNotification('Failed to move tab: ' + error.message, 'error');
+    });
+}
+
+function refreshTreemapAfterTabMove(tabId, newWindowId) {
+  console.log(`Refreshing treemap after moving tab ${tabId} to window ${newWindowId}`);
+  
+  // Show loading indicator
+  const loadingIndicator = document.createElement('div');
+  loadingIndicator.className = 'loading-indicator';
+  loadingIndicator.innerHTML = 'Updating visualization...';
+  loadingIndicator.style.position = 'fixed';
+  loadingIndicator.style.top = '10px';
+  loadingIndicator.style.left = '50%';
+  loadingIndicator.style.transform = 'translateX(-50%)';
+  loadingIndicator.style.background = 'rgba(0, 0, 0, 0.7)';
+  loadingIndicator.style.color = 'white';
+  loadingIndicator.style.padding = '10px 20px';
+  loadingIndicator.style.borderRadius = '4px';
+  loadingIndicator.style.zIndex = '9999';
+  document.body.appendChild(loadingIndicator);
+  
+  // Wait a bit and then reload the page to get fresh data
+  setTimeout(() => {
+    window.location.reload();
+  }, 300);
+  
+  // This will never execute due to reload, but keeping for future reference
+  setTimeout(() => {
+    if (loadingIndicator.parentNode) {
+      loadingIndicator.parentNode.removeChild(loadingIndicator);
+    }
+  }, 2000);
+}
+
+// Add a function to focus on a specific tab after reload
+function focusMovedTabAfterReload() {
+  const tabIdToFocus = sessionStorage.getItem('focusTabAfterMove');
+  
+  if (!tabIdToFocus) return; // Nothing to focus
+  
+  console.log(`Looking for tab ${tabIdToFocus} to focus after move`);
+  
+  // Clear the storage so we don't focus again on next reload
+  sessionStorage.removeItem('focusTabAfterMove');
+  
+  // Use a longer delay to ensure DOM is fully ready
+  setTimeout(() => {
+    // Find the tab node in the treemap
+    let foundNode = null;
+    
+    d3.selectAll('.cell').each(function(d) {
+      if (!d || !d.data || !d.data.id) return;
+      
+      const nodeTabId = d.data.id.toString().replace('tab', '');
+      
+      if (nodeTabId === tabIdToFocus) {
+        foundNode = { node: this, data: d };
+        console.log('Found moved tab element:', this);
+        return;
+      }
+    });
+    
+    if (foundNode) {
+      console.log('Found moved tab, focusing:', foundNode);
+      
+      // Focus the node using your existing focus function
+      focusNode(foundNode.node, foundNode.data);
+      
+      // Scroll the node into view
+      foundNode.node.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'center' 
+      });
+      
+      // Add a STRONG highlight effect with both D3 and direct DOM methods
+      const $node = d3.select(foundNode.node);
+      $node.classed('moved-tab-highlight', true);
+      
+      // Also add an outline directly for immediate feedback
+      foundNode.node.style.outline = '3px solid #ff5722';
+      foundNode.node.style.outlineOffset = '-3px';
+      foundNode.node.style.boxShadow = '0 0 20px rgba(255, 87, 34, 0.8)';
+      foundNode.node.style.zIndex = '1000';
+      foundNode.node.style.position = 'relative';
+      
+      // Flash effect
+      let flashCount = 0;
+      const flashInterval = setInterval(() => {
+        if (flashCount >= 5) {
+          clearInterval(flashInterval);
+          return;
+        }
+        
+        foundNode.node.style.opacity = flashCount % 2 === 0 ? '0.5' : '1';
+        flashCount++;
+      }, 250);
+      
+      // Remove the highlight effects after a delay
+      setTimeout(() => {
+        $node.classed('moved-tab-highlight', false);
+        foundNode.node.style.outline = '';
+        foundNode.node.style.outlineOffset = '';
+        foundNode.node.style.boxShadow = '';
+        foundNode.node.style.opacity = '1';
+      }, 3000);
+    } else {
+      console.log(`Could not find moved tab ${tabIdToFocus} in the treemap`);
+    }
+  }, 800); // Longer delay to ensure DOM is ready
+}
+
+// Make sure this call is present at the end of your drawTreemap function
+setTimeout(() => {
+  focusMovedTabAfterReload();
+}, 1000); // Increased delay
+
+
+// Add this function definition before dragEnded
+function showNotification(message, type) {
+  // Prevent duplicates by removing existing notifications of the same type
+  const existingNotifications = document.querySelectorAll(`.notification.${type}`);
+  existingNotifications.forEach(notification => notification.remove());
+  
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.className = `notification ${type}`;
+  notification.textContent = message;
+  
+  // Style the notification
+  notification.style.position = 'fixed';
+  notification.style.bottom = '20px';
+  notification.style.right = '20px';
+  notification.style.padding = '12px 20px';
+  notification.style.borderRadius = '4px';
+  notification.style.color = 'white';
+  notification.style.fontWeight = '500';
+  notification.style.boxShadow = '0 3px 10px rgba(0,0,0,0.2)';
+  notification.style.zIndex = '10000';
+  
+  // Apply type-specific styling
+  if (type === 'success') {
+    notification.style.backgroundColor = '#43a047';
+  } else if (type === 'error') {
+    notification.style.backgroundColor = '#e53935';
+  } else {
+    notification.style.backgroundColor = '#1976d2';
+  }
+  
+  // Initial state for animation
+  notification.style.transform = 'translateY(100px)';
+  notification.style.opacity = '0';
+  notification.style.transition = 'all 0.3s ease';
+  
+  // Add to document
+  document.body.appendChild(notification);
+  
+  // Trigger animation to show
+  setTimeout(() => {
+    notification.style.transform = 'translateY(0)';
+    notification.style.opacity = '1';
+  }, 10);
+  
+  // Remove after delay
+  setTimeout(() => {
+    notification.style.transform = 'translateY(100px)';
+    notification.style.opacity = '0';
+    
+    // Remove from DOM after transition
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+
