@@ -82,6 +82,14 @@ function processHistoryData(historyItems, bookmarks, windows) {
     // Create nodes map to avoid duplicates
     const nodesMap = new Map();
     
+    // Limit history items to 300 most recent
+    if (historyItems.length > 300) {
+        console.log(`Limiting visualization to 300 most recent items out of ${historyItems.length}`);
+        historyItems = historyItems
+            .sort((a, b) => b.lastVisitTime - a.lastVisitTime)
+            .slice(0, 300);
+    }
+
     // Process history items
     historyItems.forEach(item => {
         const domain = getDomainFromUrl(item.url);

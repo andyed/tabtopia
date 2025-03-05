@@ -21,6 +21,8 @@ for reflecting on your overall browsing and refinding recently visited URLs.
 
 Use keyboard 'r' to reset the view, 't' for time view, or 'd' for domain view. 
 
+You can also drag the graph canvas and zoom in/out with the scroll wheel. 
+
 ## Screenshots
 
 ### Treemap View
