@@ -685,6 +685,10 @@ function setupViewModes() {
             setActiveButton('domainViewBtn');
         }
     });
+
+    // Add title attributes to buttons
+    document.getElementById('timeViewBtn').title = "Arrange nodes by time of visit";
+    document.getElementById('domainViewBtn').title = "Group nodes by website domain";
 }
 
 // Helper function to update button appearance
@@ -927,5 +931,31 @@ document.addEventListener('DOMContentLoaded', () => {
         node.style.pointerEvents = 'none';
       }
     });
+  }
+});
+
+// Add keyboard shortcuts for common actions
+document.addEventListener('keydown', (e) => {
+  // Press 'r' to focus on recent nodes
+  if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+    focusOnRecentNodes();
+  }
+  
+  // Press 't' for time view
+  if (e.key === 't' && !e.ctrlKey && !e.metaKey) {
+    if (currentViewMode !== 'time') {
+      currentViewMode = 'time';
+      updateViewMode();
+      setActiveButton('timeViewBtn');
+    }
+  }
+  
+  // Press 'd' for domain view
+  if (e.key === 'd' && !e.ctrlKey && !e.metaKey) {
+    if (currentViewMode !== 'domain') {
+      currentViewMode = 'domain';
+      updateViewMode();
+      setActiveButton('domainViewBtn');
+    }
   }
 });
