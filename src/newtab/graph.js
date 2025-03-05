@@ -486,28 +486,31 @@ function createForceGraph() {
         .force('link', d3.forceLink(links)
             .id(d => d.id)
             .distance(80)
-            .strength(d => d.strength * 0.5 || 0.05))
+            .strength(d => d.strength * 0.7 || 0.1)) // Increased strength
         .force('collision', d3.forceCollide().radius(d => calculateNodeSize(d) + 2))
-        .force('center', d3.forceCenter(width / 2, height / 2).strength(0.05));
-        
+        .force('center', d3.forceCenter(width / 2, height / 2).strength(0.1)) // Stronger centering
+        .alphaDecay(0.05) // Much faster decay (default is 0.0228)
+        .velocityDecay(0.4) // Slightly higher damping (default is 0.4)
+        .alpha(1); // Start with maximum heat
+    
     // Apply the appropriate forces based on view mode
     if (currentViewMode === 'time') {
         simulation
-            .force('charge', d3.forceManyBody().strength(-80))
-            .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.2))
+            .force('charge', d3.forceManyBody().strength(-100)) // Stronger repulsion
+            .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.4)) // Stronger time positioning
             .force('y', d3.forceY(d => {
                 if (d.isActive) {
                     return height * (0.2 + Math.random() * 0.2);
                 }
                 const domainHash = hashString(d.domain);
                 return height * 0.35 + domainHash * height * 0.5;
-            }).strength(0.1));
+            }).strength(0.2)); // Stronger vertical positioning
     } else {
         simulation
-            .force('charge', d3.forceManyBody().strength(-60))
-            .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.05))
-            .force('y', d3.forceY(height / 2).strength(0.05))
-            .force('domain', createDomainClusterForce());
+            .force('charge', d3.forceManyBody().strength(-80)) // Stronger repulsion
+            .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.1))
+            .force('y', d3.forceY(height / 2).strength(0.1))
+            .force('domain', createDomainClusterForce(0.8)); // Stronger domain clustering
     }
     
     simulation.on('tick', ticked);
@@ -526,7 +529,7 @@ function createForceGraph() {
 
     // Drag functions
     function dragstarted(event, d) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
+        if (!event.active) simulation.alphaTarget(0.5).restart(); // Higher target alpha
         d.fx = d.x;
         d.fy = d.y;
     }
@@ -547,7 +550,7 @@ function createForceGraph() {
     window.addEventListener('resize', handleResize);
 
     // Call the focus function after simulation stabilizes
-    simulation.on('end', focusOnRecentNodes);
+    //simulation.on('end', focusOnRecentNodes);
 
     // Also add a button to jump to recent content
     // This can be added as a floating action button in the corner
@@ -737,12 +740,15 @@ function updateViewMode() {
             .force('domain', createDomainClusterForce());
     }
     
-    // Restart the simulation with a gentle alpha
-    simulation.alpha(0.3).restart();
+    // Restart the simulation with a higher alpha and faster decay
+    simulation
+        .alphaDecay(0.05)
+        .alpha(0.6)
+        .restart();
 }
 
 // Create a custom force that attracts nodes of the same domain
-function createDomainClusterForce() {
+function createDomainClusterForce(strength = 0.5) {
     // Group nodes by domain
     const domainGroups = {};
     nodes.forEach(node => {
@@ -754,8 +760,6 @@ function createDomainClusterForce() {
     
     // Return the custom force function
     return function(alpha) {
-        const clusterStrength = 0.5; // Strength of domain clustering
-        
         // For each domain group, pull nodes toward their domain center
         Object.values(domainGroups).forEach(domainNodes => {
             // Skip tiny groups
@@ -772,8 +776,8 @@ function createDomainClusterForce() {
             
             // Pull each node toward the center of its domain
             domainNodes.forEach(node => {
-                node.vx += (centerX - node.x) * alpha * clusterStrength;
-                node.vy += (centerY - node.y) * alpha * clusterStrength;
+                node.vx += (centerX - node.x) * alpha * strength;
+                node.vy += (centerY - node.y) * alpha * strength;
             });
         });
     };
@@ -819,56 +823,54 @@ document.addEventListener('DOMContentLoaded', init);
 // After the simulation creation and initialization, 
 // Add this at the end of createForceGraph():
 function focusOnRecentNodes() {
-    // Find nodes from the last 24 hours
-    const last24Hours = Date.now() - (24 * 60 * 60 * 1000);
-    const recentNodes = nodes.filter(d => d.lastVisitTime > last24Hours);
-    
-    if (recentNodes.length === 0) return; // No recent nodes
-    
-    // Allow the simulation to settle briefly before focusing
-    setTimeout(() => {
-        // Find the bounding box of recent nodes
-        let minX = Infinity, minY = Infinity;
-        let maxX = -Infinity, maxY = -Infinity;
-        
-        recentNodes.forEach(node => {
-            minX = Math.min(minX, node.x);
-            minY = Math.min(minY, node.y);
-            maxX = Math.max(maxX, node.x);
-            maxY = Math.max(maxY, node.y);
-        });
-        
-        // Add some padding
-        const padding = 50;
-        minX -= padding;
-        minY -= padding;
-        maxX += padding;
-        maxY += padding;
-        
-        // Calculate the center and size of the bounding box
-        const centerX = (minX + maxX) / 2;
-        const centerY = (minY + maxY) / 2;
-        const boxWidth = maxX - minX;
-        const boxHeight = maxY - minY;
-        
-        // Calculate zoom scale to fit the bounding box
-        const scale = Math.min(
-            width / boxWidth,
-            height / boxHeight,
-            2 // Cap at 2x zoom
-        );
-        
-        // Apply the transform to center and zoom into recent nodes
-        svg.transition()
-           .duration(50 )
-           .call(
-               zoom.transform,
-               d3.zoomIdentity
-                 .translate(width / 2, height / 2)
-                 .scale(scale * 0.9) // Slightly less than max to leave margin
-                 .translate(-centerX, -centerY)
-           );
-    }, 100); // Wait for the graph to stabilize a bit
+  // Find nodes from the last 24 hours
+  const last24Hours = Date.now() - (24 * 60 * 60 * 1000);
+  const recentNodes = nodes.filter(d => d.lastVisitTime > last24Hours);
+  
+  if (recentNodes.length === 0) return; // No recent nodes
+  
+  // Find the bounding box of recent nodes
+  let minX = Infinity, minY = Infinity;
+  let maxX = -Infinity, maxY = -Infinity;
+  
+  recentNodes.forEach(node => {
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x);
+    maxY = Math.max(maxY, node.y);
+  });
+  
+  // Add asymmetric padding - more on the left side
+  const leftPadding = 120;  // More padding on the left
+  const rightPadding = 80;  // Standard padding on the right
+  const verticalPadding = 80;  // Standard padding top/bottom
+  
+  minX -= leftPadding;
+  minY -= verticalPadding;
+  maxX += rightPadding;
+  maxY += verticalPadding;
+  
+  // Calculate the center and size of the bounding box
+  const centerX = 50+ ((minX + maxX) / 2);
+  const centerY = (minY + maxY) / 2;
+  const boxWidth = maxX - minX;
+  const boxHeight = maxY - minY;
+  
+  // Calculate zoom scale to fit the bounding box
+  const scale = Math.min(
+    width / boxWidth,
+    height / boxHeight,
+    1.8  // Cap at 1.8x zoom (slightly lower than before)
+  );
+  
+  // Apply the transform to center and zoom into recent nodes - immediately
+  svg.call(
+    zoom.transform,
+    d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(scale * 0.75)  // Use 85% of the max scale for more margin
+      .translate(-centerX, -centerY)
+  );
 }
 
 // Reattach search functionality
