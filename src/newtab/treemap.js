@@ -55,6 +55,9 @@ let dragElement = null;
 let dropTarget = null;
 let dragGhost = null;
 
+// Add this variable at the top of your file with other state variables
+let lastValidTargetTime = 0;
+
 // Initialize state from background
 async function initializeState() {
     try {
@@ -274,10 +277,7 @@ export async function drawTreemap(data) {
             parseInt(windowNode.name.replace('Window ', ''), 10);
 
         const baseColor = d3.color(lightColors[windowId % lightColors.length]);
-        if (!baseColor) {
-            console.warn(`No color found for window ${windowId}, using default`);
-            return;
-        }
+ 
 
         const colorScale = d3.scaleLinear()
             .domain([minLastAccessed, maxLastAccessed])
@@ -346,7 +346,8 @@ export async function drawTreemap(data) {
         .attr('aria-label', d => d.data.title)
         // Add these two data attributes for drag and drop
         .attr('data-tabid', d => d.data.id)
-        .attr('data-windowid', d => d.data.windowId);
+        .attr('data-windowid', d => d.data.windowId)
+        .attr('data-window-id', d => d.data.windowId); // Add this additional attribute
 
     nodes.append('rect')
         .attr('id', d => d.data.id)
@@ -1352,7 +1353,11 @@ function dragStarted(event, d, node) {
   console.log("Drag started successfully");
 }
 
-// Improved dragging function with better drop target detection
+// Improved dragging function with better tab cell detection
+
+// Add a variable to track the last valid drop target
+let lastValidTarget = null;
+
 function dragging(event, d, node) {
   if (!draggedTab || !draggedTab.ghost) return;
   
@@ -1368,23 +1373,37 @@ function dragging(event, d, node) {
   
   if (!elemBelow) return;
   
-  // First check if we're directly over a tab cell
+  // First check if we're directly over a cell with data-window-id
   let targetWindowId = null;
   let current = elemBelow;
   
-  // Look up the DOM for elements with data-windowid attributes
-  while (current && current !== document.body && !targetWindowId) {
-    if (current.hasAttribute && current.hasAttribute('data-windowid')) {
-      targetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
-      console.log(`Found target by data attribute: Window ID ${targetWindowId}`);
+  // Look up the DOM, increasing the search depth to find cell containers
+  let searchDepth = 0;
+  while (current && current !== document.body && !targetWindowId && searchDepth < 6) {
+    searchDepth++;
+    
+    // Check for direct data-window-id attribute first
+    if (current.hasAttribute && current.hasAttribute('data-window-id')) {
+      targetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
+      console.log(`Found target directly with data-window-id: ${targetWindowId}`);
       break;
     }
     
-    // If this is a window group, get its ID
-    if (current.classList && current.classList.contains('window-group')) {
-      targetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
-      console.log(`Found target by window group: Window ID ${targetWindowId}`);
+    // Also check for data-windowid attribute for compatibility
+    if (current.hasAttribute && current.hasAttribute('data-windowid')) {
+      targetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
+      console.log(`Found target with data-windowid: ${targetWindowId}`);
       break;
+    }
+    
+    // Check if this is a cell with D3 data - use D3's data to get windowId
+    if (current.classList && current.classList.contains('cell')) {
+      const cellData = d3.select(current).datum();
+      if (cellData && cellData.data && cellData.data.windowId) {
+        targetWindowId = parseInt(cellData.data.windowId, 10);
+        console.log(`Found target from cell D3 data: ${targetWindowId}`);
+        break;
+      }
     }
     
     current = current.parentElement;
@@ -1408,61 +1427,137 @@ function dragging(event, d, node) {
         windowId: targetWindowId
       };
       
+      // IMPORTANT: Also store in our independent tracker
+      lastValidTarget = {
+        element: windowGroup,
+        windowId: targetWindowId,
+        timestamp: Date.now()
+      };
+      
       console.log(`Valid drop target: Window ${targetWindowId}`);
     }
   } else {
-    // Clear drop target
-    draggedTab.dropTarget = null;
+    // Make the sticky target behavior MORE sticky - increase duration to 800ms
+    const timeSinceValidTarget = Date.now() - (lastValidTarget?.timestamp || 0);
+    const stickyDuration = 800; // Increased stickiness
+    
+    if (timeSinceValidTarget > stickyDuration || !lastValidTarget) {
+      draggedTab.dropTarget = null;
+    } else {
+      // Use the last valid target
+      draggedTab.dropTarget = {
+        element: lastValidTarget.element,
+        windowId: lastValidTarget.windowId
+      };
+      
+      if (lastValidTarget.element) {
+        d3.select(lastValidTarget.element).classed('drop-target-active', true);
+        console.log(`Using sticky target: Window ${lastValidTarget.windowId}`);
+      }
+    }
   }
 }
 
+// Fix the dragEnded function to properly convert windowId to integer
+// Update dragEnded to always check lastValidTarget as a fallback
 function dragEnded(event, d, node) {
     if (!draggedTab) return;
     
-    console.log("Drag ended, drop target:", draggedTab.dropTarget);
+    // First try to detect the window directly under the cursor at release
+    let finalTargetWindowId = null;
     
-    // If we have a valid drop target, move the tab
-    if (draggedTab.dropTarget && draggedTab.dropTarget.windowId) {
-      const targetWindowId = draggedTab.dropTarget.windowId;
-      const tabId = draggedTab.id;
-      
-      console.log(`Attempting to move tab ${tabId} to window ${targetWindowId}`);
-      
-      if (targetWindowId && targetWindowId !== draggedTab.windowId) {
-        // Use standard callback format for older Chrome versions
-        chrome.tabs.move(tabId, { windowId: targetWindowId, index: -1 }, function(movedTab) {
-          if (chrome.runtime.lastError) {
-            console.error('Move failed:', chrome.runtime.lastError);
-            showNotification('Failed to move tab: ' + chrome.runtime.lastError.message, 'error');
-            return;
-          }
-          
-          console.log('Tab moved successfully:', movedTab);
-          showNotification('Tab moved successfully', 'success');
-          
-          // Store the moved tab ID in sessionStorage to focus after reload
-          sessionStorage.setItem('focusTabAfterMove', tabId.toString());
-          
-          // Reload the page after a short delay to update the visualization
-          setTimeout(() => {
-            window.location.reload();
-          }, 500);
+    // Get the element under the cursor when the drag ended
+    const elemBelow = document.elementFromPoint(
+        event.sourceEvent.clientX,
+        event.sourceEvent.clientY
+    );
+    
+    if (elemBelow) {
+        // Look up from the release point to find a window ID
+        let current = elemBelow;
+        let searchDepth = 0;
+        
+        while (current && current !== document.body && !finalTargetWindowId && searchDepth < 6) {
+            searchDepth++;
+            
+            // Check data-window-id attribute first
+            if (current.hasAttribute && current.hasAttribute('data-window-id')) {
+                finalTargetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
+                console.log(`Final drop directly found window ID: ${finalTargetWindowId}`);
+                break;
+            }
+            
+            // Also check data-windowid
+            if (current.hasAttribute && current.hasAttribute('data-windowid')) {
+                finalTargetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
+                console.log(`Final drop found windowid: ${finalTargetWindowId}`);
+                break;
+            }
+            
+            current = current.parentElement;
+        }
+    }
+    
+    // If we didn't find anything directly, use the last stored dropTarget
+    if (!finalTargetWindowId && draggedTab.dropTarget && draggedTab.dropTarget.windowId) {
+        finalTargetWindowId = parseInt(draggedTab.dropTarget.windowId, 10);
+        console.log(`Using stored dropTarget window ID: ${finalTargetWindowId}`);
+    }
+    
+    // If still nothing, try lastValidTarget as final fallback
+    if (!finalTargetWindowId && lastValidTarget && lastValidTarget.windowId) {
+        const timeSinceLastValid = Date.now() - (lastValidTarget.timestamp || 0);
+        if (timeSinceLastValid < 1000) { // Only use if recent (within last second)
+            finalTargetWindowId = parseInt(lastValidTarget.windowId, 10);
+            console.log(`Using lastValidTarget as fallback: ${finalTargetWindowId}`);
+        }
+    }
+    
+    // Log the final decision
+    console.log(`Final drop decision - Source: ${draggedTab.windowId}, Target: ${finalTargetWindowId}`);
+    
+    // Only proceed if we have a valid target different from source
+    if (finalTargetWindowId && finalTargetWindowId !== draggedTab.windowId) {
+        const tabId = draggedTab.id;
+        
+        console.log(`Moving tab ${tabId} to window ${finalTargetWindowId}`);
+        
+        chrome.tabs.move(tabId, { windowId: finalTargetWindowId, index: -1 }, function(movedTab) {
+            if (chrome.runtime.lastError) {
+                console.error('Move failed:', chrome.runtime.lastError);
+                showNotification('Failed to move tab: ' + chrome.runtime.lastError.message, 'error');
+                return;
+            }
+            
+            console.log('Tab moved successfully:', movedTab);
+            showNotification('Tab moved successfully', 'success');
+            
+            // Store the moved tab ID in sessionStorage to focus after reload
+            sessionStorage.setItem('focusTabAfterMove', tabId.toString());
+            
+            // Reload the page after a short delay to update the visualization
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
         });
-      }
+    } else {
+        console.log('No valid drop target found or source and target window are the same');
     }
     
     // Clean up
     d3.select(draggedTab.element).classed('being-dragged', false);
     d3.selectAll('.window-group')
-      .classed('valid-drop-target', false)
-      .classed('drop-target-active', false);
+        .classed('valid-drop-target', false)
+        .classed('drop-target-active', false);
     
     if (draggedTab.ghost) {
-      draggedTab.ghost.remove();
+        draggedTab.ghost.remove();
     }
     
+    // Reset state variables
     draggedTab = null;
-  }
+    lastValidTarget = null;
+}
 
 // Add message listener to update treemap when tabs are moved
 
