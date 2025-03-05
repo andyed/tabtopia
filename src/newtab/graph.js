@@ -446,28 +446,48 @@ function createForceGraph() {
             return d3.interpolateSpectral(hash / 100);
         });
     
+    // Update the favicon image creation and loading code 
+
+    // Replace this section:
     // Add favicon images to nodes with placeholder
     const nodeImages = node.append('image')
+        .attr('class', 'favicon')
         .attr('x', -8)
         .attr('y', -8)
         .attr('width', 16)
         .attr('height', 16)
         .attr('clip-path', 'circle(8px)')
-        .attr('xlink:href', ''); // Empty placeholder initially
-    
-    // Asynchronously load favicons using our standard utility function
-    nodes.forEach(async (d, i) => {
-        if (d.url) {
-            try {
-                const faviconUrl = await getFaviconUrl(d.url, 16);
-                if (faviconUrl) {
-                    // Update the favicon URL for this specific node
+        .attr('xlink:href', '/images/default-favicon.png'); // Default while loading
+
+    // Use the same approach as treemap for consistency
+    nodes.forEach((d, i) => {
+        if (!d.url) return;
+        
+        try {
+            // Extract the domain for direct favicon fetching
+            const domain = getDomainFromUrl(d.url);
+            if (domain) {
+                // Try direct domain favicon first - this works in treemap
+                const directFaviconUrl = `https://${domain}/favicon.ico`;
+                
+                // Test if the image loads
+                const img = new Image();
+                img.onload = function() {
                     d3.select(nodeImages.nodes()[i])
-                        .attr('xlink:href', faviconUrl);
-                }
-            } catch (e) {
-                console.warn('Error loading favicon for:', d.url);
+                        .attr('xlink:href', directFaviconUrl);
+                };
+                
+                img.onerror = function() {
+                    // If direct favicon fails, try Google's service
+                    const googleIconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
+                    d3.select(nodeImages.nodes()[i])
+                        .attr('xlink:href', googleIconUrl);
+                };
+                
+                img.src = directFaviconUrl;
             }
+        } catch (e) {
+            console.warn('Error loading favicon for:', d.url);
         }
     });
     
@@ -485,8 +505,27 @@ function createForceGraph() {
         hideTooltip();
     })
     .on('click', (event, d) => {
-        // Navigate to URL on click
-        chrome.tabs.create({ url: d.url });
+        // If it's an active tab, focus it instead of creating a new tab
+        if (d.isActive) {
+            // Find the tab ID from the currentlyOpenTabs map
+            const tabToFocus = Array.from(currentlyOpenTabs.entries())
+                .find(([id, tab]) => tab.url === d.url);
+            
+            if (tabToFocus) {
+                chrome.tabs.update(tabToFocus[0], { active: true }, (tab) => {
+                    // If the tab is in a different window, focus that window too
+                    if (tab && tab.windowId) {
+                        chrome.windows.update(tab.windowId, { focused: true });
+                    }
+                });
+            } else {
+                // Fallback to creating a new tab if we can't find the existing one
+                chrome.tabs.create({ url: d.url });
+            }
+        } else {
+            // For non-active nodes, create a new tab as before
+            chrome.tabs.create({ url: d.url });
+        }
     });
 
     // Create force simulation with forces based on current view mode
