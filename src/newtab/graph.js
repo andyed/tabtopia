@@ -959,3 +959,130 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+// Fix the Escape key handler to properly clear search filtering
+
+// Handle Escape key to clear search
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    console.log("Escape key pressed");
+    
+    // Try both potential search input IDs - we have a mismatch in the code
+    const tabSearchInput = document.getElementById('tabSearch');
+    const graphSearchInput = document.getElementById('graphSearch');
+    
+    // Use whichever search input exists and has a value
+    const searchInput = (tabSearchInput && tabSearchInput.value) ? tabSearchInput : 
+                       (graphSearchInput && graphSearchInput.value) ? graphSearchInput : 
+                       null;
+    
+    if (searchInput && searchInput.value) {
+      console.log("Clearing search:", searchInput.id, "value:", searchInput.value);
+      
+      // Clear the search box
+      searchInput.value = '';
+      
+      // Clear the stored search query in session storage
+      window.sessionStorage.removeItem('tabSearchQuery');
+      
+      // IMPORTANT: This is a more direct way to reset all nodes
+      // Instead of calling filterGraphBySearch which might have issues
+      d3.selectAll('.node')
+        .style('opacity', 1)
+        .style('pointer-events', 'all')
+        .classed('search-result', false)
+        .classed('search-dimmed', false);
+      
+      // Reset link visibility
+      d3.selectAll('.links line')
+        .style('opacity', function() {
+          return d3.select(this).attr('stroke-opacity') || 0.6;
+        })
+        .style('pointer-events', 'all');
+      
+      // Apply any global filters that should remain active
+      if (typeof applyFilters === 'function') {
+        applyFilters();
+      }
+      
+      // Fire an event to notify that search was cleared
+      const event = new CustomEvent('searchCleared');
+      document.dispatchEvent(event);
+      
+      console.log("Search clearing complete");
+    }
+  }
+});
+
+// Replace the search handling code with this simplified version
+
+document.addEventListener('DOMContentLoaded', () => {
+  const searchInput = document.getElementById('tabSearch');
+  if (searchInput) {
+    // Clear any existing listeners
+    searchInput.removeEventListener('input', handleSearchInput);
+    
+    // Add the listener back
+    searchInput.addEventListener('input', handleSearchInput);
+    
+    // Restore previous search value if it exists
+    if (window.sessionStorage.getItem('tabSearchQuery')) {
+      searchInput.value = window.sessionStorage.getItem('tabSearchQuery');
+      // Trigger the search with the restored value
+      handleSearchInput({target: searchInput});
+    }
+  }
+  
+  function handleSearchInput(event) {
+    const query = event.target.value.toLowerCase().trim();
+    
+    // Store search query in session storage for persistence
+    window.sessionStorage.setItem('tabSearchQuery', query);
+    
+    // Apply filtering directly - same logic as the Escape key handler
+    if (!query) {
+      // Reset all nodes and links if query is empty
+      d3.selectAll('.node')
+        .style('opacity', 1)
+        .style('pointer-events', 'all')
+        .classed('search-result', false)
+        .classed('search-dimmed', false);
+      
+      // Reset link visibility
+      d3.selectAll('.links line')
+        .style('opacity', function() {
+          return d3.select(this).attr('stroke-opacity') || 0.6;
+        })
+        .style('pointer-events', 'all');
+        
+      // Apply any global filters
+      if (typeof applyFilters === 'function') {
+        applyFilters();
+      }
+    } else {
+      // Filter nodes based on query
+      d3.selectAll('.node').each(function(d) {
+        const nodeText = d.title?.toLowerCase() || '';
+        const nodeUrl = d.url?.toLowerCase() || '';
+        const isMatch = nodeText.includes(query) || nodeUrl.includes(query);
+        
+        d3.select(this)
+          .style('opacity', isMatch ? 1 : 0.2)
+          .style('pointer-events', isMatch ? 'all' : 'none')
+          .classed('search-result', isMatch)
+          .classed('search-dimmed', !isMatch);
+      });
+      
+      // Update link visibility
+      d3.selectAll('.links line').each(function(d) {
+        const sourceMatched = d3.select(`[data-url="${d.source.id}"]`).classed('search-result');
+        const targetMatched = d3.select(`[data-url="${d.target.id}"]`).classed('search-result');
+        
+        d3.select(this)
+          .style('opacity', (sourceMatched && targetMatched) ? 
+            (d3.select(this).attr('stroke-opacity') || 0.6) : 0.05)
+          .style('pointer-events', (sourceMatched && targetMatched) ? 'all' : 'none');
+      });
+    }
+  }
+});
