@@ -9,7 +9,7 @@ The treemap allows you to find and manage tabs. You can:
 * close tabs
 * move tabs from one window to another
 * bookmark the url in a given tab
-* displays recent history and bookmarks for the domain on hover/select
+* displays recent history and bookmarks for the domain on hover/select. single-click the node to make the readout sticky and enable interaction with bookmarks and history from the domain
 
 Additionally, keyboard navigation is supported. Use the arrow keys after selecting a node or hitting enter from the search box.
 

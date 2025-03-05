@@ -38,6 +38,53 @@ export function debounce(func, wait) {
   };
 }
 
+// Add this function to generate SVG favicon with domain initial
+export function createLetterFavicon(url) {
+  try {
+    // Get domain and extract first letter
+    const domain = getDomainFromUrl(url) || 'unknown';
+    let letter = domain.charAt(0).toUpperCase();
+    
+    // Handle numeric or special character domains
+    if (!letter.match(/[A-Z]/i)) {
+      letter = domain.charAt(1).toUpperCase() || 'X';
+      if (!letter.match(/[A-Z]/i)) {
+        letter = 'X';
+      }
+    }
+    
+    // Generate random but consistent color based on domain
+    const hue = Math.abs(hashString(domain) % 360);
+    const bgColor = `hsl(${hue}, 60%, 85%)`;
+    const textColor = `hsl(${hue}, 70%, 35%)`;
+    
+    // Create SVG icon
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+      <circle cx="16" cy="16" r="16" fill="${bgColor}" />
+      <text x="16" y="22" font-family="Arial, sans-serif" font-size="16" font-weight="bold" 
+        text-anchor="middle" fill="${textColor}">${letter}</text>
+    </svg>`;
+    
+    // Convert SVG to base64 data URL
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+  } catch (error) {
+    console.warn('Error creating letter favicon:', error);
+    return '/images/default-favicon.png';
+  }
+}
+
+// Add this simple hash function for consistent colors
+function hashString(str) {
+  let hash = 0;
+  if (str.length === 0) return hash;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return hash;
+}
+
 // Update favicon handling function
 export async function getFaviconUrl(url, preferredSize = 128) {
   // Try to get favicon using chrome.tabs.favIconUrl for active tabs
@@ -80,7 +127,7 @@ export async function getFaviconUrl(url, preferredSize = 128) {
               url: url,
               size: 16
             }, smallFavicon => {
-              resolve(smallFavicon || '/images/default-favicon.png');
+              resolve(smallFavicon);
             });
           }
         });
@@ -90,9 +137,35 @@ export async function getFaviconUrl(url, preferredSize = 128) {
     }
   }
 
-  // Fallback 2: Try Google's favicon service with size parameter
-  const hostname = encodeURIComponent(new URL(url).hostname);
-  return `https://www.google.com/s2/favicons?sz=${preferredSize}&domain=${hostname}`;
+  try {
+    // Fallback 2: Try Google's favicon service with size parameter
+    const hostname = encodeURIComponent(new URL(url).hostname);
+    const googleFavicon = `https://www.google.com/s2/favicons?sz=${preferredSize}&domain=${hostname}`;
+    
+    // Test if Google favicon exists and is not the default
+    const img = new Image();
+    img.src = googleFavicon;
+    
+    const googleFaviconWorks = await new Promise(resolve => {
+      img.onload = () => {
+        // Check image dimensions to see if it's the default icon
+        // (Google returns a 16x16 default icon when not found)
+        resolve(img.width > 16 || img.height > 16);
+      };
+      img.onerror = () => resolve(false);
+      // Set timeout in case image never loads
+      setTimeout(() => resolve(false), 1000);
+    });
+    
+    if (googleFaviconWorks) {
+      return googleFavicon;
+    }
+  } catch (error) {
+    console.warn('Error with Google favicon service:', error);
+  }
+  
+  // Final fallback: Generate letter favicon
+  return createLetterFavicon(url);
 }
 
 function exportSession() {
