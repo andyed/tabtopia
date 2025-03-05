@@ -343,7 +343,10 @@ export async function drawTreemap(data) {
         .style('cursor', 'pointer')
         .attr('tabindex', d => currentTabOrder.indexOf(d.data.id))
         .attr('role', 'button')
-        .attr('aria-label', d => d.data.title);
+        .attr('aria-label', d => d.data.title)
+        // Add these two data attributes for drag and drop
+        .attr('data-tabid', d => d.data.id)
+        .attr('data-windowid', d => d.data.windowId);
 
     nodes.append('rect')
         .attr('id', d => d.data.id)
@@ -1365,48 +1368,50 @@ function dragging(event, d, node) {
   
   if (!elemBelow) return;
   
-  // Find if we're over a window group
-  let windowGroup = null;
+  // First check if we're directly over a tab cell
+  let targetWindowId = null;
   let current = elemBelow;
   
-  // Look up the DOM tree for a window group
-  while (current && current !== document.body) {
-    if (current.classList && current.classList.contains('window-group')) {
-      windowGroup = current;
+  // Look up the DOM for elements with data-windowid attributes
+  while (current && current !== document.body && !targetWindowId) {
+    if (current.hasAttribute && current.hasAttribute('data-windowid')) {
+      targetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
+      console.log(`Found target by data attribute: Window ID ${targetWindowId}`);
       break;
     }
+    
+    // If this is a window group, get its ID
+    if (current.classList && current.classList.contains('window-group')) {
+      targetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
+      console.log(`Found target by window group: Window ID ${targetWindowId}`);
+      break;
+    }
+    
     current = current.parentElement;
   }
   
-  // If we found a window group, check if it's a valid drop target
-  if (windowGroup) {
-    const targetWindowId = parseInt(windowGroup.getAttribute('data-window-id'));
+  // Reset highlights
+  d3.selectAll('.window-group').classed('drop-target-active', false);
+  
+  // If we found a window ID and it's different from source
+  if (targetWindowId && targetWindowId !== draggedTab.windowId) {
+    // Find the window group element
+    const windowGroup = d3.select(`.window-group[data-window-id="${targetWindowId}"]`).node();
     
-    // If it's a different window than source, highlight as drop target
-    if (targetWindowId && targetWindowId !== draggedTab.windowId) {
-      // Remove active class from all windows
-      d3.selectAll('.window-group').classed('drop-target-active', false);
-      
-      // Add active class to current window
+    if (windowGroup) {
+      // Highlight as drop target
       d3.select(windowGroup).classed('drop-target-active', true);
       
-      // Store as current drop target
+      // Store as drop target
       draggedTab.dropTarget = {
         element: windowGroup,
         windowId: targetWindowId
       };
-    } else {
-      // Not a valid target
-      d3.select(windowGroup).classed('drop-target-active', false);
       
-      if (draggedTab.dropTarget && 
-          draggedTab.dropTarget.element === windowGroup) {
-        draggedTab.dropTarget = null;
-      }
+      console.log(`Valid drop target: Window ${targetWindowId}`);
     }
   } else {
-    // Not over a valid drop target
-    d3.selectAll('.window-group').classed('drop-target-active', false);
+    // Clear drop target
     draggedTab.dropTarget = null;
   }
 }
