@@ -2,6 +2,7 @@ export class TabSearch {
     constructor() {
         this.searchIndex = null;
         this.documentLookup = new Map();
+        this.summaryLookup = new Map();
     }
 
     buildIndex(state) {
@@ -26,27 +27,95 @@ export class TabSearch {
                 };
                 documents.push(doc);
                 this.documentLookup.set(doc.id, doc);
-                /*console.log('Indexed tab:', {
-                    id: doc.id,
-                    title: doc.title,
-                    url: doc.url
-                });*/
             });
         });
 
-        // Create Lunr index
-        this.searchIndex = lunr(function() {
-            this.field('title', { boost: 10 });
-            this.field('url', { boost: 5 });
-            this.ref('id');
+        // Create Lunr index with summary field
+        const builder = new lunr.Builder();
+        
+        builder.ref('id');
+        builder.field('title', { boost: 10 });
+        builder.field('url', { boost: 5 });
+        builder.field('summary', { boost: 3 });
 
-            documents.forEach(doc => this.add(doc));
+        // Add all documents to the builder
+        documents.forEach(doc => {
+            builder.add({
+                id: doc.id,
+                title: doc.title || '',
+                url: doc.url || '',
+                summary: ''  // Initially empty
+            });
         });
+
+        this.searchIndex = builder.build();
 
         console.log('Search index built:', {
             documentsIndexed: documents.length,
             hasSearchIndex: !!this.searchIndex
         });
+    }
+
+    addSummaryToIndex(url, summary) {
+        if (!url || !summary) return;
+        
+        const doc = Array.from(this.documentLookup.values())
+            .find(d => d.url === url);
+            
+        if (!doc) {
+            console.log('No document found for URL:', url);
+            return;
+        }
+
+        // Store summary in lookup
+        this.summaryLookup.set(doc.id, summary);
+
+        // Rebuild index with updated documents
+        const builder = new lunr.Builder();
+        
+        builder.ref('id');
+        builder.field('title', { boost: 10 });
+        builder.field('url', { boost: 5 });
+        builder.field('summary', { boost: 3 });
+
+        // Add all documents with their current summaries
+        Array.from(this.documentLookup.values()).forEach(doc => {
+            builder.add({
+                id: doc.id,
+                title: doc.title || '',
+                url: doc.url || '',
+                summary: this.summaryLookup.get(doc.id) || ''
+            });
+        });
+
+        this.searchIndex = builder.build();
+        console.log('Added summary to index for:', doc.id);
+    }
+
+    getMatchContext(url, searchTerm) {
+        if (!url || !searchTerm) return null;
+
+        const doc = Array.from(this.documentLookup.values())
+            .find(d => d.url === url);
+            
+        if (!doc) return null;
+
+        const summary = this.summaryLookup.get(doc.id);
+        if (!summary) return null;
+
+        const normalizedSummary = summary.toLowerCase();
+        const normalizedSearch = searchTerm.toLowerCase();
+        const index = normalizedSummary.indexOf(normalizedSearch);
+        
+        if (index === -1) return null;
+
+        const contextLength = 50;
+        const start = Math.max(0, index - contextLength);
+        const end = Math.min(summary.length, index + searchTerm.length + contextLength);
+        
+        return {
+            summaryContext: summary.slice(start, end)
+        };
     }
 
     search(query) {
@@ -70,6 +139,10 @@ export class TabSearch {
 
             return results.map(result => {
                 const doc = this.documentLookup.get(result.ref);
+                const summary = this.summaryLookup.get(result.ref);
+                
+                const matchType = this.determineMatchType(result, query, doc);
+                
                 return {
                     score: result.score,
                     id: doc.id,
@@ -77,24 +150,59 @@ export class TabSearch {
                     url: doc.url,
                     windowId: doc.windowId,
                     isBookmark: doc.isBookmark,
-                    data: doc.data
+                    data: doc.data,
+                    matchType,
+                    tab: doc.data
                 };
             });
         } catch (e) {
             console.warn('Search error:', e);
-            // Fallback to basic search
             return Array.from(this.documentLookup.values())
-                .filter(doc => 
-                    doc.title.toLowerCase().includes(query.toLowerCase()) ||
-                    doc.url.toLowerCase().includes(query.toLowerCase())
-                );
+                .filter(doc => {
+                    const summary = this.summaryLookup.get(doc.id);
+                    const normalizedQuery = query.toLowerCase();
+                    return doc.title.toLowerCase().includes(normalizedQuery) ||
+                           doc.url.toLowerCase().includes(normalizedQuery) ||
+                           (summary && summary.toLowerCase().includes(normalizedQuery));
+                })
+                .map(doc => ({
+                    score: 1,
+                    id: doc.id,
+                    title: doc.title,
+                    url: doc.url,
+                    windowId: doc.windowId,
+                    isBookmark: doc.isBookmark,
+                    data: doc.data,
+                    matchType: this.determineMatchType({ matchData: {} }, query, doc),
+                    tab: doc.data
+                }));
         }
+    }
+
+    determineMatchType(result, query, doc) {
+        const normalizedQuery = query.toLowerCase();
+        
+        if (result.matchData && result.matchData.metadata) {
+            const metadata = result.matchData.metadata;
+            if (metadata[query] || metadata[`*${query}*`]) {
+                if (metadata[query]?.title || metadata[`*${query}*`]?.title) return 'direct';
+                if (metadata[query]?.url || metadata[`*${query}*`]?.url) return 'direct';
+                if (metadata[query]?.summary || metadata[`*${query}*`]?.summary) return 'summary';
+            }
+        }
+        
+        if (doc) {
+            if (doc.title.toLowerCase().includes(normalizedQuery)) return 'direct';
+            if (doc.url.toLowerCase().includes(normalizedQuery)) return 'direct';
+            const summary = this.summaryLookup.get(doc.id);
+            if (summary && summary.toLowerCase().includes(normalizedQuery)) return 'summary';
+        }
+        
+        return 'direct';
     }
 }   
 
 export const tabSearch = new TabSearch();
-
-// Update the initializeSearch function to ensure it's connecting properly
 
 export function initializeSearch() {
     const searchInput = document.getElementById('tabSearch');
@@ -104,10 +212,8 @@ export function initializeSearch() {
         return;
     }
     
-    // Log to confirm initialization
     console.log('Initializing search input listeners');
     
-    // Add input event to trigger search as user types
     searchInput.addEventListener('input', (event) => {
         const query = event.target.value.trim();
         
@@ -116,21 +222,10 @@ export function initializeSearch() {
             return;
         }
         
-        // Use your existing search method
-        let results;
-        if (tabSearch && tabSearch.searchIndex) {
-            // Use Lunr search if available
-            results = tabSearch.search(query);
-        } else {
-            // Fallback to simple search
-            results = searchTabs(query);
-        }
-        
-        // Display results
+        const results = tabSearch.search(query);
         handleSearchResults(results);
     });
     
-    // Enhance the keydown handler to debug
     searchInput.addEventListener('keydown', (event) => {
         console.log('Search keydown:', event.key);
         
@@ -138,8 +233,6 @@ export function initializeSearch() {
             case 'Enter':
                 event.preventDefault();
                 console.log('Enter key pressed in search, finding results...');
-                const results = document.querySelectorAll('.cell-search-match');
-                console.log(`Found ${results.length} matching results`);
                 focusFirstSearchResult();
                 break;
             case 'Tab':
@@ -156,84 +249,59 @@ export function initializeSearch() {
     console.log('Search initialization complete');
 }
 
-// Update the focusFirstSearchResult function with more logging
 function focusFirstSearchResult() {
     console.log('Attempting to focus first search result');
     
-    // Find the first search match
     const firstResult = d3.select('.cell-search-match').node();
     console.log('First result found:', !!firstResult);
     
     if (firstResult) {
-        // Log the data
         const nodeData = d3.select(firstResult).datum();
         console.log('First result data:', nodeData?.data);
         
-        // Clear any previous selections
         d3.selectAll('.cell').classed('cell-selected', false);
-        
-        // Add selected class to highlight this cell
         d3.select(firstResult).classed('cell-selected', true);
         
-        // Make sure the cell is focusable and focus it
         firstResult.setAttribute('tabindex', '0');
         firstResult.focus();
         
         if (nodeData && nodeData.data) {
             console.log('Activating tab/bookmark from search result');
             
-            // Implement the same behavior as the dblclick handler in treemap.js
             if (nodeData.data.isBookmark) {
-                // Handle bookmark - open in a new tab
                 console.log('Opening bookmark in new tab:', nodeData.data.url);
                 chrome.tabs.create({
                     url: nodeData.data.url,
                     active: true
                 });
             } else {
-                // Parse tab and window IDs carefully
-                let windowId, tabId;
+                let windowId = typeof nodeData.data.windowId === 'number' ? 
+                    nodeData.data.windowId : parseInt(nodeData.data.windowId, 10);
+                let tabId = typeof nodeData.data.id === 'number' ? 
+                    nodeData.data.id : parseInt(nodeData.data.id.replace(/\D/g, ''), 10);
                 
-                try {
-                    windowId = typeof nodeData.data.windowId === 'number' ? 
-                        nodeData.data.windowId : parseInt(nodeData.data.windowId, 10);
+                console.log('Activating tab:', tabId, 'in window:', windowId);
+                
+                chrome.windows.update(windowId, { focused: true }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Error focusing window:', chrome.runtime.lastError);
+                        return;
+                    }
                     
-                    tabId = typeof nodeData.data.id === 'number' ? 
-                        nodeData.data.id : parseInt(nodeData.data.id.replace(/\D/g, ''), 10);
-                    
-                    console.log('Activating tab:', tabId, 'in window:', windowId);
-                    
-                    // First focus the window
-                    chrome.windows.update(windowId, { focused: true }, () => {
+                    chrome.tabs.update(tabId, { active: true }, () => {
                         if (chrome.runtime.lastError) {
-                            console.error('Error focusing window:', chrome.runtime.lastError);
-                            return;
+                            console.error('Error activating tab:', chrome.runtime.lastError);
                         }
-                        
-                        // Then activate the tab
-                        chrome.tabs.update(tabId, { active: true }, () => {
-                            if (chrome.runtime.lastError) {
-                                console.error('Error activating tab:', chrome.runtime.lastError);
-                            }
-                        });
                     });
-                } catch (err) {
-                    console.error('Error parsing IDs:', err, 'Data:', nodeData.data);
-                }
+                });
             }
-        } else {
-            console.warn('No data found for search result');
         }
     } else {
         console.log('No search match found, focusing treemap');
-        
-        // If no results found, focus the treemap instead
         const treemap = document.getElementById('treemap');
         if (treemap) {
             treemap.setAttribute('tabindex', '0'); 
             treemap.focus();
-        } else {
-            console.error('Treemap element not found');
         }
     }
 }
@@ -259,7 +327,6 @@ export function handleSearchResults(results) {
         .classed('cell-search-nomatch', d => !results.some(r => r.id === d.data.id))
         .style('opacity', d => results.some(r => r.id === d.data.id) ? 1 : 0.3);
 
-    // Update keyboard navigation order
     updateSearchTabOrder(results);
 }
 
@@ -269,110 +336,6 @@ function updateSearchTabOrder(results) {
         .attr('tabindex', d => {
             const index = searchOrder.indexOf(d.data.id);
             return index >= 0 ? 0 : -1;
-        });
-}
-
-// Add search index management
-let searchIndex = new Map();
-
-export function indexNode(id, data) {
-    // Validate input data
-    if (!data) {
-        console.warn('No data provided for indexing');
-        return;
-    }
-
-    // Extract tab ID from either the id parameter or data.id
-    let tabId;
-    if (typeof id === 'string' && id.startsWith('tab')) {
-        tabId = id.replace('tab', '');
-    } else if (data.id) {
-        tabId = data.id;
-    } else {
-        console.warn('Invalid or missing tab ID:', { id, data });
-        return;
-    }
-
-    // Ensure we have a valid numeric ID
-    if (isNaN(parseInt(tabId))) {
-        console.warn('Non-numeric tab ID:', { tabId, originalId: id, data });
-        return;
-    }
-
-    const indexData = {
-        id: `tab${tabId}`,
-        title: data.title || 'Untitled',
-        url: data.url || '',
-        isBookmark: !!data.isBookmark,
-        windowId: data.windowId
-    };
-
-    console.log('Indexing node with validated ID:', {
-        id: indexData.id,
-        title: indexData.title,
-        url: indexData.url
-    });
-
-    searchIndex.set(indexData.id, indexData);
-}
-
-// Add helper function to validate tab data
-function isValidTabData(data) {
-    return data && 
-           typeof data.id !== 'undefined' && 
-           data.id !== null &&
-           !isNaN(parseInt(data.id));
-}
-
-// Update the search index management
-export function updateSearchIndex(tabs) {
-    console.log('Updating search index with tabs:', tabs.length);
-    
-    // Clear existing index
-    searchIndex.clear();
-    
-    // Index only valid tabs
-    tabs.forEach(tab => {
-        if (isValidTabData(tab)) {
-            indexNode(`tab${tab.id}`, tab);
-        } else {
-            console.warn('Skipping invalid tab data:', tab);
-        }
-    });
-}
-
-export function removeFromIndex(id) {
-    searchIndex.delete(id);
-    console.log('Removed from index:', id);
-}
-
-export function clearBookmarksFromIndex() {
-    // Remove all bookmark entries
-    for (const [id, data] of searchIndex.entries()) {
-        if (data.isBookmark) {
-            searchIndex.delete(id);
-        }
-    }
-    console.log('Cleared bookmarks from index');
-}
-
-// Update search function to use index
-export function searchTabs(query) {
-    if (!query) return [];
-    
-    const normalizedQuery = query.toLowerCase();
-    return Array.from(searchIndex.values())
-        .filter(item => {
-            return item.title.toLowerCase().includes(normalizedQuery) ||
-                   item.url.toLowerCase().includes(normalizedQuery);
-        })
-        .sort((a, b) => {
-            // Prioritize exact matches
-            const aExact = a.title.toLowerCase() === normalizedQuery;
-            const bExact = b.title.toLowerCase() === normalizedQuery;
-            if (aExact && !bExact) return -1;
-            if (!aExact && bExact) return 1;
-            return 0;
         });
 }
 

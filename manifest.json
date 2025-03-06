@@ -13,7 +13,8 @@
     "chrome://favicon/",
     "favicon",
     "*://*/*",
-    "bookmarks"
+    "bookmarks", 
+    "scripting"
 
   ],  
   "web_accessible_resources": [

@@ -1070,3 +1070,42 @@ mark {
   50% { box-shadow: 0 0 0 8px rgba(255, 87, 34, 0.3); }
   100% { box-shadow: 0 0 0 0px #ff5722; }
 }
+
+.summary-section h3 .cached {
+    font-size: 0.8em;
+    color: #666;
+    font-weight: normal;
+    margin-left: 8px;
+}
+
+.summary-content {
+    position: relative;
+    margin-top: 8px;
+}
+
+.summary-text {
+    white-space: pre-wrap;
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+.summary-expand {
+    margin-top: 8px;
+    text-align: right;
+}
+
+.show-more-btn {
+    background: none;
+    border: none;
+    color: #64b5f6;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.show-more-btn:hover {
+    background: rgba(100, 181, 246, 0.1);
+    color: #90caf9;
+}
