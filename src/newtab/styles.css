@@ -1039,3 +1039,34 @@ mark {
   50% { box-shadow: 0 0 0 8px rgba(25, 118, 210, 0.3); }
   100% { box-shadow: 0 0 0 0px #1976d2; }
 }
+
+/* Window drag and drop styling */
+.drag-in-progress .window-group {
+  outline: 2px dashed rgba(0,0,0,0.2);
+  outline-offset: -2px;
+}
+
+.drag-in-progress .valid-drop-target {
+  outline: 3px dashed #2196F3;
+  outline-offset: -3px;
+  background-color: rgba(33, 150, 243, 0.1) !important;
+}
+
+.drag-in-progress .drop-target-active {
+  outline: 3px solid #2196F3;
+  outline-offset: -3px;
+  background-color: rgba(33, 150, 243, 0.2) !important;
+}
+
+/* Style for the moved tab highlight */
+.moved-tab-highlight {
+  animation: pulse 2s ease-in-out;
+  box-shadow: 0 0 0 2px #1976d2, 0 0 20px rgba(25, 118, 210, 0.5);
+  z-index: 10;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0px #ff5722; }
+  50% { box-shadow: 0 0 0 8px rgba(255, 87, 34, 0.3); }
+  100% { box-shadow: 0 0 0 0px #ff5722; }
+}
