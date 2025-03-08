@@ -121,10 +121,14 @@ Human oversight, editing, and testing were applied throughout development to ens
 
 Alternatives with similar functionality
 - [Tab Manager Plus](https://github.com/stefanXO/Tab-Manager-Plus): a treemap of favicons using an overlay
+- [Fuzzy Finder](https://github.com/siadat/chrome-ff): 'ff' to url bar search your open tabs with fuzzy matching
+- Older: [Tab Switcher](https://github.com/kamranahmedse/tab-switcher), [fast tab switcher](https://github.com/BinaryMuse/chrome-fast-tab-switcher)
+- [Search All Tabs](https://github.com/lunu-bounir/search-all-tabs)
 
 Inspiration
 - - [Galaxy Tab](https://github.com/Katee/galaxy-tab): a D3 force visualization from 12 years ago, still works!
 
 
 See also github's [Browser Extension topic](https://github.com/topics/browser-extension)
+and [makeuseof 10 tab management extensions](https://www.makeuseof.com/tag/10-extensions-chrome-tab-management/)
 ---

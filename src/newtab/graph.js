@@ -18,37 +18,72 @@ let currentViewMode = 'time'; // 'time' or 'domain'
 
 // Initialize the visualization
 async function init() {
-    // Fetch data
-    const [historyItems, windows] = await Promise.all([
-        chrome.history.search({ text: '', maxResults: 200, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
-        chrome.windows.getAll({ populate: true })
-    ]);
-
-    // Get bookmarks
-    const bookmarks = await fetchBookmarks();
+    // Show loading indicator
+    document.getElementById('graph').innerHTML = 
+        '<div class="loading"><div class="spinner"></div>Loading your browsing data...</div>';
     
-    // Track currently open tabs
-    windows.forEach(window => {
-        if (window.tabs) {
-            window.tabs.forEach(tab => {
-                currentlyOpenTabs.set(tab.id, tab);
-            });
+    try {
+        // Get stored graph data for faster initialization
+        const cachedGraphData = await browserState.getGraphData();
+        
+        // Fetch data
+        const [historyItems, windows] = await Promise.all([
+            chrome.history.search({ text: '', maxResults: 200, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
+            chrome.windows.getAll({ populate: true })
+        ]);
+
+        // Get bookmarks
+        const bookmarks = await fetchBookmarks();
+        
+        // Track currently open tabs
+        windows.forEach(window => {
+            if (window.tabs) {
+                window.tabs.forEach(tab => {
+                    currentlyOpenTabs.set(tab.id, tab);
+                });
+            }
+        });
+
+        // Process data with cached positions
+        processHistoryData(historyItems, bookmarks, windows, cachedGraphData.nodePositions);
+        
+        // Restore summaries from cache
+        if (Object.keys(cachedGraphData.summaries).length > 0) {
+            for (const [url, summary] of Object.entries(cachedGraphData.summaries)) {
+                const node = nodes.find(n => n.url === url);
+                if (node) {
+                    node.summary = summary;
+                }
+            }
         }
-    });
+        
+        // Add custom edges
+        if (cachedGraphData.customEdges.length > 0) {
+            addCustomEdges(cachedGraphData.customEdges);
+        }
+        
+        // Create the visualization
+        createForceGraph();
 
-    // Build graph data
-    processHistoryData(historyItems, bookmarks, windows);
-    
-    // Create the visualization
-    createForceGraph();
+        // Periodically save node positions
+        setInterval(() => {
+            // Only save if simulation has stabilized
+            if (simulation && simulation.alpha() < 0.1) {
+                browserState.storeNodePositions(nodes);
+            }
+        }, 30000);
 
-    // Set up search functionality
-    setupSearch();
-    
-    // Set up view mode switching
-    setupViewModes();
-    
-    // REMOVE THIS LINE: setupControls();
+        // Set up search functionality
+        setupSearch();
+        
+        // Set up view mode switching
+        setupViewModes();
+        
+    } catch (error) {
+        console.error('Failed to initialize graph:', error);
+        document.getElementById('graph').innerHTML = 
+            `<div class="error">Error loading graph visualization: ${error.message}</div>`;
+    }
 }
 
 async function fetchBookmarks() {

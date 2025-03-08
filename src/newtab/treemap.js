@@ -184,6 +184,35 @@ function calculateOptimalLayout(totalTabs, width, viewportHeight) {
     };
 }
 
+// Add a default color scale
+const defaultColor = d3.scaleOrdinal(d3.schemeCategory10);
+
+// Add a color safety function
+function getSafeColor(d) {
+    try {
+        // If d has a color property, use it
+        if (d.data && d.data.color) {
+            return d3.color(d.data.color) || defaultColor(d.data.id);
+        }
+        // Otherwise use the default color scale
+        return defaultColor(d.data ? d.data.id : d.id || 0);
+    } catch (error) {
+        console.warn('Error getting color for node:', d);
+        return d3.color(defaultColor(0)); // Ensure we return a valid color object
+    }
+}
+
+// Add a helper function to safely get darker color
+function getDarkerColor(d, amount = 0.5) {
+    try {
+        const baseColor = getSafeColor(d);
+        return baseColor ? baseColor.darker(amount) : d3.color(defaultColor(0)).darker(amount);
+    } catch (error) {
+        console.warn('Error getting darker color:', error);
+        return d3.color(defaultColor(0)).darker(amount);
+    }
+}
+
 export async function drawTreemap(data) {
     if (!data?.activeWindows) {
         console.warn('Invalid data for treemap:', data);
@@ -353,38 +382,25 @@ export async function drawTreemap(data) {
         .attr('id', d => d.data.id)
         .attr('width', d => d.x1 - d.x0)
         .attr('height', d => d.y1 - d.y0)
-        .attr('fill', d => d.data.color)
-        .attr('opacity', d => {
-            // Use the same comprehensive check for bookmarks
+        .attr('fill', d => {
             const isBookmark = d.data.isBookmark || 
-                              (d.parent && d.parent.data.name === 'Window bookmark') || 
-                              (d.parent && d.parent.data.id === 'bookmark');
+                             (d.parent && d.parent.data.name === 'Window bookmark') || 
+                             (d.parent && d.parent.data.id === 'bookmark');
+            return isBookmark ? '#e8f4f8' : getSafeColor(d);
+        })
+        .attr('opacity', d => {
+            const isBookmark = d.data.isBookmark || 
+                             (d.parent && d.parent.data.name === 'Window bookmark') || 
+                             (d.parent && d.parent.data.id === 'bookmark');
             return isBookmark ? 0.9 : 1;
         })
         .attr('stroke', d => {
             const isBookmark = d.data.isBookmark || 
-                              (d.parent && d.parent.data.name === 'Window bookmark') || 
-                              (d.parent && d.parent.data.id === 'bookmark');
-            return isBookmark ? '#99c2d7' : 'none';
+                             (d.parent && d.parent.data.name === 'Window bookmark') || 
+                             (d.parent && d.parent.data.id === 'bookmark');
+            return isBookmark ? '#99c2d7' : getDarkerColor(d, 0.2);
         })
-        .attr('stroke-dasharray', d => {
-            const isBookmark = d.data.isBookmark || 
-                              (d.parent && d.parent.data.name === 'Window bookmark') || 
-                              (d.parent && d.parent.data.id === 'bookmark');
-            return isBookmark ? '4,4' : 'none';
-        })
-        .attr('rx', d => {
-            const isBookmark = d.data.isBookmark || 
-                              (d.parent && d.parent.data.name === 'Window bookmark') || 
-                              (d.parent && d.parent.data.id === 'bookmark');
-            return isBookmark ? '8' : '4';
-        })
-        .attr('ry', d => {
-            const isBookmark = d.data.isBookmark || 
-                              (d.parent && d.parent.data.name === 'Window bookmark') || 
-                              (d.parent && d.parent.data.id === 'bookmark');
-            return isBookmark ? '8' : '4';
-        });
+        .attr('stroke-width', 1);
 
     // 3. Add cell content container
     const cellContent = nodes.append('g')
