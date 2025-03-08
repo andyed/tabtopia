@@ -1,5 +1,6 @@
 import { tabSearch } from './search.js';
 import { getDomainFromUrl, getFaviconUrl } from './utility.js';
+import { browserState } from './state.js';
 
 // Graph visualization data
 let nodes = [];
@@ -24,7 +25,7 @@ async function init() {
     
     try {
         // Get stored graph data for faster initialization
-        const cachedGraphData = await browserState.getGraphData();
+        const cachedGraphData = await getGraphData();
         
         // Fetch data
         const [historyItems, windows] = await Promise.all([
@@ -66,19 +67,22 @@ async function init() {
         createForceGraph();
 
         // Periodically save node positions
-        setInterval(() => {
+        const positionSaveInterval = setInterval(() => {
             // Only save if simulation has stabilized
             if (simulation && simulation.alpha() < 0.1) {
-                browserState.storeNodePositions(nodes);
+                storeNodePositions(nodes);
             }
         }, 30000);
 
-        // Set up search functionality
-        setupSearch();
-        
-        // Set up view mode switching
-        setupViewModes();
-        
+        // Add this cleanup to avoid memory leaks when the page is unloaded
+        window.addEventListener('unload', () => {
+            clearInterval(positionSaveInterval);
+            // Save one last time when leaving
+            if (simulation && nodes.length > 0) {
+                storeNodePositions(nodes);
+            }
+        });
+
     } catch (error) {
         console.error('Failed to initialize graph:', error);
         document.getElementById('graph').innerHTML = 
@@ -1168,3 +1172,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 });
+
+// Add this helper function in graph.js to handle the storage operations
+async function getGraphData() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get('graphPersistentData', (result) => {
+            resolve(result.graphPersistentData || {
+                summaries: {},
+                customEdges: [],
+                nodePositions: {},
+                lastUpdated: null
+            });
+        });
+    });
+}
+
+// Add this helper function for storing positions
+async function storeNodePositions(nodes) {
+    try {
+        // Get existing data
+        const data = await getGraphData();
+        const nodePositions = {};
+        
+        // Save current node positions
+        nodes.forEach(node => {
+            if (node.id && (node.x !== undefined && node.y !== undefined)) {
+                nodePositions[node.id] = {
+                    x: node.x,
+                    y: node.y, 
+                    fixed: node.fx !== null || node.fy !== null
+                };
+            }
+        });
+        
+        data.nodePositions = nodePositions;
+        data.lastUpdated = Date.now();
+        
+        // Save to storage
+        chrome.storage.local.set({ 'graphPersistentData': data });
+        console.log(`Saved positions for ${Object.keys(nodePositions).length} nodes`);
+    } catch (e) {
+        console.warn('Error saving node positions:', e);
+    }
+}
