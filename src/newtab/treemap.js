@@ -1,3 +1,33 @@
+/**
+ * Treemap.js - Interactive D3 visualization of browser tabs and windows
+ * 
+ * This module provides a responsive treemap visualization of browser tabs and windows,
+ * with support for drag-and-drop tab management, interactive searching, and
+ * detailed readout panels. The treemap visualizes tabs grouped by window, with
+ * sizing based on tab usage and color-coding for recency.
+ * 
+ * Architecture Overview:
+ * - Uses D3.js for visualization and interaction
+ * - Maintains local state as a cache of browser data
+ * - Communicates with background service worker via Chrome messaging
+ * - Implements drag & drop for moving tabs between windows
+ * - Provides keyboard navigation and accessibility features
+ * - Integrates with readout panel for detailed tab information
+ * 
+ * State Management:
+ * - treemapState: Core visualization data including windows and tabs
+ * - interactionState: Tracks user focus, selection, and keyboard navigation
+ * - updateState: Controls rendering timing and debounce logic
+ * 
+ * @module treemap
+ * @requires d3
+ * @requires utility
+ * @requires readout
+ * @requires keyboardNav
+ * @requires init
+ * @requires state
+ */
+
 import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './utility.js';
 import { displayReadout, hideReadout } from './readout.js';
 import { handleKeyNavigation } from './keyboardNav.js';
@@ -213,6 +243,23 @@ function getDarkerColor(d, amount = 0.5) {
     }
 }
 
+/**
+ * Draw treemap visualization based on provided data
+ * 
+ * Creates a hierarchical treemap visualization of browser windows and tabs
+ * using D3.js. Handles adaptive sizing, color coding, and interaction setup.
+ * 
+ * Features:
+ * - Window grouping with hierarchical structure
+ * - Favicon loading with fallbacks
+ * - Tab and window color-coding by activity and recency
+ * - Automatic bookmark insertion for empty spaces
+ * - Drag and drop between windows
+ * - Interactive node selection
+ * 
+ * @param {Object} data - Browser state data with activeWindows array
+ * @returns {Promise<void>} - Resolves when treemap is fully rendered
+ */
 export async function drawTreemap(data) {
     if (!data?.activeWindows) {
         console.warn('Invalid data for treemap:', data);
@@ -1274,7 +1321,18 @@ function handleNodeClick(event, d) {
 // Track drag state
 let draggedTab = null;
 
-// Initialize D3 drag behavior
+/**
+ * Initialize drag and drop functionality for the treemap
+ * 
+ * Sets up D3 drag behavior on tab cells to enable moving tabs between windows
+ * by dragging. Configures drag start, drag, and drag end handlers and identifies
+ * valid drop targets.
+ * 
+ * Key interactions:
+ * - Drag start: Highlights dragged tab and potential drop targets
+ * - Dragging: Shows drag ghost and updates drop target highlighting
+ * - Drop: Moves tab to target window via Chrome API and refreshes visualization
+ */
 function initDragDrop() {
   console.log("Initializing drag and drop functionality");
   
@@ -1317,6 +1375,16 @@ function initDragDrop() {
 }
 
 // Keep the original working dragStarted function
+/**
+ * Handle start of drag operation
+ * 
+ * Creates visual feedback for drag start and identifies the tab being dragged.
+ * Sets up ghost element to follow cursor and highlights potential drop targets.
+ * 
+ * @param {Event} event - D3 drag event
+ * @param {Object} d - Tab data object
+ * @param {HTMLElement} node - DOM element being dragged
+ */
 function dragStarted(event, d, node) {
   console.log("Drag started for:", d);
   
@@ -1374,6 +1442,16 @@ function dragStarted(event, d, node) {
 // Add a variable to track the last valid drop target
 let lastValidTarget = null;
 
+/**
+ * Handle drag movement
+ * 
+ * Updates ghost element position and detects potential drop targets under cursor.
+ * Implements "sticky" target detection with timeout to improve usability.
+ * 
+ * @param {Event} event - D3 drag event
+ * @param {Object} d - Tab data object
+ * @param {HTMLElement} node - DOM element being dragged
+ */
 function dragging(event, d, node) {
   if (!draggedTab || !draggedTab.ghost) return;
   
@@ -1476,6 +1554,16 @@ function dragging(event, d, node) {
 
 // Fix the dragEnded function to properly convert windowId to integer
 // Update dragEnded to always check lastValidTarget as a fallback
+/**
+ * Handle end of drag operation
+ * 
+ * Determines final drop target and initiates tab move if valid.
+ * Handles fallback from stored targets and cleans up visual elements.
+ * 
+ * @param {Event} event - D3 drag event
+ * @param {Object} d - Tab data object
+ * @param {HTMLElement} node - DOM element being dragged
+ */
 function dragEnded(event, d, node) {
     if (!draggedTab) return;
     
@@ -1749,6 +1837,15 @@ setTimeout(() => {
 
 
 // Add this function definition before dragEnded
+/**
+ * Show notification message to the user
+ * 
+ * Displays a temporary notification message with animation
+ * and automatic dismissal. Supports success and error types.
+ * 
+ * @param {string} message - Message to display
+ * @param {string} type - Notification type ('success', 'error', or 'info')
+ */
 function showNotification(message, type) {
   // Prevent duplicates by removing existing notifications of the same type
   const existingNotifications = document.querySelectorAll(`.notification.${type}`);
