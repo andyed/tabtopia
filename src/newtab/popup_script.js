@@ -9,12 +9,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabCountEl = document.getElementById('tabCount');
     const windowCountEl = document.getElementById('windowCount');
     const tooltip = document.getElementById('tooltip');
-    const newTabBtn = document.getElementById('newTabBtn');
-    const groupTabsBtn = document.getElementById('groupTabsBtn');
+
     
     // Add these variables at the top level inside your DOMContentLoaded event handler
     const windowColorCache = new Map();
     const colorPalettes = {};
+    
+    // Add these variables at the top of your script
+    let focusableElements = [];
+    let currentFocusIndex = -1;
+    let isKeyboardNavigating = false;
     
     // Initialize loading state
     showLoading();
@@ -154,10 +158,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 .enter()
                 .append('g')
                 .attr('class', 'cell')
+                .attr('tabindex', '0') // Make focusable
                 .attr('transform', d => `translate(${d.x0 - windowNode.x0},${d.y0 - windowNode.y0})`)
                 .on('click', handleTabClick)
                 .on('mouseover', showTabTooltip)
                 .on('mouseout', hideTooltip)
+                .on('focus', handleCellFocus) // Add focus handler
+                .on('blur', handleCellBlur)   // Add blur handler
                 .each(function(d) {
                     const cell = d3.select(this);
                     const width = d.x1 - d.x0;
@@ -184,6 +191,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         .attr('href', d => d.data.favIconUrl || getLetterFavicon(d.data.url));
                 });
         });
+
+        // After rendering is complete, update the focusable elements list
+        setTimeout(() => {
+            focusableElements = Array.from(document.querySelectorAll('.cell'));
+            console.log(`Found ${focusableElements.length} focusable tab elements`);
+        }, 100);
     }
     
     /**
@@ -372,32 +385,37 @@ document.addEventListener('DOMContentLoaded', () => {
     function showTabTooltip(event, d) {
         const tabData = d.data;
         
+        // Skip if already showing keyboard tooltip
+        if (tooltip.classList.contains('keyboard-tooltip')) {
+            return;
+        }
+        
         tooltip.style.display = 'block';
         tooltip.innerHTML = `
             <div>${tabData.title}</div>
             <div style="font-size:10px; color:#9e9e9e; margin-top:4px; overflow:hidden; text-overflow:ellipsis;">${tabData.url}</div>
         `;
         
-        // Position tooltip
-        const rect = event.currentTarget.getBoundingClientRect();
-        const tooltipRect = tooltip.getBoundingClientRect();
-        
-        let left = event.clientX - tooltipRect.width / 2;
-        let top = rect.top - tooltipRect.height - 5;
-        
-        // Keep tooltip within viewport
-        if (left < 5) left = 5;
-        if (left + tooltipRect.width > window.innerWidth - 5) {
-            left = window.innerWidth - tooltipRect.width - 5;
+        // Position tooltip differently depending on whether it was triggered by mouse or keyboard
+        if (event) {
+            // Mouse-triggered tooltip
+            let left = event.clientX - tooltip.offsetWidth / 2;
+            let top = event.clientY - tooltip.offsetHeight - 10;
+            
+            // Keep tooltip within viewport
+            if (left < 5) left = 5;
+            if (left + tooltip.offsetWidth > window.innerWidth - 5) {
+                left = window.innerWidth - tooltip.offsetWidth - 5;
+            }
+            
+            // If tooltip would go above viewport, show it below
+            if (top < 5) {
+                top = event.clientY + 20;
+            }
+            
+            tooltip.style.left = `${left}px`;
+            tooltip.style.top = `${top}px`;
         }
-        
-        // If tooltip would go above viewport, show it below
-        if (top < 5) {
-            top = rect.bottom + 5;
-        }
-        
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
     }
     
     /**
@@ -408,29 +426,178 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     /**
+     * Handle cell focus event
+     */
+    function handleCellFocus(event, d) {
+        // Mark the current element as focused
+        d3.select(this).classed('keyboard-focused', true);
+        
+        // Show tooltip with a keyboard-specific class
+        const tabData = d.data;
+        
+        tooltip.style.display = 'block';
+        tooltip.classList.add('keyboard-tooltip');
+        tooltip.innerHTML = `
+            <div><strong>${tabData.title}</strong></div>
+            <div style="font-size:10px; color:#9e9e9e; margin-top:4px; overflow:hidden; text-overflow:ellipsis;">${tabData.url}</div>
+            <div style="margin-top:8px; font-size:11px; color:#aaa;">Press Enter to activate</div>
+        `;
+        
+        // Position tooltip near the focused cell
+        const rect = event.target.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        
+        let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+        let top = rect.top - tooltipRect.height - 10;
+        
+        // Keep tooltip within viewport
+        if (left < 5) left = 5;
+        if (left + tooltipRect.width > window.innerWidth - 5) {
+            left = window.innerWidth - tooltipRect.width - 5;
+        }
+        
+        // If tooltip would go above viewport, show it below
+        if (top < 5) {
+            top = rect.bottom + 10;
+        }
+        
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+        
+        // Update current focus index
+        currentFocusIndex = focusableElements.indexOf(event.target);
+        isKeyboardNavigating = true;
+    }
+    
+    /**
+     * Handle cell blur event
+     */
+    function handleCellBlur() {
+        // Remove focus styling
+        d3.select(this).classed('keyboard-focused', false);
+        
+        // Hide tooltip with a small delay to prevent flashing during focus changes
+        setTimeout(() => {
+            if (!document.activeElement.classList.contains('cell')) {
+                tooltip.style.display = 'none';
+                tooltip.classList.remove('keyboard-tooltip');
+            }
+        }, 50);
+    }
+    
+    /**
+     * Handle keyboard navigation
+     */
+    function handleKeyNavigation(e) {
+        // Only handle if we have focusable elements
+        if (focusableElements.length === 0) return;
+        
+        // Handle various key presses
+        switch (e.key) {
+            case 'ArrowRight':
+                e.preventDefault();
+                moveFocus(1);
+                break;
+                
+            case 'ArrowLeft':
+                e.preventDefault();
+                moveFocus(-1);
+                break;
+                
+            case 'ArrowDown':
+                e.preventDefault();
+                // Estimate number of items per row based on container width
+                const itemsPerRow = Math.max(1, Math.floor(treemapContainer.clientWidth / 50));
+                moveFocus(itemsPerRow);
+                break;
+                
+            case 'ArrowUp':
+                e.preventDefault();
+                const itemsPerRowUp = Math.max(1, Math.floor(treemapContainer.clientWidth / 50));
+                moveFocus(-itemsPerRowUp);
+                break;
+                
+            case 'Home':
+                e.preventDefault();
+                moveFocusToIndex(0);
+                break;
+                
+            case 'End':
+                e.preventDefault();
+                moveFocusToIndex(focusableElements.length - 1);
+                break;
+                
+            case 'Enter':
+            case ' ': // Space
+                if (document.activeElement.classList.contains('cell')) {
+                    e.preventDefault();
+                    // Trigger activation of the focused tab
+                    const focusedElement = document.activeElement;
+                    const elementData = d3.select(focusedElement).datum();
+                    handleTabClick(null, elementData);
+                }
+                break;
+        }
+    }
+    
+    /**
+     * Move focus by relative offset
+     */
+    function moveFocus(offset) {
+        // If nothing is focused, start with first element
+        if (currentFocusIndex === -1) {
+            currentFocusIndex = 0;
+        } else {
+            // Calculate new index with wrap-around
+            currentFocusIndex = (currentFocusIndex + offset + focusableElements.length) % focusableElements.length;
+        }
+        
+        // Focus the element
+        if (focusableElements[currentFocusIndex]) {
+            focusableElements[currentFocusIndex].focus();
+        }
+        
+        isKeyboardNavigating = true;
+    }
+    
+    /**
+     * Move focus to specific index
+     */
+    function moveFocusToIndex(index) {
+        if (index >= 0 && index < focusableElements.length) {
+            currentFocusIndex = index;
+            focusableElements[index].focus();
+            isKeyboardNavigating = true;
+        }
+    }
+    
+    /**
+     * Reset keyboard navigation when using mouse
+     */
+    function handleMouseMovement() {
+        if (isKeyboardNavigating) {
+            isKeyboardNavigating = false;
+        }
+    }
+    
+    /**
      * Setup event listeners
      */
     function setupEventListeners() {
         // Search
         searchInput.addEventListener('input', handleSearch);
         
-        // New tab button
-        newTabBtn.addEventListener('click', () => {
-            chrome.tabs.create({});
-            window.close();
-        });
+        // Keyboard navigation
+        document.addEventListener('keydown', handleKeyNavigation);
         
-        // Group tabs button
-        groupTabsBtn.addEventListener('click', () => {
-            chrome.tabs.query({ currentWindow: true }, tabs => {
-                // Group all tabs that aren't in a group
-                const ungroupedTabs = tabs.filter(tab => tab.groupId === -1).map(tab => tab.id);
-                if (ungroupedTabs.length > 0) {
-                    chrome.tabs.group({ tabIds: ungroupedTabs }, () => {
-                        window.close();
-                    });
-                }
-            });
+        // Mouse interaction
+        document.addEventListener('mousemove', handleMouseMovement);
+        
+        // Update focusable elements list when window resizes
+        window.addEventListener('resize', () => {
+            setTimeout(() => {
+                focusableElements = Array.from(document.querySelectorAll('.cell'));
+            }, 200);
         });
     }
     
