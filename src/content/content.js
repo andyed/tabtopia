@@ -85,6 +85,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse(tabData);
     }
 
+    if (request.action === "getPageContent") {
+        sendResponse({ content: document.body.innerText });
+    }
+
     return true;
 });
 

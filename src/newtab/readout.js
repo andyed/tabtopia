@@ -9,9 +9,28 @@ const BOOKMARKS_PER_PAGE = 10;
 let stickyCell = null;  // Track currently sticky cell
 
 let inactivityTimer = null;
-const INACTIVITY_TIMEOUT = 30000; // 30 seconds
+const INACTIVITY_TIMEOUT = 200000;
 
 let currentMotivationalMessage = null;
+
+// Add cache for summaries at the top of the file
+const summaryCache = new Map();
+const SUMMARY_CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
+
+// Add these constants at the top with other constants
+const MAX_SUMMARY_LINES = 5;
+const LINE_HEIGHT = 20; // Approximate height of a line in pixels
+
+// Add at the top with other constants
+const summaryQueue = new Set();
+let isProcessingQueue = false;
+
+// Update the summarizer options
+const SUMMARIZER_OPTIONS = {
+    type: 'headline', // Change to headline for shorter summaries
+    format: 'plain-text',
+    length: 'short'
+};
 
 // Helper function to get domain from URL
 function getDomain(url) {
@@ -151,7 +170,204 @@ async function searchHistoryForTab(url) {
     }
 }
 
-// Update the bookmark detection in displayReadout
+async function getTabContent(url) {
+    try {
+        // Find the tab with this URL
+        const [tab] = await chrome.tabs.query({ url });
+        
+        if (!tab) {
+            console.log('No matching tab found for URL:', url);
+            return null;
+        }
+
+        // Execute script in the tab to get content
+        const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => {
+                // Get all text content, excluding scripts and styles
+                const walker = document.createTreeWalker(
+                    document.body,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: (node) => {
+                            const parent = node.parentElement;
+                            if (!parent) return NodeFilter.FILTER_REJECT;
+                            
+                            // Skip hidden elements
+                            if (parent.offsetHeight === 0) return NodeFilter.FILTER_REJECT;
+                            
+                            // Skip script and style tags
+                            const tag = parent.tagName.toLowerCase();
+                            if (tag === 'script' || tag === 'style') return NodeFilter.FILTER_REJECT;
+                            
+                            return NodeFilter.FILTER_ACCEPT;
+                        }
+                    }
+                );
+
+                let content = '';
+                let node;
+                while (node = walker.nextNode()) {
+                    const text = node.textContent.trim();
+                    if (text) content += text + ' ';
+                }
+                
+                return content.trim();
+            }
+        });
+
+        return result;
+    } catch (error) {
+        console.error('Error getting tab content:', error);
+        return null;
+    }
+}
+
+// Add cache management functions
+function getCachedSummary(url) {
+    const cached = summaryCache.get(url);
+    if (!cached) return null;
+    
+    // Check if cache is still valid
+    if (Date.now() - cached.timestamp > SUMMARY_CACHE_DURATION) {
+        summaryCache.delete(url);
+        return null;
+    }
+    
+    return cached.summary;
+}
+
+function cacheSummary(url, summary) {
+    summaryCache.set(url, {
+        summary,
+        timestamp: Date.now()
+    });
+    
+    // Add summary to search index if the function exists
+    if (typeof tabSearch.addSummaryToIndex === 'function') {
+        tabSearch.addSummaryToIndex(url, summary);
+    }
+}
+
+// Update the queue processing function to be more aggressive
+async function processSummaryQueue() {
+    if (isProcessingQueue) return;
+    isProcessingQueue = true;
+
+    try {
+        const urls = Array.from(summaryQueue);
+        summaryQueue.clear();
+
+        await Promise.all(urls.map(async (url) => {
+            // Skip if already cached
+            if (getCachedSummary(url)) return;
+
+            // Skip chrome URLs
+            if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) return;
+
+            try {
+                const summary = await summarizeUrl(url);
+                if (summary) {
+                    cacheSummary(url, summary);
+                    // Update current readout if it's showing this URL
+                    const readout = document.getElementById('readout');
+                    const summaryContent = document.getElementById('summary-content');
+                    const currentUrl = readout?.querySelector('.readout-url')?.textContent;
+                    if (summaryContent && formatUrlForDisplay(url) === currentUrl) {
+                        summaryContent.innerHTML = createTruncatedSummary(summary);
+                    }
+                }
+            } catch (error) {
+                console.error('Error generating summary for:', url, error);
+            }
+        }));
+    } finally {
+        isProcessingQueue = false;
+        if (summaryQueue.size > 0) {
+            processSummaryQueue().catch(console.error);
+        }
+    }
+}
+
+// Update summarizeUrl to use the new options
+async function summarizeUrl(url) {
+    try {
+        // Skip chrome:// URLs
+        if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
+            console.log('Skipping summary for chrome URL:', url);
+            return null;
+        }
+
+        // Check if the Summarizer API is available
+        if (!('ai' in self && 'summarizer' in self.ai)) {
+            console.log('Summarizer API not available');
+            return null;
+        }
+
+        const available = (await self.ai.summarizer.capabilities()).available;
+        if (available === 'no') {
+            console.log('Summarizer API not usable');
+            return null;
+        }
+
+        let summarizer;
+        if (available === 'readily') {
+            summarizer = await self.ai.summarizer.create(SUMMARIZER_OPTIONS);
+        } else {
+            summarizer = await self.ai.summarizer.create({
+                ...SUMMARIZER_OPTIONS,
+                monitor(m) {
+                    m.addEventListener('downloadprogress', (e) => {
+                        console.log(`Downloading summarizer model: ${e.loaded}/${e.total} bytes`);
+                    });
+                }
+            });
+            await summarizer.ready;
+        }
+
+        const content = await getTabContent(url);
+        if (!content) {
+            console.log('No content available to summarize');
+            return null;
+        }
+
+        return await summarizer.summarize(content, {
+            context: `Summarize this webpage in one sentence`
+        });
+    } catch (error) {
+        console.error('Error summarizing URL:', error);
+        return null;
+    }
+}
+
+// Add this helper function for summary display
+function createTruncatedSummary(summary) {
+    if (!summary) return '';
+    
+    const lines = summary.split('\n');
+    const isTruncated = lines.length > MAX_SUMMARY_LINES;
+    
+    const truncatedSummary = isTruncated 
+        ? lines.slice(0, MAX_SUMMARY_LINES).join('\n')
+        : summary;
+    
+    return `
+        <div class="summary-content">
+            <div class="summary-text" style="line-height: ${LINE_HEIGHT}px">
+                ${truncatedSummary}
+            </div>
+            ${isTruncated ? `
+                <div class="summary-expand">
+                    <button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`')}\`">
+                        Show more...
+                    </button>
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+// Update displayReadout to queue summaries instead of generating them immediately
 export async function displayReadout(d, event) {
     // Clear existing timeout
     if (readoutTimeout) {
@@ -214,6 +430,16 @@ export async function displayReadout(d, event) {
     // Get domain for display
     const domain = getDomain(url);
 
+    // Check if we should show summary section
+    const isChromePage = url.startsWith('chrome://') || url.startsWith('chrome-extension://');
+    const cachedSummary = getCachedSummary(url);
+    const showSummarySection = !isChromePage;
+
+    // Check if this is a search result with summary match
+    const searchInput = document.getElementById('tabSearch');
+    const searchTerm = searchInput?.value.trim().toLowerCase();
+    const searchMatch = searchTerm ? tabSearch.getMatchContext(url, searchTerm) : null;
+
     // Build readout HTML
     const readout = document.getElementById('readout');
     if (!readout) {
@@ -225,6 +451,12 @@ export async function displayReadout(d, event) {
         <div class="readout-header ${isBookmark ? 'bookmark' : ''}">
             <div class="readout-title">${title}</div>
             <div class="readout-url">${displayUrl}</div>
+            ${searchMatch?.summaryContext ? `
+                <div class="search-match-context">
+                    <span class="match-label">Matched in summary:</span>
+                    <span class="match-text">"...${searchMatch.summaryContext}..."</span>
+                </div>
+            ` : ''}
         </div>
         <div class="readout-details">
             ${isBookmark ? `
@@ -246,7 +478,19 @@ export async function displayReadout(d, event) {
             `}
         </div>
         
-        <!-- History section first -->
+        ${showSummarySection ? `
+            <div class="summary-section">
+                <h3>Summary ${cachedSummary ? '<span class="cached">(cached)</span>' : ''}</h3>
+                <div id="summary-content" class="summary-content">
+                    ${cachedSummary ? 
+                        createTruncatedSummary(cachedSummary) : 
+                        '<div class="loading">Generating summary...</div>'
+                    }
+                </div>
+            </div>
+        ` : ''}
+
+        <!-- History section -->
         ${sortedHistory.length > 0 ? `
             <div class="history-section">
                 <h3>History from ${domain} (${sortedHistory.length})</h3>
@@ -263,7 +507,7 @@ export async function displayReadout(d, event) {
             </div>
         ` : ''}
         
-        <!-- Bookmarks section second -->
+        <!-- Bookmarks section -->
         ${bookmarks.length > 0 ? `
             <div class="bookmarks-section">
                 <h3>Bookmarks from ${domain} (${bookmarks.length})</h3>
@@ -284,9 +528,15 @@ export async function displayReadout(d, event) {
     // Show readout
     readout.style.display = 'block';
 
-    // Position
+    // Position readout
     if (event) {
         positionReadout(event);
+    }
+
+    // Queue summary generation if needed
+    if (showSummarySection && !cachedSummary) {
+        summaryQueue.add(url);
+        processSummaryQueue().catch(console.error);
     }
 }
 
@@ -329,10 +579,18 @@ function positionReadout(event) {
     readout.style.top = `${y}px`;
 }
 
+// Add cache cleanup on hide
 export function hideReadout() {
     const readoutContainer = document.getElementById('readout');
     readoutContainer.style.display = 'none';
     readoutContainer.innerHTML = '';
+    
+    // Cleanup old cache entries
+    for (const [url, cached] of summaryCache.entries()) {
+        if (Date.now() - cached.timestamp > SUMMARY_CACHE_DURATION) {
+            summaryCache.delete(url);
+        }
+    }
 }
 
 function showDefaultReadout(categorizedDataCache) {
@@ -341,8 +599,8 @@ function showDefaultReadout(categorizedDataCache) {
         console.warn('Readout container or data not available');
         return;
     }
-   // First, clear any existing content
-   readoutContainer.innerHTML = '';
+    // First, clear any existing content
+    readoutContainer.innerHTML = '';
     // Initialize search box if needed
     initializeSearchBox();
 
@@ -377,7 +635,7 @@ function showDefaultReadout(categorizedDataCache) {
 }
 
 function handleTabSearch(event) {
-    const searchTerm = event.target.value.trim();
+    const searchTerm = event.target.value.trim().toLowerCase();
     
     // Reset all cells if search is empty
     if (!searchTerm) {
@@ -394,11 +652,25 @@ function handleTabSearch(event) {
     d3.selectAll('#treemap g').each(function(d) {
         const tabId = parseInt(d.data.id.replace('tab', ''));
         const isMatch = matchedIds.has(tabId);
-        const opacity = isMatch ? 1 : 0.3;
+        const matchType = results.find(r => r.tab.id === tabId)?.matchType;
+        
+        // Higher opacity for summary matches
+        const opacity = isMatch ? (matchType === 'summary' ? 0.8 : 1) : 0.3;
         
         d3.select(this)
             .style('opacity', opacity)
             .style('transition', 'opacity 0.2s ease-in-out');
+            
+        // Add a subtle indicator for summary matches
+        if (isMatch && matchType === 'summary') {
+            d3.select(this).select('rect')
+                .style('stroke', '#4CAF50')
+                .style('stroke-width', '2px');
+        } else {
+            d3.select(this).select('rect')
+                .style('stroke', null)
+                .style('stroke-width', null);
+        }
     });
 }
 

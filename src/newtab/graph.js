@@ -1,5 +1,6 @@
 import { tabSearch } from './search.js';
 import { getDomainFromUrl, getFaviconUrl } from './utility.js';
+import { browserState } from './state.js';
 
 // Graph visualization data
 let nodes = [];
@@ -18,37 +19,75 @@ let currentViewMode = 'time'; // 'time' or 'domain'
 
 // Initialize the visualization
 async function init() {
-    // Fetch data
-    const [historyItems, windows] = await Promise.all([
-        chrome.history.search({ text: '', maxResults: 200, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
-        chrome.windows.getAll({ populate: true })
-    ]);
-
-    // Get bookmarks
-    const bookmarks = await fetchBookmarks();
+    // Show loading indicator
+    document.getElementById('graph').innerHTML = 
+        '<div class="loading"><div class="spinner"></div>Loading your browsing data...</div>';
     
-    // Track currently open tabs
-    windows.forEach(window => {
-        if (window.tabs) {
-            window.tabs.forEach(tab => {
-                currentlyOpenTabs.set(tab.id, tab);
-            });
+    try {
+        // Get stored graph data for faster initialization
+        const cachedGraphData = await getGraphData();
+        
+        // Fetch data
+        const [historyItems, windows] = await Promise.all([
+            chrome.history.search({ text: '', maxResults: 200, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
+            chrome.windows.getAll({ populate: true })
+        ]);
+
+        // Get bookmarks
+        const bookmarks = await fetchBookmarks();
+        
+        // Track currently open tabs
+        windows.forEach(window => {
+            if (window.tabs) {
+                window.tabs.forEach(tab => {
+                    currentlyOpenTabs.set(tab.id, tab);
+                });
+            }
+        });
+
+        // Process data with cached positions
+        processHistoryData(historyItems, bookmarks, windows, cachedGraphData.nodePositions);
+        
+        // Restore summaries from cache
+        if (Object.keys(cachedGraphData.summaries).length > 0) {
+            for (const [url, summary] of Object.entries(cachedGraphData.summaries)) {
+                const node = nodes.find(n => n.url === url);
+                if (node) {
+                    node.summary = summary;
+                }
+            }
         }
-    });
+        
+        // Add custom edges
+        if (cachedGraphData.customEdges.length > 0) {
+            addCustomEdges(cachedGraphData.customEdges);
+        }
+        
+        // Create the visualization
+        createForceGraph();
 
-    // Build graph data
-    processHistoryData(historyItems, bookmarks, windows);
-    
-    // Create the visualization
-    createForceGraph();
+        // Periodically save node positions
+        const positionSaveInterval = setInterval(() => {
+            // Only save if simulation has stabilized
+            if (simulation && simulation.alpha() < 0.1) {
+                storeNodePositions(nodes);
+            }
+        }, 30000);
 
-    // Set up search functionality
-    setupSearch();
-    
-    // Set up view mode switching
-    setupViewModes();
-    
-    // REMOVE THIS LINE: setupControls();
+        // Add this cleanup to avoid memory leaks when the page is unloaded
+        window.addEventListener('unload', () => {
+            clearInterval(positionSaveInterval);
+            // Save one last time when leaving
+            if (simulation && nodes.length > 0) {
+                storeNodePositions(nodes);
+            }
+        });
+
+    } catch (error) {
+        console.error('Failed to initialize graph:', error);
+        document.getElementById('graph').innerHTML = 
+            `<div class="error">Error loading graph visualization: ${error.message}</div>`;
+    }
 }
 
 async function fetchBookmarks() {
@@ -446,28 +485,48 @@ function createForceGraph() {
             return d3.interpolateSpectral(hash / 100);
         });
     
+    // Update the favicon image creation and loading code 
+
+    // Replace this section:
     // Add favicon images to nodes with placeholder
     const nodeImages = node.append('image')
+        .attr('class', 'favicon')
         .attr('x', -8)
         .attr('y', -8)
         .attr('width', 16)
         .attr('height', 16)
         .attr('clip-path', 'circle(8px)')
-        .attr('xlink:href', ''); // Empty placeholder initially
-    
-    // Asynchronously load favicons using our standard utility function
-    nodes.forEach(async (d, i) => {
-        if (d.url) {
-            try {
-                const faviconUrl = await getFaviconUrl(d.url, 16);
-                if (faviconUrl) {
-                    // Update the favicon URL for this specific node
+        .attr('xlink:href', '/images/default-favicon.png'); // Default while loading
+
+    // Use the same approach as treemap for consistency
+    nodes.forEach((d, i) => {
+        if (!d.url) return;
+        
+        try {
+            // Extract the domain for direct favicon fetching
+            const domain = getDomainFromUrl(d.url);
+            if (domain) {
+                // Try direct domain favicon first - this works in treemap
+                const directFaviconUrl = `https://${domain}/favicon.ico`;
+                
+                // Test if the image loads
+                const img = new Image();
+                img.onload = function() {
                     d3.select(nodeImages.nodes()[i])
-                        .attr('xlink:href', faviconUrl);
-                }
-            } catch (e) {
-                console.warn('Error loading favicon for:', d.url);
+                        .attr('xlink:href', directFaviconUrl);
+                };
+                
+                img.onerror = function() {
+                    // If direct favicon fails, try Google's service
+                    const googleIconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
+                    d3.select(nodeImages.nodes()[i])
+                        .attr('xlink:href', googleIconUrl);
+                };
+                
+                img.src = directFaviconUrl;
             }
+        } catch (e) {
+            console.warn('Error loading favicon for:', d.url);
         }
     });
     
@@ -485,8 +544,27 @@ function createForceGraph() {
         hideTooltip();
     })
     .on('click', (event, d) => {
-        // Navigate to URL on click
-        chrome.tabs.create({ url: d.url });
+        // If it's an active tab, focus it instead of creating a new tab
+        if (d.isActive) {
+            // Find the tab ID from the currentlyOpenTabs map
+            const tabToFocus = Array.from(currentlyOpenTabs.entries())
+                .find(([id, tab]) => tab.url === d.url);
+            
+            if (tabToFocus) {
+                chrome.tabs.update(tabToFocus[0], { active: true }, (tab) => {
+                    // If the tab is in a different window, focus that window too
+                    if (tab && tab.windowId) {
+                        chrome.windows.update(tab.windowId, { focused: true });
+                    }
+                });
+            } else {
+                // Fallback to creating a new tab if we can't find the existing one
+                chrome.tabs.create({ url: d.url });
+            }
+        } else {
+            // For non-active nodes, create a new tab as before
+            chrome.tabs.create({ url: d.url });
+        }
     });
 
     // Create force simulation with forces based on current view mode
@@ -1094,3 +1172,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 });
+
+// Add this helper function in graph.js to handle the storage operations
+async function getGraphData() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get('graphPersistentData', (result) => {
+            resolve(result.graphPersistentData || {
+                summaries: {},
+                customEdges: [],
+                nodePositions: {},
+                lastUpdated: null
+            });
+        });
+    });
+}
+
+// Add this helper function for storing positions
+async function storeNodePositions(nodes) {
+    try {
+        // Get existing data
+        const data = await getGraphData();
+        const nodePositions = {};
+        
+        // Save current node positions
+        nodes.forEach(node => {
+            if (node.id && (node.x !== undefined && node.y !== undefined)) {
+                nodePositions[node.id] = {
+                    x: node.x,
+                    y: node.y, 
+                    fixed: node.fx !== null || node.fy !== null
+                };
+            }
+        });
+        
+        data.nodePositions = nodePositions;
+        data.lastUpdated = Date.now();
+        
+        // Save to storage
+        chrome.storage.local.set({ 'graphPersistentData': data });
+        console.log(`Saved positions for ${Object.keys(nodePositions).length} nodes`);
+    } catch (e) {
+        console.warn('Error saving node positions:', e);
+    }
+}

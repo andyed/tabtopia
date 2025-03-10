@@ -1,82 +1,329 @@
-// This file contains the background script for the Chrome extension. 
-// It listens for browser events and manages the state of the extension, 
-// including tracking browser history and active tabs.
+/**
+ * Tabtopia - Background Service Worker
+ * 
+ * This service worker powers the tab visualization and relationship tracking system.
+ * It serves as the central data hub that maintains tab state across the browser
+ * and provides real-time updates to visualization components.
+ * 
+ * Architecture Overview:
+ * - Uses Maps for efficient tab and window state tracking
+ * - Implements a comprehensive event system for real-time UI updates
+ * - Leverages Chrome's webNavigation API for accurate navigation tracking
+ * - Features an intelligent favicon queue system with progressive retries
+ * - Provides bidirectional tab relationship mapping for graph visualization
+ * 
+ * Data Flow:
+ * 1. Chrome events (tab created, updated, etc.) → Background script
+ * 2. Background script processes and updates browserState
+ * 3. Notifications sent to visualization components
+ * 4. UI updates reflect current browser state
+ */
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("Chrome History Plugin installed.");
-  console.log('Extension installed');
+  console.log("Tabtopia installed successfully.");
 });
-const processedNavigations = new Map(); // Track already processed navigations
 
-// Error handling for unhandled exceptions
+/**
+ * Navigation deduplication system
+ * 
+ * Chrome sometimes fires multiple events for the same navigation.
+ * This map tracks already processed navigations to prevent duplicate handling.
+ * 
+ * Format: { "tabId-url-timestamp": { timestamp, handled, type, qualifiers } }
+ */
+const processedNavigations = new Map();
+
+// Global error handlers to ensure service worker stability
 self.addEventListener('error', (event) => {
-    console.error('Uncaught error in service worker:', event.error);
+  console.error('Uncaught error in service worker:', event.error);
 });
 
 self.addEventListener('unhandledrejection', (event) => {
-    console.error('Unhandled promise rejection:', event.reason);
+  console.error('Unhandled promise rejection:', event.reason);
 });
 
-let historyEntries = [];
-let activeTabs = [];
-let lastClickedLink = null;
-let tabEdges = new Map(); // Initialize tabEdges as a Map
+/**
+ * Browser state cache collections
+ * 
+ * These structures maintain lightweight references to browser state
+ * that can be quickly serialized and sent to visualization components.
+ */
+let historyEntries = [];  // Recent browsing history entries
+let activeTabs = [];      // Currently active tabs across all windows
+let lastClickedLink = null; // Tracks the most recently clicked link for relationship mapping
+let tabEdges = new Map(); // Graph edge data connecting related tabs
 
-// State variables
+/**
+ * Core application state manager
+ * 
+ * The browserState object is the central data structure that maintains
+ * the complete state of all tabs, windows, and their relationships.
+ * It uses Maps for O(1) lookups and efficient memory usage.
+ * 
+ * This is the source of truth for all tab visualizations.
+ */
 const browserState = {
-    tabs: new Map(),
-    windows: new Map(),
-    tabHistory: new Map(), // Moved from separate declaration 
-    tabRelationships: new Map(), // Moved from separate declaration
-    tabActivityLog: new Map(), // Moved from separate declaration
-    lastActive: null,
-    listeners: [],
+  tabs: new Map(),              // All tabs by ID with complete metadata
+  windows: new Map(),           // Window grouping data with tab references
+  tabHistory: new Map(),        // Navigation history sequence per tab
+  tabRelationships: new Map(),  // Parent/child and sibling relationships between tabs
+  tabActivityLog: new Map(),    // User interaction and time-spent data
+  lastActive: null,             // Last active tab and window reference
+  listeners: [],                // State change subscribers
+
+  /**
+   * Notifies all registered listeners about state changes
+   * This enables reactive UI updates without polling
+   * 
+   * @param {string} changeType - Category of state change (tab, window, etc)
+   * @param {Object} data - Relevant change details
+   */
+  notifyChange(changeType, data) {
+    console.log(`State change: ${changeType}`, data);
+    this.listeners.forEach(listener => {
+      try {
+        listener(changeType, data);
+      } catch (error) {
+        console.error('Error in state listener:', error);
+      }
+    });
+  },
+
+  /**
+   * Registers a callback for state changes with automatic cleanup
+   * Returns an unsubscribe function to prevent memory leaks
+   * 
+   * @param {Function} callback - Function to call on state changes
+   * @return {Function} Unsubscribe function to remove the listener
+   */
+  subscribe(callback) {
+    this.listeners.push(callback);
+    return () => {
+      this.listeners = this.listeners.filter(cb => cb !== callback);
+    };
+  },
+
+  /**
+   * Retrieves complete tab data with related information
+   * Combines core tab data with history and relationship context
+   * 
+   * @param {number} tabId - Chrome tab ID to fetch
+   * @return {Object|null} Comprehensive tab data or null if not found
+   */
+  getTabData(tabId) {
+    const tab = this.tabs.get(tabId);
+    if (!tab) return null;
     
-    // Add notification method
-    notifyChange(changeType, data) {
-        console.log(`State change: ${changeType}`, data);
-        this.listeners.forEach(listener => {
-            try {
-                listener(changeType, data);
-            } catch (error) {
-                console.error('Error in state listener:', error);
-            }
-        });
-    },
-    
-    // Add subscription method
-    subscribe(callback) {
-        this.listeners.push(callback);
-        return () => {
-            this.listeners = this.listeners.filter(cb => cb !== callback);
-        };
-    },
-    
-    // Helper to get tab data with all related info
-    getTabData(tabId) {
-        const tab = this.tabs.get(tabId);
-        if (!tab) return null;
-        
-        return {
-            ...tab,
-            history: this.tabHistory.get(tabId) || [],
-            relationship: this.tabRelationships.get(tabId),
-            activity: this.tabActivityLog.get(tabId)
-        };
-    }
+    return {
+      ...tab,
+      history: this.tabHistory.get(tabId) || [],
+      relationship: this.tabRelationships.get(tabId),
+      activity: this.tabActivityLog.get(tabId)
+    };
+  }
 };
 
-// Add tracking constants
+/**
+ * Activity tracking configuration constants
+ * 
+ * These thresholds determine how tab activity time is calculated
+ * and when tabs are considered active vs idle
+ */
 const TAB_ACTIVITY = {
-  ACTIVE_THRESHOLD: 1000,    // 1 second minimum to count as active time
-  IDLE_THRESHOLD: 300000,    // 5 minutes without interaction = idle
-  UPDATE_INTERVAL: 5000      // Update active tab time every 5 seconds
+  ACTIVE_THRESHOLD: 1000,    // Min milliseconds to count as active time (prevents counting quick tab switches)
+  IDLE_THRESHOLD: 300000,    // Time without interaction to consider tab idle (5 minutes)
+  UPDATE_INTERVAL: 5000      // How often to update active tab time counters
 };
 
-// Add this new tracking Map after the browserState declaration
-const navigationEvents = new Map(); // Track navigation sequence per tab
+/**
+ * Navigation sequence tracker
+ * 
+ * Maps tab IDs to arrays of navigation events for that tab
+ * Enables back/forward detection and navigation classification
+ */
+const navigationEvents = new Map();
 
-// Centralized event dispatcher
+/**
+ * Favicon queue system
+ * 
+ * Manages efficient favicon fetching with intelligent retries.
+ * Implements progressive backoff for failed requests and
+ * batch processing to reduce browser API load.
+ * 
+ * Key features:
+ * - Prioritized processing (critical favicons first)
+ * - Automatic retries with exponential backoff
+ * - Batch processing for performance
+ * - Special URL handling
+ */
+const faviconQueue = {
+  pending: new Map(),  // Map of tabId -> {url, attempts, lastCheck, priority}
+  processing: false,   // Whether queue is currently being processed
+  
+  /**
+   * Add a favicon check to the queue with optional priority
+   * 
+   * @param {number} tabId - Tab ID to check favicon for
+   * @param {string} url - URL to fetch favicon for
+   * @param {string} priority - 'normal' or 'high' priority
+   */
+  enqueue(tabId, url, priority = 'normal') {
+    // Skip special URLs that can't use chrome://favicon
+    if (url.startsWith('chrome://') || url.startsWith('file://') || 
+        url.startsWith('about:') || !url) {
+      return;
+    }
+    
+    // Update existing entry or add new one
+    const existing = this.pending.get(tabId);
+    if (existing && existing.url === url) {
+      // Don't reset attempts if already in queue
+      existing.priority = priority === 'high' ? 'high' : existing.priority;
+      this.pending.set(tabId, existing);
+    } else {
+      // New entry
+      this.pending.set(tabId, {
+        url,
+        attempts: 0,
+        lastCheck: 0,
+        priority
+      });
+    }
+    
+    // Start processing if not already running
+    if (!this.processing) {
+      this.processQueue();
+    }
+  },
+  
+  /**
+   * Process the favicon queue in prioritized batches
+   * 
+   * Processes favicons in order of:
+   * 1. High priority items first
+   * 2. Then by time since last check (oldest first)
+   * 
+   * Uses batching to limit Chrome API load and improve performance
+   */
+  processQueue() {
+    if (this.pending.size === 0) {
+      this.processing = false;
+      return;
+    }
+    
+    this.processing = true;
+    
+    // Sort queue by priority and time since last check
+    const now = Date.now();
+    const entries = Array.from(this.pending.entries())
+      .sort(([, a], [, b]) => {
+        // High priority first
+        if (a.priority === 'high' && b.priority !== 'high') return -1;
+        if (a.priority !== 'high' && b.priority === 'high') return 1;
+        // Then by time since last check
+        return (a.lastCheck - b.lastCheck);
+      });
+    
+    // Process first batch of up to 5 entries
+    const batch = entries.slice(0, 5);
+    
+    // Remove processed entries from pending queue
+    batch.forEach(([tabId]) => this.pending.delete(tabId));
+    
+    // Process batch
+    Promise.all(batch.map(([tabId, item]) => this.checkFavicon(tabId, item)))
+      .finally(() => {
+        // Schedule next batch after a short delay
+        setTimeout(() => this.processQueue(), 50);
+      });
+  },
+  
+  /**
+   * Check favicon for a specific tab with progressive retry logic
+   * 
+   * Implements smart detection and fallback mechanisms:
+   * 1. Try to get favicon directly from tab
+   * 2. If missing, retry with progressive backoff
+   * 3. After 3 attempts, use Chrome's favicon service as fallback
+   * 4. Send notifications when favicon is found
+   * 
+   * @param {number} tabId - Tab ID to check
+   * @param {Object} item - Queue item with URL and attempt data
+   */
+  async checkFavicon(tabId, item) {
+    const { url, attempts } = item;
+    
+    try {
+      // Mark as checked
+      item.lastCheck = Date.now();
+      item.attempts++;
+      
+      // Get tab info
+      const tab = await new Promise(resolve => {
+        chrome.tabs.get(tabId, tab => {
+          if (chrome.runtime.lastError) {
+            resolve(null);
+          } else {
+            resolve(tab);
+          }
+        });
+      });
+      
+      // Tab doesn't exist anymore or URL changed
+      if (!tab || tab.url !== url) {
+        return;
+      }
+      
+      // Tab already has favicon
+      if (tab.favIconUrl) {
+        updateTabMetadata(tabId, { favIconUrl: tab.favIconUrl });
+        
+        // Explicit notification
+        sendMessageWithErrorHandling({
+          action: 'explicitFaviconUpdate',
+          tabId,
+          favIconUrl: tab.favIconUrl,
+          timestamp: Date.now()
+        });
+        return;
+      }
+      
+      // If no favicon after 3 attempts, use fallback
+      if (attempts >= 3) {
+        const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(url)}`;
+        updateTabMetadata(tabId, { favIconUrl: fallbackFavicon });
+        
+        // Notify about fallback favicon
+        sendMessageWithErrorHandling({
+          action: 'explicitFaviconUpdate',
+          tabId,
+          favIconUrl: fallbackFavicon,
+          timestamp: Date.now()
+        });
+        return;
+      }
+      
+      // Requeue with progressive backoff if favicon still missing
+      // Exponential backoff with 1.5x multiplier (500ms → 750ms → 1125ms...)
+      const delay = Math.min(500 * Math.pow(1.5, attempts), 3000);
+      setTimeout(() => {
+        this.pending.set(tabId, item);
+        if (!this.processing) {
+          this.processQueue();
+        }
+      }, delay);
+      
+    } catch (error) {
+      console.error('Error checking favicon:', error);
+    }
+  }
+};
+
+/**
+ * Centralized event dispatcher for UI notifications
+ * @param {string} eventType - Type of event
+ * @param {Object} data - Event data payload
+ */
 function dispatchTabEvent(eventType, data) {
     sendMessageWithErrorHandling({
         action: eventType,
@@ -85,7 +332,11 @@ function dispatchTabEvent(eventType, data) {
     });
 }
 
-// Clean tab data before sending
+/**
+ * Clean and normalize tab data for messaging and storage
+ * @param {Object} tab - Chrome tab object
+ * @return {Object|null} Sanitized tab data or null if invalid
+ */
 function sanitizeTabData(tab) {
     if (!tab || !tab.id) {
         console.warn('Invalid tab data:', tab);
@@ -104,7 +355,11 @@ function sanitizeTabData(tab) {
     };
 }
 
-// Add after the TAB_ACTIVITY constant definition
+/**
+ * Find tab by ID with error handling
+ * @param {number} tabId - Chrome tab ID
+ * @return {Promise<Object|null>} Tab object or null if not found
+ */
 function findTabById(tabId) {
   return new Promise((resolve) => {
     chrome.tabs.get(tabId, (tab) => {
@@ -119,7 +374,11 @@ function findTabById(tabId) {
   });
 }
 
-// Enhanced edge creation with more detailed navigation information
+/**
+ * Updates the graph with a new edge representing a tab relationship
+ * Creates bidirectional references to track parent-child relationships
+ * @param {Object} edge - Edge data with source and target tabs
+ */
 async function updateGraphWithNewEdge(edge) {
   console.log('Creating new edge:', edge);
   
@@ -161,9 +420,14 @@ async function updateGraphWithNewEdge(edge) {
   }
 }
 
-// Add time tracking function
+/**
+ * Update tab activity time tracking
+ * Records time spent in each tab for analytics
+ * @param {number} tabId - Tab ID to update
+ * @param {boolean} isActive - Whether tab is currently active
+ */
 function updateTabActivity(tabId, isActive) {
-  console.log("Upating tab timespent", tabId);
+  console.log("Updating tab timespent", tabId);
   const now = Date.now();
   const activity = browserState.tabActivityLog.get(tabId) || {
     totalTimeSpent: 0,
@@ -174,6 +438,7 @@ function updateTabActivity(tabId, isActive) {
   if (isActive) {
     if (activity.lastTouch) {
       const timeSpent = now - activity.lastTouch;
+      // Only count if above threshold to avoid counting quick tab switches
       if (timeSpent > TAB_ACTIVITY.ACTIVE_THRESHOLD) {
         activity.totalTimeSpent += timeSpent;
       }
@@ -184,7 +449,10 @@ function updateTabActivity(tabId, isActive) {
   browserState.tabActivityLog.set(tabId, activity);
 }
 
-// Function to update history entries
+/**
+ * Update history entries cache
+ * Retrieves recent browsing history and stores it for visualization
+ */
 function updateHistory() {
   chrome.history.search({ text: '', maxResults: 100 }, (results) => {
       historyEntries = results;
@@ -195,7 +463,10 @@ function updateHistory() {
   });
 }
 
-// Function to update active tabs
+/**
+ * Update active tabs cache
+ * Maintains a list of currently active tabs across all windows
+ */
 function updateActiveTabs() {
   chrome.tabs.query({ active: true }, (tabs) => {
       activeTabs = tabs;
@@ -206,7 +477,12 @@ function updateActiveTabs() {
   });
 }
 
-// Function to get favicon URL for a given tab
+/**
+ * Get standard favicon URL for a given page URL
+ * Uses Chrome's built-in favicon service
+ * @param {string} url - Page URL to get favicon for
+ * @return {string} Chrome favicon service URL
+ */
 function getFaviconUrl(url) {
   return `chrome://favicon/size/16@1x/${url}`;
 }
@@ -228,14 +504,16 @@ chrome.history.onVisited.addListener((result) => {
   });
 });
 
-// Modify this handler to be more efficient
+/**
+ * Handle tab activation with optimized event flow
+ * Uses debouncing to reduce unnecessary processing
+ */
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
     try {
-        // Get the tab data directly without additional async operations
+        // Track active time immediately
         updateTabActivity(activeInfo.tabId, true);
         
-        // Avoid making redundant tab queries - we only need the ID here
-        // since chrome.tabs.get can be slow with many tabs
+        // Quick notification with just tab ID (lightweight)
         sendMessageWithRateLimit({
             type: 'tabChanged',
             data: {
@@ -244,7 +522,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
             }
         });
         
-        // Debounce the full update
+        // Debounce full tab data update to reduce overhead
         if (window.tabActivationTimeout) {
             clearTimeout(window.tabActivationTimeout);
         }
@@ -263,40 +541,17 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
                     }
                 });
             });
-        }, 250); // Delay full processing
+        }, 250); // Delay full processing for better performance
     } catch (error) {
         console.error('Error in tab activation handler:', error);
     }
 });
 
-// Listen for favicon requests
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'getFavicon') {
-    // Create a proxy URL that we can use in our extension
-    const proxyUrl = chrome.runtime.getURL(`_favicon/?pageUrl=${encodeURIComponent(request.url)}`);
-    sendResponse({ faviconUrl: proxyUrl });
-    return true; // Keep the message channel open for the async response
-  }
-  return true;
-});
-
-// Add this listener to handle the proxy requests
-chrome.webRequest.onBeforeRequest.addListener(
-  function(details) {
-    const url = new URL(details.url);
-    const pageUrl = url.searchParams.get('pageUrl');
-    if (pageUrl) {
-      return {
-        redirectUrl: `chrome-extension://${chrome.runtime.id}/_favicon/${pageUrl}`
-      };
-    }
-    return {};
-  },
-  { urls: ["*://*/*"], types: ["main_frame", "sub_frame", "image"] }
-);
-
-
-// Add dedicated content update handler
+/**
+ * Process content script updates to tab metadata
+ * @param {Object} data - Tab metadata from content script
+ * @param {Object} sender - Message sender info
+ */
 function handleContentUpdate(data, sender) {
     const { tabId, title, url, favIconUrl } = data;
     
@@ -330,7 +585,14 @@ function handleContentUpdate(data, sender) {
     }
 }
 
-// Add this helper function for navigation detection
+/**
+ * Detect type of navigation for better classification
+ * Identifies back/forward, refresh, and URL bar navigations
+ * @param {number} tabId - Tab ID
+ * @param {string} url - New URL
+ * @param {Object} changeInfo - Change info from Chrome
+ * @return {string} Navigation type classification
+ */
 function detectNavigationType(tabId, url, changeInfo) {
     // First check for history-based navigation
     if (!browserState.tabHistory.has(tabId)) {
@@ -352,8 +614,6 @@ function detectNavigationType(tabId, url, changeInfo) {
         return urlIndex < currentPos ? 'backNavigation' : 'forwardNavigation';
     }
     
-    // Now distinguish between URL bar navigation and other new navigations
-    
     // Check if this was from a link click (detected by content script)
     const isLinkClick = browserState.recentClicks && 
                         browserState.recentClicks[tabId] &&
@@ -368,7 +628,12 @@ function detectNavigationType(tabId, url, changeInfo) {
     return 'newNavigation';
 }
 
-// Add this utility function to detect URL bar navigation
+/**
+ * Detect if navigation came from URL bar based on history API
+ * @param {string} url - URL being navigated to
+ * @param {number} tabId - Tab ID
+ * @return {Promise<boolean>} Whether navigation was from URL bar
+ */
 function detectURLBarNavigation(url, tabId) {
     return new Promise(resolve => {
         // Look up visit information for this URL
@@ -396,8 +661,12 @@ function detectURLBarNavigation(url, tabId) {
     });
 }
 
-
-// Helper to update tab in window structure
+/**
+ * Update tab in window structure
+ * Maintains the window-tab hierarchy in browserState
+ * @param {number} tabId - Tab ID
+ * @param {Object} tabData - Tab data
+ */
 function updateTabInWindows(tabId, tabData) {
     if (!tabData || !tabData.windowId) return;
     
@@ -428,8 +697,12 @@ function updateTabInWindows(tabId, tabData) {
     }
 }
 
-
-// Enhanced function to handle link context with more detailed information
+/**
+ * Handle link context information from content scripts
+ * Tracks details about clicked links for correlation with navigation events
+ * @param {Object} message - Message with link data
+ * @param {Object} sender - Sender information
+ */
 function handleLinkContext(message, sender) {
     lastClickedLink = {
         ...message.data,
@@ -456,7 +729,7 @@ function handleLinkContext(message, sender) {
     
     browserState.tabActivityLog.set(sender.tab.id, tabActivity);
     
-    // Clear after 5 seconds if not used
+    // Clear after 5 seconds if not used to prevent memory leaks
     setTimeout(() => {
         if (lastClickedLink?.timestamp === message.data.timestamp) {
             lastClickedLink = null;
@@ -464,12 +737,16 @@ function handleLinkContext(message, sender) {
     }, 5000);
 }
 
-// Track new tabs from context menu
+/**
+ * Handle new tab creation and track relationships
+ * Links new tabs to their source tabs in the relationship graph
+ */
 chrome.tabs.onCreated.addListener((tab) => {
   // Get the last active tab before this creation
   const previousActiveTab = browserState.lastActive?.tabId;
   
   if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
+    // This tab was created from a link click we tracked
     const edge = {
       source: lastClickedLink.sourceTabId,
       target: tab.id,
@@ -520,7 +797,10 @@ chrome.tabs.onCreated.addListener((tab) => {
   });
 });
 
-// Track new windows from context menu
+/**
+ * Handle new window creation and track relationships
+ * Correlates new windows with the link clicks that created them
+ */
 chrome.windows.onCreated.addListener(async (window) => {
     if (!lastClickedLink) return;
 
@@ -598,7 +878,10 @@ chrome.windows.onCreated.addListener(async (window) => {
     await checkTab();
 });
 
-// Main tab removal listener
+/**
+ * Handle tab removal and clean up references
+ * Ensures no memory leaks from removed tabs
+ */
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     console.log('Tab being removed:', {
         tabId,
@@ -608,7 +891,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
     // Get tab data before cleanup
     const removedTab = browserState.tabs.get(tabId);
-    const tabHistoryData = browserState.tabHistory.get(tabId); // Renamed to avoid collision
+    const tabHistoryData = browserState.tabHistory.get(tabId);
     const relationships = browserState.tabRelationships.get(tabId);
 
     // Send removal event with complete data
@@ -624,7 +907,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
         }
     });
 
-    // Clean up all references
+    // Clean up all references to prevent memory leaks
     browserState.tabs.delete(tabId);
     browserState.tabHistory.delete(tabId);
     browserState.tabActivityLog.delete(tabId);
@@ -646,7 +929,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     });
 });
 
-// Track window focus
+// Track window focus changes for context awareness
 chrome.windows.onFocusChanged.addListener((windowId) => {
     if (windowId !== chrome.windows.WINDOW_ID_NONE) {
         browserState.lastActive = {
@@ -681,8 +964,6 @@ function notifyTreemap(message) {
     }
 }
 
-
-
 // Replace all instances of direct chrome.runtime.sendMessage with this wrapper
 function sendMessageWithErrorHandling(message) {
   if (!message || !message.action) return Promise.resolve();
@@ -704,8 +985,6 @@ function sendMessageWithErrorHandling(message) {
 
 // Add temporary storage for link data
 let pendingLinkData = {};
-
-
 
 // Add or modify the navigation event listener
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
@@ -967,7 +1246,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         console.log('Skipping duplicate URL change already handled by webNavigation');
         // But still check for favicon even if URL was handled elsewhere
         if (!tab.favIconUrl) {
-            setTimeout(() => checkAndUpdateFavicon(tabId, tab.url), 300);
+            faviconQueue.enqueue(tabId, tab.url);
         }
         return;
     }
@@ -978,8 +1257,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // This ensures we don't miss favicon updates for any navigation type
     if (browserState.tabs.has(tabId) && tab.url && !tab.favIconUrl) {
         // Schedule immediate check plus delayed check
-        setTimeout(() => checkAndUpdateFavicon(tabId, tab.url), 50);
-        setTimeout(() => checkAndUpdateFavicon(tabId, tab.url), 500);
+        faviconQueue.enqueue(tabId, tab.url);
+        faviconQueue.enqueue(tabId, tab.url);
     }
     
     // Handle different update types appropriately
@@ -1196,38 +1475,10 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     });
 });
 
-// Add this new helper function for consolidated favicon checking
+// Replace your current checkAndUpdateFavicon function with this:
 function checkAndUpdateFavicon(tabId, url) {
-    chrome.tabs.get(tabId, (updatedTab) => {
-        if (chrome.runtime.lastError) return;
-        
-        if (updatedTab.favIconUrl) {
-            // Real favicon available now
-            updateTabMetadata(tabId, { favIconUrl: updatedTab.favIconUrl });
-            
-            // Add explicit notification to UI
-            console.log('Explicitly notifying about favicon update:', updatedTab.favIconUrl);
-            sendMessageWithErrorHandling({
-                action: 'explicitFaviconUpdate',
-                tabId,
-                favIconUrl: updatedTab.favIconUrl,
-                timestamp: Date.now()
-            });
-        } else if (url) {
-            // Use Chrome's favicon service as fallback
-            const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(url)}`;
-            updateTabMetadata(tabId, { favIconUrl: fallbackFavicon });
-            
-            // Add explicit notification for fallback favicon
-            console.log('Notifying about fallback favicon:', fallbackFavicon);
-            sendMessageWithErrorHandling({
-                action: 'explicitFaviconUpdate',
-                tabId,
-                favIconUrl: fallbackFavicon,
-                timestamp: Date.now()
-            });
-        }
-    });
+    // Just add to queue - the queue system handles the rest
+    faviconQueue.enqueue(tabId, url);
 }
 
 // 1. Replace all duplicate message listeners with a single comprehensive one
