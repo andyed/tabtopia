@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Histospire</title>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="popup_styles.css">
+</head>
+<body>
+    <div class="popup-container">
+        <header class="popup-header">
+            <div class="logo">Histospire</div>
+            <div class="header-controls">
+                <div class="search-container">
+                    <input type="text" id="popupSearch" class="search-input" placeholder="Search tabs...">
+                </div>
+            </div>
+        </header>
+        
+        <div class="status-bar">
+            <span id="tabCount" class="status-item">0 tabs</span>
+            <span id="windowCount" class="status-item">0 windows</span>
+        </div>
+        
+        <div id="popup-treemap" class="popup-treemap"></div>
+        
+        <div class="quick-actions">
+            <button id="newTabBtn" class="action-button" title="New Tab">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12h18M12 3v18"></path>
+                </svg>
+                <span>New Tab</span>
+            </button>
+            <button id="groupTabsBtn" class="action-button" title="Group Tabs">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="8" height="8"></rect>
+                    <rect x="13" y="3" width="8" height="8"></rect>
+                    <rect x="3" y="13" width="8" height="8"></rect>
+                    <rect x="13" y="13" width="8" height="8"></rect>
+                </svg>
+                <span>Group Tabs</span>
+            </button>
+        </div>
+        
+        <div id="tooltip" class="tooltip"></div>
+    </div>
+    
+    <script src="../lib/d3.min.js"></script>
+    <script src="popup_script.js"></script>
+</body>
+</html>

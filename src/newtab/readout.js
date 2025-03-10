@@ -9,7 +9,7 @@ const BOOKMARKS_PER_PAGE = 10;
 let stickyCell = null;  // Track currently sticky cell
 
 let inactivityTimer = null;
-const INACTIVITY_TIMEOUT = 200000;
+const INACTIVITY_TIMEOUT = 600000;
 
 let currentMotivationalMessage = null;
 

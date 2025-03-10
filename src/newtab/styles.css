@@ -40,7 +40,7 @@ body {
 #readout-container {
     flex: 1; /* 20% of the width */
     background-color: #fff;
-    padding: 10px;
+    padding: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -198,7 +198,7 @@ body {
 .bookmarks-section,
 .history-section {
     margin-top: 1rem;
-    padding: 15px;
+    padding: 0;
     border-top: 1px solid #403c36; /* Darker border for sections */
     background-color: #2f2b26; /* Slightly darker than readout */
     border-radius: 4px;
@@ -207,7 +207,7 @@ body {
 .bookmarks-section h3,
 .history-section h3 {
     margin: 0 0 10px 0;
-    font-size: 1.1em;
+    font-size: 1.1em;   
     color: #ffffff;
 }
 
@@ -394,7 +394,7 @@ mark {
 .bookmarks-section,
 .history-section {
     margin-top: 1rem;
-    padding: 15px;
+    padding: 0;
 }
 
 .bookmark-item:last-child,
@@ -663,7 +663,7 @@ mark {
     border: 1px solid #403c36 !important; /* Dark border */
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
-    padding: 12px;
+    padding: 0px;
     z-index: 100;
     max-width: 400px;
     min-width: 250px;
@@ -761,7 +761,7 @@ mark {
 /* List items */
 .bookmark-item,
 .history-item {
-    padding: 8px 0;
+    padding:  0;
     border-bottom: 1px solid #403c36 !important; /* Dark border */
 }
 
