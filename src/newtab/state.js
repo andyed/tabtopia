@@ -1,87 +1,532 @@
 /**
  * State Management Module for Tabtopia
  * 
- * This module provides a facade for accessing and manipulating browser state data,
- * handling communication with the background script, and formatting data for
- * different visualization types. It implements a pub/sub pattern for real-time
- * updates to UI components when browser state changes.
- * 
- * Architecture:
- * - Communication Layer: Chrome messaging API interface
- * - Data Transformation: Converts raw browser state to visualization-friendly formats
- * - State Persistence: Manages local storage for persistent graph data
- * - Cache Management: Implements memory caching for performance-critical resources
+ * This module implements a Redux-inspired state management system with:
+ * - Single source of truth (store)
+ * - Read-only state
+ * - Actions for state changes
+ * - Pure reducer functions
+ * - Middleware support
  * 
  * @module state
  */
 
 /**
- * Central browser state interface providing reactive access to Chrome's state
+ * Action Types
+ * Constants for all possible state changes
+ */
+export const ActionTypes = {
+  // Tab actions
+  TAB_CREATED: 'TAB_CREATED',
+  TAB_UPDATED: 'TAB_UPDATED',
+  TAB_REMOVED: 'TAB_REMOVED',
+  TAB_ACTIVATED: 'TAB_ACTIVATED',
+  
+  // Window actions
+  WINDOW_CREATED: 'WINDOW_CREATED',
+  WINDOW_UPDATED: 'WINDOW_UPDATED',
+  WINDOW_REMOVED: 'WINDOW_REMOVED',
+  
+  // UI actions
+  UI_SELECT_TAB: 'UI_SELECT_TAB',
+  UI_CHANGE_VIEW: 'UI_CHANGE_VIEW',
+  
+  // Relationship actions
+  RELATIONSHIP_ADDED: 'RELATIONSHIP_ADDED',
+  RELATIONSHIP_REMOVED: 'RELATIONSHIP_REMOVED',
+  
+  // Data actions
+  SUMMARY_STORED: 'SUMMARY_STORED',
+  NODE_POSITION_UPDATED: 'NODE_POSITION_UPDATED',
+  
+  // Batch actions
+  BATCH_STATE_UPDATE: 'BATCH_STATE_UPDATE',
+};
+
+/**
+ * Initial state for the Redux store
+ */
+const initialState = {
+  // Browser state
+  tabs: new Map(),
+  windows: new Map(),
+  tabHistory: new Map(),
+  tabRelationships: new Map(),
+  
+  // UI state
+  ui: {
+    selectedTab: null,
+    selectedWindow: null,
+    currentView: 'treemap',
+    searchQuery: '',
+  },
+  
+  // Persistent data
+  graphData: {
+    summaries: {},
+    customEdges: [],
+    nodePositions: {},
+    lastUpdated: null
+  },
+  
+  // Cache
+  cache: {
+    favicons: new Map(),
+    lastFetch: Date.now()
+  }
+};
+
+/**
+ * Central browser state interface with Redux-inspired architecture
  * @namespace browserState
  */
 export const browserState = {
   /**
+   * Private store holding the actual state
+   * @private
+   */
+  _store: { ...initialState },
+  
+  /**
+   * State change listeners
+   * @private
+   */
+  _listeners: [],
+  
+  /**
+   * Middleware functions to process actions
+   * @private
+   */
+  _middleware: [],
+  
+  /**
    * Retrieves a complete snapshot of the current browser state
    * 
-   * Communicates with the background service worker to get the current state
-   * of all windows, tabs, and their relationships. This serves as the source
-   * of truth for visualizations.
-   * 
    * @async
-   * @returns {Promise<Object>} Current browser state with windows, tabs, and relationships
-   * @property {Map<number, Object>} windows - Map of window objects by ID
-   * @property {Map<number, Object>} tabs - Map of tab objects by ID
-   * @property {Map<number, Array>} tabHistory - Navigation history by tab ID
-   * @property {Map<number, Object>} tabRelationships - Tab relationships by ID
+   * @returns {Promise<Object>} Current browser state
    */
   async getState() {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: 'getState' }, (response) => {
-        resolve(response);
+    // First try getting fresh state from background service
+    try {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'getState' }, (response) => {
+          if (response) {
+            // Update local store with fresh data
+            this._dispatch({
+              type: ActionTypes.BATCH_STATE_UPDATE,
+              payload: response
+            });
+            resolve(response);
+          } else {
+            // Fall back to local store if no response
+            resolve(this._getLocalState());
+          }
+        });
       });
+    } catch (error) {
+      console.error('Error fetching state:', error);
+      return this._getLocalState();
+    }
+  },
+  
+  /**
+   * Get current state from local store
+   * @private
+   * @returns {Object} Current local state
+   */
+  _getLocalState() {
+    return {
+      tabs: this._store.tabs,
+      windows: this._store.windows,
+      tabHistory: this._store.tabHistory,
+      tabRelationships: this._store.tabRelationships
+    };
+  },
+  
+  /**
+   * Subscribe to state changes
+   * 
+   * @param {Function} callback - Function to call when state changes
+   * @returns {Function} Unsubscribe function
+   */
+  subscribe(callback) {
+    const listener = (message) => {
+      // Map Chrome message events to actions
+      if (message.action === 'tabUpdated') {
+        this._dispatch({
+          type: ActionTypes.TAB_UPDATED,
+          payload: message.data
+        });
+      } else if (message.action === 'tabCreated') {
+        this._dispatch({
+          type: ActionTypes.TAB_CREATED,
+          payload: message.data
+        });
+      } else if (message.action === 'tabRemoved') {
+        this._dispatch({
+          type: ActionTypes.TAB_REMOVED,
+          payload: message.data
+        });
+      } else if (message.action === 'windowUpdated') {
+        this._dispatch({
+          type: ActionTypes.WINDOW_UPDATED,
+          payload: message.data
+        });
+      }
+      
+      // Forward original message to maintain backward compatibility
+      callback(message);
+    };
+    
+    chrome.runtime.onMessage.addListener(listener);
+    this._listeners.push(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      chrome.runtime.onMessage.removeListener(listener);
+      this._listeners = this._listeners.filter(cb => cb !== callback);
+    };
+  },
+  
+  /**
+   * Add middleware to process actions
+   * 
+   * @param {Function} middleware - Middleware function
+   * @returns {Function} Function to remove middleware
+   */
+  addMiddleware(middleware) {
+    this._middleware.push(middleware);
+    return () => {
+      this._middleware = this._middleware.filter(m => m !== middleware);
+    };
+  },
+  
+  /**
+   * Dispatch an action to update state
+   * Public method for components to trigger state changes
+   * 
+   * @param {Object} action - Redux-style action object
+   * @param {string} action.type - Action type constant
+   * @param {*} action.payload - Action payload data
+   */
+  dispatch(action) {
+    this._dispatch(action);
+  },
+  
+  /**
+   * Internal dispatch implementation with middleware support
+   * 
+   * @private
+   * @param {Object} action - Action object
+   */
+  _dispatch(action) {
+    console.log('Action dispatched:', action);
+    
+    // Run action through middleware
+    let processedAction = action;
+    for (const middleware of this._middleware) {
+      processedAction = middleware(processedAction, this._store);
+      // Middleware can cancel action by returning null/undefined
+      if (!processedAction) return;
+    }
+    
+    // Apply action using reducer
+    const newState = this._reducer(this._store, processedAction);
+    
+    // Update store with new state
+    this._store = newState;
+    
+    // Notify listeners about state change
+    const changeType = action.type;
+    this._notifyListeners(changeType, action.payload);
+  },
+  
+  /**
+   * Notify all listeners of state change
+   * 
+   * @private
+   * @param {string} changeType - Type of change
+   * @param {*} data - Change data
+   */
+  _notifyListeners(changeType, data) {
+    this._listeners.forEach(listener => {
+      try {
+        listener({
+          action: this._mapActionTypeToLegacyAction(changeType),
+          data: data
+        });
+      } catch (error) {
+        console.error('Error in state listener:', error);
+      }
     });
   },
   
   /**
-   * Subscribes to browser state changes with automatic event filtering
+   * Map Redux action types to legacy action names
    * 
-   * Sets up a listener for relevant Chrome events and calls the provided callback
-   * when state changes occur. Only passes events that affect the visualization.
-   * Returns an unsubscribe function to prevent memory leaks.
-   * 
-   * @param {Function} callback - Function to call when state changes
-   * @param {Object} callback.message - Message object with action and associated data
-   * @param {string} callback.message.action - Type of state change (tabUpdated, tabCreated, etc.)
-   * @param {Object} callback.message.data - Relevant data for the state change
-   * @returns {Function} Unsubscribe function to remove the listener
+   * @private
+   * @param {string} actionType - Redux action type
+   * @returns {string} Legacy action name
    */
-  subscribe(callback) {
-    const listener = (message) => {
-      if (message.action === 'tabUpdated' || 
-          message.action === 'tabCreated' || 
-          message.action === 'tabRemoved' ||
-          message.action === 'windowUpdated') {
-        callback(message);
-      }
+  _mapActionTypeToLegacyAction(actionType) {
+    const mapping = {
+      [ActionTypes.TAB_CREATED]: 'tabCreated',
+      [ActionTypes.TAB_UPDATED]: 'tabUpdated',
+      [ActionTypes.TAB_REMOVED]: 'tabRemoved',
+      [ActionTypes.WINDOW_UPDATED]: 'windowUpdated',
+      // Add more mappings as needed
     };
-    
-    chrome.runtime.onMessage.addListener(listener);
-    
-    // Return unsubscribe function
-    return () => chrome.runtime.onMessage.removeListener(listener);
+    return mapping[actionType] || 'stateChanged';
   },
   
   /**
-   * Retrieves and formats data specifically for treemap visualization
+   * Root reducer function to handle all actions
    * 
-   * Gets current state and transforms it into the hierarchical structure
-   * required by the D3 treemap visualization. Handles data normalization
-   * and ensures consistent structure regardless of background data format.
-   * 
+   * @private
+   * @param {Object} state - Current state
+   * @param {Object} action - Action object
+   * @returns {Object} New state
+   */
+  _reducer(state, action) {
+    switch (action.type) {
+      case ActionTypes.TAB_CREATED:
+        return this._reducers.tabCreated(state, action.payload);
+        
+      case ActionTypes.TAB_UPDATED:
+        return this._reducers.tabUpdated(state, action.payload);
+        
+      case ActionTypes.TAB_REMOVED:
+        return this._reducers.tabRemoved(state, action.payload);
+        
+      case ActionTypes.WINDOW_UPDATED:
+        return this._reducers.windowUpdated(state, action.payload);
+        
+      case ActionTypes.UI_SELECT_TAB:
+        return this._reducers.uiSelectTab(state, action.payload);
+        
+      case ActionTypes.UI_CHANGE_VIEW:
+        return this._reducers.uiChangeView(state, action.payload);
+        
+      case ActionTypes.SUMMARY_STORED:
+        return this._reducers.summaryStored(state, action.payload);
+        
+      case ActionTypes.NODE_POSITION_UPDATED:
+        return this._reducers.nodePositionUpdated(state, action.payload);
+        
+      case ActionTypes.BATCH_STATE_UPDATE:
+        return this._reducers.batchStateUpdate(state, action.payload);
+        
+      default:
+        return state;
+    }
+  },
+  
+  /**
+   * Individual reducer functions for each action type
+   * @private
+   */
+  _reducers: {
+    /**
+     * Handle tab created action
+     * @param {Object} state - Current state
+     * @param {Object} payload - Tab data
+     * @returns {Object} New state
+     */
+    tabCreated(state, payload) {
+      const { tabId, tab } = payload;
+      const newTabs = new Map(state.tabs);
+      newTabs.set(tabId, { ...tab });
+      
+      return {
+        ...state,
+        tabs: newTabs
+      };
+    },
+    
+    /**
+     * Handle tab updated action
+     * @param {Object} state - Current state
+     * @param {Object} payload - Update data
+     * @returns {Object} New state
+     */
+    tabUpdated(state, payload) {
+      const { tabId, changes } = payload;
+      const newTabs = new Map(state.tabs);
+      
+      const existingTab = newTabs.get(tabId) || {};
+      newTabs.set(tabId, { 
+        ...existingTab, 
+        ...changes,
+        lastUpdate: Date.now()
+      });
+      
+      return {
+        ...state,
+        tabs: newTabs
+      };
+    },
+    
+    /**
+     * Handle tab removed action
+     * @param {Object} state - Current state
+     * @param {Object} payload - Tab ID
+     * @returns {Object} New state
+     */
+    tabRemoved(state, payload) {
+      const { tabId } = payload;
+      const newTabs = new Map(state.tabs);
+      newTabs.delete(tabId);
+      
+      return {
+        ...state,
+        tabs: newTabs
+      };
+    },
+    
+    /**
+     * Handle window updated action
+     * @param {Object} state - Current state
+     * @param {Object} payload - Window data
+     * @returns {Object} New state
+     */
+    windowUpdated(state, payload) {
+      const { windowId, window } = payload;
+      const newWindows = new Map(state.windows);
+      
+      if (window) {
+        newWindows.set(windowId, window);
+      } else {
+        // If no window data, it might be a removal
+        newWindows.delete(windowId);
+      }
+      
+      return {
+        ...state,
+        windows: newWindows
+      };
+    },
+    
+    /**
+     * Handle UI tab selection
+     * @param {Object} state - Current state
+     * @param {Object} payload - Selected tab ID
+     * @returns {Object} New state
+     */
+    uiSelectTab(state, payload) {
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          selectedTab: payload
+        }
+      };
+    },
+    
+    /**
+     * Handle UI view change
+     * @param {Object} state - Current state
+     * @param {Object} payload - New view name
+     * @returns {Object} New state
+     */
+    uiChangeView(state, payload) {
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          currentView: payload
+        }
+      };
+    },
+    
+    /**
+     * Handle URL summary storage
+     * @param {Object} state - Current state
+     * @param {Object} payload - Summary data
+     * @returns {Object} New state
+     */
+    summaryStored(state, { url, summary }) {
+      return {
+        ...state,
+        graphData: {
+          ...state.graphData,
+          summaries: {
+            ...state.graphData.summaries,
+            [url]: summary
+          },
+          lastUpdated: Date.now()
+        }
+      };
+    },
+    
+    /**
+     * Handle node position update
+     * @param {Object} state - Current state
+     * @param {Object} payload - Node position data
+     * @returns {Object} New state
+     */
+    nodePositionUpdated(state, { nodes }) {
+      const nodePositions = { ...state.graphData.nodePositions };
+      
+      nodes.forEach(node => {
+        if (node.id && (node.x !== undefined && node.y !== undefined)) {
+          nodePositions[node.id] = {
+            x: node.x,
+            y: node.y,
+            fixed: node.fixed || false
+          };
+        }
+      });
+      
+      return {
+        ...state,
+        graphData: {
+          ...state.graphData,
+          nodePositions,
+          lastUpdated: Date.now()
+        }
+      };
+    },
+    
+    /**
+     * Handle batch state update (e.g. from background script)
+     * @param {Object} state - Current state
+     * @param {Object} payload - Full state data
+     * @returns {Object} New state
+     */
+    batchStateUpdate(state, payload) {
+      // Convert Maps if they come as arrays of entries
+      const tabs = payload.tabs instanceof Map 
+        ? payload.tabs 
+        : new Map(payload.tabs || []);
+        
+      const windows = payload.windows instanceof Map 
+        ? payload.windows 
+        : new Map(payload.windows || []);
+        
+      const tabHistory = payload.tabHistory instanceof Map 
+        ? payload.tabHistory 
+        : new Map(payload.tabHistory || []);
+        
+      const tabRelationships = payload.tabRelationships instanceof Map 
+        ? payload.tabRelationships 
+        : new Map(payload.tabRelationships || []);
+      
+      return {
+        ...state,
+        tabs,
+        windows,
+        tabHistory,
+        tabRelationships
+      };
+    }
+  },
+  
+  // --- Maintain existing API methods ---
+  
+  /**
+   * Get data formatted for treemap visualization
    * @async
-   * @returns {Promise<Object>} Hierarchical data structure ready for D3 treemap
-   * @property {string} name - Root node name
-   * @property {Array<Object>} children - Window nodes with their tab children
+   * @returns {Promise<Object>} Formatted treemap data
    */
   async getTreemapData() {
     const stateSnapshot = await this.getState();
@@ -89,24 +534,16 @@ export const browserState = {
   },
   
   /**
-   * Transforms raw browser state into treemap-compatible hierarchical format
-   * 
-   * Converts Maps to arrays and structures data as a nested hierarchy with
-   * windows as parent nodes and tabs as children. Handles potential inconsistencies
-   * in data format between in-memory and serialized states.
-   * 
-   * @param {Object} stateSnapshot - Browser state object from getState()
-   * @returns {Object} Hierarchical data structure for treemap visualization
-   * @property {string} name - Root node name
-   * @property {Array<Object>} children - Window nodes containing tab nodes
+   * Format data for treemap
+   * @param {Object} stateSnapshot - State data
+   * @returns {Object} Formatted treemap data
    */
   formatDataForTreemap(stateSnapshot) {
-    // Convert windows map to array if needed
+    // Keep existing implementation...
     const windows = Array.isArray(stateSnapshot.windows) 
-      ? stateSnapshot.windows.map(w => w[1]) // If array of entries [id, window]
+      ? stateSnapshot.windows.map(w => w[1])
       : Array.from(stateSnapshot.windows?.values() || []);
     
-    // Convert tabs map to array if needed
     const tabs = stateSnapshot.tabs instanceof Map 
       ? stateSnapshot.tabs 
       : new Map(stateSnapshot.tabs || []);
@@ -132,22 +569,27 @@ export const browserState = {
       }))
     };
   },
-
+  
   /**
-   * Persists graph visualization data to local storage
-   * 
-   * Stores custom relationships, node positions, and content summaries
-   * so they persist between browser sessions. Updates timestamp to track
-   * when data was last modified.
-   * 
+   * Store graph data
    * @async
-   * @param {Object} graphData - Graph visualization data to store
-   * @param {Object} [graphData.summaries={}] - URL to summary text mapping
-   * @param {Array} [graphData.customEdges=[]] - Custom relationship edges
-   * @param {Object} [graphData.nodePositions={}] - Saved node position coordinates
-   * @returns {Promise<void>} Promise that resolves when storage is complete
+   * @param {Object} graphData - Graph data to store
    */
   async storeGraphData(graphData) {
+    // Dispatch through Redux flow instead of direct storage
+    this.dispatch({
+      type: ActionTypes.BATCH_STATE_UPDATE,
+      payload: {
+        graphData: {
+          summaries: graphData.summaries || {},
+          customEdges: graphData.customEdges || [],
+          nodePositions: graphData.nodePositions || {},
+          lastUpdated: Date.now()
+        }
+      }
+    });
+    
+    // Also persist to storage
     return chrome.storage.local.set({ 
       'graphPersistentData': {
         summaries: graphData.summaries || {},
@@ -157,79 +599,81 @@ export const browserState = {
       }
     });
   },
-
+  
   /**
-   * Retrieves stored graph data from local storage
-   * 
-   * Gets persistent graph data including custom relationships,
-   * node positions, and content summaries. Returns empty defaults
-   * if no stored data exists.
-   * 
+   * Get graph data
    * @async
-   * @returns {Promise<Object>} Stored graph data or default empty structure
-   * @property {Object} summaries - URL to summary text mapping
-   * @property {Array} customEdges - Custom relationship edges between nodes
-   * @property {Object} nodePositions - Saved position coordinates by node ID
-   * @property {number|null} lastUpdated - Timestamp of last data modification
+   * @returns {Promise<Object>} Graph data
    */
   async getGraphData() {
+    // First check local store
+    if (this._store.graphData.lastUpdated) {
+      return this._store.graphData;
+    }
+    
+    // Otherwise fetch from storage
     return new Promise((resolve) => {
       chrome.storage.local.get('graphPersistentData', (result) => {
-        resolve(result.graphPersistentData || {
+        const data = result.graphPersistentData || {
           summaries: {},
           customEdges: [],
           nodePositions: {},
           lastUpdated: null
+        };
+        
+        // Update store with fetched data
+        this.dispatch({
+          type: ActionTypes.BATCH_STATE_UPDATE,
+          payload: { graphData: data }
         });
+        
+        resolve(data);
       });
     });
   },
-
+  
   /**
-   * Stores a generated summary for a URL
-   * 
-   * Persists AI-generated or user-provided content summaries for URLs
-   * to improve graph node readability and context.
-   * 
+   * Store URL summary
    * @async
-   * @param {string} url - The URL to store a summary for
-   * @param {string} summary - The summary text to store
-   * @returns {Promise<void>} Promise that resolves when storage is complete
+   * @param {string} url - URL to store summary for
+   * @param {string} summary - Summary text
    */
   async storeSummary(url, summary) {
+    // Dispatch through Redux flow
+    this.dispatch({
+      type: ActionTypes.SUMMARY_STORED,
+      payload: { url, summary }
+    });
+    
+    // Then update persistent storage
     const graphData = await this.getGraphData();
     graphData.summaries[url] = summary;
     return this.storeGraphData(graphData);
   },
-
+  
   /**
-   * Retrieves a stored summary for a URL if available
-   * 
+   * Get URL summary
    * @async
-   * @param {string} url - The URL to get a summary for
-   * @returns {Promise<string|null>} The summary text or null if not available
+   * @param {string} url - URL to get summary for
+   * @returns {Promise<string|null>} Summary text or null
    */
   async getSummary(url) {
+    // Check local store first for better performance
+    if (this._store.graphData.summaries[url]) {
+      return this._store.graphData.summaries[url];
+    }
+    
     const graphData = await this.getGraphData();
     return graphData.summaries[url] || null;
   },
-
+  
   /**
-   * Stores or updates a custom relationship edge between nodes
-   * 
-   * Creates or updates a user-defined relationship between graph nodes.
-   * Checks for existing edges to prevent duplicates and handles bidirectional
-   * relationships automatically.
-   * 
+   * Store custom edge
    * @async
-   * @param {Object} edge - Edge definition object
-   * @param {string} edge.source - Source node identifier
-   * @param {string} edge.target - Target node identifier
-   * @param {string} edge.type - Relationship type (semantic, temporal, etc.)
-   * @param {number} [edge.strength=1] - Relationship strength (0-1)
-   * @returns {Promise<void>} Promise that resolves when storage is complete
+   * @param {Object} edge - Edge data
    */
   async storeCustomEdge(edge) {
+    // Original implementation
     const graphData = await this.getGraphData();
     
     // Check if edge already exists (in either direction)
@@ -246,22 +690,20 @@ export const browserState = {
     
     return this.storeGraphData(graphData);
   },
-
+  
   /**
-   * Persists node positions from graph visualization
-   * 
-   * Saves node coordinates to maintain visual consistency between sessions
-   * and preserve user-arranged graph layouts.
-   * 
+   * Store node positions
    * @async
-   * @param {Array<Object>} nodes - Array of node objects with positions
-   * @param {string} nodes[].id - Node identifier
-   * @param {number} nodes[].x - X-coordinate position
-   * @param {number} nodes[].y - Y-coordinate position
-   * @param {boolean} [nodes[].fixed=false] - Whether position is pinned
-   * @returns {Promise<void>} Promise that resolves when storage is complete
+   * @param {Array<Object>} nodes - Node position data
    */
   async storeNodePositions(nodes) {
+    // Dispatch through Redux flow
+    this.dispatch({
+      type: ActionTypes.NODE_POSITION_UPDATED,
+      payload: { nodes }
+    });
+    
+    // Also update persistent storage
     const graphData = await this.getGraphData();
     const nodePositions = {};
     
@@ -278,40 +720,27 @@ export const browserState = {
     graphData.nodePositions = nodePositions;
     return this.storeGraphData(graphData);
   },
-
+  
   /**
-   * In-memory cache for favicons to improve performance
-   * 
-   * Maps domains to favicon URLs or promises representing
-   * pending favicon requests.
-   * 
-   * @type {Map<string, string|Promise<string>>}
+   * Favicon cache
    */
   faviconCache: new Map(),
-
+  
   /**
-   * Retrieves favicon URL with memory caching
-   * 
-   * First checks the in-memory cache, then requests favicon from
-   * the background script if needed. Handles parallel requests efficiently
-   * by caching promises for in-flight requests.
-   * 
+   * Get favicon with cache
    * @async
-   * @param {string} url - The URL to get favicon for
-   * @returns {Promise<string|null>} Promise resolving to favicon URL or null on failure
+   * @param {string} url - URL to get favicon for
+   * @returns {Promise<string|null>} Favicon URL
    */
   async getFaviconWithCache(url) {
-    // Try cache first
+    // Keep existing implementation...
     const domain = this._getDomainFromUrl(url);
     if (this.faviconCache.has(domain)) {
       return this.faviconCache.get(domain);
     }
     
-    // If not in cache, fetch and store
     try {
-      // Asynchronously fetch icon in background
       const fetchPromise = new Promise(async (resolve) => {
-        // Send message to background script to get favicon
         chrome.runtime.sendMessage(
           { type: 'getFavicon', url, size: 16 },
           response => {
@@ -319,7 +748,6 @@ export const browserState = {
               this.faviconCache.set(domain, response.faviconUrl);
               resolve(response.faviconUrl);
             } else {
-              // Try direct domain favicon
               const directUrl = `https://${domain}/favicon.ico`;
               this.faviconCache.set(domain, directUrl);
               resolve(directUrl);
@@ -328,7 +756,6 @@ export const browserState = {
         );
       });
       
-      // Store promise in cache to handle parallel requests
       this.faviconCache.set(domain, fetchPromise);
       return fetchPromise;
     } catch (error) {
@@ -336,16 +763,11 @@ export const browserState = {
       return null;
     }
   },
-
+  
   /**
-   * Extract domain from a URL string
-   * 
-   * Safely parses URLs and extracts hostname, handling edge cases
-   * like missing protocols and invalid URLs.
-   * 
-   * @private
-   * @param {string} url - URL to extract domain from
-   * @returns {string} Domain name or 'unknown' if parsing fails
+   * Extract domain from URL
+   * @param {string} url - URL string
+   * @returns {string} Domain
    */
   _getDomainFromUrl(url) {
     try {
@@ -355,5 +777,55 @@ export const browserState = {
     } catch (e) {
       return 'unknown';
     }
+  },
+  
+  /**
+   * Action creators for common operations
+   * Convenience methods for components to dispatch standard actions
+   */
+  actions: {
+    /**
+     * Select a tab in the UI
+     * @param {number} tabId - Tab ID to select
+     */
+    selectTab(tabId) {
+      browserState.dispatch({
+        type: ActionTypes.UI_SELECT_TAB,
+        payload: tabId
+      });
+    },
+    
+    /**
+     * Change current visualization view
+     * @param {string} viewName - View name ('treemap', 'graph', etc.)
+     */
+    changeView(viewName) {
+      browserState.dispatch({
+        type: ActionTypes.UI_CHANGE_VIEW,
+        payload: viewName
+      });
+    }
   }
 };
+
+// Initialize state from storage at startup
+(async function initializeState() {
+  try {
+    // Load persisted graph data
+    const graphData = await new Promise((resolve) => {
+      chrome.storage.local.get('graphPersistentData', (result) => {
+        resolve(result.graphPersistentData || {
+          summaries: {},
+          customEdges: [],
+          nodePositions: {},
+          lastUpdated: null
+        });
+      });
+    });
+    
+    // Initialize with stored graph data
+    browserState._store.graphData = graphData;
+  } catch (error) {
+    console.error('Error initializing state:', error);
+  }
+})();

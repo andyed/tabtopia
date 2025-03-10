@@ -1334,7 +1334,7 @@ let draggedTab = null;
  * - Drop: Moves tab to target window via Chrome API and refreshes visualization
  */
 function initDragDrop() {
-  console.log("Initializing drag and drop functionality");
+  //console.log("Initializing drag and drop functionality");
   
   // Create the D3 drag behavior first - this was working before
   const drag = d3.drag()
