@@ -756,25 +756,30 @@ function updateVisibility(matchedIds) {
 }
 
 function setupViewModes() {
-    document.getElementById('timeViewBtn').addEventListener('click', () => {
-        if (currentViewMode !== 'time') {
-            currentViewMode = 'time';
-            updateViewMode();
-            setActiveButton('timeViewBtn');
-        }
-    });
-    
-    document.getElementById('domainViewBtn').addEventListener('click', () => {
-        if (currentViewMode !== 'domain') {
-            currentViewMode = 'domain';
-            updateViewMode();
-            setActiveButton('domainViewBtn');
-        }
-    });
+    const timeViewBtn = document.getElementById('timeViewBtn');
+    const domainViewBtn = document.getElementById('domainViewBtn');
 
-    // Add title attributes to buttons
-    document.getElementById('timeViewBtn').title = "Arrange nodes by time of visit";
-    document.getElementById('domainViewBtn').title = "Group nodes by website domain";
+    if (timeViewBtn) {
+        timeViewBtn.addEventListener('click', () => {
+            if (currentViewMode !== 'time') {
+                currentViewMode = 'time';
+                updateViewMode();
+                setActiveButton('timeViewBtn');
+            }
+        });
+        timeViewBtn.title = "Arrange nodes by time of visit";
+    }
+    
+    if (domainViewBtn) {
+        domainViewBtn.addEventListener('click', () => {
+            if (currentViewMode !== 'domain') {
+                currentViewMode = 'domain';
+                updateViewMode();
+                setActiveButton('domainViewBtn');
+            }
+        });
+        domainViewBtn.title = "Group nodes by website domain";
+    }
 }
 
 // Helper function to update button appearance
@@ -908,7 +913,10 @@ function hashString(str) {
 }
 
 // Wait for DOM to be ready
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+    setupViewModes();
+});
 
 // After the simulation creation and initialization, 
 // Add this at the end of createForceGraph():
