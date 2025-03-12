@@ -32,6 +32,9 @@ const SUMMARIZER_OPTIONS = {
     length: 'short'
 };
 
+// Add at the top with other state variables
+let lastDisplayedNodeId = null;
+
 // Helper function to get domain from URL
 function getDomain(url) {
     if (!url) return 'Unknown';
@@ -384,6 +387,14 @@ export async function displayReadout(d, event) {
         return;
     }
 
+    // Check if this is the same node we're already displaying
+    const currentNodeId = nodeData.id || `${nodeData.windowId}-${nodeData.index}`;
+    if (currentNodeId === lastDisplayedNodeId) {
+        console.log('Skipping readout update - same node');
+        return;
+    }
+    lastDisplayedNodeId = currentNodeId;
+
     console.log('Normalized data:', nodeData);
     
     // Make sure we have a URL to work with
@@ -582,6 +593,9 @@ function positionReadout(event) {
 // Add cache cleanup on hide
 export function hideReadout() {
     const readoutContainer = document.getElementById('readout');
+    
+    // Reset the last displayed node ID
+    lastDisplayedNodeId = null;
     
     // Use classList instead of style.display = 'none'
     readoutContainer.classList.add('hidden');

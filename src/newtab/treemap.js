@@ -1362,44 +1362,56 @@ let draggedTab = null;
  * @param {HTMLElement} node - DOM element being dragged
  */
 function initDragDrop() {
-  //console.log("Initializing drag and drop functionality");
-  
-  // Create the D3 drag behavior first - this was working before
-  const drag = d3.drag()
-    .subject(d => d)
-    .on('start', function(event, d) { dragStarted(event, d, this); })
-    .on('drag', function(event, d) { dragging(event, d, this); })
-    .on('end', function(event, d) { dragEnded(event, d, this); });
-  
-  // Apply to all tab cells (not window cells or bookmarks)
-  d3.selectAll('.cell')
-    .filter(function(d) {
-      return d && d.data && d.data.id && 
-             d.data.id.toString().startsWith('tab') && 
-             !d.data.isBookmark;
-    })
-    .classed('draggable', true)
-    .attr('title', 'Drag to move tab between windows')
-    .call(drag); // Apply drag behavior
-  
-  //console.log(`Applied drag behavior to ${d3.selectAll('.cell.draggable').size()} cells`);
-  
-  // Identify window groups - keep this simple but effective
-  d3.selectAll('.cell').each(function(d) {
-    if (!d || !d.data || !d.data.windowId) return;
-    
-    // Use simple parent element as window group
-    const windowId = d.data.windowId;
-    const parent = this.parentElement;
-    
-    if (parent && !parent.hasAttribute('data-window-id')) {
-      d3.select(parent)
-        .classed('window-group', true)
-        .attr('data-window-id', windowId);
-    }
-  });
-  
-  //console.log(`Identified ${d3.selectAll('.window-group').size()} window groups`);
+    let longPressTimer;
+    let isDragging = false;
+    let dragNode = null;
+
+    const drag = d3.drag()
+        .on('start', function(event, d) {
+            // Clear any existing timer
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+            }
+            
+            // Set up long press timer
+            longPressTimer = setTimeout(() => {
+                if (!isDragging) {
+                    isDragging = true;
+                    dragNode = this;
+                    dragStarted(event, d, this);
+                }
+            }, 750); // 750ms delay for long press
+        })
+        .on('drag', function(event, d) {
+            // If drag movement happens before long press timer, cancel the timer
+            if (!isDragging) {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+                return;
+            }
+            
+            if (isDragging && dragNode === this) {
+                dragging(event, d, this);
+            }
+        })
+        .on('end', function(event, d) {
+            // Clear the timer if it exists
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+            
+            if (isDragging && dragNode === this) {
+                dragEnded(event, d, this);
+                isDragging = false;
+                dragNode = null;
+            }
+        });
+
+    // Apply drag behavior to all cells
+    d3.selectAll('.cell').call(drag);
 }
 
 // Keep the original working dragStarted function
