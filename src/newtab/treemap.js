@@ -469,42 +469,36 @@ export async function drawTreemap(data) {
         .attr('class', 'favicon')
         .attr('xlink:href', d => {
             // Only proceed if we have valid data
-            if (!d.data?.url) return null;
-
-            try {
-                // Use existing favicon if available
-                if (d.data.favIconUrl && d.data.favIconUrl !== 'chrome://favicon/') {
-                    return d.data.favIconUrl;
-                }
-
-                // Handle chrome:// URLs with settings icon
-                if (d.data.url.startsWith('chrome://')) {
-                    return 'data:image/svg+xml;base64,' + btoa(`
-                       <svg  xmlns="http://www.w3.org/2000/svg"  width="24"  height="24"  viewBox="0 0 24 24"  fill="none"  stroke="currentColor"  stroke-width="2"  stroke-linecap="round"  stroke-linejoin="round"  class="icon icon-tabler icons-tabler-outline icon-tabler-settings"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
-                    `);
-                }
-
-                // For regular URLs, try to get favicon from origin
-                const url = new URL(d.data.url);
-                return `${url.origin}/favicon.ico`;
-
-            } catch (e) {
-                console.warn('Invalid URL or favicon:', d.data.url);
-                return null;
+            if (!d.data?.url) {
+                return createPlaceholderFavicon('?');
             }
+
+            // Handle special URLs that can't use chrome://favicon
+            if (d.data.url.startsWith('chrome://') || 
+                d.data.url.startsWith('chrome-extension://') || 
+                d.data.url.startsWith('file://') || 
+                d.data.url.startsWith('about:')) {
+                
+                // Use letter favicon immediately for special URLs
+                return createLetterFaviconForURL(d.data.url);
+            }
+            
+            // Return existing favicon if available
+            if (d.data.favIconUrl && !d.data.favIconUrl.includes('chrome://favicon')) {
+                return d.data.favIconUrl;
+            }
+            
+            // Otherwise generate a letter favicon
+            return createLetterFaviconForURL(d.data.url);
         })
         .attr('width', d => d.iconSize)
         .attr('height', d => d.iconSize)
         .attr('x', d => -d.iconSize/2)
         .attr('y', d => -d.iconSize/2)
-        .on('error', function() {
-            // On error, set to default icon
-            d3.select(this).attr('xlink:href', 'data:image/svg+xml;base64,' + btoa(`
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-                    <rect width="24" height="24" rx="4" fill="#eeeeee"/>
-                    <text x="12" y="16" font-size="14" text-anchor="middle" fill="#999999">?</text>
-                </svg>
-            `));
+        .on('error', function(event, d) {
+            // On error, set to letter favicon based on URL
+            d3.select(this).attr('xlink:href', 
+                d.data?.url ? createLetterFaviconForURL(d.data.url) : createPlaceholderFavicon('?'));
         });
 
     // Centered text below favicon
@@ -830,7 +824,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// Update the handleTabUpdated function with better error handling
+// Update the handleTabUpdated function with proper change detection
 async function handleTabUpdated(message) {
     const { tabId, changeInfo, tab } = message;
     
@@ -854,11 +848,11 @@ async function handleTabUpdated(message) {
     }
 
     let updated = false;
+    let hasContentChange = false; // Track actual content changes
+
     treemapState.data.activeWindows = treemapState.data.activeWindows.map(window => {
         const updatedTabs = window.tabs.map(t => {
             if (t.id === tabId) {
-                updated = true;
-                
                 // Determine the best title to use
                 let bestTitle = null;
                 
@@ -880,29 +874,59 @@ async function handleTabUpdated(message) {
                     bestTitle = tab.title || t.title;
                 }
                 
-                const updatedTab = {
-                    ...t,
-                    title: bestTitle,
-                    url: changeInfo.url || tab.url || t.url,
-                    favIconUrl: tab.favIconUrl || t.favIconUrl,
-                    lastAccessed: Date.now()
-                };
-                console.log('Updating tab in window:', {
-                    windowId: window.id,
-                    tabId,
-                    oldUrl: t.url,
-                    newUrl: updatedTab.url
-                });
-                return updatedTab;
+                // Check if anything actually changed
+                const urlChanged = (changeInfo.url && changeInfo.url !== t.url);
+                const titleChanged = (bestTitle && bestTitle !== t.title);
+                const faviconChanged = (tab.favIconUrl && tab.favIconUrl !== t.favIconUrl);
+                
+                // Only mark as having content change if something meaningful changed
+                hasContentChange = urlChanged || titleChanged || faviconChanged;
+                
+                if (hasContentChange) {
+                    console.log('Content changed:', {
+                        urlChanged,
+                        titleChanged,
+                        faviconChanged,
+                        oldTitle: t.title,
+                        newTitle: bestTitle
+                    });
+                    
+                    updated = true;
+                    const updatedTab = {
+                        ...t,
+                        title: bestTitle,
+                        url: changeInfo.url || tab.url || t.url,
+                        favIconUrl: tab.favIconUrl || t.favIconUrl,
+                        lastAccessed: hasContentChange ? Date.now() : t.lastAccessed // Only update timestamp if something changed
+                    };
+                    
+                    console.log('Updating tab in window:', {
+                        windowId: window.id,
+                        tabId,
+                        oldUrl: t.url,
+                        newUrl: updatedTab.url
+                    });
+                    return updatedTab;
+                }
+                
+                // If nothing changed, return the tab as-is
+                return t;
             }
             return t;
         });
         return { ...window, tabs: updatedTabs };
     });
 
-    if (updated) {
-        console.log('Redrawing treemap after URL change');
-        await drawTreemap(treemapState.data); // Ensure this is awaited
+    if (updated && hasContentChange) {
+        console.log('Redrawing treemap after content change');
+        
+        // Use debouncing to prevent multiple redraws in quick succession
+        clearTimeout(updateState.debounceTimer);
+        updateState.debounceTimer = setTimeout(async () => {
+            await drawTreemap(treemapState.data);
+        }, 300); // Wait 300ms before redrawing
+    } else if (updated) {
+        console.log('Tab updated but no visual content change, skipping redraw');
     } else {
         console.warn('Tab not found in any window:', tabId);
     }
@@ -1332,6 +1356,10 @@ let draggedTab = null;
  * - Drag start: Highlights dragged tab and potential drop targets
  * - Dragging: Shows drag ghost and updates drop target highlighting
  * - Drop: Moves tab to target window via Chrome API and refreshes visualization
+ * 
+ * @param {Event} event - D3 drag event
+ * @param {Object} d - Tab data object
+ * @param {HTMLElement} node - DOM element being dragged
  */
 function initDragDrop() {
   //console.log("Initializing drag and drop functionality");
@@ -1354,7 +1382,7 @@ function initDragDrop() {
     .attr('title', 'Drag to move tab between windows')
     .call(drag); // Apply drag behavior
   
-  console.log(`Applied drag behavior to ${d3.selectAll('.cell.draggable').size()} cells`);
+  //console.log(`Applied drag behavior to ${d3.selectAll('.cell.draggable').size()} cells`);
   
   // Identify window groups - keep this simple but effective
   d3.selectAll('.cell').each(function(d) {
@@ -1371,7 +1399,7 @@ function initDragDrop() {
     }
   });
   
-  console.log(`Identified ${d3.selectAll('.window-group').size()} window groups`);
+  //console.log(`Identified ${d3.selectAll('.window-group').size()} window groups`);
 }
 
 // Keep the original working dragStarted function
@@ -1898,5 +1926,102 @@ function showNotification(message, type) {
     // Remove from DOM after transition
     setTimeout(() => notification.remove(), 300);
   }, 3000);
+}
+
+/**
+ * Creates a letter favicon for a URL
+ * @param {string} url - URL to create favicon for
+ * @return {string} - Data URL for SVG favicon
+ */
+function createLetterFaviconForURL(url) {
+    try {
+        // Extract domain or URL part for the letter
+        let letter = '?';
+        let domain = '';
+        
+        if (url.startsWith('chrome://')) {
+            letter = 'C';
+            domain = 'chrome';
+        } 
+        else if (url.startsWith('chrome-extension://')) {
+            letter = 'E';
+            domain = 'extension';
+        }
+        else if (url.startsWith('file://')) {
+            letter = 'F';
+            domain = 'file';
+        }
+        else if (url.startsWith('about:')) {
+            letter = 'A';
+            domain = 'about';
+        }
+        else {
+            try {
+                const urlObj = new URL(url);
+                domain = urlObj.hostname.replace(/^www\./, '');
+                letter = domain.charAt(0).toUpperCase();
+                
+                // Handle domains starting with numbers or symbols
+                if (!letter.match(/[A-Z]/i)) {
+                    letter = domain.charAt(1)?.toUpperCase() || 'X';
+                    if (!letter.match(/[A-Z]/i)) {
+                        letter = 'X';
+                    }
+                }
+            } catch (e) {
+                letter = url.charAt(0).toUpperCase() || '?';
+            }
+        }
+        
+        // Generate color based on domain for consistency
+        const hue = Math.abs(hashCode(domain || url) % 360);
+        const color = `hsl(${hue}, 60%, 70%)`;
+        const textColor = `hsl(${hue}, 70%, 30%)`;
+        
+        return createLetterFaviconSVG(letter, color, textColor);
+    } catch (error) {
+        console.warn('Error creating letter favicon:', error);
+        return createPlaceholderFavicon('?');
+    }
+}
+
+/**
+ * Simple string hash function for consistent colors
+ * @param {string} str - String to hash
+ * @return {number} - Hash code
+ */
+function hashCode(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0; // Convert to 32bit integer
+    }
+    return hash;
+}
+
+/**
+ * Creates an SVG favicon with a letter
+ * @param {string} letter - Letter to display
+ * @param {string} bgColor - Background color
+ * @param {string} textColor - Text color
+ * @return {string} - Data URL for SVG favicon
+ */
+function createLetterFaviconSVG(letter, bgColor = '#e0e0e0', textColor = '#505050') {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+        <rect width="32" height="32" fill="${bgColor}" rx="4" />
+        <text x="16" y="22" font-family="Arial, sans-serif" font-size="16" 
+              fill="${textColor}" text-anchor="middle" font-weight="bold">${letter}</text>
+    </svg>`;
+    
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+}
+
+/**
+ * Creates a placeholder favicon
+ * @param {string} symbol - Symbol to display
+ * @return {string} - Data URL for SVG favicon
+ */
+function createPlaceholderFavicon(symbol = '?') {
+    return createLetterFaviconSVG(symbol, '#eeeeee', '#999999');
 }
 

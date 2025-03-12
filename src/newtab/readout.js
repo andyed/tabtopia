@@ -525,8 +525,8 @@ export async function displayReadout(d, event) {
         ` : ''}
     `;
 
-    // Show readout
-    readout.style.display = 'block';
+    // Show readout - ensure it's visible
+    readout.classList.remove('hidden');
 
     // Position readout
     if (event) {
@@ -582,8 +582,12 @@ function positionReadout(event) {
 // Add cache cleanup on hide
 export function hideReadout() {
     const readoutContainer = document.getElementById('readout');
-    readoutContainer.style.display = 'none';
-    readoutContainer.innerHTML = '';
+    
+    // Use classList instead of style.display = 'none'
+    readoutContainer.classList.add('hidden');
+    
+    // Keep a minimal placeholder to maintain structure
+    readoutContainer.innerHTML = '<div class="readout-placeholder"></div>';
     
     // Cleanup old cache entries
     for (const [url, cached] of summaryCache.entries()) {
