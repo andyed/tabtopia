@@ -252,4 +252,168 @@ export function getDomainFromUrl(url) {
   }
 }
 
+// Replace the duplicate sections with this consolidated code
+
+// Color palette cache - SINGLE declaration
+const windowColorCache = new Map();
+const colorPalettes = {};
+
+/**
+ * Get a consistent color palette for a window
+ * @param {number} windowId - Window identifier
+ * @param {Object} options - Configuration options
+ * @returns {Object} - Color palette with various properties
+ */
+export function getWindowColorPalette(windowId, options = {}) {
+  // Default options
+  const defaults = {
+    paletteSize: 20,
+    baseHueFn: (id) => (id * 137.5) % 360, // Golden angle for good distribution
+    activeSaturation: 75,
+    activeLightness: 55,
+    lightnessFn: (i) => 55 - (i * 1.5),  // 55% down to 25% (lighter overall)
+    saturationFn: (i) => 60 - (i * 1.5)  // 60% down to 30% (more saturated)
+  };
+  
+  const config = { ...defaults, ...options };
+  
+  // Use cached palette if available
+  const cacheKey = `${windowId}-${JSON.stringify(config)}`;
+  if (colorPalettes[cacheKey]) {
+    return colorPalettes[cacheKey];
+  }
+  
+  // Generate or get base hue
+  let baseHue;
+  if (windowColorCache.has(windowId)) {
+    baseHue = windowColorCache.get(windowId);
+  } else {
+    baseHue = config.baseHueFn(windowId);
+    windowColorCache.set(windowId, baseHue);
+  }
+  
+  // Generate palette
+  const palette = {
+    baseHue,
+    windowId,
+    colors: [],
+    activeColor: `hsl(${baseHue}, ${config.activeSaturation}%, ${config.activeLightness}%)`,
+    
+    // Helper method to get color for a specific tab
+    getTabColor: function(tab) {
+      if (!tab) return this.colors[0];
+      if (tab.active) return this.activeColor;
+      const index = Math.min(tab.index || 0, this.colors.length - 1);
+      return this.colors[index];
+    },
+    
+    // Background color for window (lighter version)
+    getWindowBackground: function() {
+      return `hsl(${baseHue}, 15%, 70%)`;
+    }
+  };
+  
+  // Generate gradient from light to dark
+  for (let i = 0; i < config.paletteSize; i++) {
+    const lightness = config.lightnessFn(i);
+    const saturation = config.saturationFn(i);
+    palette.colors.push(`hsl(${baseHue}, ${saturation}%, ${lightness}%)`);
+  }
+  
+  // Cache palette
+  colorPalettes[cacheKey] = palette;
+  
+  return palette;
+}
+
+// Predefined colors for windows - can be used directly in both views
+export const lightColors = [
+  '#e3f2fd', '#e8f5e9', '#fff3e0', '#ffebee', 
+  '#f3e5f5', '#e0f7fa', '#fffde7', '#efebe9'
+];
+
+// SINGLE getWindowColor function that combines both approaches
+/**
+ * Get a consistent color for a window
+ * @param {number} windowId - Window identifier
+ * @param {Object} options - Optional configuration
+ * @returns {Object} - Color information including base color and palette
+ */
+export function getWindowColor(windowId, options = {}) {
+  // Default options
+  const config = {
+    lightness: options.lightness || 70, // Brighter default (25-75% range)
+    saturation: options.saturation || 60,
+    fallbackHue: options.fallbackHue || 210, // Default blue
+    useLegacy: options.useLegacy || false // Flag to use legacy simple colors
+  };
+  
+  // Legacy mode - simple color from array
+  if (config.useLegacy) {
+    return {
+      base: lightColors[windowId % lightColors.length],
+      getTabColor: () => lightColors[windowId % lightColors.length],
+      background: lightColors[windowId % lightColors.length],
+      getBorder: (focused) => focused ? '#64b5f6' : '#403c36'
+    };
+  }
+  
+  // Return cached value if available
+  if (windowColorCache.has(windowId)) {
+    return windowColorCache.get(windowId);
+  }
+  
+  // Generate a consistent hue based on window ID
+  const hue = (windowId * 137.5) % 360; // Golden angle for good distribution
+  
+  // Create color object with helper methods
+  const colorObj = {
+    windowId,
+    hue,
+    
+    // Base color for the window (background)
+    base: `hsl(${hue}, ${config.saturation}%, ${config.lightness}%)`,
+    
+    // Get tab color based on activity and recency
+    getTabColor: function(tabIndex, isActive = false) {
+      if (isActive) {
+        return `hsl(${hue}, 80%, 55%)`; // Vibrant color for active tab
+      }
+      // More recent tabs get brighter colors
+      const tabLightness = Math.max(30, Math.min(70, config.lightness - (tabIndex * 2)));
+      const tabSaturation = Math.max(40, Math.min(80, config.saturation - (tabIndex * 2)));
+      return `hsl(${hue}, ${tabSaturation}%, ${tabLightness}%)`;
+    },
+    
+    // Get window background
+    background: `hsl(${hue}, ${Math.max(15, config.saturation - 45)}%, ${Math.min(75, config.lightness + 5)}%)`,
+    
+    // Get window border
+    getBorder: function(focused = false) {
+      return focused 
+        ? `hsl(${hue}, 70%, 50%)` // Focused window border
+        : `hsl(${hue}, 30%, 55%)`; // Normal window border
+    }
+  };
+  
+  // Cache the color
+  windowColorCache.set(windowId, colorObj);
+  return colorObj;
+}
+
+// Clear color cache (call this if you want to regenerate colors)
+export function resetWindowColors() {
+  windowColorCache.clear();
+}
+
+// Fallback colors for bookmarks or special windows
+export const specialColors = {
+  bookmark: {
+    base: 'hsl(195, 53%, 79%)',
+    background: 'hsl(195, 33%, 89%)',
+    getBorder: (focused) => focused ? 'hsl(195, 70%, 50%)' : 'hsl(195, 40%, 65%)',
+    getTabColor: () => 'hsl(195, 53%, 79%)'
+  }
+};
+
 

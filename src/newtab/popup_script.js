@@ -2,6 +2,9 @@
  * Lightweight treemap visualization for Chrome extension popup
  */
 
+// Add at top with other imports
+import { getWindowColor, specialColors } from './utility.js';
+
 document.addEventListener('DOMContentLoaded', () => {
     // Get DOM elements
     const treemapContainer = document.getElementById('popup-treemap');
@@ -10,10 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const windowCountEl = document.getElementById('windowCount');
     const tooltip = document.getElementById('tooltip');
 
-    
-    // Add these variables at the top level inside your DOMContentLoaded event handler
-    const windowColorCache = new Map();
-    const colorPalettes = {};
     
     // Add these variables at the top of your script
     let focusableElements = [];
@@ -138,8 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
         windows.append('rect')
             .attr('width', d => d.x1 - d.x0)
             .attr('height', d => d.y1 - d.y0)
-            .attr('fill', '#2f2b26')
-            .attr('stroke', d => d.data.focused ? '#64b5f6' : '#403c36')
+            .attr('fill', d => getWindowColor(d.data.id).background)
+            .attr('stroke', d => getWindowColor(d.data.id).getBorder(d.data.focused))
             .attr('stroke-width', d => d.data.focused ? 2 : 1)
             .attr('rx', 3)
             .attr('ry', 3);
@@ -301,17 +300,13 @@ document.addEventListener('DOMContentLoaded', () => {
      * Get color for a tab based on its state and recency
      */
     function getColorForTab(tab) {
-        const palette = getWindowPalette(tab.windowId);
+        if (!tab || !tab.windowId) return '#999999';
         
-        // Active tabs get special treatment
-        if (tab.active) {
-            return palette[-1]; // Use the active color
-        }
+        // Use the imported getWindowColor function
+        const windowColor = getWindowColor(tab.windowId);
         
-        // Use the tab's index to determine its color
-        // This represents recency order since we sorted earlier
-        const colorIndex = Math.min(tab.index, palette.length - 1);
-        return palette[colorIndex];
+        // Return tab color based on activity and index
+        return windowColor.getTabColor(tab.index, tab.active);
     }
     
     /**
