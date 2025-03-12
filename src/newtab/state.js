@@ -11,6 +11,8 @@
  * @module state
  */
 
+import { debounce } from './utility.js';
+
 /**
  * Action Types
  * Constants for all possible state changes
@@ -75,6 +77,8 @@ const initialState = {
     lastFetch: Date.now()
   }
 };
+
+const updateDebouncer = debounce((callback) => callback(), 300);
 
 /**
  * Central browser state interface with Redux-inspired architecture
@@ -354,16 +358,41 @@ export const browserState = {
       const newTabs = new Map(state.tabs);
       
       const existingTab = newTabs.get(tabId) || {};
-      newTabs.set(tabId, { 
-        ...existingTab, 
-        ...changes,
-        lastUpdate: Date.now()
+      
+      // Check if any significant values actually changed
+      let hasSignificantChanges = false;
+      const significantKeys = ['url', 'title', 'active', 'windowId'];
+      
+      for (const [key, value] of Object.entries(changes)) {
+        // Only check significant keys
+        if (significantKeys.includes(key) && existingTab[key] !== value) {
+          hasSignificantChanges = true;
+          break;
+        }
+      }
+      
+      // If no significant changes, return existing state
+      if (!hasSignificantChanges) {
+        console.log('Skipping tab update - no significant changes:', tabId);
+        return state;
+      }
+      
+      // Use debouncer for the state update
+      updateDebouncer(() => {
+        newTabs.set(tabId, { 
+          ...existingTab, 
+          ...changes,
+          lastUpdate: Date.now()
+        });
+        
+        return {
+          ...state,
+          tabs: newTabs
+        };
       });
       
-      return {
-        ...state,
-        tabs: newTabs
-      };
+      // Return current state while debounced update is pending
+      return state;
     },
     
     /**

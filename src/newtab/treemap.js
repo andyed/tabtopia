@@ -243,6 +243,39 @@ function getDarkerColor(d, amount = 0.5) {
     }
 }
 
+// Add this function to compare data
+function hasDataChanged(oldData, newData) {
+  if (!oldData || !newData) return true;
+  
+  // Compare window and tab counts
+  const oldWindows = oldData.children || [];
+  const newWindows = newData.children || [];
+  
+  if (oldWindows.length !== newWindows.length) return true;
+  
+  // Compare each window's tabs
+  for (let i = 0; i < oldWindows.length; i++) {
+    const oldTabs = oldWindows[i].children || [];
+    const newTabs = newWindows[i].children || [];
+    
+    if (oldTabs.length !== newTabs.length) return true;
+    
+    // Compare essential tab properties
+    for (let j = 0; j < oldTabs.length; j++) {
+      if (oldTabs[j].id !== newTabs[j].id ||
+          oldTabs[j].url !== newTabs[j].url ||
+          oldTabs[j].active !== newTabs[j].active) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+// Modify the drawTreemap function to use this check
+let lastTreemapData = null;
+
 /**
  * Draw treemap visualization based on provided data
  * 
@@ -261,7 +294,15 @@ function getDarkerColor(d, amount = 0.5) {
  * @returns {Promise<void>} - Resolves when treemap is fully rendered
  */
 export async function drawTreemap(data) {
-    if (!data?.activeWindows) {
+  // Check if data actually changed
+  if (!hasDataChanged(lastTreemapData, data)) {
+    console.log('Skipping treemap redraw - no meaningful changes');
+    return;
+  }
+  
+  lastTreemapData = JSON.parse(JSON.stringify(data)); // Deep copy to prevent reference issues
+  
+  if (!data?.activeWindows) {
         console.warn('Invalid data for treemap:', data);
         return;
     }
