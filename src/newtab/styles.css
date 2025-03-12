@@ -102,6 +102,18 @@ body {
     background-color: #33302b; /* Slightly lighter than main background */
     border-left: 1px solid #403c36; /* Subtle border */
     box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
+    min-width: 300px;  /* Set a minimum width */
+    width: 30%;        /* Or use percentage width */
+    transition: opacity 0.2s ease;  /* Smooth transition */
+    visibility: visible;
+    opacity: 1;
+}
+
+#readout.hidden {
+    visibility: hidden;  /* Keeps element in document flow */
+    opacity: 0;
+    /* Don't use display: none */
+    pointer-events: none; /* Prevent interaction when hidden */
 }
 
 /* Readout headings */

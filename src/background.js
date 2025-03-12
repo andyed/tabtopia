@@ -1060,68 +1060,25 @@ function recordNavigation(details) {
     processNavigationByType(tabData, details);
 }
 
-// Update tab metadata without recording a new navigation
+// Add this helper function
+function hasSignificantChanges(oldData, newData) {
+  // Only consider changes that would affect visualization
+  const significantKeys = ['url', 'title', 'active', 'windowId'];
+  
+  return significantKeys.some(key => oldData[key] !== newData[key]);
+}
+
+// Modify the updateTabMetadata function
 function updateTabMetadata(tabId, changes) {
-    // Get existing tab data
-    const tabData = browserState.tabs.get(tabId);
-    if (!tabData) return;
-    
-    // Update fields that changed
-    let hasChanges = false;
-    
-    if (changes.title && changes.title !== tabData.title) {
-        tabData.title = changes.title;
-        hasChanges = true;
-        
-        // NEW CODE: If title updates but no favicon, try to fetch favicon
-        // This helps with typed navigation where title comes first
-        if (!tabData.favIconUrl && tabData.url) {
-            // Schedule a favicon check when we get a title update
-            setTimeout(() => {
-                chrome.tabs.get(tabId, (tab) => {
-                    if (chrome.runtime.lastError) return;
-                    
-                    if (tab.favIconUrl) {
-                        updateTabMetadata(tabId, { favIconUrl: tab.favIconUrl });
-                    } else {
-                        // Use fallback favicon if needed
-                        const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(tabData.url)}`;
-                        updateTabMetadata(tabId, { favIconUrl: fallbackFavicon });
-                    }
-                });
-            }, 300); // Shorter delay since title already updated
-        }
-    }
-    
-    if (changes.favIconUrl && changes.favIconUrl !== tabData.favIconUrl) {
-        tabData.favIconUrl = changes.favIconUrl;
-        hasChanges = true;
-        
-        // Specifically notify about favicon changes
-        sendMessageWithErrorHandling({
-            action: 'tabFaviconUpdated',
-            tabId,
-            favIconUrl: changes.favIconUrl
-        });
-    }
-    
-    if (changes.status === 'complete' && tabData.status !== 'complete') {
-        tabData.status = 'complete';
-        tabData.loadCompleted = Date.now();
-        hasChanges = true;
-    }
-    
-    if (hasChanges) {
-        tabData.lastUpdate = Date.now();
-        browserState.tabs.set(tabId, tabData);
-        
-        // Only notify for significant changes to reduce message traffic
-        sendMessageWithErrorHandling({
-            action: 'tabMetadataUpdated',
-            tabId,
-            changes
-        });
-    }
+  const existingTab = findTabById(tabId);
+  
+  // Skip update if no significant changes
+  if (existingTab && !hasSignificantChanges(existingTab, changes)) {
+    console.log('Skipping tab update - no significant changes:', tabId);
+    return;
+  }
+  
+  // Rest of the existing updateTabMetadata code...
 }
 
 // Enhanced function to process navigation events by type

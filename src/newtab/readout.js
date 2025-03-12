@@ -32,6 +32,9 @@ const SUMMARIZER_OPTIONS = {
     length: 'short'
 };
 
+// Add at the top with other state variables
+let lastDisplayedNodeId = null;
+
 // Helper function to get domain from URL
 function getDomain(url) {
     if (!url) return 'Unknown';
@@ -57,12 +60,25 @@ function formatUrlForDisplay(url) {
 const ITEMS_PER_PAGE = 5;
 
 function resetInactivityTimer(categorizedDataCache) {
-    // Don't set timer if we're in sticky state
-    if (stickyCell) {
+    // Clear any existing timer
+    clearTimeout(inactivityTimer);
+    
+    // Don't set timer if:
+    // 1. We have a sticky cell selected
+    // 2. There's an active search
+    // 3. We have a lastDisplayedNodeId (meaning something is selected)
+    const searchInput = document.getElementById('tabSearch');
+    const hasActiveSearch = searchInput && searchInput.value.trim().length > 0;
+    
+    if (stickyCell || hasActiveSearch || lastDisplayedNodeId) {
+        console.log('Skipping inactivity timer - active interaction:', {
+            hasSticky: !!stickyCell,
+            hasSearch: hasActiveSearch,
+            lastNode: lastDisplayedNodeId
+        });
         return;
     }
 
-    clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
         showDefaultReadout(categorizedDataCache);
     }, INACTIVITY_TIMEOUT);
@@ -384,6 +400,14 @@ export async function displayReadout(d, event) {
         return;
     }
 
+    // Check if this is the same node we're already displaying
+    const currentNodeId = nodeData.id || `${nodeData.windowId}-${nodeData.index}`;
+    if (currentNodeId === lastDisplayedNodeId) {
+        console.log('Skipping readout update - same node');
+        return;
+    }
+    lastDisplayedNodeId = currentNodeId;
+
     console.log('Normalized data:', nodeData);
     
     // Make sure we have a URL to work with
@@ -525,8 +549,8 @@ export async function displayReadout(d, event) {
         ` : ''}
     `;
 
-    // Show readout
-    readout.style.display = 'block';
+    // Show readout - ensure it's visible
+    readout.classList.remove('hidden');
 
     // Position readout
     if (event) {
@@ -582,8 +606,15 @@ function positionReadout(event) {
 // Add cache cleanup on hide
 export function hideReadout() {
     const readoutContainer = document.getElementById('readout');
-    readoutContainer.style.display = 'none';
-    readoutContainer.innerHTML = '';
+    
+    // Reset the last displayed node ID
+    lastDisplayedNodeId = null;
+    
+    // Use classList instead of style.display = 'none'
+    readoutContainer.classList.add('hidden');
+    
+    // Keep a minimal placeholder to maintain structure
+    readoutContainer.innerHTML = '<div class="readout-placeholder"></div>';
     
     // Cleanup old cache entries
     for (const [url, cached] of summaryCache.entries()) {
@@ -594,11 +625,21 @@ export function hideReadout() {
 }
 
 function showDefaultReadout(categorizedDataCache) {
+    // Don't show default readout if we have active interactions
+    const searchInput = document.getElementById('tabSearch');
+    const hasActiveSearch = searchInput && searchInput.value.trim().length > 0;
+    
+    if (stickyCell || hasActiveSearch || lastDisplayedNodeId) {
+        console.log('Skipping default readout - active interaction');
+        return;
+    }
+
     const readoutContainer = document.getElementById('readout');
     if (!readoutContainer || !categorizedDataCache?.activeWindows) {
         console.warn('Readout container or data not available');
         return;
     }
+
     // First, clear any existing content
     readoutContainer.innerHTML = '';
     // Initialize search box if needed

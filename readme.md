@@ -13,7 +13,7 @@ Tabtopia is a Chrome extension that visualizes your browser history and open tab
    - Press Escape to clear selection
 
 2. **Tab Management**
-   - Close tabs directly from the visualization
+   - Long press (750ms) on a node to initiate drag and drop
    - Drag nodes to move tabs between windows
    - Bookmark tabs with a single click
    - View domain-specific history and bookmarks in the readout panel
@@ -23,6 +23,7 @@ Tabtopia is a Chrome extension that visualizes your browser history and open tab
    - Quick search with real-time filtering
    - Domain grouping and window organization
    - Automatic tab count and window statistics
+   - Readout panel updates only when selected element changes
 
 ### Graph Exploration
 1. **View Modes**
