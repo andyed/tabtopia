@@ -576,13 +576,40 @@ export async function drawTreemap(data) {
         `)
         .on('click', async function(event, d) {
             event.stopPropagation();
-            const tabId = parseInt(d.data.id.replace('tab', ''), 10);
+            event.preventDefault();
+            
+            // Extract tab ID from the data
+            let tabId;
+            if (d.data.id) {
+                // Handle both number and string formats
+                tabId = typeof d.data.id === 'number' ? 
+                    d.data.id : 
+                    parseInt(d.data.id.replace(/\D/g, ''), 10);
+            }
+            
+            if (!tabId || isNaN(tabId)) {
+                console.error('Invalid tab ID:', d.data.id);
+                showNotification('Failed to close tab: Invalid tab ID', 'error');
+                return;
+            }
+            
+            console.log('Attempting to close tab:', tabId);
+            
             try {
                 await chrome.tabs.remove(tabId);
-                // Let the onRemoved handler deal with the UI update
-                console.log('Tab removal requested:', tabId, event);
+                console.log('Tab closed successfully:', tabId);
+                showNotification('Tab closed successfully', 'success');
+                
+                // Remove the cell from the visualization
+                d3.select(this.parentNode).remove();
+                
+                // Update the treemap after a short delay
+                setTimeout(() => {
+                    window.location.reload();
+                }, 300);
             } catch (error) {
-                console.error('Error removing tab:', error);
+                console.error('Error closing tab:', error);
+                showNotification('Failed to close tab: ' + error.message, 'error');
             }
         });
 
@@ -709,7 +736,36 @@ export async function drawTreemap(data) {
             }
         })
         .on('keydown', function(event, d) {
-            handleKeyNavigation(event, this, d, interactionState);
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                event.stopPropagation();
+                
+                if (d.data.isBookmark) {
+                    chrome.tabs.create({ url: d.data.url, active: true });
+                } else {
+                    const windowId = parseInt(d.data.windowId, 10);
+                    const tabId = parseInt(d.data.id.replace(/\D/g, ''), 10);
+                    
+                    if (!windowId || !tabId) {
+                        console.error('Invalid window or tab ID:', { windowId, tabId, data: d.data });
+                        return;
+                    }
+                    
+                    chrome.windows.update(windowId, { focused: true }, () => {
+                        if (chrome.runtime.lastError) {
+                            console.error('Error focusing window:', chrome.runtime.lastError);
+                            return;
+                        }
+                        chrome.tabs.update(tabId, { active: true }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.error('Error activating tab:', chrome.runtime.lastError);
+                            }
+                        });
+                    });
+                }
+            } else {
+                handleKeyNavigation(event, this, d, interactionState);
+            }
         });
 
     // Store nodes for keyboard navigation
