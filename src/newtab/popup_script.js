@@ -13,6 +13,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const windowCountEl = document.getElementById('windowCount');
     const tooltip = document.getElementById('tooltip');
 
+    // Focus the search input as soon as the popup loads
+    if (searchInput) {
+        searchInput.focus();
+        // Optionally select all text for quick overwrite
+        searchInput.select();
+    }
+
     
     // Add these variables at the top of your script
     let focusableElements = [];
@@ -44,6 +51,18 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Setup event listeners
             setupEventListeners();
+            // Keyboard navigation: allow up/down/enter to select tabs
+            if (searchInput) {
+                searchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'ArrowDown') {
+                        // Move focus to first matching tab cell (after search)
+                        if (focusableElements.length > 0) {
+                            moveFocusToIndex(0);
+                            e.preventDefault();
+                        }
+                    }
+                });
+            }
         })
         .catch(error => {
             console.error('Error fetching browser data:', error);
@@ -601,7 +620,6 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function handleSearch() {
         const query = searchInput.value.toLowerCase();
-        
         // Filter tabs based on search
         d3.selectAll('.cell')
             .style('opacity', d => {
@@ -610,5 +628,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const matchesUrl = tabData.url.toLowerCase().includes(query);
                 return (matchesTitle || matchesUrl || !query) ? 1 : 0.3;
             });
+        // Update focusableElements to only include matching cells
+        focusableElements = Array.from(document.querySelectorAll('.cell')).filter(el => {
+            const d = d3.select(el).datum();
+            const title = d.data.title.toLowerCase();
+            const url = d.data.url.toLowerCase();
+            return !query || title.includes(query) || url.includes(query);
+        });
+        currentFocusIndex = -1; // Reset focus index after search
     }
 });
