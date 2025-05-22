@@ -964,25 +964,6 @@ function notifyTreemap(message) {
     }
 }
 
-// Replace all instances of direct chrome.runtime.sendMessage with this wrapper
-function sendMessageWithErrorHandling(message) {
-  if (!message || !message.action) return Promise.resolve();
-  
-  try {
-    // Add a timestamp to every message for debugging
-    message.timestamp = message.timestamp || Date.now();
-    
-    return chrome.runtime.sendMessage(message)
-      .catch(error => {
-        // Expected when no active listeners
-        return null;
-      });
-  } catch (error) {
-    console.log('Error sending message:', error);
-    return Promise.resolve(null);
-  }
-}
-
 // Add temporary storage for link data
 let pendingLinkData = {};
 
@@ -1009,56 +990,6 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
     delete pendingLinkData[details.tabId];
   }
 });
-
-// Record a navigation event and update state
-function recordNavigation(details) {
-    const { tabId, url, title, transitionType, timestamp, navigationId } = details;
-    
-    // Get existing tab data or create new entry
-    let tabData = browserState.tabs.get(tabId) || {
-        id: tabId,
-        history: [],
-        created: timestamp
-    };
-    
-    // Update tab data
-    tabData = {
-        ...tabData,
-        url,
-        title: title || tabData.title || '',
-        lastNavigation: {
-            url,
-            timestamp,
-            type: transitionType
-        },
-        lastUpdate: timestamp
-    };
-    
-    // Add to history (with size limit)
-    if (!tabData.history) tabData.history = [];
-    tabData.history.unshift({ url, timestamp, type: transitionType });
-    
-    // Limit history size
-    if (tabData.history.length > 50) {
-        tabData.history = tabData.history.slice(0, 50);
-    }
-    
-    // Save updated tab data
-    browserState.tabs.set(tabId, tabData);
-    
-    // Only send one message for this navigation
-    sendMessageWithErrorHandling({
-        action: 'tabNavigated',
-        tabId,
-        url,
-        title,
-        transitionType,
-        timestamp
-    });
-    
-    // Additional processing for specific navigation types
-    processNavigationByType(tabData, details);
-}
 
 // Update tab metadata without recording a new navigation
 function updateTabMetadata(tabId, changes) {
@@ -1121,46 +1052,6 @@ function updateTabMetadata(tabId, changes) {
             tabId,
             changes
         });
-    }
-}
-
-// Enhanced function to process navigation events by type
-function processNavigationByType(tabData, details) {
-    const { tabId, transitionType, transitionQualifiers, url } = details;
-    
-    // Create a base edge object for all navigation types
-    const baseEdge = {
-        target: tabId,
-        targetUrl: url,
-        timestamp: Date.now(),
-        transitionType: transitionType,
-        transitionQualifiers: transitionQualifiers || []
-    };
-    
-    // Handle different navigation types
-    if (transitionType === 'link') {
-        // Link click navigation
-        processLinkNavigation(tabData, details, baseEdge);
-    } 
-    else if (transitionType === 'typed' || transitionType === 'generated') {
-        // URL bar navigation or address entered
-        // DON'T create an edge from prior URL for typed URLs
-        // Just record the navigation without creating an edge
-        const activity = browserState.tabActivityLog.get(tabId) || { navigations: [] };
-        if (!activity.navigations) activity.navigations = [];
-        
-        activity.navigations.push({
-            type: 'typed_navigation',
-            url: url,
-            timestamp: Date.now(),
-            transitionType: transitionType,
-            transitionQualifiers: transitionQualifiers || []
-        });
-        
-        browserState.tabActivityLog.set(tabId, activity);
-        
-        // Skip processDirectNavigation which would create an unwanted edge
-        // processDirectNavigation(tabData, details, baseEdge); 
     }
 }
 

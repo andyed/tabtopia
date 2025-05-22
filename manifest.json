@@ -10,13 +10,13 @@
     "activeTab",
     "webRequest",
     "windows",
-    "chrome://favicon/",
     "favicon",
-    "*://*/*",
-    "bookmarks", 
+    "bookmarks",
     "scripting"
-
-  ],  
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "web_accessible_resources": [
     {
       "resources": ["src/newtab/*.js", "_favicon/*"],
@@ -24,9 +24,6 @@
       "use_dynamic_url": true,
       "extension_ids": ["*"]
     }
-  ],
-  "host_permissions": [
-    "<all_urls>"
   ],
   "background": {
     "service_worker": "src/background.js",
@@ -47,7 +44,7 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
-  
+
     "action": {
       "default_popup": "src/newtab/popup.html",
       "default_icon": {

@@ -66,6 +66,9 @@ async function init() {
         // Create the visualization
         createForceGraph();
 
+        // Setup view mode buttons
+        setupViewModes();
+
         // Periodically save node positions
         const positionSaveInterval = setInterval(() => {
             // Only save if simulation has stabilized
