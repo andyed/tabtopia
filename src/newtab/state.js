@@ -52,6 +52,7 @@ const initialState = {
   windows: new Map(),
   tabHistory: new Map(),
   tabRelationships: new Map(),
+  tabActivityLog: new Map(), // Added for dwell time and activity
   
   // UI state
   ui: {
@@ -139,7 +140,8 @@ export const browserState = {
       tabs: this._store.tabs,
       windows: this._store.windows,
       tabHistory: this._store.tabHistory,
-      tabRelationships: this._store.tabRelationships
+      tabRelationships: this._store.tabRelationships,
+      tabActivityLog: this._store.tabActivityLog // Added for dwell time and activity
     };
   },
   
@@ -510,13 +512,23 @@ export const browserState = {
       const tabRelationships = payload.tabRelationships instanceof Map 
         ? payload.tabRelationships 
         : new Map(payload.tabRelationships || []);
+        
+      const tabActivityLog = payload.tabActivityLog instanceof Map 
+        ? payload.tabActivityLog 
+        : new Map(payload.tabActivityLog || []);
       
       return {
         ...state,
         tabs,
         windows,
         tabHistory,
-        tabRelationships
+        tabRelationships,
+        tabActivityLog,
+        // Ensure other parts of the state are also updated if present in payload
+        ui: payload.ui ? { ...state.ui, ...payload.ui } : state.ui,
+        graphData: payload.graphData ? { ...state.graphData, ...payload.graphData } : state.graphData,
+        cache: payload.cache ? { ...state.cache, ...payload.cache } : state.cache,
+        lastUpdated: Date.now()
       };
     }
   },
@@ -777,6 +789,79 @@ export const browserState = {
     } catch (e) {
       return 'unknown';
     }
+  },
+
+  async getPageActivityAndReferrals(pageInfoArray) {
+    // Ensure the local store (_store) is up-to-date with the latest from background.js
+    await this.getState();
+
+    const enrichedPages = pageInfoArray.map(page => {
+      let visitTabId = null;
+      let navigationEntry = null;
+      let nextNavigationEntry = null;
+
+      // Find the tabId and specific navigation entry for this page visit
+      // by searching through all tab histories.
+      // Assumes page.visitTimestamp is reasonably accurate.
+      if (this._store.tabHistory && this._store.tabHistory.size > 0) {
+        for (const [tabId, historyArray] of this._store.tabHistory.entries()) {
+          // tabHistory entries are typically newest first (unshifted)
+          const entryIndex = historyArray.findIndex(
+            (nav) => nav.url === page.url && 
+                     Math.abs(nav.timestamp - page.visitTimestamp) < 2000 // Allow 2s delta for timestamp match
+          );
+
+          if (entryIndex !== -1) {
+            visitTabId = tabId;
+            navigationEntry = historyArray[entryIndex];
+            // The chronologically next navigation is at the previous index (if it exists)
+            if (entryIndex > 0) { 
+              nextNavigationEntry = historyArray[entryIndex - 1];
+            }
+            break; // Found the relevant navigation history for this page
+          }
+        }
+      }
+
+      let dwellTimeMs = null;
+      if (navigationEntry && nextNavigationEntry) {
+        const duration = nextNavigationEntry.timestamp - navigationEntry.timestamp;
+        if (duration > 0) {
+          dwellTimeMs = duration;
+        }
+      } else if (navigationEntry) {
+        // This page was the last recorded in its tab's history or tab still open.
+        // Dwell time calculation here is less certain without tab closure/session end times.
+        // For now, we'll leave it null. sessions.js might refine this later.
+      }
+
+      let referral = null;
+      if (visitTabId && this._store.tabRelationships && this._store.tabRelationships.has(visitTabId)) {
+        const relationship = this._store.tabRelationships.get(visitTabId);
+        // This relationship describes how the 'visitTabId' itself was opened.
+        if (relationship && relationship.referringTabId) {
+          referral = {
+            type: 'tabOpen', // Indicates this referral is about how the tab was initiated
+            sourceTabId: relationship.referringTabId,
+            sourceUrl: relationship.referringURL,
+            linkText: relationship.linkText || null,
+            timestamp: relationship.timestamp
+          };
+        }
+      }
+      // Note: For intra-tab navigations (link clicks not opening new tabs),
+      // specific link text might not be available via tabRelationships.
+      // The transitionType on the navigationEntry itself (e.g., 'link') can indicate this.
+
+      return {
+        ...page, // Keep original page info (pageId, url, visitTimestamp)
+        originalTabId: visitTabId, // The tabId in which this specific page visit occurred
+        dwellTimeMs,
+        referral,
+      };
+    });
+
+    return enrichedPages;
   },
   
   /**

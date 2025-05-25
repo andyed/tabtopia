@@ -69,7 +69,7 @@ async function initSessions() {
         console.log('Fetched windows:', allWindows.length);
 
         // Placeholder for processing data into sessions
-        const sessionsData = processDataIntoSessions(historyItems, allWindows);
+        const sessionsData = await processDataIntoSessions(historyItems, allWindows); // Added await
         allSessionsData = sessionsData; // Store the full dataset
         
         renderSessions(allSessionsData); // Initial render with all data
@@ -82,7 +82,7 @@ async function initSessions() {
     }
 }
 
-function processDataIntoSessions(historyItems, allWindows) {
+async function processDataIntoSessions(historyItems, allWindows) { // Made async
     console.log('Processing data into sessions...');
     const SESSION_GAP_THRESHOLD = 30 * 60 * 1000; // 30 minutes in milliseconds
     let processedSessions = [];
@@ -164,8 +164,35 @@ function processDataIntoSessions(historyItems, allWindows) {
         finalizeSession(currentSession);
         processedSessions.push(currentSession);
     }
+
+    // Enrich sessions with dwell time and referral data
+    if (typeof browserState !== 'undefined' && browserState.getPageActivityAndReferrals) {
+        console.log('Enriching sessions with activity and referral data...');
+        for (let i = 0; i < processedSessions.length; i++) {
+            const session = processedSessions[i];
+            if (session.pages && session.pages.length > 0) {
+                const pageInfoForEnrichment = session.pages.map(p => ({
+                    url: p.url,
+                    visitTimestamp: p.visitTime // Map visitTime to visitTimestamp
+                }));
+
+                try {
+                    const enrichedPages = await browserState.getPageActivityAndReferrals(pageInfoForEnrichment);
+                    session.pages = session.pages.map((originalPage, index) => ({
+                        ...originalPage,
+                        ...enrichedPages[index] // Adds originalTabId, dwellTimeMs, referral
+                    }));
+                    console.log(`Enriched ${enrichedPages.length} pages for session ${session.id}`);
+                } catch (error) {
+                    console.error(`Error enriching pages for session ${session.id}:`, error);
+                }
+            }
+        }
+    } else {
+        console.warn('browserState.getPageActivityAndReferrals not available. Skipping session enrichment.');
+    }
     
-    console.log('Processed sessions:', processedSessions);
+    console.log('Processed sessions (enriched):', processedSessions);
     return processedSessions;
 }
 
@@ -248,6 +275,16 @@ function finalizeSession(session) {
             domain: domain,
             faviconUrl: getFaviconDisplayUrl(domain) // Get favicon for the domain itself
         }));
+
+    // Populate linkTexts from enriched page data
+    session.linkTexts = [];
+    if (session.pages) {
+        session.pages.forEach(page => {
+            if (page.referral && page.referral.linkText && !session.linkTexts.includes(page.referral.linkText)) {
+                session.linkTexts.push(page.referral.linkText);
+            }
+        });
+    }
 }
 
 function formatDuration(milliseconds) {
@@ -344,6 +381,40 @@ function renderSessionPageList(pages) {
         visitTimeText.textContent = `Visited: ${new Date(page.visitTime).toLocaleString()}`;
         pageDetails.appendChild(visitTimeText);
 
+        // Display Dwell Time
+        if (page.dwellTimeMs && page.dwellTimeMs > 0) {
+            const dwellTimeText = document.createElement('span');
+            dwellTimeText.className = 'page-dwell-time';
+            dwellTimeText.textContent = `Dwell time: ${formatDuration(page.dwellTimeMs)}`;
+            pageDetails.appendChild(dwellTimeText);
+        }
+
+        // Display Referral Info
+        if (page.referral) {
+            const referralDiv = document.createElement('div');
+            referralDiv.className = 'page-referral-info';
+            let referralHtml = 'Referred by: ';
+            if (page.referral.type === 'tabOpen') {
+                if (page.referral.sourceUrl) {
+                    const sourceLink = document.createElement('a');
+                    sourceLink.href = page.referral.sourceUrl;
+                    sourceLink.textContent = page.referral.sourceUrl.length > 70 ? page.referral.sourceUrl.substring(0, 67) + '...' : page.referral.sourceUrl;
+                    sourceLink.target = '_blank';
+                    referralDiv.appendChild(document.createTextNode(referralHtml));
+                    referralDiv.appendChild(sourceLink);
+                } else {
+                    referralDiv.textContent = referralHtml + 'an unknown source tab';
+                }
+                if (page.referral.linkText) {
+                    referralDiv.appendChild(document.createTextNode(` (link: "${page.referral.linkText}")`));
+                }
+            } else {
+                 // Fallback for other referral types if ever introduced
+                referralDiv.textContent = referralHtml + 'unknown mechanism.';
+            }
+            pageDetails.appendChild(referralDiv);
+        }
+
         li.appendChild(pageDetails);
         ul.appendChild(li);
     });
@@ -412,14 +483,31 @@ function renderSessions(sessionsData) {
         extentElement.textContent = `Extent: ${session.pageCount || 'N/A'} pages, Duration: ${durationFormatted}`;
         sessionElement.appendChild(extentElement);
 
+        const detailsPreview = document.createElement('div');
+        detailsPreview.className = 'session-preview-details';
+
         const topDomainsElement = createDomainListElement(session.topDomains, 'Top Domains');
-        if (topDomainsElement) sessionElement.appendChild(topDomainsElement);
+        if (topDomainsElement) {
+            detailsPreview.appendChild(topDomainsElement); // Add top domains to preview
+        }
 
-        const linkTextsElement = createListElement(session.linkTexts, 'Clicked Links');
-        if (linkTextsElement) sessionElement.appendChild(linkTextsElement);
+        // Add Clicked Link Texts to preview
+        if (session.linkTexts && session.linkTexts.length > 0) {
+            const linkTextsElement = createListElement(session.linkTexts, 'Clicked Links');
+            if (linkTextsElement) {
+                detailsPreview.appendChild(linkTextsElement);
+            }
+        }
 
-        const searchQueriesElement = createListElement(session.searchQueries, 'Search Queries');
-        if (searchQueriesElement) sessionElement.appendChild(searchQueriesElement);
+        // Add Search Queries to preview
+        if (session.searchQueries && session.searchQueries.length > 0) {
+            const searchQueriesElement = createListElement(session.searchQueries, 'Search Queries');
+            if (searchQueriesElement) {
+                detailsPreview.appendChild(searchQueriesElement);
+            }
+        }
+
+        sessionElement.appendChild(detailsPreview);
 
         // Append the collapsible content container to the session element
         sessionElement.appendChild(collapsibleContent);
