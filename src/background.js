@@ -1129,8 +1129,6 @@ function cleanProcessedNavigations() {
     }
 }
 
-// Consolidate these three onUpdated listeners into ONE comprehensive handler
-// Keep only this one and remove the other two
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // First check if webNavigation already handled this (for URL changes)
     if (changeInfo.url && processedNavigations.has(`${tabId}-${changeInfo.url}-${Date.now() - 1000}`)) {
@@ -1366,14 +1364,11 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     });
 });
 
-// Replace your current checkAndUpdateFavicon function with this:
 function checkAndUpdateFavicon(tabId, url) {
     // Just add to queue - the queue system handles the rest
     faviconQueue.enqueue(tabId, url);
 }
 
-// 1. Replace all duplicate message listeners with a single comprehensive one
-// Remove all other chrome.runtime.onMessage.addListener declarations and keep only this:
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
         const messageType = message.type || message.action;
@@ -1462,7 +1457,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep the message channel open for async responses
 });
 
-// 2. Fix the sendMessageWithErrorHandling function to properly handle errors
 function sendMessageWithErrorHandling(message) {
     try {
         return chrome.runtime.sendMessage(message).catch(error => {
