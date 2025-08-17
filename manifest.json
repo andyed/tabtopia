@@ -12,7 +12,8 @@
     "windows",
     "favicon",
     "bookmarks",
-    "scripting"
+    "scripting",
+    "ai"
   ],
   "host_permissions": [
     "<all_urls>"

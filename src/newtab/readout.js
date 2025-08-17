@@ -175,54 +175,88 @@ async function searchHistoryForTab(url) {
 
 async function getTabContent(url) {
     try {
-        // Find the tab with this URL
-        const [tab] = await chrome.tabs.query({ url });
-        
-        if (!tab) {
-            console.log('No matching tab found for URL:', url);
+        // Check for unsupported URLs
+        if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('file://')) {
+            console.log('Skipping content extraction for restricted URL:', url);
             return null;
         }
 
-        // Execute script in the tab to get content
-        const [{ result }] = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: () => {
-                // Get all text content, excluding scripts and styles
-                const walker = document.createTreeWalker(
-                    document.body,
-                    NodeFilter.SHOW_TEXT,
-                    {
-                        acceptNode: (node) => {
-                            const parent = node.parentElement;
-                            if (!parent) return NodeFilter.FILTER_REJECT;
-                            
-                            // Skip hidden elements
-                            if (parent.offsetHeight === 0) return NodeFilter.FILTER_REJECT;
-                            
-                            // Skip script and style tags
-                            const tag = parent.tagName.toLowerCase();
-                            if (tag === 'script' || tag === 'style') return NodeFilter.FILTER_REJECT;
-                            
-                            return NodeFilter.FILTER_ACCEPT;
+        // First try to find the tab with this URL
+        const tabs = await chrome.tabs.query({ url });
+        
+        if (!tabs || tabs.length === 0) {
+            console.log('No matching tab found for URL:', url);
+            // Rather than fail, we'll try a different approach to get content
+            // Return a placeholder summary instead
+            return `This is a webpage at ${url}. The specific content is not accessible.`;
+        }
+
+        try {
+            // Check if we can execute script in this tab
+            const tab = tabs[0];
+            
+            // Execute script in the tab to get content
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    // Get all text content, excluding scripts and styles
+                    try {
+                        const walker = document.createTreeWalker(
+                            document.body,
+                            NodeFilter.SHOW_TEXT,
+                            {
+                                acceptNode: (node) => {
+                                    const parent = node.parentElement;
+                                    if (!parent) return NodeFilter.FILTER_REJECT;
+                                    
+                                    // Skip hidden elements
+                                    if (parent.offsetHeight === 0) return NodeFilter.FILTER_REJECT;
+                                    
+                                    // Skip script and style tags
+                                    const tag = parent.tagName.toLowerCase();
+                                    if (tag === 'script' || tag === 'style') return NodeFilter.FILTER_REJECT;
+                                    
+                                    return NodeFilter.FILTER_ACCEPT;
+                                }
+                            }
+                        );
+
+                        let content = '';
+                        let node;
+                        let counter = 0;
+                        const maxNodes = 5000; // Prevent excessive processing
+                        
+                        while ((node = walker.nextNode()) && counter < maxNodes) {
+                            const text = node.textContent.trim();
+                            if (text) content += text + ' ';
+                            counter++;
                         }
+                        
+                        return content.trim();
+                    } catch (err) {
+                        // If we encounter an error within the injected script
+                        return `Could not extract content from this page: ${err.message}`;
                     }
-                );
-
-                let content = '';
-                let node;
-                while (node = walker.nextNode()) {
-                    const text = node.textContent.trim();
-                    if (text) content += text + ' ';
                 }
-                
-                return content.trim();
+            });
+            
+            if (results && results[0] && results[0].result) {
+                return results[0].result;
+            } else {
+                console.log('Script executed but returned no content');
+                return `This appears to be a webpage at ${new URL(url).hostname}. Content could not be extracted.`;
             }
-        });
-
-        return result;
+        } catch (scriptError) {
+            console.warn('Cannot execute script in tab:', scriptError);
+            // Return basic page information from tab data instead
+            const tab = tabs[0];
+            return `This is a webpage titled "${tab.title}" at ${new URL(url).hostname}.`;
+        }
     } catch (error) {
         console.error('Error getting tab content:', error);
-        return null;
+        // Return a minimal string that can still be summarized
+        const urlObj = new URL(url);
+        return `This is a webpage at ${urlObj.hostname}.`;
     }
 }
 
@@ -238,6 +272,24 @@ export function getCachedSummary(url) {
     }
     
     return cached.summary;
+}
+
+/**
+ * Flushes all summary caches (both in-memory and Redux state)
+ * Call this when you want to force re-generation of summaries
+ * @param {boolean} notifyState - Whether to notify the state system to clear summaries
+ */
+export function flushSummaryCache(notifyState = true) {
+    console.log('Flushing summary cache');
+    
+    // Clear the in-memory cache
+    summaryCache.clear();
+    
+    // Optionally clear the summaries in Redux state
+    if (notifyState && window.browserState) {
+        // Dispatch an action to clear state summaries
+        window.browserState.clearSummaries();
+    }
 }
 
 function cacheSummary(url, summary) {
@@ -292,53 +344,66 @@ async function processSummaryQueue() {
     }
 }
 
-// Update summarizeUrl to use the new options
+// Update summarizeUrl to use the Chrome Summarizer API correctly
 async function summarizeUrl(url) {
     try {
         // Skip chrome:// URLs
-        if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
-            console.log('Skipping summary for chrome URL:', url);
+        if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('file://')) {
+            console.log('Skipping summary for restricted URL:', url);
             return null;
         }
 
-        // Check if the Summarizer API is available
-        if (!('ai' in self && 'summarizer' in self.ai)) {
-            console.log('Summarizer API not available');
+        // Check if the global Summarizer API is available
+        if (!window.Summarizer) {
+            console.log('Chrome Summarizer API not available in this browser');
             return null;
         }
 
-        const available = (await self.ai.summarizer.capabilities()).available;
-        if (available === 'no') {
-            console.log('Summarizer API not usable');
+        // Check if model is available using correct API method
+        const availability = await window.Summarizer.availability();
+        console.log('Summarizer availability:', availability);
+        
+        if (availability === 'unavailable') {
+            console.log('Summarizer API not usable on this system');
             return null;
         }
 
+        // Get tab content to summarize
+        const content = await getTabContent(url);
+        if (!content) {
+            console.log('No content available to summarize for URL:', url);
+            return null;
+        }
+        
+        // Initialize the summarizer
         let summarizer;
-        if (available === 'readily') {
-            summarizer = await self.ai.summarizer.create(SUMMARIZER_OPTIONS);
-        } else {
-            summarizer = await self.ai.summarizer.create({
+        try {
+            // Create the summarizer with proper monitoring of download
+            summarizer = await window.Summarizer.create({
                 ...SUMMARIZER_OPTIONS,
                 monitor(m) {
                     m.addEventListener('downloadprogress', (e) => {
-                        console.log(`Downloading summarizer model: ${e.loaded}/${e.total} bytes`);
+                        console.log(`Downloading summarizer model: ${Math.round(e.loaded * 100)}%`);
                     });
                 }
             });
-            await summarizer.ready;
-        }
-
-        const content = await getTabContent(url);
-        if (!content) {
-            console.log('No content available to summarize');
+            
+            // Wait for model to be ready if needed
+            if (summarizer.ready) {
+                await summarizer.ready;
+            }
+            
+            // Generate the summary
+            console.log('Generating summary for:', url);
+            return await summarizer.summarize(content, {
+                context: `Summarize this webpage in one sentence`
+            });
+        } catch (error) {
+            console.error('Error during summarization:', error);
             return null;
         }
-
-        return await summarizer.summarize(content, {
-            context: `Summarize this webpage in one sentence`
-        });
     } catch (error) {
-        console.error('Error summarizing URL:', error);
+        console.error('Error in summarizeUrl function:', error);
         return null;
     }
 }

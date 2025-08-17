@@ -441,12 +441,27 @@ export const browserState = {
     },
     
     /**
-     * Handle URL summary storage
+     * Handle summary storage or clearing
      * @param {Object} state - Current state
-     * @param {Object} payload - Summary data
+     * @param {Object} payload - Summary data or clear flag
      * @returns {Object} New state
      */
-    summaryStored(state, { url, summary }) {
+    summaryStored(state, payload) {
+      // Handle clear operation
+      if (payload.clear) {
+        console.log('Clearing all summaries from state');
+        return {
+          ...state,
+          graphData: {
+            ...state.graphData,
+            summaries: {},
+            lastUpdated: Date.now()
+          }
+        };
+      }
+      
+      // Handle normal summary storage
+      const { url, summary } = payload;
       return {
         ...state,
         graphData: {
@@ -656,10 +671,23 @@ export const browserState = {
       type: ActionTypes.SUMMARY_STORED,
       payload: { url, summary }
     });
+  },
+  
+  /**
+   * Clear all stored summaries from state
+   * This allows for cache refreshing when summaries need to be regenerated
+   * @async
+   */
+  async clearSummaries() {
+    // Dispatch through Redux flow
+    this.dispatch({
+      type: ActionTypes.SUMMARY_STORED,
+      payload: { clear: true }
+    });
     
     // Then update persistent storage
     const graphData = await this.getGraphData();
-    graphData.summaries[url] = summary;
+    graphData.summaries = {}; // Clear all summaries
     return this.storeGraphData(graphData);
   },
   
