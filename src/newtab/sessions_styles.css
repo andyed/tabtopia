@@ -1,7 +1,7 @@
 /* Styles for sessions.html */
 
 #sessions-container {
-    padding: 20px 10px; /* Adjusted padding */
+    padding: 10px 10px; /* Reduced top padding */
     width: 100%; /* Full width for multi-column layout */
     margin: 0 auto; /* Center the container */
     height: calc(100vh - var(--header-height, 48px)); /* Assuming --header-height is defined or provide fallback */
@@ -33,24 +33,24 @@
 /* Main date milestone (Today, Yesterday, etc) */
 .date-milestone.main-milestone {
     font-size: 1.3em;
-    padding: 12px 20px;
+    padding: 10px 20px;
     background-color: #33302b;
     border-left: 4px solid #1976d2; /* Blue accent to match newtab.html */
     border-bottom: 1px solid #1976d2;
     letter-spacing: 0.5px;
-    margin-top: 30px;
-    margin-bottom: 16px;
+    margin-top: 16px; /* Reduced from 30px */
+    margin-bottom: 12px; /* Reduced from 16px */
 }
 
 /* Time period milestone (Morning, Afternoon, etc) */
 .date-milestone.period-milestone {
     font-size: 1em;
-    padding: 8px 16px;
+    padding: 6px 16px; /* Reduced vertical padding */
     background-color: #2f2b26; /* Slightly darker than main milestone */
     border-left: 3px solid #66bb6a; /* Slightly different green */
     border-bottom: 1px solid #66bb6a;
-    margin-top: 16px;
-    margin-bottom: 8px;
+    margin-top: 12px; /* Reduced from 16px */
+    margin-bottom: 6px; /* Reduced from 8px */
     font-weight: 400;
     letter-spacing: 0.3px;
 }
@@ -59,17 +59,17 @@
 .sessions-row {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 12px;
+    gap: 10px; /* Reduced from 12px */
     width: 100%;
-    margin-bottom: 12px;
+    margin-bottom: 8px; /* Reduced from 12px */
 }
 
 .session-item {
     background-color: #2c2c2e; /* Darker background for each session block */
     border: 1px solid #444; /* Subtle border */
     border-radius: 8px; /* Rounded corners */
-    margin-bottom: 10px; /* Further reduced space between session blocks */
-    padding: 12px; /* Smaller padding for more compact cards */
+    margin-bottom: 8px; /* Further reduced space between session blocks */
+    padding: 10px; /* Smaller padding for more compact cards */
     color: #e0e0e0; /* Light text color for content */
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Subtle shadow for depth */
     transition: all 0.25s ease;
@@ -88,7 +88,7 @@
 .session-item h3.session-name {
     color: #ffffff; /* White text for session names */
     margin-top: 0;
-    margin-bottom: 8px;
+    margin-bottom: 6px; /* Reduced from 8px */
     cursor: pointer;
     position: relative;
     padding-left: 20px;
