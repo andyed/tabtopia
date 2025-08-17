@@ -25,12 +25,48 @@ const LINE_HEIGHT = 20; // Approximate height of a line in pixels
 const summaryQueue = new Set();
 let isProcessingQueue = false;
 
-// Update the summarizer options
+// Update the summarizer options with more specificity for on-device models
 const SUMMARIZER_OPTIONS = {
-    type: 'headline', // Change to headline for shorter summaries
-    format: 'plain-text',
-    length: 'short'
+    type: 'headline',     // Use headline for concise summaries
+    format: 'plain-text', // Keep it simple
+    length: 'short'      // Don't make it too verbose
 };
+
+// Utility function to extract and clean words from a URL for better search recall
+function extractWordsFromUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname;
+        const path = urlObj.pathname;
+        
+        // Extract domain parts (e.g., 'example' and 'com' from example.com)
+        const domainParts = hostname.split('.');
+        
+        // Extract path parts and filter out empty parts
+        const pathParts = path.split(/[\/\-_.]/).filter(part => part.length > 0);
+        
+        // Combine and filter out common words and very short parts
+        const allParts = [...domainParts, ...pathParts].filter(part => {
+            return part.length > 2 && 
+                  !['www', 'com', 'org', 'net', 'io', 'html', 'php', 'asp', 'jsp'].includes(part);
+        });
+        
+        // Split CamelCase and kebab-case words
+        const expandedParts = [];
+        allParts.forEach(part => {
+            // Split by camelCase
+            const camelSplit = part.replace(/([a-z])([A-Z])/g, '$1 $2');
+            // Add original and split versions
+            expandedParts.push(part);
+            if (camelSplit !== part) expandedParts.push(camelSplit);
+        });
+        
+        return expandedParts;
+    } catch (e) {
+        console.log('Error extracting words from URL:', e);
+        return [];
+    }
+}
 
 // Add at the top with other state variables
 let lastDisplayedNodeId = null;
@@ -304,6 +340,74 @@ function cacheSummary(url, summary) {
     }
 }
 
+// Generate a fallback summary based on URL structure and visit metrics
+async function generateVisitMetricFallback(url) {
+    try {
+        console.log('Generating fallback summary for:', url);
+        
+        // Extract meaningful words from the URL
+        const urlWords = extractWordsFromUrl(url);
+        console.log('Extracted URL words:', urlWords);
+        
+        // Get history metrics for this URL/domain
+        const historyItems = await searchHistoryForTab(url);
+        
+        // Extract basic URL info
+        let domain = 'unknown';
+        let pathname = '';
+        let pageType = '';
+        
+        try {
+            const urlObj = new URL(url);
+            domain = urlObj.hostname;
+            pathname = urlObj.pathname;
+            
+            // Try to identify page type from path
+            if (pathname.includes('/article/') || pathname.includes('/post/')) {
+                pageType = 'article';
+            } else if (pathname.includes('/product/')) {
+                pageType = 'product';
+            } else if (pathname.includes('/category/') || pathname.includes('/tag/')) {
+                pageType = 'category';
+            } else if (pathname.endsWith('.pdf')) {
+                pageType = 'PDF document';
+            } else if (pathname === '/' || pathname === '') {
+                pageType = 'homepage';
+            }
+        } catch (e) { /* ignore parsing errors */ }
+        
+        // Construct a meaningful fallback message
+        const visitCount = historyItems.length;
+        const pluralVisits = visitCount === 1 ? 'visit' : 'visits';
+        
+        // Create informative summary based on available data
+        let summary;
+        
+        if (visitCount > 0) {
+            // With history data
+            if (urlWords.length > 0) {
+                const keyTerms = urlWords.slice(0, 3).join(', ');
+                summary = `${domain} page about ${keyTerms} (${visitCount} previous ${pluralVisits})`;
+            } else {
+                summary = `${domain} ${pageType || 'page'} with ${visitCount} previous ${pluralVisits}`;
+            }
+        } else {
+            // No history data
+            if (urlWords.length > 0) {
+                const keyTerms = urlWords.slice(0, 3).join(', ');
+                summary = `${domain} page related to ${keyTerms}`;
+            } else {
+                summary = `${domain} ${pageType || 'page'} (content not available for summarization)`;
+            }
+        }
+        
+        return summary;
+    } catch (error) {
+        console.error('Error generating fallback summary:', error);
+        return 'Page content not available for summarization';
+    }
+}
+
 // Update the queue processing function to be more aggressive
 async function processSummaryQueue() {
     if (isProcessingQueue) return;
@@ -370,9 +474,11 @@ async function summarizeUrl(url) {
 
         // Get tab content to summarize
         const content = await getTabContent(url);
+        
+        // If no content available, create a fallback summary based on visit metrics
         if (!content) {
             console.log('No content available to summarize for URL:', url);
-            return null;
+            return await generateVisitMetricFallback(url);
         }
         
         // Limit content length to avoid QuotaExceededError
@@ -408,10 +514,34 @@ async function summarizeUrl(url) {
                 await summarizer.ready;
             }
             
-            // Generate the summary
+            // Generate the summary with enhanced context for on-device model
             console.log('Generating summary for:', url, `(content length: ${trimmedContent.length})`);
+            
+            // Extract domain and title information to provide more context
+            let domain = 'unknown';
+            let pageTitle = '';
+            
+            try {
+                const urlObj = new URL(url);
+                domain = urlObj.hostname;
+                
+                // Look for a title in the content
+                const titleMatch = trimmedContent.match(/<title>([^<]+)<\/title>/) || 
+                                  trimmedContent.match(/^([^\n]{10,100})\n/) ||
+                                  /<h1[^>]*>([^<]+)<\/h1>/i.exec(trimmedContent);
+                if (titleMatch) {
+                    pageTitle = titleMatch[1].trim();
+                }
+            } catch (e) { /* ignore URL parsing errors */ }
+            
+            // Create a more detailed context prompt
+            const contextPrompt = `Summarize this webpage${pageTitle ? ' about "' + pageTitle + '"' : ''} from ${domain} in one concise sentence. ` +
+                               `Focus on the main topic and key information. ` + 
+                               `Include what makes this page unique or valuable to the reader. ` +
+                               `Ensure your summary is factual, informative, and directly based on the content.`;
+                               
             return await summarizer.summarize(trimmedContent, {
-                context: `Summarize this webpage in one sentence`
+                context: contextPrompt
             });
         } catch (error) {
             console.error('Error during summarization:', error);
