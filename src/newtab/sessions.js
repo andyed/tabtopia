@@ -1,9 +1,52 @@
 // Sessions view JavaScript
 console.log('sessions.js loaded');
 
+// Import the summary cache and helper functions from readout.js
+import { summaryCache, getCachedSummary } from './readout.js';
+
+// Helper function to create a truncated summary display (simplified version from readout.js)
+function createTruncatedSummary(summary, searchTerm = '') {
+    if (!summary) return '';
+    
+    const MAX_SUMMARY_LINES = 3;
+    const lines = summary.split('\n');
+    const isTruncated = lines.length > MAX_SUMMARY_LINES;
+    
+    let truncatedSummary = isTruncated 
+        ? lines.slice(0, MAX_SUMMARY_LINES).join('\n')
+        : summary;
+    
+    // Highlight search term if provided
+    if (searchTerm && searchTerm.trim() !== '') {
+        truncatedSummary = highlightText(truncatedSummary, searchTerm);
+    }
+    
+    return `
+        <div class="summary-content">
+            <div class="summary-text">
+                ${truncatedSummary}
+            </div>
+            ${isTruncated ? `
+                <div class="summary-expand">
+                    <button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`')}\`">
+                        Show more...
+                    </button>
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+// Helper function to highlight search matches in text
+function highlightText(text, searchTerm) {
+    if (!searchTerm || !text) return text;
+    
+    const searchRegex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    return text.replace(searchRegex, match => `<span class="search-highlight">${match}</span>`);
+}
+
 let allSessionsData = []; // To store the original full list of sessions
-let searchDebounceTimer;
-const DEBOUNCE_DELAY = 300; // milliseconds
+let currentSearchTerm = ''; // Track current search term for highlighting
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Sessions view DOM fully loaded and parsed');
@@ -13,11 +56,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('sessionSearch'); 
     if (searchInput) {
         searchInput.addEventListener('input', (event) => {
-            const searchTerm = event.target.value.toLowerCase();
-            clearTimeout(searchDebounceTimer);
-            searchDebounceTimer = setTimeout(() => {
-                filterAndRenderSessions(searchTerm);
-            }, DEBOUNCE_DELAY);
+            currentSearchTerm = event.target.value.toLowerCase();
+            filterAndRenderSessions(currentSearchTerm);
         });
     }
 });
@@ -42,6 +82,12 @@ function filterAndRenderSessions(searchTerm) {
                     return true;
                 }
                 if (page.url && page.url.toLowerCase().includes(searchTerm)) {
+                    return true;
+                }
+                
+                // Check AI summary if available in cache
+                const cachedSummary = getCachedSummary(page.url);
+                if (cachedSummary && cachedSummary.toLowerCase().includes(searchTerm)) {
                     return true;
                 }
             }
@@ -232,11 +278,60 @@ function getFaviconDisplayUrl(pageUrlOrDomain) {
     }
 }
 
+function extractSearchQuery(url) {
+    try {
+        const urlObj = new URL(url);
+        let query = null;
+        
+        // Google search
+        if (urlObj.hostname.includes('google.') && urlObj.pathname.includes('/search')) {
+            query = urlObj.searchParams.get('q');
+        }
+        // Bing search
+        else if (urlObj.hostname.includes('bing.com') && urlObj.pathname.includes('/search')) {
+            query = urlObj.searchParams.get('q');
+        }
+        // DuckDuckGo
+        else if (urlObj.hostname.includes('duckduckgo.com')) {
+            query = urlObj.searchParams.get('q');
+        }
+        // Yahoo search
+        else if (urlObj.hostname.includes('search.yahoo.com')) {
+            query = urlObj.searchParams.get('p');
+        }
+        // Baidu
+        else if (urlObj.hostname.includes('baidu.com') && urlObj.pathname.includes('/s')) {
+            query = urlObj.searchParams.get('wd');
+        }
+        // Yandex
+        else if (urlObj.hostname.includes('yandex') && urlObj.pathname.includes('/search')) {
+            query = urlObj.searchParams.get('text');
+        }
+        // Add more search engines as needed
+        
+        return query;
+    } catch (e) {
+        console.warn('Error extracting search query:', e);
+        return null;
+    }
+}
+
 function finalizeSession(session) {
     session.duration = session.endTime - session.startTime;
     
     const uniqueUrls = new Set(session.pages.map(p => p.url));
     session.pageCount = uniqueUrls.size;
+    
+    // Extract search queries from all URLs in the session
+    session.searchQueries = [];
+    if (session.pages) {
+        session.pages.forEach(page => {
+            const query = extractSearchQuery(page.url);
+            if (query && query.trim() !== '' && !session.searchQueries.includes(query)) {
+                session.searchQueries.push(query);
+            }
+        });
+    }
 
     // Updated session naming
     if (session.pages.length > 0) {
@@ -319,24 +414,62 @@ function createListElement(items, title) {
     return listContainer;
 }
 
-function createDomainListElement(domains, title) {
+function createDomainListElement(domains) { // Removed title parameter
     if (!domains || domains.length === 0) return null;
     const listContainer = document.createElement('div');
     listContainer.className = 'session-detail-list session-domain-list';
-    const listTitle = document.createElement('strong');
-    listTitle.textContent = `${title}: `;
-    listContainer.appendChild(listTitle);
+    // Removed title element creation
     const ul = document.createElement('ul');
     domains.forEach(item => {
         const li = document.createElement('li');
+        const anchor = document.createElement('a');
+        anchor.href = '#'; // Prevent page jump, actual navigation handled by JS
+        anchor.className = 'domain-pill-link';
+        anchor.style.textDecoration = 'none';
+        anchor.style.color = 'inherit';
+        anchor.style.cursor = 'pointer';
+
         if (item.faviconUrl) {
             const img = document.createElement('img');
             img.src = item.faviconUrl;
             img.alt = `${item.domain} favicon`;
             img.className = 'favicon-img';
-            li.appendChild(img);
+            anchor.appendChild(img);
         }
-        li.appendChild(document.createTextNode(`${item.faviconUrl ? ' ' : ''}${item.domain}`));
+        anchor.appendChild(document.createTextNode(`${item.faviconUrl ? ' ' : ''}${item.domain}`));
+        
+        anchor.addEventListener('click', async (event) => {
+            event.preventDefault(); // Prevent default anchor behavior
+            const domainToFind = item.domain;
+            try {
+                const tabs = await chrome.tabs.query({});
+                let foundTab = null;
+                for (const tab of tabs) {
+                    if (tab.url) {
+                        try {
+                            const tabHostname = new URL(tab.url).hostname;
+                            if (tabHostname === domainToFind || tabHostname.endsWith('.' + domainToFind)) {
+                                foundTab = tab;
+                                break;
+                            }
+                        } catch (e) {
+                            // Invalid URL, skip
+                        }
+                    }
+                }
+
+                if (foundTab) {
+                    await chrome.tabs.update(foundTab.id, { active: true });
+                    await chrome.windows.update(foundTab.windowId, { focused: true });
+                } else {
+                    await chrome.tabs.create({ url: `https://${domainToFind}` });
+                }
+            } catch (error) {
+                console.error('Error handling domain click:', error);
+            }
+        });
+
+        li.appendChild(anchor);
         ul.appendChild(li);
     });
     listContainer.appendChild(ul);
@@ -351,6 +484,9 @@ function renderSessionPageList(pages) {
     // Sort pages chronologically if not already sorted (oldest to newest for display)
     const sortedPages = [...pages].sort((a,b) => a.visitTime - b.visitTime);
 
+    // Use the current search term for highlighting
+    const searchTerm = currentSearchTerm;
+    
     sortedPages.forEach(page => {
         const li = document.createElement('li');
         li.className = 'session-page-item';
@@ -364,16 +500,27 @@ function renderSessionPageList(pages) {
         const pageDetails = document.createElement('div');
         pageDetails.className = 'page-item-details';
 
+        // Title with optional highlight
         const titleLink = document.createElement('a');
         titleLink.href = page.url;
-        titleLink.textContent = page.title || page.url;
+        const titleText = page.title || page.url;
+        if (searchTerm && titleText.toLowerCase().includes(searchTerm)) {
+            titleLink.innerHTML = highlightText(titleText, searchTerm);
+        } else {
+            titleLink.textContent = titleText;
+        }
         titleLink.className = 'page-title-link';
         titleLink.target = '_blank'; // Open in new tab
         pageDetails.appendChild(titleLink);
 
+        // URL with optional highlight
         const urlText = document.createElement('span');
         urlText.className = 'page-url-text';
-        urlText.textContent = page.url;
+        if (searchTerm && page.url.toLowerCase().includes(searchTerm)) {
+            urlText.innerHTML = highlightText(page.url, searchTerm);
+        } else {
+            urlText.textContent = page.url;
+        }
         pageDetails.appendChild(urlText);
         
         const visitTimeText = document.createElement('span');
@@ -414,6 +561,28 @@ function renderSessionPageList(pages) {
             }
             pageDetails.appendChild(referralDiv);
         }
+        
+        // Display cached AI summary if available
+        const cachedSummary = getCachedSummary(page.url);
+        if (cachedSummary) {
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'page-summary';
+            
+            // Add a small label indicating this is an AI summary
+            const summaryLabel = document.createElement('div');
+            summaryLabel.className = 'summary-label';
+            summaryLabel.textContent = 'AI Summary';
+            summaryDiv.appendChild(summaryLabel);
+            
+            // Add the summary content with truncation if needed
+            const summaryContent = document.createElement('div');
+            
+            // Apply highlighting if there's a search match in the summary
+            summaryContent.innerHTML = createTruncatedSummary(cachedSummary, searchTerm);
+            summaryDiv.appendChild(summaryContent);
+            
+            pageDetails.appendChild(summaryDiv);
+        }
 
         li.appendChild(pageDetails);
         ul.appendChild(li);
@@ -432,87 +601,252 @@ function renderSessions(sessionsData) {
     container.innerHTML = ''; // Clear previous content (e.g., loading message)
 
     if (!sessionsData || sessionsData.length === 0) {
-        container.innerHTML = '<p class="info-message">No sessions to display at the moment.</p>';
-        console.log('No sessions data to render.');
+        const noSessionsMessage = document.createElement('p');
+        noSessionsMessage.className = 'info-message';
+        noSessionsMessage.textContent = 'No browsing sessions found. Start browsing or try modifying your filters.';
+        container.appendChild(noSessionsMessage);
         return;
     }
-
-    // Sort sessions by startTime in descending order (most recent first)
-    sessionsData.sort((a, b) => b.startTime - a.startTime);
-
+    
+    // Define time period boundaries (in hours, 24-hour format)
+    const timePeriods = [
+        { name: 'Early Morning', start: 0, end: 6 },
+        { name: 'Morning', start: 6, end: 12 },
+        { name: 'Afternoon', start: 12, end: 17 },
+        { name: 'Evening', start: 17, end: 21 },
+        { name: 'Night', start: 21, end: 24 }
+    ];
+    
+    // Helper function to get time period for a given hour
+    function getTimePeriod(hour) {
+        return timePeriods.find(period => hour >= period.start && hour < period.end) || timePeriods[0];
+    }
+    
+    // Group sessions by date and time period
+    const sessionsByDateAndPeriod = {};
+    
     sessionsData.forEach(session => {
-        const sessionElement = document.createElement('div');
-        sessionElement.className = 'session-item';
-        sessionElement.setAttribute('data-session-id', session.id);
+        // Get the date string in local timezone
+        const sessionDate = new Date(session.startTime);
+        const dateKey = sessionDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+        const hour = sessionDate.getHours();
+        const period = getTimePeriod(hour);
+        const dateAndPeriodKey = `${dateKey}_${period.name}`;
+        
+        if (!sessionsByDateAndPeriod[dateAndPeriodKey]) {
+            sessionsByDateAndPeriod[dateAndPeriodKey] = {
+                date: dateKey,
+                period: period.name,
+                hour: period.start, // Use this for sorting
+                sessions: []
+            };
+        }
+        
+        sessionsByDateAndPeriod[dateAndPeriodKey].sessions.push(session);
+    });
+    
+    // Sort dates in reverse chronological order (newest first)
+    // First group by date
+    const groupedByDate = {};
+    Object.entries(sessionsByDateAndPeriod).forEach(([key, data]) => {
+        if (!groupedByDate[data.date]) {
+            groupedByDate[data.date] = [];
+        }
+        groupedByDate[data.date].push(data);
+    });
+    
+    const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
+    
+    // For each date, process each time period
+    sortedDates.forEach(dateKey => {
+        const date = new Date(dateKey);
+        
+        // Format the date nicely for the main date heading
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        let dateDisplay;
+        if (dateKey === today.toISOString().split('T')[0]) {
+            dateDisplay = 'Today';
+        } else if (dateKey === yesterday.toISOString().split('T')[0]) {
+            dateDisplay = 'Yesterday';
+        } else {
+            dateDisplay = new Intl.DateTimeFormat('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            }).format(date);
+        }
+        
+        // Create main date milestone
+        const dateMilestone = document.createElement('div');
+        dateMilestone.className = 'date-milestone main-milestone';
+        dateMilestone.textContent = dateDisplay;
+        container.appendChild(dateMilestone);
+        
+        // Sort time periods within this date (evening before morning)
+        const timePeriods = groupedByDate[dateKey].sort((a, b) => b.hour - a.hour);
+        
+        timePeriods.forEach(periodData => {
+            const { period, sessions } = periodData;
+            
+            // Create period milestone if we have sessions in this period
+            if (sessions.length > 0) {
+                const periodMilestone = document.createElement('div');
+                periodMilestone.className = 'date-milestone period-milestone';
+                periodMilestone.textContent = period;
+                container.appendChild(periodMilestone);
+                
+                // Create a row for sessions from this period
+                const sessionsRow = document.createElement('div');
+                sessionsRow.className = 'sessions-row';
+                container.appendChild(sessionsRow);
+                
+                // Sort sessions by descending start time
+                sessions.sort((a, b) => b.startTime - a.startTime);
+                
+                // Calculate time deltas for vertical offset
+                let previousTime = sessions[0].startTime; // Start with the most recent session time
+                
+                // Render each session in the row
+                sessions.forEach((session, index) => {
+                    // Calculate time difference for vertical offset
+                    const timeDelta = index === 0 ? 0 : previousTime - session.startTime;
+                    previousTime = session.startTime;
+                    
+                    // Calculate vertical offset based on time difference
+                    // Use logarithmic scale to prevent extreme offsets
+                    // 1 minute = small offset, 1 hour = medium offset, > 3 hours = larger offset
+                    const timeOffsetMinutes = timeDelta / (1000 * 60); // Convert to minutes
+                    let verticalOffsetPx = 0;
+                    
+                    if (timeOffsetMinutes > 0) {
+                        if (timeOffsetMinutes < 10) {
+                            // Less than 10 minutes - minimal offset
+                            verticalOffsetPx = 5;
+                        } else if (timeOffsetMinutes < 30) {
+                            // 10-30 minutes - small offset
+                            verticalOffsetPx = 15;
+                        } else if (timeOffsetMinutes < 60) {
+                            // 30-60 minutes - medium offset
+                            verticalOffsetPx = 25;
+                        } else if (timeOffsetMinutes < 180) {
+                            // 1-3 hours - larger offset
+                            verticalOffsetPx = 35;
+                        } else {
+                            // > 3 hours - maximum offset
+                            verticalOffsetPx = 45;
+                        }
+                    }
+                    
+                    const sessionElement = document.createElement('div');
+                    sessionElement.className = 'session-item';
+                    sessionElement.setAttribute('data-session-id', session.id);
+                    
+                    // Apply vertical offset through margin-top
+                    if (verticalOffsetPx > 0) {
+                        sessionElement.style.marginTop = `${verticalOffsetPx}px`;
+                    }
 
-        const sessionHeader = document.createElement('h3');
-        sessionHeader.className = 'session-name';
-        sessionHeader.textContent = session.name || `Session from ${new Date(session.startTime).toLocaleString()}`;
-        sessionElement.appendChild(sessionHeader);
+                    const sessionHeader = document.createElement('h3');
+                    sessionHeader.className = 'session-name';
+                    sessionHeader.textContent = session.name || `Session from ${new Date(session.startTime).toLocaleString()}`;
+                    sessionElement.appendChild(sessionHeader);
 
-        // Create a container for collapsible content
-        const collapsibleContent = document.createElement('div');
-        collapsibleContent.className = 'session-collapsible-content';
-        // Initially hidden
-        collapsibleContent.style.display = 'none'; 
+                    // Create a container for collapsible content
+                    const collapsibleContent = document.createElement('div');
+                    collapsibleContent.className = 'session-collapsible-content';
+                    // Will be initially hidden by CSS
 
-        // Add click listener to the header to toggle details
-        sessionHeader.addEventListener('click', () => {
-            const isExpanded = collapsibleContent.style.display === 'block';
-            collapsibleContent.style.display = isExpanded ? 'none' : 'block';
-            sessionElement.classList.toggle('expanded', !isExpanded);
+                    // Add click listener to the header to toggle details with improved animation handling
+                    sessionHeader.addEventListener('click', () => {
+                        const isExpanded = sessionElement.classList.contains('expanded');
+                        sessionElement.classList.toggle('expanded', !isExpanded);
+                        
+                        // Load content on first expansion
+                        if (!isExpanded && collapsibleContent.childElementCount === 0) {
+                            // Check if pages exist and are not empty
+                            if (session.pages && session.pages.length > 0) {
+                                const pageListElement = renderSessionPageList(session.pages);
+                                collapsibleContent.appendChild(pageListElement);
+                            } else {
+                                const noPagesMessage = document.createElement('p');
+                                noPagesMessage.textContent = 'No page details available for this session.';
+                                noPagesMessage.className = 'no-pages-message';
+                                collapsibleContent.appendChild(noPagesMessage);
+                            }
+                        }
+                    });
 
-            // If expanding and content isn't there yet, render it
-            if (!isExpanded && collapsibleContent.childElementCount === 0) {
-                 // Check if pages exist and are not empty
-                if (session.pages && session.pages.length > 0) {
-                    const pageListElement = renderSessionPageList(session.pages);
-                    collapsibleContent.appendChild(pageListElement);
-                } else {
-                    const noPagesMessage = document.createElement('p');
-                    noPagesMessage.textContent = 'No page details available for this session.';
-                    noPagesMessage.className = 'no-pages-message';
-                    collapsibleContent.appendChild(noPagesMessage);
-                }
+                    const extentElement = document.createElement('p');
+                    extentElement.className = 'session-extent';
+                    const durationFormatted = formatDuration(session.duration);
+                    extentElement.textContent = `${session.pageCount || '0'} pages • ${durationFormatted}`;
+                    sessionElement.appendChild(extentElement);
+
+                    const detailsPreview = document.createElement('div');
+                    detailsPreview.className = 'session-preview-details';
+
+                    const topDomainsElement = createDomainListElement(session.topDomains);
+                    if (topDomainsElement) {
+                        detailsPreview.appendChild(topDomainsElement); // Add top domains to preview
+                    }
+
+                    // Add Clicked Link Texts to preview
+                    if (session.linkTexts && session.linkTexts.length > 0) {
+                        const linkTextsElement = createListElement(session.linkTexts, 'Clicked Links');
+                        if (linkTextsElement) {
+                            detailsPreview.appendChild(linkTextsElement);
+                        }
+                    }
+                    
+                    // Add Search Queries to preview with enhanced styling
+                    if (session.searchQueries && session.searchQueries.length > 0) {
+                        const searchQueriesContainer = document.createElement('div');
+                        searchQueriesContainer.className = 'session-detail-list';
+                        
+                        const searchQueriesTitle = document.createElement('strong');
+                        searchQueriesTitle.textContent = 'Search Queries: ';
+                        searchQueriesContainer.appendChild(searchQueriesTitle);
+                        
+                        const searchQueriesWrapper = document.createElement('div');
+                        searchQueriesWrapper.className = 'search-queries-wrapper';
+                        searchQueriesWrapper.style.display = 'flex';
+                        searchQueriesWrapper.style.flexWrap = 'wrap';
+                        searchQueriesWrapper.style.gap = '5px';
+                        searchQueriesWrapper.style.marginTop = '5px';
+                        
+                        session.searchQueries.forEach(query => {
+                            const queryItem = document.createElement('span');
+                            queryItem.className = 'search-query-item';
+                            
+                            const queryIcon = document.createElement('span');
+                            queryIcon.className = 'search-query-icon';
+                            queryItem.appendChild(queryIcon);
+                            
+                            queryItem.appendChild(document.createTextNode(query));
+                            searchQueriesWrapper.appendChild(queryItem);
+                        });
+                        
+                        searchQueriesContainer.appendChild(searchQueriesWrapper);
+                        detailsPreview.appendChild(searchQueriesContainer);
+                    }
+
+                    sessionElement.appendChild(detailsPreview);
+
+                    // Append the collapsible content container to the session element
+                    sessionElement.appendChild(collapsibleContent);
+
+                    // Add the completed session element to the row
+                    sessionsRow.appendChild(sessionElement);
+                });
             }
         });
-
-        const extentElement = document.createElement('p');
-        extentElement.className = 'session-extent';
-        const durationFormatted = formatDuration(session.duration);
-        extentElement.textContent = `Extent: ${session.pageCount || 'N/A'} pages, Duration: ${durationFormatted}`;
-        sessionElement.appendChild(extentElement);
-
-        const detailsPreview = document.createElement('div');
-        detailsPreview.className = 'session-preview-details';
-
-        const topDomainsElement = createDomainListElement(session.topDomains, 'Top Domains');
-        if (topDomainsElement) {
-            detailsPreview.appendChild(topDomainsElement); // Add top domains to preview
-        }
-
-        // Add Clicked Link Texts to preview
-        if (session.linkTexts && session.linkTexts.length > 0) {
-            const linkTextsElement = createListElement(session.linkTexts, 'Clicked Links');
-            if (linkTextsElement) {
-                detailsPreview.appendChild(linkTextsElement);
-            }
-        }
-
-        // Add Search Queries to preview
-        if (session.searchQueries && session.searchQueries.length > 0) {
-            const searchQueriesElement = createListElement(session.searchQueries, 'Search Queries');
-            if (searchQueriesElement) {
-                detailsPreview.appendChild(searchQueriesElement);
-            }
-        }
-
-        sessionElement.appendChild(detailsPreview);
-
-        // Append the collapsible content container to the session element
-        sessionElement.appendChild(collapsibleContent);
-
-        container.appendChild(sessionElement);
     });
-    console.log('Sessions rendered.');
+    
+    console.log('Sessions rendered with date milestones, time periods, and vertical offsets.');
 }
+
+// Close the renderSessions function

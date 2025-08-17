@@ -14,7 +14,7 @@ const INACTIVITY_TIMEOUT = 600000;
 let currentMotivationalMessage = null;
 
 // Add cache for summaries at the top of the file
-const summaryCache = new Map();
+export const summaryCache = new Map();
 const SUMMARY_CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
 
 // Add these constants at the top with other constants
@@ -227,7 +227,7 @@ async function getTabContent(url) {
 }
 
 // Add cache management functions
-function getCachedSummary(url) {
+export function getCachedSummary(url) {
     const cached = summaryCache.get(url);
     if (!cached) return null;
     
