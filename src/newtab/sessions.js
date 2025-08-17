@@ -667,17 +667,22 @@ function renderSessions(sessionsData) {
         yesterday.setDate(yesterday.getDate() - 1);
         
         let dateDisplay;
+        let dateNumericFormat = new Intl.DateTimeFormat('en-US', { 
+            month: 'numeric', 
+            day: 'numeric', 
+            year: 'numeric' 
+        }).format(date);
+
         if (dateKey === today.toISOString().split('T')[0]) {
-            dateDisplay = 'Today';
+            dateDisplay = `Today: ${dateNumericFormat}`;
         } else if (dateKey === yesterday.toISOString().split('T')[0]) {
-            dateDisplay = 'Yesterday';
+            dateDisplay = `Yesterday: ${dateNumericFormat}`;
         } else {
-            dateDisplay = new Intl.DateTimeFormat('en-US', { 
+            dateDisplay = `${new Intl.DateTimeFormat('en-US', { 
                 weekday: 'long', 
-                year: 'numeric', 
                 month: 'long', 
-                day: 'numeric' 
-            }).format(date);
+                day: 'numeric'
+            }).format(date)}: ${dateNumericFormat}`;
         }
         
         // Create main date milestone
@@ -694,9 +699,18 @@ function renderSessions(sessionsData) {
             
             // Create period milestone if we have sessions in this period
             if (sessions.length > 0) {
+                // Get the earliest session time in this period for the time label
+                const firstSession = sessions.reduce((earliest, current) => 
+                    current.startTime < earliest.startTime ? current : earliest
+                );
+                
+                // Format the time for display
+                const periodTime = new Date(firstSession.startTime);
+                const timeString = periodTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                
                 const periodMilestone = document.createElement('div');
                 periodMilestone.className = 'date-milestone period-milestone';
-                periodMilestone.textContent = period;
+                periodMilestone.textContent = `${period}: ${timeString}`;
                 container.appendChild(periodMilestone);
                 
                 // Create a row for sessions from this period
