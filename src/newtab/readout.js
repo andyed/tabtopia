@@ -375,6 +375,21 @@ async function summarizeUrl(url) {
             return null;
         }
         
+        // Limit content length to avoid QuotaExceededError
+        // Chrome Summarizer API has input limits
+        const MAX_CONTENT_LENGTH = 12000; // ~12KB max based on API limits
+        let trimmedContent = content;
+        
+        if (content.length > MAX_CONTENT_LENGTH) {
+            console.log(`Content too large (${content.length} chars), trimming to ${MAX_CONTENT_LENGTH} chars`);
+            // Take first part for better context
+            const firstPart = Math.floor(MAX_CONTENT_LENGTH * 0.7);
+            // Take last part to include conclusions
+            const lastPart = MAX_CONTENT_LENGTH - firstPart;
+            trimmedContent = content.substring(0, firstPart) + "\n[...content trimmed...]\n" + 
+                           content.substring(content.length - lastPart);
+        }
+        
         // Initialize the summarizer
         let summarizer;
         try {
@@ -394,8 +409,8 @@ async function summarizeUrl(url) {
             }
             
             // Generate the summary
-            console.log('Generating summary for:', url);
-            return await summarizer.summarize(content, {
+            console.log('Generating summary for:', url, `(content length: ${trimmedContent.length})`);
+            return await summarizer.summarize(trimmedContent, {
                 context: `Summarize this webpage in one sentence`
             });
         } catch (error) {
@@ -419,20 +434,7 @@ function createTruncatedSummary(summary) {
         ? lines.slice(0, MAX_SUMMARY_LINES).join('\n')
         : summary;
     
-    return `
-        <div class="summary-content">
-            <div class="summary-text" style="line-height: ${LINE_HEIGHT}px">
-                ${truncatedSummary}
-            </div>
-            ${isTruncated ? `
-                <div class="summary-expand">
-                    <button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`')}\`">
-                        Show more...
-                    </button>
-                </div>
-            ` : ''}
-        </div>
-    `;
+    return `<div class="summary-content"><div class="summary-text" style="line-height: ${LINE_HEIGHT}px">${truncatedSummary.trim()}</div>${isTruncated ? `<div class="summary-expand"><button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`').trim()}\`">Show more...</button></div>` : ''}</div>`;
 }
 
 // Update displayReadout to queue summaries instead of generating them immediately
@@ -788,6 +790,23 @@ function handleTabSearch(event) {
         }
     });
 }
+
+// Make browserState.clearSummaries available globally for console access
+window.flushSummaryCache = function() {
+    console.log(`Flushing summary cache with ${summaryCache.size} entries...`);
+    summaryCache.clear();
+    
+    // Also clear summaries in browserState if available
+    if (typeof browserState !== 'undefined' && browserState.clearSummaries) {
+        browserState.clearSummaries();
+        console.log('Cleared summaries from browserState');
+    } else {
+        console.warn('browserState.clearSummaries not available');
+    }
+    
+    console.log('Summary cache flushed successfully');
+    return true;
+};
 
 // Export both the function and timer reset
 export {  showDefaultReadout, resetInactivityTimer };

@@ -21,20 +21,7 @@ function createTruncatedSummary(summary, searchTerm = '') {
         truncatedSummary = highlightText(truncatedSummary, searchTerm);
     }
     
-    return `
-        <div class="summary-content">
-            <div class="summary-text">
-                ${truncatedSummary}
-            </div>
-            ${isTruncated ? `
-                <div class="summary-expand">
-                    <button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`')}\`">
-                        Show more...
-                    </button>
-                </div>
-            ` : ''}
-        </div>
-    `;
+    return `<div class="summary-content"><div class="summary-text">${truncatedSummary.trim()}</div>${isTruncated ? `<div class="summary-expand"><button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`').trim()}\`">Show more...</button></div>` : ''}</div>`;
 }
 
 // Helper function to highlight search matches in text
@@ -131,6 +118,7 @@ async function initSessions() {
 async function processDataIntoSessions(historyItems, allWindows) { // Made async
     console.log('Processing data into sessions...');
     const SESSION_GAP_THRESHOLD = 30 * 60 * 1000; // 30 minutes in milliseconds
+    const SESSION_CONTEXT_THRESHOLD = 4 * 60 * 60 * 1000; // 4 hours as extended context threshold
     let processedSessions = [];
 
     // 1. Combine history items and active tabs into a single list of activities
@@ -156,10 +144,13 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         }
     });
 
-    // Remove duplicates based on url and timestamp (prefer active_tab if timestamps are close)
+    // Only deduplicate exact timestamp duplicates, not across sessions
+    // This preserves multiple visits to the same URL when they occur in different sessions
     activities = activities.reduce((acc, current) => {
+        // Only consider it a duplicate if it's the same URL with nearly identical timestamp (within 1 second)
         const x = acc.find(item => item.url === current.url && Math.abs(item.timestamp - current.timestamp) < 1000);
         if (!x) {
+            // No duplicate found, add the current activity
             return acc.concat([current]);
         } else if (current.type === 'active_tab' && x.type === 'history') {
             // Replace history with active_tab if it's essentially the same event
@@ -167,6 +158,8 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         }
         return acc;
     }, []);
+    
+    console.log(`Activities after deduplication: ${activities.length}`);
 
 
     // 2. Sort activities chronologically (oldest first for session building)
@@ -177,32 +170,78 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         return [];
     }
 
-    // 3. Group activities into sessions
+    // 3. Group activities into sessions with context awareness
     let currentSession = null;
+    let lastActivity = null;
+    let sessionsByDay = {}; // Group sessions by day for context matching
 
     activities.forEach((activity, index) => {
         if (!activity.url) return; // Skip activities without a URL
 
+        // Get day key for the activity for context matching
+        const activityDate = new Date(activity.timestamp);
+        const year = activityDate.getFullYear();
+        const month = String(activityDate.getMonth() + 1).padStart(2, '0');
+        const day = String(activityDate.getDate()).padStart(2, '0');
+        const dayKey = `${year}-${month}-${day}`;
+        
+        if (!sessionsByDay[dayKey]) {
+            sessionsByDay[dayKey] = [];
+        }
+        
         if (currentSession === null) {
             // Start the first session
             currentSession = createNewSession(activity);
         } else {
             const timeDiff = activity.timestamp - currentSession.endTime;
+            
+            // Check if we're revisiting a page that was already seen in the current session
+            const previousVisitInSession = currentSession.pages.find(page => page.url === activity.url);
+            const isRevisit = previousVisitInSession !== undefined;
+            
+            // Check for context matching with earlier sessions from the same day
+            const contextSessions = sessionsByDay[dayKey].filter(session => {
+                // Only consider sessions within context threshold of this activity
+                return Math.abs(activity.timestamp - session.endTime) < SESSION_CONTEXT_THRESHOLD;
+            });
+            
+            // Find if any contextual session has this URL
+            const matchingContextSession = contextSessions.find(session => {
+                return session.pages.some(page => page.url === activity.url);
+            });
+            
             if (timeDiff > SESSION_GAP_THRESHOLD) {
-                // Time gap is too large, finalize previous session and start a new one
-                finalizeSession(currentSession);
-                processedSessions.push(currentSession);
-                currentSession = createNewSession(activity);
+                // Time gap is too large, check for possible context bridge
+                if (matchingContextSession && timeDiff < SESSION_CONTEXT_THRESHOLD) {
+                    console.log(`Found context match for ${activity.url} in recent session`); 
+                    // Add to existing session instead of creating new one
+                    currentSession.pages.push({
+                        url: activity.url,
+                        title: activity.title,
+                        visitTime: activity.timestamp,
+                        isContextualRevisit: true
+                    });
+                    currentSession.endTime = activity.timestamp;
+                } else {
+                    // Time gap is too large and no context match, finalize previous session and start a new one
+                    finalizeSession(currentSession);
+                    processedSessions.push(currentSession);
+                    sessionsByDay[dayKey].push(currentSession); // Add to day's sessions for future context matching
+                    currentSession = createNewSession(activity);
+                }
             } else {
                 // Activity is part of the current session
                 currentSession.pages.push({
                     url: activity.url,
                     title: activity.title,
-                    visitTime: activity.timestamp
+                    visitTime: activity.timestamp,
+                    isRevisit: isRevisit
                 });
                 currentSession.endTime = activity.timestamp;
             }
         }
+        
+        lastActivity = activity;
     });
 
     // Finalize the last session
@@ -655,10 +694,20 @@ function renderSessions(sessionsData) {
     sessionsData.forEach(session => {
         // Get the date string in local timezone
         const sessionDate = new Date(session.startTime);
-        const dateKey = sessionDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+        
+        // Fix timezone issues by using local date methods instead of toISOString() which uses UTC
+        const year = sessionDate.getFullYear();
+        const month = String(sessionDate.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+        const day = String(sessionDate.getDate()).padStart(2, '0');
+        
+        // Create date key in YYYY-MM-DD format using local time
+        const dateKey = `${year}-${month}-${day}`;
+        
         const hour = sessionDate.getHours();
         const period = getTimePeriod(hour);
         const dateAndPeriodKey = `${dateKey}_${period.name}`;
+        
+        console.log(`Session from ${sessionDate.toLocaleString()} grouped into date: ${dateKey}, period: ${period.name}`);
         
         if (!sessionsByDateAndPeriod[dateAndPeriodKey]) {
             sessionsByDateAndPeriod[dateAndPeriodKey] = {
@@ -690,8 +739,17 @@ function renderSessions(sessionsData) {
         
         // Format the date nicely for the main date heading
         const today = new Date();
+        const todayYear = today.getFullYear();
+        const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+        const todayDay = String(today.getDate()).padStart(2, '0');
+        const todayDateKey = `${todayYear}-${todayMonth}-${todayDay}`; // YYYY-MM-DD format in local time
+        
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayYear = yesterday.getFullYear();
+        const yesterdayMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
+        const yesterdayDay = String(yesterday.getDate()).padStart(2, '0');
+        const yesterdayDateKey = `${yesterdayYear}-${yesterdayMonth}-${yesterdayDay}`;
         
         let dateDisplay;
         let dateNumericFormat = new Intl.DateTimeFormat('en-US', { 
@@ -699,10 +757,12 @@ function renderSessions(sessionsData) {
             day: 'numeric', 
             year: 'numeric' 
         }).format(date);
+        
+        console.log(`Comparing dates: dateKey=${dateKey}, todayDateKey=${todayDateKey}, match=${dateKey === todayDateKey}`);
 
-        if (dateKey === today.toISOString().split('T')[0]) {
+        if (dateKey === todayDateKey) {
             dateDisplay = `Today: ${dateNumericFormat}`;
-        } else if (dateKey === yesterday.toISOString().split('T')[0]) {
+        } else if (dateKey === yesterdayDateKey) {
             dateDisplay = `Yesterday: ${dateNumericFormat}`;
         } else {
             dateDisplay = `${new Intl.DateTimeFormat('en-US', { 
