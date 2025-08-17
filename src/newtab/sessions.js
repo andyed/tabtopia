@@ -562,24 +562,51 @@ function renderSessionPageList(pages) {
             pageDetails.appendChild(referralDiv);
         }
         
-        // Display cached AI summary if available
+        // Handle summary display with loading indicator for non-cached summaries
         const cachedSummary = getCachedSummary(page.url);
-        if (cachedSummary) {
+        const isInternalUrl = page.url.startsWith('chrome://') || page.url.startsWith('file:///');
+        
+        // Only show summary section if we have a cached summary or if URL is valid for summarization
+        if (cachedSummary || !isInternalUrl) {
             const summaryDiv = document.createElement('div');
             summaryDiv.className = 'page-summary';
             
             // Add a small label indicating this is an AI summary
             const summaryLabel = document.createElement('div');
             summaryLabel.className = 'summary-label';
-            summaryLabel.textContent = 'AI Summary';
+            
+            if (cachedSummary) {
+                summaryLabel.textContent = 'AI Summary';
+            } else {
+                // Use a loading indicator instead of static text
+                summaryLabel.innerHTML = 'AI Summary <span class="loading-indicator">...</span>';
+                
+                // Set up polling to check for summary availability
+                const checkSummaryInterval = setInterval(() => {
+                    const updatedSummary = getCachedSummary(page.url);
+                    if (updatedSummary) {
+                        clearInterval(checkSummaryInterval);
+                        // Update the label to remove loading indicator
+                        summaryLabel.textContent = 'AI Summary';
+                        // Create and add summary content
+                        const summaryContent = document.createElement('div');
+                        summaryContent.innerHTML = createTruncatedSummary(updatedSummary, searchTerm);
+                        summaryDiv.appendChild(summaryContent);
+                    }
+                }, 2000); // Check every 2 seconds
+                
+                // Stop checking after 30 seconds to avoid resource waste
+                setTimeout(() => clearInterval(checkSummaryInterval), 30000);
+            }
+            
             summaryDiv.appendChild(summaryLabel);
             
-            // Add the summary content with truncation if needed
-            const summaryContent = document.createElement('div');
-            
-            // Apply highlighting if there's a search match in the summary
-            summaryContent.innerHTML = createTruncatedSummary(cachedSummary, searchTerm);
-            summaryDiv.appendChild(summaryContent);
+            // Only add content if we have a cached summary
+            if (cachedSummary) {
+                const summaryContent = document.createElement('div');
+                summaryContent.innerHTML = createTruncatedSummary(cachedSummary, searchTerm);
+                summaryDiv.appendChild(summaryContent);
+            }
             
             pageDetails.appendChild(summaryDiv);
         }

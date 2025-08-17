@@ -444,7 +444,8 @@ export async function displayReadout(d, event) {
     // Check if we should show summary section
     const isChromePage = url.startsWith('chrome://') || url.startsWith('chrome-extension://');
     const cachedSummary = getCachedSummary(url);
-    const showSummarySection = !isChromePage;
+    // Only show summary section if we either have a cached summary or it's not a Chrome page (and can be summarized)
+    const showSummarySection = cachedSummary || (!isChromePage && !url.startsWith('file://'));
 
     // Check if this is a search result with summary match
     const searchInput = document.getElementById('tabSearch');
@@ -495,7 +496,7 @@ export async function displayReadout(d, event) {
                 <div id="summary-content" class="summary-content">
                     ${cachedSummary ? 
                         createTruncatedSummary(cachedSummary) : 
-                        '<div class="loading">Generating summary...</div>'
+                        '<div class="loading"><span class="loading-dots">...</span></div>'
                     }
                 </div>
             </div>
@@ -544,10 +545,41 @@ export async function displayReadout(d, event) {
         positionReadout(event);
     }
 
-    // Queue summary generation if needed
-    if (showSummarySection && !cachedSummary) {
+    // Queue summary generation if needed (even if not showing summary section)
+    if (!isChromePage && !url.startsWith('file://') && !cachedSummary) {
         summaryQueue.add(url);
         processSummaryQueue().catch(console.error);
+        
+        // If we're not showing the summary section yet, set up a timer to show it when summary is ready
+        if (!showSummarySection) {
+            // Check every 2 seconds if summary becomes available
+            const checkInterval = setInterval(() => {
+                const newCachedSummary = getCachedSummary(url);
+                if (newCachedSummary && lastDisplayedNodeId === currentNodeId) {
+                    clearInterval(checkInterval);
+                    // Update the UI to show the summary section now that we have one
+                    const summarySection = document.createElement('div');
+                    summarySection.className = 'summary-section';
+                    summarySection.innerHTML = `
+                        <h3>Summary <span class="cached">(cached)</span></h3>
+                        <div id="summary-content" class="summary-content">
+                            ${createTruncatedSummary(newCachedSummary)}
+                        </div>
+                    `;
+                    
+                    // Insert after readout-details
+                    const readoutDetails = document.querySelector('.readout-details');
+                    if (readoutDetails && readoutDetails.nextSibling) {
+                        readout.insertBefore(summarySection, readoutDetails.nextSibling);
+                    } else {
+                        readout.appendChild(summarySection);
+                    }
+                }
+            }, 2000);
+            
+            // Clean up the interval after 30 seconds if summary never arrives
+            setTimeout(() => clearInterval(checkInterval), 30000);
+        }
     }
 }
 
