@@ -689,13 +689,17 @@ export async function displayReadout(d, event) {
         
         ${showSummarySection ? `
             <div class="summary-section">
-                <h3>Summary ${cachedSummary ? '<span class="cached">(cached)</span>' : ''}</h3>
-                <div id="summary-content" class="summary-content">
-                    ${cachedSummary ? 
-                        createTruncatedSummary(cachedSummary) : 
-                        '<div class="loading"><span class="loading-dots">...</span></div>'
-                    }
-                </div>
+                ${cachedSummary ? `
+                    <h3>Summary <span class="cached">(cached)</span></h3>
+                    <div id="summary-content" class="summary-content">
+                        ${createTruncatedSummary(cachedSummary)}
+                    </div>
+                ` : `
+                    <!-- No heading when summary is loading -->
+                    <div id="summary-content" class="summary-content summary-loading">
+                        <div class="loading"><span class="loading-dots">...</span></div>
+                    </div>
+                `}
             </div>
         ` : ''}
 

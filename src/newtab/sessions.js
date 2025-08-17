@@ -37,6 +37,8 @@ let currentSearchTerm = ''; // Track current search term for highlighting
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Sessions view DOM fully loaded and parsed');
+    // Add tab group styles to document head
+    addTabGroupStyles();
     initSessions();
 
     // Use the existing search input from the header
@@ -355,6 +357,195 @@ function extractSearchQuery(url) {
     }
 }
 
+/**
+ * Groups pages within a session by tab context
+ * @param {Array} pages - Array of page objects with originalTabId and referral data
+ * @returns {Array} Array of tab group objects, each with an id, name, and pages array
+ */
+function groupByTabContext(pages) {
+    if (!pages || !Array.isArray(pages) || pages.length === 0) {
+        return [];
+    }
+    
+    console.log('Grouping pages by tab context');
+    
+    // Track tab relationships (parent → children)
+    const tabRelationships = {};
+    const tabPageMap = {}; // originalTabId → array of pages
+    const orphanedPages = []; // Pages without tab ID
+    const tabTimelineMap = {}; // originalTabId → { startTime, endTime }
+    
+    // First pass - organize pages by tab and capture relationships
+    pages.forEach(page => {
+        if (!page.originalTabId) {
+            orphanedPages.push(page);
+            return;
+        }
+        
+        // Group pages by tab ID
+        if (!tabPageMap[page.originalTabId]) {
+            tabPageMap[page.originalTabId] = [];
+            tabTimelineMap[page.originalTabId] = {
+                startTime: page.visitTime,
+                endTime: page.visitTime
+            };
+        }
+        
+        tabPageMap[page.originalTabId].push(page);
+        
+        // Update tab timeline
+        tabTimelineMap[page.originalTabId].startTime = 
+            Math.min(tabTimelineMap[page.originalTabId].startTime, page.visitTime);
+        tabTimelineMap[page.originalTabId].endTime = 
+            Math.max(tabTimelineMap[page.originalTabId].endTime, page.visitTime);
+            
+        // Establish tab relationship from referral data
+        if (page.referral && page.referral.referringTabId && 
+            page.referral.referringTabId !== page.originalTabId) {
+            tabRelationships[page.originalTabId] = page.referral.referringTabId;
+        }
+    });
+    
+    // Create tab family trees (root tabs and their descendants)
+    const rootTabs = {};
+    const processedTabs = new Set();
+    
+    // Identify root tabs (no parent or parent not in this session)
+    Object.keys(tabPageMap).forEach(tabId => {
+        let currentTabId = tabId;
+        let parentTabId = tabRelationships[currentTabId];
+        let isRoot = true;
+        
+        // Trace back to find the ultimate parent within this session
+        while (parentTabId && tabPageMap[parentTabId]) {
+            currentTabId = parentTabId;
+            parentTabId = tabRelationships[currentTabId];
+            isRoot = false;
+        }
+        
+        // Found a root tab
+        if (isRoot && !rootTabs[tabId]) {
+            rootTabs[tabId] = {
+                tabId: tabId,
+                childTabs: [],
+                pages: tabPageMap[tabId],
+                startTime: tabTimelineMap[tabId].startTime,
+                endTime: tabTimelineMap[tabId].endTime
+            };
+        }
+        // Found a descendant of a root
+        else if (!isRoot) {
+            if (!rootTabs[currentTabId]) {
+                rootTabs[currentTabId] = {
+                    tabId: currentTabId,
+                    childTabs: [],
+                    pages: tabPageMap[currentTabId],
+                    startTime: tabTimelineMap[currentTabId].startTime,
+                    endTime: tabTimelineMap[currentTabId].endTime
+                };
+            }
+            
+            // Don't add immediate children here - will do in next pass
+        }
+    });
+    
+    // Add immediate children to their parents
+    Object.keys(tabRelationships).forEach(tabId => {
+        const parentTabId = tabRelationships[tabId];
+        if (rootTabs[parentTabId]) {
+            rootTabs[parentTabId].childTabs.push(tabId);
+        }
+    });
+    
+    // Now, create tab groups from root tabs
+    const tabGroups = [];
+    let groupCounter = 0;
+    
+    // Helper to recursively collect pages from a tab family
+    function collectTabFamilyPages(tabId) {
+        let allPages = [];
+        
+        if (tabPageMap[tabId]) {
+            allPages = allPages.concat(tabPageMap[tabId]);
+            
+            // Process direct children of this tab
+            const childTabs = Object.keys(tabRelationships)
+                .filter(childId => tabRelationships[childId] === tabId);
+                
+            childTabs.forEach(childTabId => {
+                allPages = allPages.concat(collectTabFamilyPages(childTabId));
+            });
+        }
+        
+        return allPages;
+    }
+    
+    // Create groups from root tabs
+    Object.keys(rootTabs).forEach(rootTabId => {
+        const rootTab = rootTabs[rootTabId];
+        
+        // Collect all pages from this tab family
+        let allTabFamilyPages = collectTabFamilyPages(rootTabId);
+        
+        // Only create groups with multiple pages
+        if (allTabFamilyPages.length > 0) {
+            // Sort pages chronologically
+            allTabFamilyPages.sort((a, b) => a.visitTime - b.visitTime);
+            
+            // Create a name based on the first meaningful page
+            const nameSources = allTabFamilyPages.filter(p => 
+                p.title && !p.title.toLowerCase().includes('new tab'));
+                
+            let groupName = nameSources.length > 0 ? 
+                nameSources[0].title : 
+                `Tab Group ${groupCounter + 1}`;
+                
+            // Truncate long names
+            if (groupName.length > 50) {
+                groupName = groupName.substring(0, 47) + '...';
+            }
+            
+            const groupId = `tab_group_${rootTabId}`;
+            
+            tabGroups.push({
+                id: groupId,
+                name: groupName,
+                pages: allTabFamilyPages,
+                rootTabId: rootTabId,
+                pageCount: allTabFamilyPages.length,
+                startTime: allTabFamilyPages[0].visitTime,
+                endTime: allTabFamilyPages[allTabFamilyPages.length - 1].visitTime,
+                duration: allTabFamilyPages[allTabFamilyPages.length - 1].visitTime - 
+                          allTabFamilyPages[0].visitTime
+            });
+            
+            groupCounter++;
+        }
+    });
+    
+    // Handle orphaned pages (no tab ID)
+    if (orphanedPages.length > 0) {
+        orphanedPages.sort((a, b) => a.visitTime - b.visitTime);
+        
+        tabGroups.push({
+            id: 'orphaned_pages',
+            name: 'Other Pages',
+            pages: orphanedPages,
+            pageCount: orphanedPages.length,
+            startTime: orphanedPages[0].visitTime,
+            endTime: orphanedPages[orphanedPages.length - 1].visitTime,
+            duration: orphanedPages[orphanedPages.length - 1].visitTime - orphanedPages[0].visitTime,
+            isOrphanGroup: true
+        });
+    }
+    
+    // Sort groups chronologically by their start time
+    tabGroups.sort((a, b) => a.startTime - b.startTime);
+    
+    console.log(`Created ${tabGroups.length} tab groups from ${pages.length} pages`);
+    return tabGroups;
+}
+
 function finalizeSession(session) {
     session.duration = session.endTime - session.startTime;
     
@@ -370,6 +561,30 @@ function finalizeSession(session) {
                 session.searchQueries.push(query);
             }
         });
+    }
+    
+    // Create tab groups for large sessions (>10 pages or >1 hour)
+    const ONE_HOUR = 60 * 60 * 1000;
+    const LARGE_SESSION_PAGE_THRESHOLD = 10;
+    const isLargeSession = session.pageCount > LARGE_SESSION_PAGE_THRESHOLD || session.duration > ONE_HOUR;
+    
+    if (isLargeSession && session.pages && session.pages.length > 0) {
+        console.log(`Session ${session.id} is large (${session.pageCount} pages, ${formatDuration(session.duration)}). Creating tab groups.`);
+        session.tabGroups = groupByTabContext(session.pages);
+        session.hasTabGroups = session.tabGroups && session.tabGroups.length > 0;
+        
+        if (session.hasTabGroups) {
+            // Extract most meaningful tab group for session naming
+            const meaningfulGroups = session.tabGroups
+                .filter(group => !group.isOrphanGroup)
+                .sort((a, b) => b.pageCount - a.pageCount);
+                
+            if (meaningfulGroups.length > 0 && meaningfulGroups[0].name) {
+                session.primaryTabGroup = meaningfulGroups[0];
+            }
+        }
+    } else {
+        session.hasTabGroups = false;
     }
 
     // Updated session naming
@@ -515,9 +730,353 @@ function createDomainListElement(domains) { // Removed title parameter
     return listContainer;
 }
 
-function renderSessionPageList(pages) {
+/**
+ * Adds CSS styles for tab grouping visualization
+ * This should be called once during initialization
+ */
+function addTabGroupStyles() {
+    // Check if styles are already added
+    if (document.getElementById('tab-group-styles')) {
+        return; // Styles already added
+    }
+    
+    const style = document.createElement('style');
+    style.id = 'tab-group-styles';
+    style.textContent = `
+        .tab-grouped-pages {
+            margin-top: 15px;
+        }
+        
+        .tab-groups-summary {
+            margin-bottom: 15px;
+            color: #555;
+            font-size: 0.9em;
+            padding: 8px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+        
+        .tab-group {
+            margin-bottom: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        
+        .tab-group-header {
+            padding: 10px 12px;
+            background-color: #f8f8f8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: background-color 0.2s ease;
+        }
+        
+        .tab-group-header:hover {
+            background-color: #f0f0f0;
+        }
+        
+        .tab-group-expand-icon {
+            margin-right: 8px;
+            font-size: 10px;
+            transition: transform 0.2s ease;
+        }
+        
+        .tab-group-title {
+            margin: 0;
+            flex: 1;
+            font-size: 14px;
+        }
+        
+        .tab-group-timerange {
+            font-size: 12px;
+            color: #666;
+            margin-left: auto;
+        }
+        
+        .tab-group-content {
+            transition: max-height 0.3s ease-out;
+            overflow: hidden;
+        }
+        
+        .tab-group-content.collapsed {
+            max-height: 0;
+        }
+        
+        .tab-group-content.expanded {
+            max-height: 2000px;
+        }
+        
+        .group-pages-list {
+            padding: 8px 12px;
+            margin: 0;
+            list-style-type: none;
+        }
+        
+        .tab-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #4285f4;
+            margin-right: 8px;
+            position: relative;
+        }
+        
+        .tab-indicator.child-tab::before {
+            content: "";
+            position: absolute;
+            left: -5px;
+            top: 5px;
+            width: 5px;
+            height: 1px;
+            background-color: #4285f4;
+        }
+    `;
+    
+    document.head.appendChild(style);
+}
+
+/**
+ * Renders a session's pages grouped by tab context for large sessions
+ * @param {Object} session - The session object with tabGroups
+ * @returns {HTMLElement} The container with tab groups
+ */
+function renderTabGroupedPageList(session) {
+    const container = document.createElement('div');
+    container.className = 'session-pages-list tab-grouped-pages';
+    
+    // Display summary of tab groups
+    const tabGroupSummary = document.createElement('div');
+    tabGroupSummary.className = 'tab-groups-summary';
+    tabGroupSummary.innerHTML = `<strong>This session contains ${session.tabGroups.length} tab groups across ${session.pageCount} pages</strong>`;
+    container.appendChild(tabGroupSummary);
+    
+    // Create an accordion for each tab group
+    session.tabGroups.forEach((tabGroup, index) => {
+        const tabGroupContainer = document.createElement('div');
+        tabGroupContainer.className = 'tab-group';
+        tabGroupContainer.setAttribute('data-group-id', tabGroup.id);
+        
+        // Create header with group name and toggle capability
+        const tabGroupHeader = document.createElement('div');
+        tabGroupHeader.className = 'tab-group-header';
+        
+        // Add expand/collapse icon
+        const expandIcon = document.createElement('span');
+        expandIcon.className = 'tab-group-expand-icon';
+        expandIcon.textContent = '►';
+        tabGroupHeader.appendChild(expandIcon);
+        
+        // Add group name and page count
+        const groupTitle = document.createElement('h4');
+        groupTitle.className = 'tab-group-title';
+        groupTitle.textContent = `${tabGroup.name || 'Tab Group ' + (index + 1)} (${tabGroup.pageCount} pages)`;
+        tabGroupHeader.appendChild(groupTitle);
+        
+        // Add time range
+        const timeRangeSpan = document.createElement('span');
+        timeRangeSpan.className = 'tab-group-timerange';
+        const startTime = new Date(tabGroup.startTime).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+        const endTime = new Date(tabGroup.endTime).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+        timeRangeSpan.textContent = `${startTime} - ${endTime} (${formatDuration(tabGroup.duration)})`;
+        tabGroupHeader.appendChild(timeRangeSpan);
+        
+        tabGroupContainer.appendChild(tabGroupHeader);
+        
+        // Create collapsible content for pages
+        const tabGroupContent = document.createElement('div');
+        tabGroupContent.className = 'tab-group-content collapsed';
+        
+        // Create standard page list for this group's pages
+        const ul = document.createElement('ul');
+        ul.className = 'group-pages-list';
+        
+        // Sort pages chronologically
+        const sortedPages = [...tabGroup.pages].sort((a,b) => a.visitTime - b.visitTime);
+        
+        // Use the current search term for highlighting
+        const searchTerm = currentSearchTerm;
+        
+        sortedPages.forEach(page => {
+            const li = document.createElement('li');
+            li.className = 'session-page-item';
+            
+            // Add tab indicator if we have originating tab information
+            if (page.originalTabId) {
+                const tabIndicator = document.createElement('span');
+                tabIndicator.className = 'tab-indicator';
+                tabIndicator.title = `Tab ID: ${page.originalTabId}`;
+                
+                // If this is a child tab that was opened from another tab, show that relationship
+                if (page.referral && page.referral.referringTabId) {
+                    tabIndicator.classList.add('child-tab');
+                    tabIndicator.title += ` (opened from Tab ID: ${page.referral.referringTabId})`;
+                }
+                
+                li.appendChild(tabIndicator);
+            }
+    
+            const faviconImg = document.createElement('img');
+            faviconImg.className = 'page-favicon-img';
+            faviconImg.src = getFaviconDisplayUrl(page.url);
+            faviconImg.alt = ''; // Decorative
+            li.appendChild(faviconImg);
+    
+            const pageDetails = document.createElement('div');
+            pageDetails.className = 'page-item-details';
+    
+            // Title with optional highlight
+            const titleLink = document.createElement('a');
+            titleLink.href = page.url;
+            const titleText = page.title || page.url;
+            if (searchTerm && titleText.toLowerCase().includes(searchTerm)) {
+                titleLink.innerHTML = highlightText(titleText, searchTerm);
+            } else {
+                titleLink.textContent = titleText;
+            }
+            titleLink.className = 'page-title-link';
+            titleLink.target = '_blank'; // Open in new tab
+            pageDetails.appendChild(titleLink);
+    
+            // URL with optional highlight
+            const urlText = document.createElement('span');
+            urlText.className = 'page-url-text';
+            if (searchTerm && page.url.toLowerCase().includes(searchTerm)) {
+                urlText.innerHTML = highlightText(page.url, searchTerm);
+            } else {
+                urlText.textContent = page.url;
+            }
+            pageDetails.appendChild(urlText);
+            
+            const visitTimeText = document.createElement('span');
+            visitTimeText.className = 'page-visit-time';
+            visitTimeText.textContent = `Visited: ${new Date(page.visitTime).toLocaleString()}`;
+            pageDetails.appendChild(visitTimeText);
+    
+            // Display Dwell Time
+            if (page.dwellTimeMs && page.dwellTimeMs > 0) {
+                const dwellTimeText = document.createElement('span');
+                dwellTimeText.className = 'page-dwell-time';
+                dwellTimeText.textContent = `Dwell time: ${formatDuration(page.dwellTimeMs)}`;
+                pageDetails.appendChild(dwellTimeText);
+            }
+    
+            // Display Referral Info
+            if (page.referral) {
+                const referralDiv = document.createElement('div');
+                referralDiv.className = 'page-referral-info';
+                let referralHtml = 'Referred by: ';
+                if (page.referral.type === 'tabOpen') {
+                    if (page.referral.sourceUrl) {
+                        const sourceLink = document.createElement('a');
+                        sourceLink.href = page.referral.sourceUrl;
+                        sourceLink.textContent = page.referral.sourceUrl.length > 70 ? 
+                            page.referral.sourceUrl.substring(0, 67) + '...' : page.referral.sourceUrl;
+                        sourceLink.target = '_blank';
+                        referralDiv.appendChild(document.createTextNode(referralHtml));
+                        referralDiv.appendChild(sourceLink);
+                    } else {
+                        referralDiv.textContent = referralHtml + 'an unknown source tab';
+                    }
+                    if (page.referral.linkText) {
+                        referralDiv.appendChild(document.createTextNode(` (link: "${page.referral.linkText}")`));
+                    }
+                } else {
+                    // Fallback for other referral types
+                    referralDiv.textContent = referralHtml + 'unknown mechanism.';
+                }
+                pageDetails.appendChild(referralDiv);
+            }
+            
+            // Handle summary display similar to the original function
+            const cachedSummary = getCachedSummary(page.url);
+            const isInternalUrl = page.url.startsWith('chrome://') || page.url.startsWith('file:///');
+            
+            if (cachedSummary || !isInternalUrl) {
+                const summaryDiv = document.createElement('div');
+                summaryDiv.className = 'page-summary';
+                
+                const summaryLabel = document.createElement('div');
+                summaryLabel.className = 'summary-label';
+                
+                if (cachedSummary) {
+                    summaryLabel.textContent = 'AI Summary';
+                } else {
+                    summaryLabel.innerHTML = 'AI Summary <span class="loading-indicator">...</span>';
+                    
+                    const checkSummaryInterval = setInterval(() => {
+                        const newCachedSummary = getCachedSummary(page.url);
+                        if (newCachedSummary) {
+                            clearInterval(checkSummaryInterval);
+                            summaryLabel.textContent = 'AI Summary';
+                            const summaryContent = document.createElement('p');
+                            summaryContent.textContent = newCachedSummary;
+                            summaryDiv.appendChild(summaryContent);
+                        }
+                    }, 3000); // Check every 3 seconds
+                }
+                
+                summaryDiv.appendChild(summaryLabel);
+                
+                if (cachedSummary) {
+                    const summaryContent = document.createElement('p');
+                    summaryContent.textContent = cachedSummary;
+                    summaryDiv.appendChild(summaryContent);
+                }
+                
+                pageDetails.appendChild(summaryDiv);
+            }
+            
+            li.appendChild(pageDetails);
+            ul.appendChild(li);
+        });
+        
+        tabGroupContent.appendChild(ul);
+        tabGroupContainer.appendChild(tabGroupContent);
+        container.appendChild(tabGroupContainer);
+        
+        // Set up click handlers to toggle tab group expansion
+        const toggleExpansion = (event) => {
+            // Check if the click is on an interactive element or link
+            if (event.target.tagName === 'A' || 
+                event.target.closest('a') ||
+                event.target.closest('.page-item-details')) {
+                // Don't handle clicks on interactive elements inside the content
+                return;
+            }
+            
+            const isExpanded = tabGroupContent.classList.contains('expanded');
+            tabGroupContent.classList.toggle('expanded', !isExpanded);
+            tabGroupContent.classList.toggle('collapsed', isExpanded);
+            expandIcon.textContent = isExpanded ? '►' : '▼';
+        };
+        
+        // Add click handler to header (guaranteed to work)
+        tabGroupHeader.addEventListener('click', toggleExpansion);
+        
+        // Add click handler to entire container for better UX
+        tabGroupContainer.addEventListener('click', (event) => {
+            // Only handle clicks directly on the container itself,
+            // not bubbled events from content elements
+            if (event.target === tabGroupContainer) {
+                toggleExpansion(event);
+            }
+        });
+    });
+    
+    return container;
+}
+
+function renderSessionPageList(pages, session) {
     const pageListContainer = document.createElement('div');
     pageListContainer.className = 'session-pages-list';
+    
+    // Check if this session has tab groups and should use them
+    if (session && session.hasTabGroups && session.tabGroups && session.tabGroups.length > 0) {
+        return renderTabGroupedPageList(session);
+    }
+    
     const ul = document.createElement('ul');
 
     // Sort pages chronologically if not already sorted (oldest to newest for display)
@@ -692,8 +1251,16 @@ function renderSessions(sessionsData) {
     const sessionsByDateAndPeriod = {};
     
     sessionsData.forEach(session => {
-        // Get the date string in local timezone
-        const sessionDate = new Date(session.startTime);
+        // Get the date string in local timezone, ensuring we're working with milliseconds timestamps
+        const sessionDate = new Date(Number(session.startTime));
+        
+        // Debug timestamp conversion
+        console.log('Session timestamp conversion:', {
+            originalTimestamp: session.startTime,
+            numericTimestamp: Number(session.startTime),
+            convertedDate: sessionDate.toLocaleString(),
+            tzOffset: sessionDate.getTimezoneOffset()
+        });
         
         // Fix timezone issues by using local date methods instead of toISOString() which uses UTC
         const year = sessionDate.getFullYear();
@@ -738,12 +1305,28 @@ function renderSessions(sessionsData) {
         const date = new Date(dateKey);
         
         // Format the date nicely for the main date heading
+        // Ensure we're working with fresh date objects in local timezone
         const today = new Date();
+        
+        // Log raw dates for debugging
+        console.log('Raw date comparison:', {
+            sessionDateObj: date,
+            sessionDateKey: dateKey,
+            todayObj: today,
+            sessionTimestamp: date.getTime(),
+            todayTimestamp: today.getTime(),
+            sessionDateString: date.toLocaleString(),
+            todayDateString: today.toLocaleString()
+        });
+        
+        // Explicitly create today's date key using the same consistent method
+        // Use local methods to ensure proper timezone handling
         const todayYear = today.getFullYear();
         const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
         const todayDay = String(today.getDate()).padStart(2, '0');
         const todayDateKey = `${todayYear}-${todayMonth}-${todayDay}`; // YYYY-MM-DD format in local time
         
+        // Create yesterday reference using local methods too
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayYear = yesterday.getFullYear();
@@ -752,24 +1335,41 @@ function renderSessions(sessionsData) {
         const yesterdayDateKey = `${yesterdayYear}-${yesterdayMonth}-${yesterdayDay}`;
         
         let dateDisplay;
-        let dateNumericFormat = new Intl.DateTimeFormat('en-US', { 
-            month: 'numeric', 
-            day: 'numeric', 
-            year: 'numeric' 
-        }).format(date);
         
         console.log(`Comparing dates: dateKey=${dateKey}, todayDateKey=${todayDateKey}, match=${dateKey === todayDateKey}`);
 
         if (dateKey === todayDateKey) {
-            dateDisplay = `Today: ${dateNumericFormat}`;
+            // For today, use the actual today date object for formatting
+            const todayDayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(today);
+            const todayNumericFormat = new Intl.DateTimeFormat('en-US', { 
+                month: 'numeric', 
+                day: 'numeric', 
+                year: 'numeric' 
+            }).format(today);
+            dateDisplay = `Today (${todayDayOfWeek}): ${todayNumericFormat}`;
         } else if (dateKey === yesterdayDateKey) {
-            dateDisplay = `Yesterday: ${dateNumericFormat}`;
+            const yesterdayDayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(yesterday);
+            const yesterdayNumericFormat = new Intl.DateTimeFormat('en-US', { 
+                month: 'numeric', 
+                day: 'numeric', 
+                year: 'numeric' 
+            }).format(yesterday);
+            dateDisplay = `Yesterday (${yesterdayDayOfWeek}): ${yesterdayNumericFormat}`;
         } else {
-            dateDisplay = `${new Intl.DateTimeFormat('en-US', { 
-                weekday: 'long', 
+            // For other dates, use consistent formatting with day of week
+            const dayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(date);
+            const numericFormat = new Intl.DateTimeFormat('en-US', { 
+                month: 'numeric', 
+                day: 'numeric',
+                year: 'numeric'
+            }).format(date);
+            
+            const fullDateFormat = new Intl.DateTimeFormat('en-US', { 
                 month: 'long', 
                 day: 'numeric'
-            }).format(date)}: ${dateNumericFormat}`;
+            }).format(date);
+            
+            dateDisplay = `${fullDateFormat} (${dayOfWeek}): ${numericFormat}`;
         }
         
         // Create main date milestone
@@ -870,7 +1470,7 @@ function renderSessions(sessionsData) {
                         if (!isExpanded && collapsibleContent.childElementCount === 0) {
                             // Check if pages exist and are not empty
                             if (session.pages && session.pages.length > 0) {
-                                const pageListElement = renderSessionPageList(session.pages);
+                                const pageListElement = renderSessionPageList(session.pages, session);
                                 collapsibleContent.appendChild(pageListElement);
                             } else {
                                 const noPagesMessage = document.createElement('p');
