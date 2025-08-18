@@ -5,40 +5,6 @@
 
 console.log('🔍 Histospire debug injector loaded');
 
-// Create a button to force hero image extraction
-function createDebugButton() {
-  const button = document.createElement('button');
-  button.textContent = '📸 Extract Hero Images';
-  button.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 9999;
-    padding: 8px 12px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-family: system-ui;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-  `;
-  
-  // Add hover effect
-  button.onmouseover = () => {
-    button.style.background = 'rgba(0, 0, 0, 0.85)';
-  };
-  button.onmouseout = () => {
-    button.style.background = 'rgba(0, 0, 0, 0.7)';
-  };
-  
-  button.onclick = () => forceExtractHeroImages();
-  
-  document.body.appendChild(button);
-  
-  return button;
-}
-
 // Force hero image extraction
 async function forceExtractHeroImages() {
   try {
@@ -85,9 +51,5 @@ async function forceExtractHeroImages() {
   }
 }
 
-// Wait for page to be ready
-if (document.readyState === 'complete' || document.readyState === 'interactive') {
-  createDebugButton();
-} else {
-  document.addEventListener('DOMContentLoaded', createDebugButton);
-}
+// Button overlay removed as hero image extraction is working properly now
+// The extraction functionality can still be accessed through the console API
