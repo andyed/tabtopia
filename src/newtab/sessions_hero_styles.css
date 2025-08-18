@@ -1,0 +1,347 @@
+/* Hero image display styles for sessions view */
+
+/* View Toggle Button */
+.view-toggle-button {
+  background: transparent;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  margin-right: 15px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.view-toggle-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.view-toggle-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.view-toggle-button .tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  padding: 5px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.view-toggle-button:hover .tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Card Grid Layout */
+.sessions-cards-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  grid-gap: 20px;
+  margin-bottom: 30px;
+}
+
+/* Define card spans for different card types */
+.session-card {
+  grid-column-end: span 3; /* Standard cards take 3 columns */
+}
+
+.session-card.double-width {
+  grid-column-end: span 6; /* Double-width cards take 6 columns */
+}
+
+/* Session Card Base Styles */
+.session-card {
+  position: relative;
+  width: 100%;
+  height: 200px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  cursor: pointer;
+  display: flex;
+  background-color: #1e2630;
+}
+
+/* Double-width card uses horizontal layout */
+.session-card.double-width {
+  flex-direction: row;
+}
+
+/* Standard-width card uses vertical layout */
+.session-card.standard-width {
+  flex-direction: column;
+  height: 280px; /* Slightly taller for vertical layout */
+}
+
+.session-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+}
+
+.session-card.no-image {
+  background: linear-gradient(135deg, #2c3440 0%, #1a1f26 100%);
+}
+
+/* Image section of card */
+.card-image-section {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Compact image section for standard cards */
+.card-image-section.compact {
+  flex: none;
+  height: 140px;
+}
+
+.card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.session-card:hover .card-image {
+  transform: scale(1.05);
+}
+
+.image-source {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 70%, transparent 100%);
+  color: #ffffff;
+  padding: 10px;
+  font-size: 0.75em;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+}
+
+/* Content section of card */
+.card-content-section {
+  flex: 1;
+  padding: 20px;
+  color: #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.card-content-section.full-width {
+  flex: 2;
+}
+
+/* Compact content section for standard width cards */
+.card-content-section.compact {
+  padding: 15px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.card-title {
+  font-size: 1.3em;
+  font-weight: 500;
+  margin: 0 0 15px 0;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Compact title for standard cards */
+.card-title.compact {
+  font-size: 1.1em;
+  margin: 0 0 10px 0;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.card-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-gap: 10px;
+  margin-bottom: 15px;
+}
+
+/* Compact stats for standard cards */
+.card-stats.compact {
+  margin-bottom: 10px;
+  grid-gap: 5px;
+}
+
+.stat-item {
+  font-size: 0.85em;
+}
+
+.stat-label {
+  color: #a0a0a0;
+  font-weight: 500;
+}
+
+.card-domains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 15px;
+}
+
+/* Compact domains for standard cards */
+.card-domains.compact {
+  margin-bottom: 0;
+  gap: 4px;
+}
+
+.domain-tag {
+  background-color: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.75em;
+  border: 1px solid rgba(255,255,255,0.2);
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.domain-favicon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  margin-right: 2px;
+}
+
+.domain-tag:hover {
+  background-color: rgba(255,255,255,0.2);
+}
+
+.card-summary {
+  font-size: 0.8em;
+  color: #b0b0b0;
+  line-height: 1.4;
+}
+
+.journey-summary {
+  font-style: italic;
+}
+
+/* Image Mosaic Layout */
+.session-mosaic {
+  display: grid;
+  grid-gap: 5px;
+  margin: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+}
+
+/* Different layouts based on number of images */
+/* For 1 image - single image filling the container */
+.mosaic-1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* For 2 images - side by side */
+.mosaic-2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* For 3 images - large on left, two smaller on right stacked vertically */
+.mosaic-3 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.mosaic-item-3-1 {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+/* For 4 images - large on left, three smaller on right */
+.mosaic-4 {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+}
+.mosaic-item-4-1 {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+}
+
+/* For 5 images - large on left, 4 smaller in a 2x2 grid on right */
+.mosaic-5 {
+  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.mosaic-item-5-1 {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+/* Card-specific mosaic layouts */
+.card-image-section .session-mosaic {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  border-radius: 0;
+}
+
+/* Standard width card mosaic should be more compact */
+.card-image-section.compact .session-mosaic {
+  height: 140px;
+}
+
+.mosaic-item-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mosaic-item {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+}
+
+.mosaic-item:hover {
+  transform: scale(1.05);
+  z-index: 2;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+}
+
+.mosaic-favicon {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 16px;
+  height: 16px;
+  background-color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  padding: 2px;
+  z-index: 3;
+}

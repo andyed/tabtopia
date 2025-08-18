@@ -5,6 +5,8 @@ console.log('sessions.js loaded');
 import { summaryCache, getCachedSummary } from './readout.js';
 // Import the debug tools bridge for ES module compatibility
 import { viewStoredHeroImages, debugToolsReady } from './debug-tools-bridge.js';
+// Import session renderers
+import { renderSessionCards, renderSessionWithMosaic } from './sessions_renderer.js';
 
 // Helper function to create a truncated summary display (simplified version from readout.js)
 function createTruncatedSummary(summary, searchTerm = '') {
@@ -1147,13 +1149,20 @@ function renderTabGroupedPageList(session) {
         
         tabGroupContainer.appendChild(tabGroupHeader);
         
-        // Create collapsible content for pages
-        const tabGroupContent = document.createElement('div');
-        tabGroupContent.className = 'tab-group-content collapsed';
+        // Create the collapsible content container
+        const collapsibleContent = document.createElement('div');
+        collapsibleContent.className = 'session-collapsible-content';
         
-        // Create standard page list for this group's pages
-        const ul = document.createElement('ul');
-        ul.className = 'group-pages-list';
+        // Render mosaic if session has hero images
+        if (session.pages && session.pages.some(page => page.dwellTimeMs > 30000)) {
+            renderSessionWithMosaic(session, collapsibleContent);
+        }
+        
+        // Create the session pages section
+        const sessionPagesSection = document.createElement('div');
+        sessionPagesSection.className = 'session-pages-list';
+        const pagesList = document.createElement('ul');
+        pagesList.className = 'group-pages-list';
         
         // Sort pages chronologically
         const sortedPages = [...tabGroup.pages].sort((a,b) => a.visitTime - b.visitTime);
@@ -1565,368 +1574,21 @@ function renderSessions(sessions, isRefresh = false) {
     const container = document.getElementById('sessions-container');
     if (!container) return;
 
-    // If refreshing, keep track of which sessions were expanded
-    const expandedSessionIds = [];
-    if (isRefresh) {
-        // Find all expanded sessions
-        const expandedSessions = container.querySelectorAll('.session-item.expanded');
-        expandedSessions.forEach(session => {
-            const sessionId = session.getAttribute('data-session-id');
-            if (sessionId) {
-                expandedSessionIds.push(sessionId);
-            }
-        });
-    }
-
-    // Clear existing content
-    container.innerHTML = '';
-
-    if (sessions.length === 0) {
-        const noSessionsMessage = document.createElement('p');
-        noSessionsMessage.className = 'info-message';
-        noSessionsMessage.textContent = 'No browsing sessions found. Start browsing or try modifying your filters.';
-        container.appendChild(noSessionsMessage);
-        return;
+    // Show loading indicator if not a refresh
+    if (!isRefresh) {
+        container.innerHTML = '<p class="loading-message">Loading sessions data...</p>';
+    } else {
+        // If this is a refresh, show indicator and keep existing content
+        const indicator = createRefreshIndicator();
+        indicator.classList.add('active');
+        setTimeout(() => {
+            indicator.classList.remove('active');
+        }, 1000);
     }
     
-    // Define time period boundaries (in hours, 24-hour format)
-    const timePeriods = [
-        { name: 'Early Morning', start: 0, end: 6 },
-        { name: 'Morning', start: 6, end: 12 },
-        { name: 'Afternoon', start: 12, end: 17 },
-        { name: 'Evening', start: 17, end: 21 },
-        { name: 'Night', start: 21, end: 24 }
-    ];
-    
-    // Helper function to get time period for a given hour
-    function getTimePeriod(hour) {
-        return timePeriods.find(period => hour >= period.start && hour < period.end) || timePeriods[0];
-    }
-    
-    // Group sessions by date and time period
-    const sessionsByDateAndPeriod = {};
-    
-    sessions.forEach(session => {
-        // Get the date string in local timezone, ensuring we're working with milliseconds timestamps
-        const sessionDate = new Date(Number(session.startTime));
-        
-        // Debug timestamp conversion
-        console.log('Session timestamp conversion:', {
-            originalTimestamp: session.startTime,
-            numericTimestamp: Number(session.startTime),
-            convertedDate: sessionDate.toLocaleString(),
-            tzOffset: sessionDate.getTimezoneOffset()
-        });
-        
-        // Fix timezone issues by using local date methods instead of toISOString() which uses UTC
-        const year = sessionDate.getFullYear();
-        const month = String(sessionDate.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-        const day = String(sessionDate.getDate()).padStart(2, '0');
-        
-        // Create date key in YYYY-MM-DD format using local time
-        const dateKey = `${year}-${month}-${day}`;
-        
-        const hour = sessionDate.getHours();
-        const period = getTimePeriod(hour);
-        const dateAndPeriodKey = `${dateKey}_${period.name}`;
-        
-        console.log(`Session from ${sessionDate.toLocaleString()} grouped into date: ${dateKey}, period: ${period.name}`);
-        
-        if (!sessionsByDateAndPeriod[dateAndPeriodKey]) {
-            sessionsByDateAndPeriod[dateAndPeriodKey] = {
-                date: dateKey,
-                period: period.name,
-                hour: period.start, // Use this for sorting
-                sessions: []
-            };
-        }
-        
-        sessionsByDateAndPeriod[dateAndPeriodKey].sessions.push(session);
-    });
-    
-    // Sort dates in reverse chronological order (newest first)
-    // First group by date
-    const groupedByDate = {};
-    Object.entries(sessionsByDateAndPeriod).forEach(([key, data]) => {
-        if (!groupedByDate[data.date]) {
-            groupedByDate[data.date] = [];
-        }
-        groupedByDate[data.date].push(data);
-    });
-    
-    const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
-    
-    // For each date, process each time period
-    sortedDates.forEach(dateKey => {
-        const date = new Date(dateKey);
-        
-        // Format the date nicely for the main date heading
-        // Ensure we're working with fresh date objects in local timezone
-        const today = new Date();
-        
-        // Log raw dates for debugging
-        console.log('Raw date comparison:', {
-            sessionDateObj: date,
-            sessionDateKey: dateKey,
-            todayObj: today,
-            sessionTimestamp: date.getTime(),
-            todayTimestamp: today.getTime(),
-            sessionDateString: date.toLocaleString(),
-            todayDateString: today.toLocaleString()
-        });
-        
-        // Explicitly create today's date key using the same consistent method
-        // Use local methods to ensure proper timezone handling
-        const todayYear = today.getFullYear();
-        const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
-        const todayDay = String(today.getDate()).padStart(2, '0');
-        const todayDateKey = `${todayYear}-${todayMonth}-${todayDay}`; // YYYY-MM-DD format in local time
-        
-        // Create yesterday reference using local methods too
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayYear = yesterday.getFullYear();
-        const yesterdayMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
-        const yesterdayDay = String(yesterday.getDate()).padStart(2, '0');
-        const yesterdayDateKey = `${yesterdayYear}-${yesterdayMonth}-${yesterdayDay}`;
-        
-        let dateDisplay;
-        
-        console.log(`Comparing dates: dateKey=${dateKey}, todayDateKey=${todayDateKey}, match=${dateKey === todayDateKey}`);
-
-        if (dateKey === todayDateKey) {
-            // For today, use the actual today date object for formatting
-            const todayDayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(today);
-            const todayNumericFormat = new Intl.DateTimeFormat('en-US', { 
-                month: 'numeric', 
-                day: 'numeric', 
-                year: 'numeric' 
-            }).format(today);
-            dateDisplay = `Today (${todayDayOfWeek}): ${todayNumericFormat}`;
-        } else if (dateKey === yesterdayDateKey) {
-            const yesterdayDayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(yesterday);
-            const yesterdayNumericFormat = new Intl.DateTimeFormat('en-US', { 
-                month: 'numeric', 
-                day: 'numeric', 
-                year: 'numeric' 
-            }).format(yesterday);
-            dateDisplay = `Yesterday (${yesterdayDayOfWeek}): ${yesterdayNumericFormat}`;
-        } else {
-            // For other dates, use consistent formatting with day of week
-            const dayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(date);
-            const numericFormat = new Intl.DateTimeFormat('en-US', { 
-                month: 'numeric', 
-                day: 'numeric',
-                year: 'numeric'
-            }).format(date);
-            
-            const fullDateFormat = new Intl.DateTimeFormat('en-US', { 
-                month: 'long', 
-                day: 'numeric'
-            }).format(date);
-            
-            dateDisplay = `${fullDateFormat} (${dayOfWeek}): ${numericFormat}`;
-        }
-        
-        // Create main date milestone
-        const dateMilestone = document.createElement('div');
-        dateMilestone.className = 'date-milestone main-milestone';
-        dateMilestone.textContent = dateDisplay;
-        container.appendChild(dateMilestone);
-        
-        // Sort time periods within this date (evening before morning)
-        const timePeriods = groupedByDate[dateKey].sort((a, b) => b.hour - a.hour);
-        
-        timePeriods.forEach(periodData => {
-            const { period, sessions } = periodData;
-            
-            // Create period milestone if we have sessions in this period
-            if (sessions.length > 0) {
-                // Get the earliest session time in this period for the time label
-                const firstSession = sessions.reduce((earliest, current) => 
-                    current.startTime < earliest.startTime ? current : earliest
-                );
-                
-                // Format the time for display
-                const periodTime = new Date(firstSession.startTime);
-                const timeString = periodTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                
-                const periodMilestone = document.createElement('div');
-                periodMilestone.className = 'date-milestone period-milestone';
-                periodMilestone.textContent = `${period}: ${timeString}`;
-                container.appendChild(periodMilestone);
-                
-                // Create a row for sessions from this period
-                const sessionsRow = document.createElement('div');
-                sessionsRow.className = 'sessions-row';
-                container.appendChild(sessionsRow);
-                
-                // Sort sessions by descending start time
-                sessions.sort((a, b) => b.startTime - a.startTime);
-                
-                // Calculate time deltas for vertical offset
-                let previousTime = sessions[0].startTime; // Start with the most recent session time
-                
-                // Render each session in the row
-                sessions.forEach((session, index) => {
-                    // Calculate time difference for vertical offset
-                    const timeDelta = index === 0 ? 0 : previousTime - session.startTime;
-                    previousTime = session.startTime;
-                    
-                    // Calculate vertical offset based on time difference
-                    // Use logarithmic scale to prevent extreme offsets
-                    // 1 minute = small offset, 1 hour = medium offset, > 3 hours = larger offset
-                    const timeOffsetMinutes = timeDelta / (1000 * 60); // Convert to minutes
-                    let verticalOffsetPx = 0;
-                    
-                    if (timeOffsetMinutes > 0) {
-                        if (timeOffsetMinutes < 10) {
-                            // Less than 10 minutes - minimal offset
-                            verticalOffsetPx = 5;
-                        } else if (timeOffsetMinutes < 30) {
-                            // 10-30 minutes - small offset
-                            verticalOffsetPx = 15;
-                        } else if (timeOffsetMinutes < 60) {
-                            // 30-60 minutes - medium offset
-                            verticalOffsetPx = 25;
-                        } else if (timeOffsetMinutes < 180) {
-                            // 1-3 hours - larger offset
-                            verticalOffsetPx = 35;
-                        } else {
-                            // > 3 hours - maximum offset
-                            verticalOffsetPx = 45;
-                        }
-                    }
-                    
-                    const sessionElement = document.createElement('div');
-                    sessionElement.className = 'session-item';
-                    sessionElement.setAttribute('data-session-id', session.id);
-                    
-                    // Add active indicator class if this session contains active tabs
-                    if (session.hasActiveTabs) {
-                        sessionElement.classList.add('has-active-tabs');
-                    }
-                    
-                    // Apply vertical offset through margin-top
-                    if (verticalOffsetPx > 0) {
-                        sessionElement.style.marginTop = `${verticalOffsetPx}px`;
-                    }
-
-                    const sessionHeader = document.createElement('h3');
-                    sessionHeader.className = 'session-name';
-                    sessionHeader.textContent = session.name || `Session from ${new Date(session.startTime).toLocaleString()}`;
-                    sessionElement.appendChild(sessionHeader);
-
-                    // Create a container for collapsible content
-                    const collapsibleContent = document.createElement('div');
-                    collapsibleContent.className = 'session-collapsible-content';
-                    // Will be initially hidden by CSS
-
-                    // Add click listener to the header to toggle details with improved animation handling
-                    sessionHeader.addEventListener('click', () => {
-                        const isExpanded = sessionElement.classList.contains('expanded');
-                        sessionElement.classList.toggle('expanded', !isExpanded);
-                        
-                        // Load content on first expansion
-                        if (!isExpanded && collapsibleContent.childElementCount === 0) {
-                            // Check if pages exist and are not empty
-                            if (session.pages && session.pages.length > 0) {
-                                const pageListElement = renderSessionPageList(session.pages, session);
-                                collapsibleContent.appendChild(pageListElement);
-                            } else {
-                                const noPagesMessage = document.createElement('p');
-                                noPagesMessage.textContent = 'No page details available for this session.';
-                                noPagesMessage.className = 'no-pages-message';
-                                collapsibleContent.appendChild(noPagesMessage);
-                            }
-                        }
-                    });
-
-                    const extentElement = document.createElement('p');
-                    extentElement.className = 'session-extent';
-                    const durationFormatted = formatDuration(session.duration);
-                    extentElement.textContent = `${session.pageCount || '0'} pages • ${durationFormatted}`;
-                    sessionElement.appendChild(extentElement);
-
-                    const detailsPreview = document.createElement('div');
-                    detailsPreview.className = 'session-preview-details';
-
-                    const topDomainsElement = createDomainListElement(session.topDomains);
-                    if (topDomainsElement) {
-                        detailsPreview.appendChild(topDomainsElement); // Add top domains to preview
-                    }
-
-                    // Add Clicked Link Texts to preview
-                    if (session.linkTexts && session.linkTexts.length > 0) {
-                        const linkTextsElement = createListElement(session.linkTexts, 'Clicked Links');
-                        if (linkTextsElement) {
-                            detailsPreview.appendChild(linkTextsElement);
-                        }
-                    }
-                    
-                    // Add Search Queries to preview with enhanced styling
-                    if (session.searchQueries && session.searchQueries.length > 0) {
-                        const searchQueriesContainer = document.createElement('div');
-                        searchQueriesContainer.className = 'session-detail-list';
-                        
-                        const searchQueriesTitle = document.createElement('strong');
-                        searchQueriesTitle.textContent = 'Search Queries: ';
-                        searchQueriesContainer.appendChild(searchQueriesTitle);
-                        
-                        const searchQueriesWrapper = document.createElement('div');
-                        searchQueriesWrapper.className = 'search-queries-wrapper';
-                        searchQueriesWrapper.style.display = 'flex';
-                        searchQueriesWrapper.style.flexWrap = 'wrap';
-                        searchQueriesWrapper.style.gap = '5px';
-                        searchQueriesWrapper.style.marginTop = '5px';
-                        
-                        session.searchQueries.forEach(query => {
-                            const queryItem = document.createElement('span');
-                            queryItem.className = 'search-query-item';
-                            
-                            const queryIcon = document.createElement('span');
-                            queryIcon.className = 'search-query-icon';
-                            queryItem.appendChild(queryIcon);
-                            
-                            queryItem.appendChild(document.createTextNode(query));
-                            searchQueriesWrapper.appendChild(queryItem);
-                        });
-                        
-                        searchQueriesContainer.appendChild(searchQueriesWrapper);
-                        detailsPreview.appendChild(searchQueriesContainer);
-                    }
-
-                    sessionElement.appendChild(detailsPreview);
-
-                    // Append the collapsible content container to the session element
-                    sessionElement.appendChild(collapsibleContent);
-
-                    // Add the completed session element to the row
-                    sessionsRow.appendChild(sessionElement);
-                });
-            }
-        });
-    });
-    
-    console.log('Sessions rendered with date milestones, time periods, and vertical offsets.');
-    
-    // Re-expand previously expanded sessions after refresh
-    if (isRefresh && expandedSessionIds.length > 0) {
-        expandedSessionIds.forEach(sessionId => {
-            const sessionEl = container.querySelector(`.session-item[data-session-id="${sessionId}"]`);
-            if (sessionEl) {
-                sessionEl.classList.add('expanded');
-                // Trigger content loading by simulating a click on the header
-                const header = sessionEl.querySelector('.session-name');
-                if (header) {
-                    header.click();
-                }
-            }
-        });
-    }
+    // Always use card grid layout for sessions
+    renderSessionCards(sessions, container, isRefresh);
 }
-
-// Using the createRefreshIndicator function defined earlier in the file
 
 /**
  * Setup auto-refresh for sessions data

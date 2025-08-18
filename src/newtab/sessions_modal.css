@@ -1,0 +1,211 @@
+/* Modal styles for session card expansion */
+.session-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s, visibility 0.3s;
+}
+
+.session-modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.session-modal {
+  --modal-bg-color: #1e2630;
+  --modal-accent-color: rgba(255, 255, 255, 0.1);
+  --modal-text-color: #ffffff;
+  --modal-secondary-text: #a0a0a0;
+  
+  background-color: var(--modal-bg-color);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 1000px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  transform: scale(0.9);
+  transition: transform 0.3s;
+}
+
+.session-modal-overlay.active .session-modal {
+  transform: scale(1);
+}
+
+.session-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: var(--modal-accent-color, rgba(255, 255, 255, 0.1));
+}
+
+.session-modal-title {
+  font-size: 1.8em;
+  font-weight: 500;
+  color: var(--modal-text-color, #ffffff);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.session-modal-stats {
+  display: flex;
+  gap: 20px;
+  color: var(--modal-text-color, #ffffff);
+  font-size: 0.9em;
+  margin-top: 5px;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+}
+
+.modal-time-of-day {
+  color: var(--time-of-day-color, #ffcc66);
+  font-weight: 600;
+  font-size: 0.9em;
+  margin-right: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.session-modal-close {
+  background: none;
+  border: none;
+  color: var(--modal-text-color, #ffffff);
+  font-size: 1.5em;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.session-modal-close:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.session-modal-content {
+  padding: 20px;
+  overflow-y: auto;
+  color: var(--modal-text-color, #ffffff);
+}
+
+.session-modal-hero {
+  width: 100%;
+  height: 200px;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.session-modal-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.session-modal-domains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.session-page-list {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.session-page-item {
+  padding: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  color: var(--modal-text-color, #ffffff);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.session-page-time {
+  min-width: 110px;
+  color: var(--modal-text-color, #ffffff);
+  opacity: 0.85;
+  font-size: 0.85em;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.time-of-day {
+  font-size: 0.75em;
+  opacity: 0.8;
+  display: block;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--time-of-day-color, #ffcc66);
+}
+
+.session-page-favicon {
+  margin: 0 15px;
+  flex-shrink: 0;
+}
+
+.session-page-title {
+  flex-grow: 1;
+  margin-right: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-page-link {
+  color: #4a8fff;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85em;
+}
+
+.session-page-link:hover {
+  text-decoration: underline;
+}
+
+.session-page-dwell {
+  min-width: 80px;
+  text-align: right;
+  color: var(--modal-text-color, #ffffff);
+  opacity: 0.85;
+  font-size: 0.85em;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.session-page-referral {
+  margin-top: 8px;
+  padding-left: 110px;
+  font-size: 0.85em;
+  color: var(--modal-text-color, #ffffff);
+  opacity: 0.8;
+  font-style: italic;
+}
+
+.session-modal-footer {
+  padding: 15px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: flex-end;
+}
