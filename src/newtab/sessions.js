@@ -3,6 +3,8 @@ console.log('sessions.js loaded');
 
 // Import the summary cache and helper functions from readout.js
 import { summaryCache, getCachedSummary } from './readout.js';
+// Import the debug tools bridge for ES module compatibility
+import { viewStoredHeroImages, debugToolsReady } from './debug-tools-bridge.js';
 
 // Helper function to create a truncated summary display (simplified version from readout.js)
 function createTruncatedSummary(summary, searchTerm = '') {
@@ -34,6 +36,132 @@ function highlightText(text, searchTerm) {
 
 let allSessionsData = []; // To store the original full list of sessions
 let currentSearchTerm = ''; // Track current search term for highlighting
+let sessionsData = []; // Store the processed sessions data
+
+/**
+ * Get URLs of all currently active tabs
+ * @returns {Promise<Array<string>>} Array of active tab URLs
+ */
+async function getActiveTabUrls() {
+    return new Promise((resolve) => {
+        chrome.tabs.query({ active: true }, (tabs) => {
+            const activeUrls = tabs.map(tab => tab.url);
+            console.log(`Found ${activeUrls.length} active tabs:`, activeUrls);
+            resolve(activeUrls);
+        });
+    });
+}
+
+/**
+ * Get hero images for a URL
+ * @param {string} url - URL to get hero images for
+ * @returns {Promise<Array>} - Hero images or null
+ */
+async function getHeroImagesForUrl(url) {
+    return new Promise((resolve) => {
+        // First check browserState if available (core shared data structure)
+        if (typeof browserState !== 'undefined' && browserState.heroImages && browserState.heroImages.get) {
+            const heroImageData = browserState.heroImages.get(url);
+            if (heroImageData && heroImageData.images) {
+                console.log(`🔍 Found hero images for ${url} in browserState`);
+                return resolve(heroImageData.images);
+            }
+        }
+        
+        // Then check local storage
+        chrome.storage.local.get(['heroImages'], (result) => {
+            const heroImagesStore = result.heroImages || {};
+            if (heroImagesStore[url]) {
+                console.log(`📦 Found hero images for ${url} in local storage`);
+                resolve(heroImagesStore[url].images);
+            } else {
+                // If not in storage, try asking background script directly
+                console.log(`🔄 Hero images for ${url} not found locally, asking background script`);
+                chrome.runtime.sendMessage({ action: 'getHeroImagesForUrl', url: url }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('❌ Error getting hero images:', chrome.runtime.lastError);
+                        resolve(null);
+                    } else if (response && response.images) {
+                        console.log(`✅ Received hero images for ${url} from background script`);
+                        resolve(response.images);
+                    } else {
+                        console.log(`⚠️ No hero images found for ${url}`);
+                        resolve(null);
+                    }
+                });
+            }
+        });
+    });
+}
+
+/**
+ * Renders hero images for a page if available
+ * @param {Object} page - Page object with URL and dwellTime
+ * @returns {Promise<HTMLElement|null>} - Hero image strip element or null
+ */
+async function renderHeroImagesForPage(page) {
+    // Only try to show hero images for pages with significant dwell time
+    if (!page.dwellTimeMs || page.dwellTimeMs < 60000) {
+        return null;
+    }
+    
+    const heroImages = await getHeroImagesForUrl(page.url);
+    if (!heroImages || !heroImages.length) {
+        return null;
+    }
+    
+    // Create a horizontal strip of thumbnails
+    const strip = document.createElement('div');
+    strip.className = 'hero-image-strip';
+    
+    // Add each thumbnail
+    heroImages.forEach((image, index) => {
+        // Skip invalid images
+        if (!image.src) return;
+        
+        const thumb = document.createElement('img');
+        thumb.className = 'hero-image-thumbnail';
+        thumb.src = image.src;
+        thumb.alt = image.alt || '';
+        thumb.dataset.index = index;
+        thumb.dataset.fullsize = image.src;
+        
+        // Add click handler to expand image
+        thumb.addEventListener('click', (e) => {
+            // Find or create container for expanded image
+            let container = strip.nextElementSibling;
+            if (!container || !container.classList.contains('hero-image-container')) {
+                container = document.createElement('div');
+                container.className = 'hero-image-container';
+                strip.insertAdjacentElement('afterend', container);
+            } else {
+                // Clear existing content
+                container.innerHTML = '';
+            }
+            
+            // Create expanded image
+            const expandedImg = document.createElement('img');
+            expandedImg.className = 'hero-image-expanded';
+            expandedImg.src = image.src;
+            expandedImg.alt = image.alt || '';
+            
+            // Add close button
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'hero-image-close';
+            closeBtn.textContent = '×';
+            closeBtn.addEventListener('click', () => {
+                container.remove();
+            });
+            
+            container.appendChild(expandedImg);
+            container.appendChild(closeBtn);
+        });
+        
+        strip.appendChild(thumb);
+    });
+    
+    return strip;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Sessions view DOM fully loaded and parsed');
@@ -49,6 +177,20 @@ document.addEventListener('DOMContentLoaded', () => {
             filterAndRenderSessions(currentSearchTerm);
         });
     }
+    
+    // Add focus event listener to refresh data when tab gains focus
+    window.addEventListener('focus', () => {
+        console.log('Tab regained focus, refreshing sessions data...');
+        initSessions(true); // Pass true to indicate this is a refresh
+    });
+    
+    // Also refresh data every 5 minutes if the tab is active
+    setInterval(() => {
+        if (document.hasFocus()) {
+            console.log('Auto-refreshing sessions data (5 minute interval)...');
+            initSessions(true);
+        }
+    }, 5 * 60 * 1000); // 5 minutes in milliseconds
 });
 
 function filterAndRenderSessions(searchTerm) {
@@ -86,35 +228,149 @@ function filterAndRenderSessions(searchTerm) {
     renderSessions(filteredSessions);
 }
 
-async function initSessions() {
-    const container = document.getElementById('sessions-container');
-    if (container) {
-        container.innerHTML = '<p class="loading-message">Loading session data...</p>';
-    }
-
+/**
+ * Process sessions data from history and active tabs
+ * @param {Array} activeTabUrls - Array of URLs of active tabs
+ * @param {boolean} isRefresh - Whether this is a refresh operation
+ * @returns {Promise<Object>} - Object with sessions array
+ */
+async function processSessionsData(activeTabUrls = [], isRefresh = false) {
+    console.log(`Processing and rendering sessions with ${activeTabUrls.length} active tabs...`);
+    
     try {
-        // Fetch data similar to graph.js
+        // Fetch most recent 7 days of history data
         const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        
+        // Use a larger maxResults to ensure we get all recent activity
         const [historyItems, allWindows] = await Promise.all([
-            chrome.history.search({ text: '', maxResults: 1000, startTime: sevenDaysAgo }), // Fetch more for session processing
+            chrome.history.search({ 
+                text: '', 
+                maxResults: 2000,
+                startTime: sevenDaysAgo 
+            }),
             chrome.windows.getAll({ populate: true })
         ]);
 
-        console.log('Fetched history items:', historyItems.length);
-        console.log('Fetched windows:', allWindows.length);
+        console.log(`Fetched ${historyItems.length} history items and ${allWindows.length} windows`);
 
-        // Placeholder for processing data into sessions
-        const sessionsData = await processDataIntoSessions(historyItems, allWindows); // Added await
-        allSessionsData = sessionsData; // Store the full dataset
+        // Process the data into sessions
+        const processedSessions = await processDataIntoSessions(historyItems, allWindows);
         
-        renderSessions(allSessionsData); // Initial render with all data
+        // Apply any current search filter but don't render here
+        let sessionsToReturn = processedSessions;
+        
+        if (currentSearchTerm && currentSearchTerm.trim() !== '') {
+            sessionsToReturn = processedSessions.filter(session => {
+                // Check session name
+                if (session.name && session.name.toLowerCase().includes(currentSearchTerm)) {
+                    return true;
+                }
+                // Check pages within the session
+                if (session.pages) {
+                    for (const page of session.pages) {
+                        if (page.title && page.title.toLowerCase().includes(currentSearchTerm)) {
+                            return true;
+                        }
+                        if (page.url && page.url.toLowerCase().includes(currentSearchTerm)) {
+                            return true;
+                        }
+                        
+                        // Check AI summary if available in cache
+                        const cachedSummary = getCachedSummary(page.url);
+                        if (cachedSummary && cachedSummary.toLowerCase().includes(currentSearchTerm)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            });
+        }
+        
+        return { sessions: sessionsToReturn };
+    } catch (error) {
+        console.error('Error processing sessions data:', error);
+        return { sessions: [] };
+    }
+}
 
+async function initSessions(isRefresh = false) {
+    const container = document.getElementById('sessions-container');
+    const startTime = performance.now();
+    
+    try {
+        // Get active tab URLs
+        const activeTabUrls = await getActiveTabUrls();
+        
+        // Process sessions data (but don't render yet)
+        const { sessions } = await processSessionsData(activeTabUrls, isRefresh);
+        
+        // Store the full dataset
+        allSessionsData = sessions;
+        sessionsData = sessions;
+        
+        // Explicitly render the sessions
+        renderSessions(sessions, isRefresh);
+        
+        // If this is a refresh, save and restore scroll position
+        if (isRefresh) {
+            const scrollPos = window.scrollY;
+            // Small delay to ensure DOM is updated before restoring scroll
+            setTimeout(() => {
+                window.scrollTo(0, scrollPos);
+            }, 100);
+        }
+        
+        // Log performance metrics
+        const endTime = performance.now();
+        console.log(`Sessions data ${isRefresh ? 'refreshed' : 'loaded'} in ${(endTime - startTime).toFixed(2)}ms`);
     } catch (error) {
         console.error('Failed to initialize sessions view:', error);
-        if (container) {
+        if (container && !isRefresh) { // Only show error on initial load
             container.innerHTML = `<p class="error-message">Error loading sessions: ${error.message}</p>`;
         }
     }
+}
+
+/**
+ * Creates a refresh indicator element that shows when data is being refreshed
+ * @returns {HTMLElement} The refresh indicator element
+ */
+function createRefreshIndicator() {
+    // Check if it already exists
+    let indicator = document.getElementById('refresh-indicator');
+    if (indicator) return indicator;
+    
+    // Create new indicator
+    indicator = document.createElement('div');
+    indicator.id = 'refresh-indicator';
+    indicator.textContent = 'Refreshing data...';
+    indicator.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        z-index: 1000;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+    `;
+    
+    // Add a style for the active state
+    const style = document.createElement('style');
+    style.textContent = `
+        #refresh-indicator.active {
+            opacity: 1;
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Add to DOM
+    document.body.appendChild(indicator);
+    return indicator;
 }
 
 async function processDataIntoSessions(historyItems, allWindows) { // Made async
@@ -131,20 +387,33 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         type: 'history'
     }));
 
+    // Track active tab URLs to identify active sessions later
+    const activeTabUrls = new Set();
+    const activeTabIds = new Set();
+    
     allWindows.forEach(window => {
         if (window.tabs) {
             window.tabs.forEach(tab => {
                 if (tab.url && !tab.url.startsWith('chrome://')) { // Exclude internal chrome pages
+                    // Store the URL for later active session identification
+                    activeTabUrls.add(tab.url);
+                    activeTabIds.add(tab.id);
+                    
                     activities.push({
                         url: tab.url,
                         title: tab.title || tab.url,
                         timestamp: tab.lastAccessTime || Date.now(), // lastAccessTime might not be available for all tabs, fallback to now
-                        type: 'active_tab'
+                        type: 'active_tab',
+                        tabId: tab.id,
+                        windowId: window.id,
+                        active: tab.active
                     });
                 }
             });
         }
     });
+    
+    console.log(`Found ${activeTabUrls.size} active tabs for session tracking`);
 
     // Only deduplicate exact timestamp duplicates, not across sessions
     // This preserves multiple visits to the same URL when they occur in different sessions
@@ -179,7 +448,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
 
     activities.forEach((activity, index) => {
         if (!activity.url) return; // Skip activities without a URL
-
+        
         // Get day key for the activity for context matching
         const activityDate = new Date(activity.timestamp);
         const year = activityDate.getFullYear();
@@ -226,9 +495,11 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                     currentSession.endTime = activity.timestamp;
                 } else {
                     // Time gap is too large and no context match, finalize previous session and start a new one
-                    finalizeSession(currentSession);
+                    finalizeSession(currentSession, activeTabUrls);
+                    sessionsByDay[dayKey].push(currentSession);
                     processedSessions.push(currentSession);
-                    sessionsByDay[dayKey].push(currentSession); // Add to day's sessions for future context matching
+                    
+                    // Start a new session
                     currentSession = createNewSession(activity);
                 }
             } else {
@@ -248,7 +519,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
 
     // Finalize the last session
     if (currentSession) {
-        finalizeSession(currentSession);
+        finalizeSession(currentSession, activeTabUrls);
         processedSessions.push(currentSession);
     }
 
@@ -546,11 +817,19 @@ function groupByTabContext(pages) {
     return tabGroups;
 }
 
-function finalizeSession(session) {
+function finalizeSession(session, activeTabUrls) {
     session.duration = session.endTime - session.startTime;
     
     const uniqueUrls = new Set(session.pages.map(p => p.url));
     session.pageCount = uniqueUrls.size;
+    
+    // Check if this session contains any currently active tabs
+    if (activeTabUrls && activeTabUrls.size > 0) {
+        // Check if any URL in the session is currently open in a tab
+        session.hasActiveTabs = session.pages.some(page => activeTabUrls.has(page.url));
+    } else {
+        session.hasActiveTabs = false;
+    }
     
     // Extract search queries from all URLs in the session
     session.searchQueries = [];
@@ -647,7 +926,7 @@ function formatDuration(milliseconds) {
     if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
     if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
-    
+        
     return parts.join(' ');
 }
 
@@ -736,104 +1015,88 @@ function createDomainListElement(domains) { // Removed title parameter
  */
 function addTabGroupStyles() {
     // Check if styles are already added
-    if (document.getElementById('tab-group-styles')) {
-        return; // Styles already added
-    }
+    if (document.getElementById('session-tab-group-styles')) return;
     
     const style = document.createElement('style');
-    style.id = 'tab-group-styles';
-    style.textContent = `
-        .tab-grouped-pages {
-            margin-top: 15px;
-        }
-        
-        .tab-groups-summary {
-            margin-bottom: 15px;
-            color: #555;
-            font-size: 0.9em;
-            padding: 8px;
-            background-color: #f5f5f5;
-            border-radius: 4px;
-        }
-        
-        .tab-group {
-            margin-bottom: 12px;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-        
+    style.id = 'session-tab-group-styles';
+    
+    // Define the color palette
+    const groupColors = [
+        '#3498db', // Blue
+        '#2ecc71', // Green
+        '#e74c3c', // Red
+        '#f39c12', // Yellow
+        '#9b59b6', // Purple
+        '#1abc9c', // Turquoise
+        '#d35400', // Pumpkin
+        '#7f8c8d', // Gray
+        '#27ae60', // Nephritis
+        '#c0392b', // Pomegranate
+    ];
+    
+    let styleContent = `
         .tab-group-header {
-            padding: 10px 12px;
-            background-color: #f8f8f8;
-            cursor: pointer;
+            border-bottom: 1px solid #ddd;
+            padding: 8px 0;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        .page-list {
+            list-style-type: none;
+            padding-left: 0;
+            margin: 0;
+        }
+        
+        .page-item {
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #ddd;
+        }
+        
+        .page-title {
+            font-weight: bold;
+            margin-bottom: 4px;
+        .hero-image-thumbnail:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.16);
+        }
+        
+        .hero-image-expanded {
+            display: block;
+            max-width: 100%;
+            max-height: 300px;
+            margin: 10px auto;
+            border-radius: 6px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+            object-fit: contain;
+        }
+        
+        .hero-image-container {
+            position: relative;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .hero-image-close {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
             display: flex;
             align-items: center;
-            transition: background-color 0.2s ease;
-        }
-        
-        .tab-group-header:hover {
-            background-color: #f0f0f0;
-        }
-        
-        .tab-group-expand-icon {
-            margin-right: 8px;
-            font-size: 10px;
-            transition: transform 0.2s ease;
-        }
-        
-        .tab-group-title {
-            margin: 0;
-            flex: 1;
+            justify-content: center;
+            cursor: pointer;
             font-size: 14px;
         }
-        
-        .tab-group-timerange {
-            font-size: 12px;
-            color: #666;
-            margin-left: auto;
-        }
-        
-        .tab-group-content {
-            transition: max-height 0.3s ease-out;
-            overflow: hidden;
-        }
-        
-        .tab-group-content.collapsed {
-            max-height: 0;
-        }
-        
-        .tab-group-content.expanded {
-            max-height: 2000px;
-        }
-        
-        .group-pages-list {
-            padding: 8px 12px;
-            margin: 0;
-            list-style-type: none;
-        }
-        
-        .tab-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background-color: #4285f4;
-            margin-right: 8px;
-            position: relative;
-        }
-        
-        .tab-indicator.child-tab::before {
-            content: "";
-            position: absolute;
-            left: -5px;
-            top: 5px;
-            width: 5px;
-            height: 1px;
-            background-color: #4285f4;
-        }
     `;
-    
     document.head.appendChild(style);
 }
 
@@ -987,6 +1250,82 @@ function renderTabGroupedPageList(session) {
                     referralDiv.textContent = referralHtml + 'unknown mechanism.';
                 }
                 pageDetails.appendChild(referralDiv);
+            }
+            
+            // Check for hero images if the page has significant dwell time (>60s)
+            if (page.dwellTimeMs && page.dwellTimeMs >= 60000) {
+                // Add a loading placeholder that will be replaced asynchronously
+                const heroImagePlaceholder = document.createElement('div');
+                heroImagePlaceholder.className = 'hero-image-placeholder';
+                heroImagePlaceholder.setAttribute('data-url', page.url);
+                pageDetails.appendChild(heroImagePlaceholder);
+                
+                // Asynchronously load hero images
+                getHeroImagesForUrl(page.url).then(heroImages => {
+                    if (heroImages && heroImages.length > 0) {
+                        // Create a horizontal strip of thumbnails
+                        const strip = document.createElement('div');
+                        strip.className = 'hero-image-strip';
+                        
+                        // Add each thumbnail
+                        heroImages.forEach((image, index) => {
+                            // Skip invalid images
+                            if (!image.src) return;
+                            
+                            const thumb = document.createElement('img');
+                            thumb.className = 'hero-image-thumbnail';
+                            thumb.src = image.src;
+                            thumb.alt = image.alt || '';
+                            thumb.dataset.index = index;
+                            
+                            // Add click handler to expand image
+                            thumb.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent tab group toggle
+                                
+                                // Find or create container for expanded image
+                                let container = strip.nextElementSibling;
+                                if (!container || !container.classList.contains('hero-image-container')) {
+                                    container = document.createElement('div');
+                                    container.className = 'hero-image-container';
+                                    strip.insertAdjacentElement('afterend', container);
+                                } else {
+                                    // Clear existing content
+                                    container.innerHTML = '';
+                                }
+                                
+                                // Create expanded image
+                                const expandedImg = document.createElement('img');
+                                expandedImg.className = 'hero-image-expanded';
+                                expandedImg.src = image.src;
+                                expandedImg.alt = image.alt || '';
+                                
+                                // Add close button
+                                const closeBtn = document.createElement('button');
+                                closeBtn.className = 'hero-image-close';
+                                closeBtn.textContent = '\u00d7'; // × symbol
+                                closeBtn.addEventListener('click', (e) => {
+                                    e.stopPropagation(); // Prevent tab group toggle
+                                    container.remove();
+                                });
+                                
+                                container.appendChild(expandedImg);
+                                container.appendChild(closeBtn);
+                            });
+                            
+                            strip.appendChild(thumb);
+                        });
+                        
+                        // Replace placeholder with actual content
+                        if (strip.children.length > 0) {
+                            heroImagePlaceholder.replaceWith(strip);
+                        } else {
+                            heroImagePlaceholder.remove();
+                        }
+                    } else {
+                        // No images found, remove placeholder
+                        heroImagePlaceholder.remove();
+                    }
+                });
             }
             
             // Handle summary display similar to the original function
@@ -1217,15 +1556,32 @@ function renderSessionPageList(pages, session) {
     return pageListContainer;
 }
 
-function renderSessions(sessionsData) {
+/**
+ * Renders sessions in the UI
+ * @param {Array} sessions - Array of session objects to render
+ * @param {boolean} isRefresh - Whether this is a refresh operation
+ */
+function renderSessions(sessions, isRefresh = false) {
     const container = document.getElementById('sessions-container');
-    if (!container) {
-        console.error('Sessions container not found');
-        return;
-    }
-    container.innerHTML = ''; // Clear previous content (e.g., loading message)
+    if (!container) return;
 
-    if (!sessionsData || sessionsData.length === 0) {
+    // If refreshing, keep track of which sessions were expanded
+    const expandedSessionIds = [];
+    if (isRefresh) {
+        // Find all expanded sessions
+        const expandedSessions = container.querySelectorAll('.session-item.expanded');
+        expandedSessions.forEach(session => {
+            const sessionId = session.getAttribute('data-session-id');
+            if (sessionId) {
+                expandedSessionIds.push(sessionId);
+            }
+        });
+    }
+
+    // Clear existing content
+    container.innerHTML = '';
+
+    if (sessions.length === 0) {
         const noSessionsMessage = document.createElement('p');
         noSessionsMessage.className = 'info-message';
         noSessionsMessage.textContent = 'No browsing sessions found. Start browsing or try modifying your filters.';
@@ -1250,7 +1606,7 @@ function renderSessions(sessionsData) {
     // Group sessions by date and time period
     const sessionsByDateAndPeriod = {};
     
-    sessionsData.forEach(session => {
+    sessions.forEach(session => {
         // Get the date string in local timezone, ensuring we're working with milliseconds timestamps
         const sessionDate = new Date(Number(session.startTime));
         
@@ -1446,6 +1802,11 @@ function renderSessions(sessionsData) {
                     sessionElement.className = 'session-item';
                     sessionElement.setAttribute('data-session-id', session.id);
                     
+                    // Add active indicator class if this session contains active tabs
+                    if (session.hasActiveTabs) {
+                        sessionElement.classList.add('has-active-tabs');
+                    }
+                    
                     // Apply vertical offset through margin-top
                     if (verticalOffsetPx > 0) {
                         sessionElement.style.marginTop = `${verticalOffsetPx}px`;
@@ -1548,6 +1909,115 @@ function renderSessions(sessionsData) {
     });
     
     console.log('Sessions rendered with date milestones, time periods, and vertical offsets.');
+    
+    // Re-expand previously expanded sessions after refresh
+    if (isRefresh && expandedSessionIds.length > 0) {
+        expandedSessionIds.forEach(sessionId => {
+            const sessionEl = container.querySelector(`.session-item[data-session-id="${sessionId}"]`);
+            if (sessionEl) {
+                sessionEl.classList.add('expanded');
+                // Trigger content loading by simulating a click on the header
+                const header = sessionEl.querySelector('.session-name');
+                if (header) {
+                    header.click();
+                }
+            }
+        });
+    }
 }
 
-// Close the renderSessions function
+// Using the createRefreshIndicator function defined earlier in the file
+
+/**
+ * Setup auto-refresh for sessions data
+ */
+function setupSessionsAutoRefresh() {
+    const REFRESH_INTERVAL = 60000; // 60 seconds
+    const refreshIndicator = createRefreshIndicator();
+    
+    setInterval(async () => {
+        console.log('Auto-refreshing sessions data...');
+        refreshIndicator.show();
+        
+        try {
+            // Fetch fresh active tab information
+            const activeTabUrls = await getActiveTabUrls();
+            
+            // Refresh data and render with isRefresh flag
+            await refreshSessionsData(activeTabUrls);
+            
+            console.log('Sessions auto-refresh complete');
+        } catch (error) {
+            console.error('Error during sessions auto-refresh:', error);
+        } finally {
+            refreshIndicator.hide();
+        }
+    }, REFRESH_INTERVAL);
+    
+    // Also add a manual refresh button
+    const addRefreshButton = () => {
+        const existingButton = document.getElementById('manual-refresh-button');
+        if (existingButton) return;
+        
+        const container = document.querySelector('.page-header');
+        if (!container) return;
+        
+        const refreshButton = document.createElement('button');
+        refreshButton.id = 'manual-refresh-button';
+        refreshButton.className = 'refresh-button';
+        refreshButton.innerHTML = '<span>↻</span> Refresh';
+        refreshButton.title = 'Refresh sessions data';
+        refreshButton.addEventListener('click', async () => {
+            refreshButton.disabled = true;
+            refreshIndicator.show();
+            
+            try {
+                // Fetch fresh active tab information
+                const activeTabUrls = await getActiveTabUrls();
+                
+                // Refresh data and render with isRefresh flag
+                await refreshSessionsData(activeTabUrls);
+                
+                console.log('Manual sessions refresh complete');
+            } catch (error) {
+                console.error('Error during manual sessions refresh:', error);
+            } finally {
+                refreshButton.disabled = false;
+                refreshIndicator.hide();
+            }
+        });
+        
+        container.appendChild(refreshButton);
+    };
+    
+    // Add refresh button when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', addRefreshButton);
+    } else {
+        addRefreshButton();
+    }
+}
+
+/**
+ * Refresh sessions data and update UI
+ * @param {Array} activeTabUrls - Array of URLs of active tabs
+ * @returns {Promise<void>}
+ */
+async function refreshSessionsData(activeTabUrls) {
+    try {
+        // Get fresh data
+        const { sessions } = await processSessionsData(activeTabUrls, true);
+        sessionsData = sessions; // Update global sessions data
+        allSessionsData = sessions; // Update all sessions data as well
+        
+        // Render the refreshed sessions
+        renderSessions(sessions, true);
+        
+        console.log('Sessions data refreshed successfully');
+    } catch (error) {
+        console.error('Error refreshing sessions data:', error);
+    }
+}
+
+// Initialize auto-refresh when sessions view is loaded
+setupSessionsAutoRefresh();

@@ -34,12 +34,12 @@ chrome.runtime.onInstalled.addListener(() => {
 const processedNavigations = new Map();
 
 // Global error handlers to ensure service worker stability
-self.addEventListener('error', (event) => {
-  console.error('Uncaught error in service worker:', event.error);
+self.addEventListener("error", (event) => {
+  console.error("Uncaught error in service worker:", event.error);
 });
 
-self.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled promise rejection:', event.reason);
+self.addEventListener("unhandledrejection", (event) => {
+  console.error("Unhandled promise rejection:", event.reason);
 });
 
 /**
@@ -52,6 +52,7 @@ let historyEntries = [];  // Recent browsing history entries
 let activeTabs = [];      // Currently active tabs across all windows
 let lastClickedLink = null; // Tracks the most recently clicked link for relationship mapping
 let tabEdges = new Map(); // Graph edge data connecting related tabs
+let tabActivationTimeout = null; // Timeout for debouncing tab activation events
 
 /**
  * Core application state manager
@@ -66,6 +67,7 @@ const browserState = {
   tabs: new Map(),              // All tabs by ID with complete metadata
   windows: new Map(),           // Window grouping data with tab references
   tabHistory: new Map(),        // Navigation history sequence per tab
+  heroImages: new Map(),        // Hero images by URL
   tabRelationships: new Map(),  // Parent/child and sibling relationships between tabs
   tabActivityLog: new Map(),    // User interaction and time-spent data
   lastActive: null,             // Last active tab and window reference
@@ -84,7 +86,7 @@ const browserState = {
       try {
         listener(changeType, data);
       } catch (error) {
-        console.error('Error in state listener:', error);
+        console.error("Error in state listener:", error);
       }
     });
   },
@@ -167,10 +169,10 @@ const faviconQueue = {
    * @param {string} url - URL to fetch favicon for
    * @param {string} priority - 'normal' or 'high' priority
    */
-  enqueue(tabId, url, priority = 'normal') {
+  enqueue(tabId, url, priority = "normal") {
     // Skip special URLs that can't use chrome://favicon
-    if (url.startsWith('chrome://') || url.startsWith('file://') || 
-        url.startsWith('about:') || !url) {
+    if (url.startsWith("chrome://") || url.startsWith("file://") || 
+        url.startsWith("about:") || !url) {
       return;
     }
     
@@ -178,7 +180,7 @@ const faviconQueue = {
     const existing = this.pending.get(tabId);
     if (existing && existing.url === url) {
       // Don't reset attempts if already in queue
-      existing.priority = priority === 'high' ? 'high' : existing.priority;
+      existing.priority = priority === "high" ? "high" : existing.priority;
       this.pending.set(tabId, existing);
     } else {
       // New entry
@@ -214,12 +216,11 @@ const faviconQueue = {
     this.processing = true;
     
     // Sort queue by priority and time since last check
-    const now = Date.now();
     const entries = Array.from(this.pending.entries())
       .sort(([, a], [, b]) => {
         // High priority first
-        if (a.priority === 'high' && b.priority !== 'high') return -1;
-        if (a.priority !== 'high' && b.priority === 'high') return 1;
+        if (a.priority === "high" && b.priority !== "high") return -1;
+        if (a.priority !== "high" && b.priority === "high") return 1;
         // Then by time since last check
         return (a.lastCheck - b.lastCheck);
       });
@@ -280,7 +281,7 @@ const faviconQueue = {
         
         // Explicit notification
         sendMessageWithErrorHandling({
-          action: 'explicitFaviconUpdate',
+          action: "explicitFaviconUpdate",
           tabId,
           favIconUrl: tab.favIconUrl,
           timestamp: Date.now()
@@ -295,7 +296,7 @@ const faviconQueue = {
         
         // Notify about fallback favicon
         sendMessageWithErrorHandling({
-          action: 'explicitFaviconUpdate',
+          action: "explicitFaviconUpdate",
           tabId,
           favIconUrl: fallbackFavicon,
           timestamp: Date.now()
@@ -314,7 +315,7 @@ const faviconQueue = {
       }, delay);
       
     } catch (error) {
-      console.error('Error checking favicon:', error);
+      console.error("Error checking favicon:", error);
     }
   }
 };
@@ -324,6 +325,7 @@ const faviconQueue = {
  * @param {string} eventType - Type of event
  * @param {Object} data - Event data payload
  */
+// eslint-disable-next-line no-unused-vars
 function dispatchTabEvent(eventType, data) {
     sendMessageWithErrorHandling({
         action: eventType,
@@ -339,15 +341,15 @@ function dispatchTabEvent(eventType, data) {
  */
 function sanitizeTabData(tab) {
     if (!tab || !tab.id) {
-        console.warn('Invalid tab data:', tab);
+        console.warn("Invalid tab data:", tab);
         return null;
     }
 
     return {
         id: tab.id,
         windowId: tab.windowId,
-        title: tab.title || 'Untitled',
-        url: tab.url || '',
+        title: tab.title || "Untitled",
+        url: tab.url || "",
         favIconUrl: tab.favIconUrl,
         active: tab.active,
         lastAccessed: Date.now(),
@@ -367,7 +369,7 @@ function findTabById(tabId) {
         console.log(`Tab ${tabId} not found:`, chrome.runtime.lastError);
         resolve(null);
       } else {
-        console.log(`Found tab:`, tab);
+        console.log("Found tab:", tab);
         resolve(tab);
       }
     });
@@ -380,7 +382,7 @@ function findTabById(tabId) {
  * @param {Object} edge - Edge data with source and target tabs
  */
 async function updateGraphWithNewEdge(edge) {
-  console.log('Creating new edge:', edge);
+  console.log("Creating new edge:", edge);
   
   try {
     const sourceTab = await findTabById(edge.source);
@@ -392,7 +394,7 @@ async function updateGraphWithNewEdge(edge) {
         referringTabId: sourceTab.id,
         referringURL: sourceTab.url,
         timestamp: Date.now(),
-        transitionType: edge.transitionType || 'unknown',
+        transitionType: edge.transitionType || "unknown",
         transitionQualifiers: edge.transitionQualifiers || [],
         linkText: edge.linkText || null,
         isFormSubmission: edge.isFormSubmission || false,
@@ -413,10 +415,10 @@ async function updateGraphWithNewEdge(edge) {
       });
       browserState.tabRelationships.set(sourceTab.id, sourceRelationships);
       
-      console.log('Added enhanced tab relationship:', browserState.tabRelationships.get(targetTab.id));
+      console.log("Added enhanced tab relationship:", browserState.tabRelationships.get(targetTab.id));
     }
   } catch (error) {
-    console.error('Error creating edge:', error);
+    console.error("Error creating edge:", error);
   }
 }
 
@@ -454,11 +456,11 @@ function updateTabActivity(tabId, isActive) {
  * Retrieves recent browsing history and stores it for visualization
  */
 function updateHistory() {
-  chrome.history.search({ text: '', maxResults: 100 }, (results) => {
+  chrome.history.search({ text: "", maxResults: 100 }, (results) => {
       historyEntries = results;
       chrome.storage.local.set({ historyEntries })
           .catch(error => {
-              console.error('Error saving history entries:', error);
+              console.error("Error saving history entries:", error);
           });
   });
 }
@@ -472,7 +474,7 @@ function updateActiveTabs() {
       activeTabs = tabs;
       chrome.storage.local.set({ activeTabs })
           .catch(error => {
-              console.error('Error saving active tabs:', error);
+              console.error("Error saving active tabs:", error);
           });
   });
 }
@@ -495,7 +497,7 @@ chrome.history.onVisited.addListener((result) => {
   console.log(`New history entry: ${result.url} with favicon: ${faviconUrl}`);
   // Broadcast the new history entry to any listening tabs
   sendMessageWithErrorHandling({
-      type: 'newHistoryEntry',
+      type: "newHistoryEntry",
       data: {
           url: result.url,
           faviconUrl: faviconUrl,
@@ -515,7 +517,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         
         // Quick notification with just tab ID (lightweight)
         sendMessageWithRateLimit({
-            type: 'tabChanged',
+            type: "tabChanged",
             data: {
                 tabId: activeInfo.tabId,
                 timestamp: Date.now()
@@ -523,17 +525,18 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         });
         
         // Debounce full tab data update to reduce overhead
-        if (window.tabActivationTimeout) {
-            clearTimeout(window.tabActivationTimeout);
+        // Using global variable instead of window (which doesn't exist in service workers)
+        if (typeof tabActivationTimeout !== 'undefined') {
+            clearTimeout(tabActivationTimeout);
         }
         
-        window.tabActivationTimeout = setTimeout(() => {
+        tabActivationTimeout = setTimeout(() => {
             chrome.tabs.get(activeInfo.tabId, tab => {
                 if (chrome.runtime.lastError) return;
                 
                 const faviconUrl = getFaviconUrl(tab.url);
                 sendMessageWithRateLimit({
-                    type: 'tabFullyChanged',
+                    type: "tabFullyChanged",
                     data: {
                         url: tab.url,
                         faviconUrl: faviconUrl,
@@ -543,7 +546,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
             });
         }, 250); // Delay full processing for better performance
     } catch (error) {
-        console.error('Error in tab activation handler:', error);
+        console.error("Error in tab activation handler:", error);
     }
 });
 
@@ -555,7 +558,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 function handleContentUpdate(data, sender) {
     const { tabId, title, url, favIconUrl } = data;
     
-    console.log('Processing content update:', {
+    console.log("Processing content update:", {
         tabId,
         title,
         url,
@@ -577,7 +580,7 @@ function handleContentUpdate(data, sender) {
 
         // Notify treemap
         sendMessageWithErrorHandling({
-            action: 'tabUpdated',
+            action: "tabUpdated",
             tabId,
             changeInfo: { title, url, favIconUrl },
             tab: tabData
@@ -597,7 +600,7 @@ function detectNavigationType(tabId, url, changeInfo) {
     // First check for history-based navigation
     if (!browserState.tabHistory.has(tabId)) {
         browserState.tabHistory.set(tabId, []);
-        return 'newNavigation';
+        return "newNavigation";
     }
 
     const history = browserState.tabHistory.get(tabId);
@@ -608,10 +611,10 @@ function detectNavigationType(tabId, url, changeInfo) {
         const currentPos = history.findIndex(entry => entry.isCurrent);
         
         // Already at this position - likely a refresh
-        if (urlIndex === currentPos) return 'refresh';
+        if (urlIndex === currentPos) return "refresh";
         
         // Back or forward navigation
-        return urlIndex < currentPos ? 'backNavigation' : 'forwardNavigation';
+        return urlIndex < currentPos ? "backNavigation" : "forwardNavigation";
     }
     
     // Check if this was from a link click (detected by content script)
@@ -620,12 +623,12 @@ function detectNavigationType(tabId, url, changeInfo) {
                         (Date.now() - browserState.recentClicks[tabId].timestamp < 2000);
     
     // If no active link click in past 2 seconds, it's likely URL bar navigation
-    if (!isLinkClick && changeInfo.transitionType === 'typed') {
-        return 'urlBarNavigation';
+    if (!isLinkClick && changeInfo.transitionType === "typed") {
+        return "urlBarNavigation";
     }
     
     // Default to new navigation
-    return 'newNavigation';
+    return "newNavigation";
 }
 
 /**
@@ -634,6 +637,7 @@ function detectNavigationType(tabId, url, changeInfo) {
  * @param {number} tabId - Tab ID
  * @return {Promise<boolean>} Whether navigation was from URL bar
  */
+// eslint-disable-next-line no-unused-vars
 function detectURLBarNavigation(url, tabId) {
     return new Promise(resolve => {
         // Look up visit information for this URL
@@ -647,9 +651,9 @@ function detectURLBarNavigation(url, tabId) {
             const latestVisit = visits[visits.length - 1];
             
             // Check transition type - "typed" means URL bar input
-            const isURLBar = latestVisit.transition === 'typed';
+            const isURLBar = latestVisit.transition === "typed";
             
-            console.log('Navigation transition detected:', {
+            console.log("Navigation transition detected:", {
                 url,
                 tabId,
                 transition: latestVisit.transition,
@@ -662,13 +666,13 @@ function detectURLBarNavigation(url, tabId) {
 }
 
 /**
- * Update tab in window structure
- * Maintains the window-tab hierarchy in browserState
- * @param {number} tabId - Tab ID
- * @param {Object} tabData - Tab data
+ * Update tab in all window-related data structures
+ * @param {Object} tab - Chrome tab object
  */
-function updateTabInWindows(tabId, tabData) {
+// eslint-disable-next-line no-unused-vars
+function updateTabInWindows(tabData) {
     if (!tabData || !tabData.windowId) return;
+    const tabId = tabData.id;
     
     let windowFound = false;
     
@@ -711,10 +715,10 @@ function handleLinkContext(message, sender) {
         // Enhanced with more metadata
         linkText: message.data.text || null,
         sourceTitle: sender.tab.title || null,
-        interactionType: message.data.interactionType || 'click',
+        interactionType: message.data.interactionType || "click",
         isFormSubmission: !!message.data.formData,
         formData: message.data.formData || null,
-        sourceElementType: message.data.elementType || 'link'
+        sourceElementType: message.data.elementType || "link"
     };
     
     // Store in tab activity log for correlation
@@ -722,7 +726,7 @@ function handleLinkContext(message, sender) {
     if (!tabActivity.events) tabActivity.events = [];
     
     tabActivity.events.push({
-        type: 'link_interaction',
+        type: "link_interaction",
         timestamp: Date.now(),
         data: lastClickedLink
     });
@@ -750,14 +754,14 @@ chrome.tabs.onCreated.addListener((tab) => {
     const edge = {
       source: lastClickedLink.sourceTabId,
       target: tab.id,
-      type: 'link-click',
+      type: "link-click",
       text: lastClickedLink.text,
       linkText: lastClickedLink.linkText,
       sourceUrl: lastClickedLink.sourceUrl,
       targetUrl: tab.pendingUrl,
       timestamp: lastClickedLink.timestamp,
-      openContext: 'new_tab',
-      transitionType: 'link',
+      openContext: "new_tab",
+      transitionType: "link",
       isFormSubmission: lastClickedLink.isFormSubmission,
       formData: lastClickedLink.formData,
       previousTab: previousActiveTab !== lastClickedLink.sourceTabId ? previousActiveTab : null,
@@ -776,10 +780,10 @@ chrome.tabs.onCreated.addListener((tab) => {
     // (e.g. Ctrl+T or New Tab button)
     const edge = {
       target: tab.id,
-      type: 'new_tab_command',
+      type: "new_tab_command",
       timestamp: Date.now(),
-      openContext: 'user_command',
-      transitionType: 'generated',
+      openContext: "user_command",
+      transitionType: "generated",
       previousTab: previousActiveTab
     };
     
@@ -792,7 +796,7 @@ chrome.tabs.onCreated.addListener((tab) => {
   }
   
   sendMessageWithRateLimit({
-    action: 'tabCreated',
+    action: "tabCreated",
     tab: tab
   });
 });
@@ -804,7 +808,7 @@ chrome.tabs.onCreated.addListener((tab) => {
 chrome.windows.onCreated.addListener(async (window) => {
     if (!lastClickedLink) return;
 
-    console.log('New window created:', {
+    console.log("New window created:", {
         windowId: window.id,
         context: lastClickedLink
     });
@@ -812,7 +816,7 @@ chrome.windows.onCreated.addListener(async (window) => {
     // Wait for the tab to be fully loaded
     const checkTab = async (attempts = 0) => {
         if (attempts > 10) {
-            console.log('Max attempts reached waiting for window tab');
+            console.log("Max attempts reached waiting for window tab");
             return;
         }
 
@@ -830,12 +834,12 @@ chrome.windows.onCreated.addListener(async (window) => {
                 const edge = {
                     source: lastClickedLink.sourceTabId,
                     target: tab.id,
-                    type: 'link-click',
+                    type: "link-click",
                     text: lastClickedLink.text,
                     sourceUrl: lastClickedLink.sourceUrl,
                     targetUrl: targetUrl,
                     timestamp: lastClickedLink.timestamp,
-                    openContext: 'new_window'
+                    openContext: "new_window"
                 };
                 
                 tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
@@ -849,11 +853,11 @@ chrome.windows.onCreated.addListener(async (window) => {
 
                 // Send update to treemap
                 sendMessageWithErrorHandling({
-                    action: 'tabCreated',
+                    action: "tabCreated",
                     tab: {
                         id: tab.id,
                         windowId: window.id,
-                        title: tab.title || 'New Tab',
+                        title: tab.title || "New Tab",
                         url: targetUrl,
                         favIconUrl: tab.favIconUrl,
                         active: tab.active,
@@ -862,7 +866,7 @@ chrome.windows.onCreated.addListener(async (window) => {
                     }
                 });
 
-                console.log('Created edge for new window:', {
+                console.log("Created edge for new window:", {
                     edge,
                     tab: tab.id,
                     window: window.id
@@ -871,7 +875,7 @@ chrome.windows.onCreated.addListener(async (window) => {
                 lastClickedLink = null; // Clear after use
             }
         } catch (error) {
-            console.error('Error checking new window tab:', error);
+            console.error("Error checking new window tab:", error);
         }
     };
 
@@ -883,7 +887,7 @@ chrome.windows.onCreated.addListener(async (window) => {
  * Ensures no memory leaks from removed tabs
  */
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-    console.log('Tab being removed:', {
+    console.log("Tab being removed:", {
         tabId,
         removeInfo,
         hasState: browserState.tabs.has(tabId)
@@ -896,7 +900,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
     // Send removal event with complete data
     sendMessageWithErrorHandling({
-        action: 'tabRemoved',
+        action: "tabRemoved",
         tabId,
         data: {
             tab: removedTab,
@@ -922,7 +926,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
         }
     }
 
-    console.log('Tab cleanup complete:', {
+    console.log("Tab cleanup complete:", {
         tabId,
         remainingTabs: browserState.tabs.size,
         remainingEdges: tabEdges.size
@@ -944,28 +948,43 @@ updateHistory();
 updateActiveTabs();
 
 // Update message sending functions to handle errors properly
+// eslint-disable-next-line no-unused-vars
 function notifyTreemap(message) {
     try {
         // Check if we have any listeners before sending
-        chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }, (contexts) => {
+        chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] }, (contexts) => {
             if (contexts.length > 0) {
                 sendMessageWithErrorHandling(message)
                     .then(() => {
-                        console.log('Message sent successfully:', message.action);
+                        console.log("Message sent successfully:", message.action);
                     })
-                    .catch(err => {
+                    .catch(() => {
                         // Expected when no active listeners
-                        console.log('No active listeners for message (expected)');
+                        console.log("No active listeners for message (expected)");
                     });
             }
         });
     } catch (error) {
-        console.error('Error in notifyTreemap:', error);
+        console.error("Error in notifyTreemap:", error);
     }
 }
 
 // Add temporary storage for link data
 let pendingLinkData = {};
+
+/**
+ * Update browser state with navigation events
+ * @param {Object} data - Navigation event data
+ */
+function updateBrowserState(data) {
+  // Dispatch the event to browser state via notifyChange
+  if (browserState && browserState.notifyChange) {
+    browserState.notifyChange('navigation', data);
+    console.debug('Browser state updated with navigation data', data);
+  } else {
+    console.warn('browserState.notifyChange not available, skipping update', data);
+  }
+}
 
 // Add or modify the navigation event listener
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
@@ -978,11 +997,11 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
     
     // Update state with combined data
     updateBrowserState({
-      type: 'LINK_NAVIGATION',
+      type: "LINK_NAVIGATION",
       tabId: details.tabId,
       url: details.url,
       linkText: linkData.text,
-      title: linkData.title || '',
+      title: linkData.title || "",
       timestamp: linkData.timestamp
     });
     
@@ -1030,14 +1049,14 @@ function updateTabMetadata(tabId, changes) {
         
         // Specifically notify about favicon changes
         sendMessageWithErrorHandling({
-            action: 'tabFaviconUpdated',
+            action: "tabFaviconUpdated",
             tabId,
             favIconUrl: changes.favIconUrl
         });
     }
     
-    if (changes.status === 'complete' && tabData.status !== 'complete') {
-        tabData.status = 'complete';
+    if (changes.status === "complete" && tabData.status !== "complete") {
+        tabData.status = "complete";
         tabData.loadCompleted = Date.now();
         hasChanges = true;
     }
@@ -1048,7 +1067,7 @@ function updateTabMetadata(tabId, changes) {
         
         // Only notify for significant changes to reduce message traffic
         sendMessageWithErrorHandling({
-            action: 'tabMetadataUpdated',
+            action: "tabMetadataUpdated",
             tabId,
             changes
         });
@@ -1067,9 +1086,9 @@ function processLinkNavigation(tabData, details, baseEdge) {
     if (linkData && (linkData.href === url || linkData.targetUrl === url)) {
         const edge = {
             ...baseEdge,
-            type: 'link-click',
+            type: "link-click",
             linkText: linkData.text,
-            sourceElementType: linkData.elementType || 'link',
+            sourceElementType: linkData.elementType || "link",
             isFormSubmission: !!linkData.formData,
             formData: linkData.formData
         };
@@ -1090,7 +1109,7 @@ function processLinkNavigation(tabData, details, baseEdge) {
     else if (recentClick && (recentClick.targetUrl === url || url.includes(recentClick.targetUrl))) {
         const edge = {
             ...baseEdge,
-            type: 'link-click',
+            type: "link-click",
             linkText: recentClick.text,
             source: recentClick.sourceTabId,
             sourceUrl: recentClick.sourceUrl
@@ -1108,7 +1127,7 @@ function processLinkNavigation(tabData, details, baseEdge) {
     if (!activity.navigations) activity.navigations = [];
     
     activity.navigations.push({
-        type: 'link_navigation',
+        type: "link_navigation",
         url: url,
         timestamp: Date.now(),
         transitionType: details.transitionType,
@@ -1119,6 +1138,7 @@ function processLinkNavigation(tabData, details, baseEdge) {
 }
 
 // Clean up old entries from the processed navigations map
+// eslint-disable-next-line no-unused-vars
 function cleanProcessedNavigations() {
     const now = Date.now();
     for (const [id, data] of processedNavigations) {
@@ -1132,7 +1152,7 @@ function cleanProcessedNavigations() {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // First check if webNavigation already handled this (for URL changes)
     if (changeInfo.url && processedNavigations.has(`${tabId}-${changeInfo.url}-${Date.now() - 1000}`)) {
-        console.log('Skipping duplicate URL change already handled by webNavigation');
+        console.log("Skipping duplicate URL change already handled by webNavigation");
         // But still check for favicon even if URL was handled elsewhere
         if (!tab.favIconUrl) {
             faviconQueue.enqueue(tabId, tab.url);
@@ -1159,13 +1179,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         // Metadata changes only
         updateTabMetadata(tabId, changeInfo);
     }
-    else if (changeInfo.status === 'complete') {
+    else if (changeInfo.status === "complete") {
         // Load complete events
         handleLoadComplete(tabId, tab);
     }
 });
 
 // Add this debounce utility function
+// eslint-disable-next-line no-unused-vars
 function debounce(func, wait) {
     let timeout;
     return function(...args) {
@@ -1190,7 +1211,7 @@ function sendMessageWithRateLimit(message) {
     
     // Check rate limit
     if (messageCounter >= MESSAGE_RATE_LIMIT) {
-        console.log('Message rate limit exceeded, dropping:', message.action);
+        console.log("Message rate limit exceeded, dropping:", message.action);
         return Promise.resolve();
     }
     
@@ -1207,13 +1228,13 @@ function handleUrlChange(tabId, changeInfo, tab) {
             recordNavigation({
                 tabId,
                 url: changeInfo.url,
-                title: tab.title || '',
-                transitionType: changeInfo.transitionType || 'unknown',
+                title: tab.title || "",
+                transitionType: changeInfo.transitionType || "unknown",
                 navigationType,
                 timestamp: Date.now()
             });
         } catch (err) {
-            console.error('Error processing URL change:', err);
+            console.error("Error processing URL change:", err);
         }
     }, 0);
 }
@@ -1226,7 +1247,7 @@ chrome.webNavigation.onCommitted.addListener((details) => {
     const { tabId, url, transitionType, transitionQualifiers } = details;
     
     // Skip chrome:// URLs and extension pages
-    if (url.startsWith('chrome://') || url.startsWith(chrome.runtime.getURL(''))) return;
+    if (url.startsWith("chrome://") || url.startsWith(chrome.runtime.getURL(""))) return;
     
     // Create a unique ID for this navigation and mark as processed
     const navigationId = `${tabId}-${url}-${Date.now()}`;
@@ -1240,7 +1261,7 @@ chrome.webNavigation.onCommitted.addListener((details) => {
     // Get tab data then record the navigation
     chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError) {
-            console.error('Error getting tab:', chrome.runtime.lastError);
+            console.error("Error getting tab:", chrome.runtime.lastError);
             return;
         }
         
@@ -1248,7 +1269,7 @@ chrome.webNavigation.onCommitted.addListener((details) => {
         recordNavigation({
             tabId,
             url,
-            title: tab.title || '',
+            title: tab.title || "",
             transitionType,
             transitionQualifiers,
             timestamp: Date.now(),
@@ -1279,7 +1300,7 @@ function handleLoadComplete(tabId, tab) {
                         
                         // Explicitly notify about favicon update
                         sendMessageWithErrorHandling({
-                            action: 'tabFaviconUpdated',
+                            action: "tabFaviconUpdated",
                             tabId,
                             favIconUrl: updatedTab.favIconUrl
                         });
@@ -1295,7 +1316,7 @@ function handleLoadComplete(tabId, tab) {
                         browserState.tabs.set(tabId, tabData);
                         
                         sendMessageWithErrorHandling({
-                            action: 'tabFaviconUpdated',
+                            action: "tabFaviconUpdated",
                             tabId,
                             favIconUrl: fallbackFavicon
                         });
@@ -1343,7 +1364,7 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
                 ...tabData,
                 id: addedTabId,
                 url: tab.url,
-                title: tab.title || tabData.title || '',
+                title: tab.title || tabData.title || "",
                 favIconUrl: tab.favIconUrl || tabData.favIconUrl,
                 windowId: tab.windowId,
                 active: tab.active,
@@ -1356,7 +1377,7 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
         
         // Notify that tab was replaced
         sendMessageWithErrorHandling({
-            action: 'tabReplaced',
+            action: "tabReplaced",
             oldTabId: removedTabId,
             newTabId: addedTabId,
             tab: tab
@@ -1364,6 +1385,7 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     });
 });
 
+// eslint-disable-next-line no-unused-vars
 function checkAndUpdateFavicon(tabId, url) {
     // Just add to queue - the queue system handles the rest
     faviconQueue.enqueue(tabId, url);
@@ -1372,21 +1394,21 @@ function checkAndUpdateFavicon(tabId, url) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
         const messageType = message.type || message.action;
-        console.log(`Message received (${messageType}) from ${sender.tab ? 'tab '+sender.tab.id : 'extension'}`);
+        console.log(`Message received (${messageType}) from ${sender.tab ? "tab "+sender.tab.id : "extension"}`);
         
         switch (messageType) {
-            case 'contentUpdate':
+            case "contentUpdate":
                 handleContentUpdate(message.data, sender);
                 break;
-            case 'getTabId':
+            case "getTabId":
                 sendResponse({ tabId: sender.tab?.id });
                 break;
-            case 'getTabHistory':
+            case "getTabHistory":
                 const history = browserState.tabHistory.get(message.tabId) || [];
                 const relationship = browserState.tabRelationships.get(message.tabId);
                 sendResponse({ history, relationship });
                 break;
-            case 'getState':
+            case "getState":
                 // Ensure browserState and its properties are defined
                 // console.log('Background: getState received. Sending state:', browserState);
                 sendResponse({
@@ -1401,7 +1423,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // cache: browserState.cache || {}
                 });
                 break;
-            case 'LINK_TEXT_CAPTURED':
+            case "LINK_TEXT_CAPTURED":
                 if (sender.tab) {
                     const tabId = sender.tab.id;
                     console.debug(`Link text captured in tab ${tabId}:`, message.data);
@@ -1417,11 +1439,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }, 5000);
                 }
                 break;
-            case 'store_link_context':
+            case "store_link_context":
                 handleLinkContext(message, sender);
                 break;
-            case 'linkClicked':
-                console.log('Link click detected:', {
+            case "linkClicked":
+                console.log("Link click detected:", {
                     fromUrl: sender.tab.url,
                     toUrl: message.url,
                     tabId: sender.tab.id
@@ -1435,9 +1457,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     targetUrl: message.url
                 };
                 break;
-            case 'navigation_event':
+            case "navigation_event":
                 const { tabId, windowId } = sender.tab;
-                console.log('Navigation event:', {
+                console.log("Navigation event:", {
                     tabId,
                     windowId,
                     url: message.data.targetUrl
@@ -1445,7 +1467,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
                 // Force treemap update
                 sendMessageWithErrorHandling({
-                    action: 'tabUpdated',
+                    action: "tabUpdated",
                     tabId,
                     changeInfo: {
                         url: message.data.targetUrl,
@@ -1461,28 +1483,129 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             // Add other message types as needed
             // Add this case for getFavicon
-            case 'getFavicon':
+            case "getFavicon":
                 const proxyUrl = chrome.runtime.getURL(`_favicon/?pageUrl=${encodeURIComponent(message.url)}`);
                 sendResponse({ faviconUrl: proxyUrl });
                 break;
+                
+            case "getHeroImagesForUrl":
+                // First check the browserState (in-memory cache)
+                if (browserState.heroImages && browserState.heroImages.get && message.url) {
+                    const heroImageData = browserState.heroImages.get(message.url);
+                    if (heroImageData && heroImageData.images) {
+                        console.log("🔍 Returning hero images from browserState for URL:", message.url);
+                        sendResponse(heroImageData);
+                        return;
+                    }
+                }
+                
+                // Then check storage
+                chrome.storage.local.get(["heroImages"], (result) => {
+                    const heroImagesStore = result.heroImages || {};
+                    if (heroImagesStore[message.url]) {
+                        console.log("📦 Returning hero images from storage for URL:", message.url);
+                        
+                        // Update browserState for next time (cache warming)
+                        if (browserState.heroImages && browserState.heroImages.set) {
+                            browserState.heroImages.set(message.url, heroImagesStore[message.url]);
+                        }
+                        
+                        sendResponse(heroImagesStore[message.url]);
+                    } else {
+                        console.log("⚠️ No hero images found for URL:", message.url);
+                        sendResponse({ images: null });
+                    }
+                });
+                break;
+            case "storeHeroImages":
+                console.log("📸 HERO IMAGE EXTRACTION:", {
+                    url: message.data.url,
+                    title: message.data.title,
+                    imageCount: message.data.heroImages.length,
+                    dwellTime: Math.round(message.data.dwellTime/1000) + "s",
+                    scrollDepth: message.data.scrollDepth + "px"
+                });
+                
+                // Log the actual images being extracted
+                console.log("📸 Hero images found:", message.data.heroImages.map(img => ({
+                    src: img.src.substring(0, 100) + (img.src.length > 100 ? '...' : ''),
+                    score: img.score,
+                    dimensions: `${img.width}x${img.height}`,
+                    isMetaImage: !!img.isMetaImage
+                })));
+                
+                // Add to browserState (core shared data structure)
+                const heroImageData = {
+                    images: message.data.heroImages,
+                    title: message.data.title,
+                    timestamp: message.data.timestamp,
+                    dwellTime: message.data.dwellTime,
+                    scrollDepth: message.data.scrollDepth
+                };
+                
+                // Update browserState with hero image data
+                browserState.heroImages.set(message.data.url, heroImageData);
+                
+                // Notify all listeners about new hero image data
+                browserState.notifyListeners('heroImage', {
+                    type: 'added',
+                    url: message.data.url,
+                    data: heroImageData
+                });
+                
+                // Get existing hero images or initialize empty object
+                chrome.storage.local.get("heroImages", (result) => {
+                    const heroImages = result.heroImages || {};
+                    
+                    // Store new hero images for this URL
+                    heroImages[message.data.url] = heroImageData;
+                    
+                    // Save back to storage
+                    chrome.storage.local.set({ heroImages }, () => {
+                        if (chrome.runtime.lastError) {
+                            console.error("❌ Error storing hero images:", chrome.runtime.lastError);
+                        } else {
+                            console.log("✅ Successfully stored hero images for", message.data.url);
+                            // Send a response to confirm storage
+                            sendResponse({ success: true });
+                        }
+                    });
+                });
+                break;
         }
     } catch (error) {
-        console.error('Error handling message:', error);
+        console.error("Error handling message:", error);
     }
     return true; // Keep the message channel open for async responses
 });
 
+/**
+ * Send messages with enhanced error handling
+ * Gracefully handles "Could not establish connection" errors
+ * which happen when there's no receiver for the message
+ * @param {Object} message - Message to send
+ * @returns {Promise} - Promise that resolves to response or null
+ */
 function sendMessageWithErrorHandling(message) {
     try {
+        // Don't log common expected errors
+        const isSilent = message.silent === true;
+        
         return chrome.runtime.sendMessage(message).catch(error => {
-            // Only log actual errors, not just missing receivers
-            if (error && error.message && !error.message.includes('No receiver')) {
-                console.error('Error sending message:', error);
+            // Check for the specific connection error that happens when no receivers exist
+            if (error && error.message && error.message.includes("Receiving end does not exist")) {
+                if (!isSilent) {
+                    // Debug level only - this is an expected condition when no receivers
+                    console.debug("Message sent but no receivers available:", message.action || message.type);
+                }
+            } else {
+                // Log other errors as actual problems
+                console.error("Error sending message:", error);
             }
             return null;
         });
     } catch (error) {
-        console.log('Error in sendMessageWithErrorHandling:', error);
+        console.log("Error in sendMessageWithErrorHandling:", error);
         return Promise.resolve(null);
     }
 }
@@ -1498,7 +1621,7 @@ function cleanupDataStructures() {
             const activeTabs = new Set(tabs.map(tab => tab.id));
             
             // Clean up tabs that no longer exist
-            for (const [tabId, _] of browserState.tabs) {
+            for (const [tabId] of browserState.tabs) {
                 if (!activeTabs.has(tabId)) {
                     browserState.tabs.delete(tabId);
                     browserState.tabHistory.delete(tabId);
@@ -1525,13 +1648,13 @@ function cleanupDataStructures() {
             }
         }
         
-        console.log('Data structures cleaned up:', {
+        console.log("Data structures cleaned up:", {
             tabs: browserState.tabs.size,
             edges: tabEdges.size,
             processedNavigations: processedNavigations.size
         });
     } catch (error) {
-        console.error('Error in cleanup:', error);
+        console.error("Error in cleanup:", error);
     }
 }
 
@@ -1539,16 +1662,17 @@ function cleanupDataStructures() {
 setInterval(cleanupDataStructures, 5 * 60 * 1000);
 
 // Fix for process navigation function - implement missing methods
-function processDirectNavigation(tabData, details, baseEdge) {
+// eslint-disable-next-line no-unused-vars
+function processDirectNavigation(tabData, details) {
   // Implementation for direct navigation
   const activity = browserState.tabActivityLog.get(details.tabId) || { navigations: [] };
   if (!activity.navigations) activity.navigations = [];
   
   activity.navigations.push({
-    type: 'direct_navigation',
+    type: "direct_navigation",
     url: details.url,
     timestamp: Date.now(),
-    transitionType: details.transitionType || 'unknown',
+    transitionType: details.transitionType || "unknown",
     transitionQualifiers: details.transitionQualifiers || []
   });
   
@@ -1566,7 +1690,7 @@ function recordNavigation(details) {
         // Add this navigation to the start (most recent)
         history.unshift({
             url,
-            title: title || '',
+            title: title || "",
             timestamp,
             transitionType,
             transitionQualifiers: transitionQualifiers || []
@@ -1584,7 +1708,7 @@ function recordNavigation(details) {
         let tabData = browserState.tabs.get(tabId);
         if (tabData) {
             tabData.url = url;
-            tabData.title = title || tabData.title || '';
+            tabData.title = title || tabData.title || "";
             tabData.lastUpdate = timestamp;
             tabData.lastNavigation = {
                 url,
@@ -1597,7 +1721,7 @@ function recordNavigation(details) {
         
         // Notify about the navigation
         sendMessageWithErrorHandling({
-            action: 'tabNavigated',
+            action: "tabNavigated",
             tabId,
             url,
             title,
@@ -1608,7 +1732,7 @@ function recordNavigation(details) {
         // Handle different navigation types
         processNavigationType(tabId, url, transitionType, transitionQualifiers);
     } catch (error) {
-        console.error('Error recording navigation:', error);
+        console.error("Error recording navigation:", error);
     }
 }
 
@@ -1625,29 +1749,29 @@ function processNavigationType(tabId, url, transitionType, transitionQualifiers)
     
     // Handle different types of navigation
     switch (transitionType) {
-        case 'link':
+        case "link":
             // Process link navigation - this can create edges
             processLinkNavigation(tabId, url, baseData);
             break;
             
-        case 'typed':
+        case "typed":
             // Direct URL bar entry - no edge creation
-            logNavigation(tabId, 'typed_navigation', baseData);
+            logNavigation(tabId, "typed_navigation", baseData);
             break;
             
-        case 'auto_bookmark':
+        case "auto_bookmark":
             // Bookmark navigation - might create edge if we track bookmarks
-            logNavigation(tabId, 'bookmark_navigation', baseData);
+            logNavigation(tabId, "bookmark_navigation", baseData);
             break;
             
-        case 'generated':
+        case "generated":
             // Auto-generated navigation - no edge needed usually
-            logNavigation(tabId, 'generated_navigation', baseData);
+            logNavigation(tabId, "generated_navigation", baseData);
             break;
             
         default:
             // Other types - just log
-            logNavigation(tabId, 'other_navigation', baseData);
+            logNavigation(tabId, "other_navigation", baseData);
     }
 }
 
@@ -1682,7 +1806,7 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
     
     // Notify UI about the move
     sendMessageWithErrorHandling({
-      action: 'tabMoved',
+      action: "tabMoved",
       tabId,
       moveInfo,
       tab
