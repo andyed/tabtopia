@@ -12,6 +12,20 @@ export async function createSessionCard(session, options = {}) {
     return null;
   }
   
+  // Filter and prioritize active pages (pages that were focused during the session)
+  const activePages = session.pages.filter(page => page.wasActiveInSession === true);
+  const inactivePages = session.pages.filter(page => page.wasActiveInSession !== true);
+  
+  // Use active pages first, then inactive pages for display
+  // Keep original session data intact but prioritize active pages
+  const displaySession = {
+    ...session,
+    pages: [...activePages, ...inactivePages]
+  };
+  
+  // Track if we have any active pages for highlighting
+  const hasActivePagesInSession = activePages.length > 0;
+  
   // Helper function to extract domain from URL
   function extractDomainFromUrl(url) {
     if (!url) return '';
@@ -88,18 +102,18 @@ export async function createSessionCard(session, options = {}) {
   }
 
   // Find the most significant pages based on dwell time
-  const significantPages = session.pages
+  const significantPages = displaySession.pages
     .filter(page => page.dwellTimeMs > 30000) // Pages with at least 30s dwell time
     .sort((a, b) => b.dwellTimeMs - a.dwellTimeMs); // Sort by dwell time descending
   
   // Collect hero images from significant pages first, then from any page
-  let heroImages = collectHeroImagesFromSession(session);
+  let heroImages = collectHeroImagesFromSession(displaySession);
   let hasHeroImage = heroImages.length > 0;
   let imageQuality = 0; // 0-100 scale for image quality/importance
   
   // If we don't have enough images, look through all pages
   if (heroImages.length < 5) {
-    for (const page of session.pages) {
+    for (const page of displaySession.pages) {
       // Skip pages we've already processed
       if (significantPages.some(p => p.url === page.url)) {
         continue;
@@ -152,6 +166,11 @@ export async function createSessionCard(session, options = {}) {
     card.classList.add('no-image');
   }
   
+  // Add active indicator if the session has active pages
+  if (hasActivePagesInSession) {
+    card.classList.add('has-active-pages');
+  }
+  
   // Add data attributes for age-based hue and session id for modal matching
   card.dataset.sessionId = session.id || crypto.randomUUID();
   
@@ -178,7 +197,7 @@ export async function createSessionCard(session, options = {}) {
     : `${Math.floor(durationMinutes/60)}h ${durationMinutes % 60}m`;
   
   // Calculate top domains
-  const domains = session.pages.map(page => {
+  const domains = displaySession.pages.map(page => {
     try {
       return new URL(page.url).hostname;
     } catch (e) {
@@ -197,8 +216,8 @@ export async function createSessionCard(session, options = {}) {
     .map(entry => entry[0]);
   
   // Get first and last page titles for summary
-  const firstPage = session.pages.length > 0 ? session.pages[0] : null;
-  const lastPage = session.pages.length > 0 ? session.pages[session.pages.length - 1] : null;
+  const firstPage = displaySession.pages.length > 0 ? displaySession.pages[0] : null;
+  const lastPage = displaySession.pages.length > 0 ? displaySession.pages[displaySession.pages.length - 1] : null;
   
   const firstPageTitle = firstPage?.title || 'Unknown page';
   const lastPageTitle = lastPage?.title || 'Unknown page';
@@ -237,7 +256,7 @@ export async function createSessionCard(session, options = {}) {
           <h3 class="card-title">${session.name || 'Browsing Session'}</h3>
           
           <div class="card-stats">
-            <div class="stat-item"><span class="stat-label">Pages:</span> ${session.pages.length}</div>
+            <div class="stat-item"><span class="stat-label">Pages:</span> ${displaySession.pages.length}</div>
             <div class="stat-item"><span class="stat-label">Duration:</span> ${formattedDuration}</div>
             <div class="stat-item"><span class="stat-label">Started:</span> ${new Date(session.startTime).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}</div>
           </div>
@@ -278,7 +297,7 @@ export async function createSessionCard(session, options = {}) {
           <h3 class="card-title compact">${session.name || 'Browsing Session'}</h3>
           
           <div class="card-stats compact">
-            <div class="stat-item"><span class="stat-label">Pages:</span> ${session.pages.length}</div>
+            <div class="stat-item"><span class="stat-label">Pages:</span> ${displaySession.pages.length}</div>
             <div class="stat-item"><span class="stat-label">Duration:</span> ${formattedDuration}</div>
           </div>
           
@@ -295,7 +314,7 @@ export async function createSessionCard(session, options = {}) {
         <h3 class="card-title">${session.name || 'Browsing Session'}</h3>
         
         <div class="card-stats">
-          <div class="stat-item"><span class="stat-label">Pages:</span> ${session.pages.length}</div>
+          <div class="stat-item"><span class="stat-label">Pages:</span> ${displaySession.pages.length}</div>
           <div class="stat-item"><span class="stat-label">Duration:</span> ${formattedDuration}</div>
           <div class="stat-item"><span class="stat-label">Started:</span> ${new Date(session.startTime).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}</div>
         </div>
@@ -313,6 +332,8 @@ export async function createSessionCard(session, options = {}) {
   
   // Make the entire card clickable to open the modal
   card.addEventListener('click', (e) => {
+    // Keep original pages in the session when showing modal
+    const modalSession = {...session};
     // If the click is on a mosaic image or favicon, navigate to that URL
     if ((e.target.classList.contains('mosaic-item') || e.target.classList.contains('mosaic-favicon')) && 
         (e.target.dataset.pageUrl || (e.target.closest('.mosaic-item-wrapper') && 
@@ -324,7 +345,7 @@ export async function createSessionCard(session, options = {}) {
       window.open(url, '_blank');
     } else {
       // Otherwise show the session modal
-      showSessionModal(session);
+      showSessionModal(modalSession);
     }
   });
   

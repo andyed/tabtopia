@@ -893,6 +893,68 @@ export const browserState = {
   },
   
   /**
+   * Track when a tab receives focus
+   * @param {number} tabId - The ID of the tab that received focus
+   * @returns {void}
+   */
+  trackTabFocus(tabId) {
+    if (!tabId) return;
+    
+    // Make sure tabActivityLog exists
+    if (!this._store.tabActivityLog) {
+      this._store.tabActivityLog = new Map();
+    }
+    
+    // Initialize tab entry if needed
+    if (!this._store.tabActivityLog.has(tabId)) {
+      this._store.tabActivityLog.set(tabId, []);
+    }
+    
+    // Add a focus event
+    const focusEvent = {
+      timestamp: Date.now(),
+      type: 'focus'
+    };
+    
+    this._store.tabActivityLog.get(tabId).push(focusEvent);
+    
+    // For debugging
+    console.log(`Tab ${tabId} focus event recorded at ${new Date().toISOString()}`);
+    
+    // Persist to background script
+    chrome.runtime.sendMessage({ 
+      action: 'updateTabActivity', 
+      tabId, 
+      event: focusEvent 
+    });
+  },
+  
+  /**
+   * Check if a tab was active during a session
+   * @param {number} tabId - The ID of the tab to check
+   * @param {number} sessionStartTime - Session start timestamp
+   * @param {number} sessionEndTime - Session end timestamp
+   * @returns {boolean} - Whether the tab was active during the session
+   */
+  wasTabActiveInSession(tabId, sessionStartTime, sessionEndTime) {
+    if (!tabId) return false;
+    
+    // Check if tab was created during the session
+    const tab = this._store.tabs.get(tabId);
+    if (tab && tab.creationTime && tab.creationTime >= sessionStartTime && tab.creationTime <= sessionEndTime) {
+      return true;
+    }
+    
+    // Check for focus events during the session
+    const activityLog = this._store.tabActivityLog.get(tabId) || [];
+    return activityLog.some(event => 
+      event.type === 'focus' && 
+      event.timestamp >= sessionStartTime && 
+      event.timestamp <= sessionEndTime
+    );
+  },
+  
+  /**
    * Action creators for common operations
    * Convenience methods for components to dispatch standard actions
    */
@@ -906,6 +968,9 @@ export const browserState = {
         type: ActionTypes.UI_SELECT_TAB,
         payload: tabId
       });
+      
+      // Also track this as a focus event
+      browserState.trackTabFocus(tabId);
     },
     
     /**

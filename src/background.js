@@ -515,6 +515,27 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         // Track active time immediately
         updateTabActivity(activeInfo.tabId, true);
         
+        // Record tab focus event
+        const focusEvent = {
+            timestamp: Date.now(),
+            type: 'focus'
+        };
+        
+        // Update or initialize tab activity log
+        const activityLog = browserState.tabActivityLog.get(activeInfo.tabId) || [];
+        activityLog.push(focusEvent);
+        browserState.tabActivityLog.set(activeInfo.tabId, activityLog);
+        
+        // Log for debugging
+        console.log(`Tab ${activeInfo.tabId} focus event recorded in background at ${new Date().toISOString()}`);
+        
+        // Notify all tabs about this focus event
+        sendMessageWithRateLimit({
+            action: "tabFocusEvent", 
+            tabId: activeInfo.tabId,
+            event: focusEvent
+        });
+        
         // Quick notification with just tab ID (lightweight)
         sendMessageWithRateLimit({
             type: "tabChanged",
@@ -1391,7 +1412,25 @@ function checkAndUpdateFavicon(tabId, url) {
     faviconQueue.enqueue(tabId, url);
 }
 
+// Tab focus events are handled by the main chrome.tabs.onActivated listener above
+
+// Listen for runtime messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Ensure we have a valid message
+    if (!message || !message.action) {
+        console.warn("Invalid message received:", message);
+        return false;
+    }
+    
+    // Handle tab activity events from newtab pages
+    if (message.action === 'updateTabActivity' && message.tabId && message.event) {
+        const activityLog = browserState.tabActivityLog.get(message.tabId) || [];
+        activityLog.push(message.event);
+        browserState.tabActivityLog.set(message.tabId, activityLog);
+        console.log(`Tab ${message.tabId} activity updated from message:`, message.event);
+        return true;
+    }
+
     try {
         const messageType = message.type || message.action;
         console.log(`Message received (${messageType}) from ${sender.tab ? "tab "+sender.tab.id : "extension"}`);

@@ -401,10 +401,14 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                     activeTabUrls.add(tab.url);
                     activeTabIds.add(tab.id);
                     
+                    // Get the access time or use current time as fallback
+                    const accessTime = tab.lastAccessTime || Date.now();
+                    
                     activities.push({
                         url: tab.url,
                         title: tab.title || tab.url,
-                        timestamp: tab.lastAccessTime || Date.now(), // lastAccessTime might not be available for all tabs, fallback to now
+                        timestamp: accessTime,
+                        lastAccessTime: accessTime, // Store explicitly for filtering later
                         type: 'active_tab',
                         tabId: tab.id,
                         windowId: window.id,
@@ -492,6 +496,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                         url: activity.url,
                         title: activity.title,
                         visitTime: activity.timestamp,
+                        lastAccessTime: activity.lastAccessTime,
                         isContextualRevisit: true
                     });
                     currentSession.endTime = activity.timestamp;
@@ -510,6 +515,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                     url: activity.url,
                     title: activity.title,
                     visitTime: activity.timestamp,
+                    lastAccessTime: activity.lastAccessTime,
                     isRevisit: isRevisit
                 });
                 currentSession.endTime = activity.timestamp;
@@ -564,7 +570,8 @@ function createNewSession(activity) {
         pages: [{
             url: activity.url,
             title: activity.title,
-            visitTime: activity.timestamp
+            visitTime: activity.timestamp,
+            lastAccessTime: activity.lastAccessTime || activity.timestamp
         }],
         pageCount: 0, // Will be calculated in finalizeSession
         duration: 0, // Will be calculated in finalizeSession
@@ -822,8 +829,49 @@ function groupByTabContext(pages) {
 function finalizeSession(session, activeTabUrls) {
     session.duration = session.endTime - session.startTime;
     
+    // Filter out tabs from previous sessions that haven't been accessed during this session
+    const originalPageCount = session.pages.length;
+    session.pages = session.pages.filter(page => {
+        // If the page has a lastAccessTime, it must be >= the session start time
+        if (page.lastAccessTime) {
+            const shouldKeep = page.lastAccessTime >= session.startTime;
+            if (!shouldKeep) {
+                console.log(`Filtering out page from previous session: ${page.url}, lastAccess: ${new Date(page.lastAccessTime).toLocaleTimeString()}, session start: ${new Date(session.startTime).toLocaleTimeString()}`);
+            }
+            return shouldKeep;
+        }
+        // If no lastAccessTime is available, use visitTime instead
+        const shouldKeep = page.visitTime >= session.startTime;
+        if (!shouldKeep) {
+            console.log(`Filtering out page with no lastAccessTime: ${page.url}, visitTime: ${new Date(page.visitTime).toLocaleTimeString()}, session start: ${new Date(session.startTime).toLocaleTimeString()}`);
+        }
+        return shouldKeep;
+    });
+    
+    const filteredCount = originalPageCount - session.pages.length;
+    if (filteredCount > 0) {
+        console.log(`Session ${session.id}: Filtered out ${filteredCount} pages from previous sessions`);
+    }
+    
     const uniqueUrls = new Set(session.pages.map(p => p.url));
     session.pageCount = uniqueUrls.size;
+    
+    // Mark pages that were active during this session
+    if (typeof browserState !== 'undefined') {
+        for (const page of session.pages) {
+            if (page.originalTabId) {
+                // Check if this page's tab was active during this session
+                page.wasActiveInSession = browserState.wasTabActiveInSession(
+                    page.originalTabId,
+                    session.startTime,
+                    session.endTime
+                );
+            } else {
+                // For pages without tab ID, check if their URL is in activeTabUrls
+                page.wasActiveInSession = activeTabUrls.includes(page.url);
+            }
+        }
+    }
     
     // Check if this session contains any currently active tabs
     if (activeTabUrls && activeTabUrls.size > 0) {
