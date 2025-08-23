@@ -1,5 +1,10 @@
 // Hero images display for sessions view
 import { showSessionModal } from './sessions_modal.js';
+import { getDomainFromUrl, getUniqueColors } from './utils.js';
+import { formatTimeAgo } from './timeago.js';
+
+// Global registry of seen image URLs to prevent duplicates across pages/sessions
+const globalSeenImageUrls = new Set();
 
 /**
  * Creates a session card, either double-width with hero image or standard size
@@ -56,12 +61,16 @@ export async function createSessionCard(session, options = {}) {
 
   // Collects hero images from pages within a session
   function collectHeroImagesFromSession(session, maxImages = 5) {
-    const seenImageUrls = new Set(); // To track duplicate image URLs
+    const seenImageUrls = new Set(); // To track duplicate image URLs locally
     const heroImages = [];
     
     // First pass: collect images from pages with significant dwell time
     session.pages.forEach(page => {
-      if (page.heroImage && page.dwellTimeMs > 10000 && heroImages.length < maxImages && !seenImageUrls.has(page.heroImage)) {
+      if (page.heroImage && page.dwellTimeMs > 10000 && 
+          heroImages.length < maxImages && 
+          !seenImageUrls.has(page.heroImage) && 
+          !globalSeenImageUrls.has(page.heroImage)) {
+        
         const domain = extractDomainFromUrl(page.url || '');
         const imgObj = {
           src: page.heroImage,
@@ -74,13 +83,18 @@ export async function createSessionCard(session, options = {}) {
         };
         heroImages.push(imgObj);
         seenImageUrls.add(page.heroImage);
+        globalSeenImageUrls.add(page.heroImage); // Add to global registry
       }
     });
     
     // Second pass: add more images if needed
     if (heroImages.length < maxImages) {
       session.pages.forEach(page => {
-        if (page.heroImage && !seenImageUrls.has(page.heroImage) && heroImages.length < maxImages) {
+        if (page.heroImage && 
+            !seenImageUrls.has(page.heroImage) && 
+            !globalSeenImageUrls.has(page.heroImage) && 
+            heroImages.length < maxImages) {
+          
           const imgObj = {
             src: page.heroImage,
             alt: page.title || '',
@@ -90,6 +104,7 @@ export async function createSessionCard(session, options = {}) {
           };
           heroImages.push(imgObj);
           seenImageUrls.add(page.heroImage);
+          globalSeenImageUrls.add(page.heroImage); // Add to global registry
         }
       });
     }
@@ -121,18 +136,29 @@ export async function createSessionCard(session, options = {}) {
       
       const images = await getHeroImagesForUrl(page.url);
       if (images && images.length > 0) {
-        const enhancedImages = images.map(img => ({
-          ...img,
-          pageTitle: page.title || '',
-          pageUrl: page.url,
-          quality: 40 + Math.min(20, (page.dwellTimeMs / 30000) * 5) // Quality 40-60 for regular pages
-        }));
-        heroImages.push(...enhancedImages);
-        hasHeroImage = true;
+        // Only add images that haven't been seen globally
+        const uniqueImages = images.filter(img => !globalSeenImageUrls.has(img.src));
         
-        // Once we have 5 images, we have enough
-        if (heroImages.length >= 5) {
-          break;
+        if (uniqueImages.length > 0) {
+          const enhancedImages = uniqueImages.map(img => {
+            // Mark this image URL as seen globally
+            globalSeenImageUrls.add(img.src);
+            
+            return {
+              ...img,
+              pageTitle: page.title || '',
+              pageUrl: page.url,
+              quality: 40 + Math.min(20, (page.dwellTimeMs / 30000) * 5) // Quality 40-60 for regular pages
+            };
+          });
+          
+          heroImages.push(...enhancedImages);
+          hasHeroImage = true;
+          
+          // Once we have 5 images, we have enough
+          if (heroImages.length >= 5) {
+            break;
+          }
         }
       }
     }
@@ -195,6 +221,9 @@ export async function createSessionCard(session, options = {}) {
   const formattedDuration = durationMinutes < 60 
     ? `${durationMinutes}m` 
     : `${Math.floor(durationMinutes/60)}h ${durationMinutes % 60}m`;
+    
+  // Calculate time since session start for timeline visualization using timeago approach
+  const timeAgoString = formatTimeAgo(session.startTime);
   
   // Calculate top domains
   const domains = displaySession.pages.map(page => {
@@ -212,7 +241,7 @@ export async function createSessionCard(session, options = {}) {
   
   const topDomains = Object.entries(domainCounts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 4)
+    .slice(0, 5) // Get top 5 domains for favicons and cards
     .map(entry => entry[0]);
   
   // Get first and last page titles for summary
@@ -238,7 +267,7 @@ export async function createSessionCard(session, options = {}) {
                 const faviconUrl = getFaviconUrl(domain);
                 return `<div class="mosaic-item-wrapper mosaic-item-${heroImages.length}-${i+1}">
                   <img src="${img.src}" alt="${img.alt || img.pageTitle || 'Session image'}" 
-                       class="mosaic-item" 
+                       class="mosaic-item hero-image-element" 
                        title="${img.pageTitle || ''}" 
                        data-page-url="${img.pageUrl || ''}">
                   <img src="${faviconUrl}" alt="Favicon for ${domain}" 
@@ -248,7 +277,7 @@ export async function createSessionCard(session, options = {}) {
               }).join('')}
             </div>
             <div class="image-source">${pageTitle ? `From: ${pageTitle.substring(0, 40)}${pageTitle.length > 40 ? '...' : ''}` : ''}</div>` : 
-            `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || 'Session image'}" class="card-image">
+            `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || 'Session image'}" class="card-image hero-image-element">
              <div class="image-source">${pageTitle ? `From: ${pageTitle.substring(0, 40)}${pageTitle.length > 40 ? '...' : ''}` : ''}</div>`
           }
         </div>
@@ -256,9 +285,29 @@ export async function createSessionCard(session, options = {}) {
           <h3 class="card-title">${session.name || 'Browsing Session'}</h3>
           
           <div class="card-stats">
-            <div class="stat-item"><span class="stat-label">Pages:</span> ${displaySession.pages.length}</div>
-            <div class="stat-item"><span class="stat-label">Duration:</span> ${formattedDuration}</div>
-            <div class="stat-item"><span class="stat-label">Started:</span> ${new Date(session.startTime).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}</div>
+            <!-- Combined page count and favicon stack -->
+            <div class="stat-item pages-with-favicons">
+              <span class="page-count">${displaySession.pages.length}</span>
+              <div class="favicon-stack">
+                ${topDomains.slice(0, 5).map((domain, index) => 
+                  `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=16" 
+                   class="stacked-favicon" 
+                   style="z-index:${10-index}; margin-left:${index * -6}px" 
+                   title="${domain}" />`).join('')}
+              </div>
+            </div>
+            <!-- Timeline visualization for duration and start time -->
+            <div class="stat-item timeline-visualization">
+              <div class="timeline-bar">
+                <div class="timeline-duration" 
+                     style="width:${Math.min(100, Math.max(10, Math.log10(session.duration/1000) * 20))}%" 
+                     title="Duration: ${formattedDuration}"></div>
+              </div>
+              <div class="timeline-labels">
+                <span class="duration-label">${formattedDuration}</span>
+                <span class="time-ago-label">${timeAgoString}</span>
+              </div>
+            </div>
           </div>
           
           <div class="card-domains">
@@ -281,7 +330,7 @@ export async function createSessionCard(session, options = {}) {
                 const faviconUrl = getFaviconUrl(domain);
                 return `<div class="mosaic-item-wrapper mosaic-item-${heroImages.length}-${i+1}">
                   <img src="${img.src}" alt="${img.alt || img.pageTitle || 'Session image'}" 
-                       class="mosaic-item" 
+                       class="mosaic-item hero-image-element" 
                        title="${img.pageTitle || ''}" 
                        data-page-url="${img.pageUrl || ''}">
                   <img src="${faviconUrl}" alt="Favicon for ${domain}" 
@@ -290,15 +339,35 @@ export async function createSessionCard(session, options = {}) {
                 </div>`;
               }).join('')}
             </div>` : 
-            `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || 'Session image'}" class="card-image">`
+            `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || 'Session image'}" class="card-image hero-image-element">`
           }
         </div>
         <div class="card-content-section compact"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ''}>
           <h3 class="card-title compact">${session.name || 'Browsing Session'}</h3>
           
           <div class="card-stats compact">
-            <div class="stat-item"><span class="stat-label">Pages:</span> ${displaySession.pages.length}</div>
-            <div class="stat-item"><span class="stat-label">Duration:</span> ${formattedDuration}</div>
+            <!-- Combined page count and favicon stack (compact version) -->
+            <div class="stat-item pages-with-favicons">
+              <span class="page-count">${displaySession.pages.length}</span>
+              <div class="favicon-stack">
+                ${topDomains.slice(0, 5).map((domain, index) => 
+                  `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=16" 
+                   class="stacked-favicon" 
+                   style="z-index:${10-index}; margin-left:${index * -6}px" 
+                   title="${domain}" />`).join('')}
+              </div>
+            </div>
+            <!-- Timeline visualization (compact version) -->
+            <div class="stat-item timeline-visualization compact">
+              <div class="timeline-bar">
+                <div class="timeline-duration" 
+                     style="width:${Math.min(100, Math.max(10, Math.log10(session.duration/1000) * 20))}%" 
+                     title="Duration: ${formattedDuration}"></div>
+              </div>
+              <div class="timeline-labels">
+                <span class="duration-label">${formattedDuration}</span>
+              </div>
+            </div>
           </div>
           
           <div class="card-domains compact">
@@ -314,9 +383,29 @@ export async function createSessionCard(session, options = {}) {
         <h3 class="card-title">${session.name || 'Browsing Session'}</h3>
         
         <div class="card-stats">
-          <div class="stat-item"><span class="stat-label">Pages:</span> ${displaySession.pages.length}</div>
-          <div class="stat-item"><span class="stat-label">Duration:</span> ${formattedDuration}</div>
-          <div class="stat-item"><span class="stat-label">Started:</span> ${new Date(session.startTime).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}</div>
+          <!-- Combined page count and favicon stack -->
+          <div class="stat-item pages-with-favicons">
+            <span class="page-count">${displaySession.pages.length}</span>
+            <div class="favicon-stack">
+              ${topDomains.slice(0, 5).map((domain, index) => 
+                `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=16" 
+                 class="stacked-favicon" 
+                 style="z-index:${10-index}; margin-left:${index * -6}px" 
+                 title="${domain}" />`).join('')}
+            </div>
+          </div>
+          <!-- Timeline visualization for duration and start time -->
+          <div class="stat-item timeline-visualization">
+            <div class="timeline-bar">
+              <div class="timeline-duration" 
+                   style="width:${Math.min(100, Math.max(10, Math.log10(session.duration/1000) * 20))}%" 
+                   title="Duration: ${formattedDuration}"></div>
+            </div>
+            <div class="timeline-labels">
+              <span class="duration-label">${formattedDuration}</span>
+              <span class="time-ago-label">${timeAgoString}</span>
+            </div>
+          </div>
         </div>
         
         <div class="card-domains">
@@ -349,7 +438,34 @@ export async function createSessionCard(session, options = {}) {
     }
   });
   
+  // Apply error handling to all hero images after card is created
+  setupHeroImageErrorHandling(card);
   return card;
+}
+
+/**
+ * Sets up error handling for all hero image elements in the card
+ * This avoids inline event handlers which violate Content Security Policy
+ * @param {HTMLElement} card - The card containing hero images
+ */
+function setupHeroImageErrorHandling(card) {
+  // Find all hero image elements
+  const heroImages = card.querySelectorAll('.hero-image-element');
+  
+  // Add error handling to each image
+  heroImages.forEach(img => {
+    img.addEventListener('error', function() {
+      // Hide the image
+      this.style.display = 'none';
+      
+      // Add error class to parent container
+      if (this.parentNode) {
+        this.parentNode.classList.add('image-error');
+      }
+      
+      console.error(`Failed to load hero image: ${this.src}`);
+    });
+  });
 }
 
 /**
@@ -365,17 +481,33 @@ export async function createSessionMosaic(session) {
   // Get hero images from all pages in the session
   let allImages = [];
   
+  // Track seen URLs for this mosaic to avoid duplicates
+  const localSeenUrls = new Set();
+  
   // Collect hero images from all pages
   await Promise.all(session.pages.map(async (page) => {
     const images = await getHeroImagesForUrl(page.url);
     if (images && images.length > 0) {
-      // Store the page title and URL with the image for reference
-      const enhancedImages = images.map(img => ({
-        ...img,
-        pageTitle: page.title,
-        pageUrl: page.url
-      }));
-      allImages = [...allImages, ...enhancedImages];
+      // Filter out images already seen globally or locally
+      const uniqueImages = images.filter(img => 
+        !globalSeenImageUrls.has(img.src) && 
+        !localSeenUrls.has(img.src)
+      );
+      
+      if (uniqueImages.length > 0) {
+        // Store the page title and URL with the image for reference
+        const enhancedImages = uniqueImages.map(img => {
+          localSeenUrls.add(img.src);
+          globalSeenImageUrls.add(img.src); // Track globally as well
+          
+          return {
+            ...img,
+            pageTitle: page.title,
+            pageUrl: page.url
+          };
+        });
+        allImages = [...allImages, ...enhancedImages];
+      }
     }
   }));
   
@@ -384,12 +516,37 @@ export async function createSessionMosaic(session) {
     return null;
   }
   
+  // Validate image URLs before displaying
+  const validImages = allImages.filter(img => {
+    if (!img || !img.src) {
+      console.warn('Hero image missing src attribute:', img);
+      return false;
+    }
+    
+    // Basic URL validation
+    try {
+      // Check if it's a valid URL or a data URI
+      if (img.src.startsWith('data:') || new URL(img.src)) {
+        return true;
+      }
+    } catch (e) {
+      console.warn('Invalid hero image URL:', img.src);
+      return false;
+    }
+    return false;
+  });
+  
+  if (!validImages.length) {
+    console.warn('No valid hero images found');
+    return;
+  }
+  
   // Create the mosaic container
   const mosaicContainer = document.createElement('div');
   mosaicContainer.className = 'session-mosaic';
   
   // Only use up to 5 images for the mosaic
-  const mosaicImages = allImages.slice(0, 5);
+  const mosaicImages = validImages.slice(0, 5);
   
   // Add the images to the mosaic with different layout based on count
   mosaicImages.forEach((img, index) => {
@@ -397,6 +554,16 @@ export async function createSessionMosaic(session) {
     imgElement.src = img.src;
     imgElement.alt = img.alt || img.pageTitle || '';
     imgElement.className = `mosaic-item mosaic-item-${mosaicImages.length}-${index + 1}`;
+    
+    // Add error handling
+    imgElement.onerror = function() {
+      this.onerror = null;
+      this.style.display = 'none';
+      if (this.parentNode) {
+        this.parentNode.classList.add('image-error');
+      }
+      console.error(`Failed to load hero image: ${this.src}`);
+    };
     
     // Add data attributes for tooltip/details
     imgElement.dataset.pageTitle = img.pageTitle || '';
@@ -422,6 +589,14 @@ export async function createSessionMosaic(session) {
 }
 
 /**
+ * Clears the global seen image URLs registry
+ * Call this when refreshing sessions to allow images to appear again
+ */
+export function clearSeenHeroImages() {
+  globalSeenImageUrls.clear();
+}
+
+/**
  * Get hero images for a URL
  * Helper function copied from sessions.js to avoid circular dependencies
  * @param {string} url - URL to get hero images for
@@ -433,6 +608,7 @@ async function getHeroImagesForUrl(url) {
     if (typeof browserState !== 'undefined' && browserState.heroImages && browserState.heroImages.get) {
       const heroImageData = browserState.heroImages.get(url);
       if (heroImageData && heroImageData.images) {
+        console.log(`🖼️ Found hero images for ${url} in browserState`, heroImageData.images);
         return resolve(heroImageData.images);
       }
     }
@@ -441,16 +617,20 @@ async function getHeroImagesForUrl(url) {
     chrome.storage.local.get(['heroImages'], (result) => {
       const heroImagesStore = result.heroImages || {};
       if (heroImagesStore[url]) {
+        console.log(`🖼️ Found hero images for ${url} in local storage`, heroImagesStore[url].images);
         resolve(heroImagesStore[url].images);
       } else {
         // If not in storage, try asking background script directly
+        console.log(`🔄 Requesting hero images for ${url} from background script`);
         chrome.runtime.sendMessage({ action: 'getHeroImagesForUrl', url: url }, (response) => {
           if (chrome.runtime.lastError) {
             console.error('❌ Error getting hero images:', chrome.runtime.lastError);
             resolve(null);
           } else if (response && response.images) {
+            console.log(`✅ Received hero images for ${url} from background script`, response.images);
             resolve(response.images);
           } else {
+            console.warn(`⚠️ No hero images found for ${url}`);
             resolve(null);
           }
         });

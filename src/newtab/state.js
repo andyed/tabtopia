@@ -110,17 +110,28 @@ export const browserState = {
     // First try getting fresh state from background service
     try {
       return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: 'getState' }, (response) => {
+        // Add timeout to prevent hanging if background doesn't respond
+        const timeoutId = setTimeout(() => {
+          console.warn('getState timed out after 3 seconds');
+          resolve(this._store); // Use local store if timeout
+        }, 3000);
+        
+        chrome.runtime.sendMessage({ type: 'getState', action: 'getState' }, (response) => {
+          clearTimeout(timeoutId); // Clear timeout on response
+          
           if (response) {
             // Update local store with fresh data
             this._dispatch({
               type: ActionTypes.BATCH_STATE_UPDATE,
               payload: response
             });
-            resolve(response);
+
+            // Return full state
+            resolve(this._store);
           } else {
-            // Fall back to local store if no response
-            resolve(this._getLocalState());
+            console.warn('No response from background script for getState');
+            // Return current local state if no response
+            resolve(this._store);
           }
         });
       });

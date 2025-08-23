@@ -7,6 +7,10 @@ import { summaryCache, getCachedSummary } from './readout.js';
 import { viewStoredHeroImages, debugToolsReady } from './debug-tools-bridge.js';
 // Import session renderers
 import { renderSessionCards, renderSessionWithMosaic } from './sessions_renderer.js';
+// Import hero image utilities
+import { createSessionCard, clearSeenHeroImages } from './hero_images_display.js';
+// Import time formatting utilities
+import { formatTimeAgo } from './timeago.js';
 
 // Helper function to create a truncated summary display (simplified version from readout.js)
 function createTruncatedSummary(summary, searchTerm = '') {
@@ -103,7 +107,7 @@ async function getHeroImagesForUrl(url) {
  */
 async function renderHeroImagesForPage(page) {
     // Only try to show hero images for pages with significant dwell time
-    if (!page.dwellTimeMs || page.dwellTimeMs < 60000) {
+    if (!page.dwellTimeMs || page.dwellTimeMs < 60000 || page.heroImagesRendered) {
         return null;
     }
     
@@ -1198,12 +1202,20 @@ function renderTabGroupedPageList(session) {
         tabGroupContainer.appendChild(tabGroupHeader);
         
         // Create the collapsible content container
-        const collapsibleContent = document.createElement('div');
-        collapsibleContent.className = 'session-collapsible-content';
+        const tabGroupContent = document.createElement('div');
+        tabGroupContent.className = 'session-collapsible-content';
         
         // Render mosaic if session has hero images
         if (session.pages && session.pages.some(page => page.dwellTimeMs > 30000)) {
-            renderSessionWithMosaic(session, collapsibleContent);
+            renderSessionWithMosaic(session, tabGroupContent);
+            
+            // Mark all pages in this session as having their hero images rendered
+            // to prevent duplicate rendering at the individual page level
+            session.pages.forEach(page => {
+                if (page.dwellTimeMs && page.dwellTimeMs > 30000) {
+                    page.heroImagesRendered = true;
+                }
+            });
         }
         
         // Create the session pages section
@@ -1217,6 +1229,9 @@ function renderTabGroupedPageList(session) {
         
         // Use the current search term for highlighting
         const searchTerm = currentSearchTerm;
+        
+        // Track the last shown time to avoid duplicates
+        let lastShownTime = null;
         
         sortedPages.forEach(page => {
             const li = document.createElement('li');
@@ -1269,10 +1284,21 @@ function renderTabGroupedPageList(session) {
             }
             pageDetails.appendChild(urlText);
             
-            const visitTimeText = document.createElement('span');
-            visitTimeText.className = 'page-visit-time';
-            visitTimeText.textContent = `Visited: ${new Date(page.visitTime).toLocaleString()}`;
-            pageDetails.appendChild(visitTimeText);
+            // Format the current page time and check if it's different from the last shown time
+            const currentTime = new Date(page.visitTime);
+            const timeFormatted = currentTime.toLocaleString();
+            const timeKey = currentTime.getHours() + ':' + currentTime.getMinutes();
+            
+            // Only show time if it's different from the last one we showed
+            if (!lastShownTime || timeKey !== lastShownTime) {
+                const visitTimeText = document.createElement('span');
+                visitTimeText.className = 'page-visit-time';
+                visitTimeText.textContent = `Visited: ${timeFormatted}`;
+                pageDetails.appendChild(visitTimeText);
+                
+                // Update the last shown time
+                lastShownTime = timeKey;
+            }
     
             // Display Dwell Time
             if (page.dwellTimeMs && page.dwellTimeMs > 0) {
@@ -1310,7 +1336,8 @@ function renderTabGroupedPageList(session) {
             }
             
             // Check for hero images if the page has significant dwell time (>60s)
-            if (page.dwellTimeMs && page.dwellTimeMs >= 60000) {
+            // And only if it hasn't already had hero images rendered at the tab group level
+            if (page.dwellTimeMs && page.dwellTimeMs >= 60000 && !page.heroImagesRendered) {
                 // Add a loading placeholder that will be replaced asynchronously
                 const heroImagePlaceholder = document.createElement('div');
                 heroImagePlaceholder.className = 'hero-image-placeholder';
@@ -1481,20 +1508,76 @@ function renderSessionPageList(pages, session) {
     // Use the current search term for highlighting
     const searchTerm = currentSearchTerm;
     
+    // Add session header with date if available
+    if (session && session.startTime) {
+        const sessionHeader = document.createElement('div');
+        sessionHeader.className = 'session-detail-header';
+        sessionHeader.textContent = `Session started: ${new Date(session.startTime).toLocaleString()}`;
+        pageListContainer.appendChild(sessionHeader);
+        
+        // Add domain histogram if we have top domains
+        if (session.topDomains && session.topDomains.length > 0) {
+            const domainHistogram = document.createElement('div');
+            domainHistogram.className = 'domain-histogram';
+            
+            // Show top 5 domains max
+            const topDomains = session.topDomains.slice(0, 5);
+            
+            topDomains.forEach(domainInfo => {
+                const domainPill = document.createElement('div');
+                domainPill.className = 'domain-histogram-pill';
+                
+                const domainFavicon = document.createElement('img');
+                domainFavicon.src = domainInfo.faviconUrl;
+                domainFavicon.alt = '';
+                domainFavicon.className = 'domain-histogram-favicon';
+                
+                const domainName = document.createElement('span');
+                domainName.textContent = domainInfo.domain;
+                domainName.className = 'domain-histogram-name';
+                
+                domainPill.appendChild(domainFavicon);
+                domainPill.appendChild(domainName);
+                domainHistogram.appendChild(domainPill);
+            });
+            
+            pageListContainer.appendChild(domainHistogram);
+        }
+    }
+    
+    // Track the last shown time to avoid duplicates
+    let lastShownTime = null;
+    
     sortedPages.forEach(page => {
         const li = document.createElement('li');
         li.className = 'session-page-item';
 
+        // Create container for favicon and domain
+        const faviconDomainContainer = document.createElement('div');
+        faviconDomainContainer.className = 'favicon-domain-container';
+        
+        // Add favicon
         const faviconImg = document.createElement('img');
         faviconImg.className = 'page-favicon-img';
         faviconImg.src = getFaviconDisplayUrl(page.url);
         faviconImg.alt = ''; // Decorative
-        li.appendChild(faviconImg);
+        faviconDomainContainer.appendChild(faviconImg);
+        
+        // Add domain pill next to favicon
+        try {
+            const url = new URL(page.url);
+            const domainPill = document.createElement('span');
+            domainPill.className = 'domain-pill';
+            domainPill.textContent = url.hostname;
+            faviconDomainContainer.appendChild(domainPill);
+        } catch(e) { /* Invalid URL, skip domain pill */ }
+        
+        li.appendChild(faviconDomainContainer);
 
         const pageDetails = document.createElement('div');
         pageDetails.className = 'page-item-details';
 
-        // Title with optional highlight
+        // Title with optional highlight - with 4x larger font
         const titleLink = document.createElement('a');
         titleLink.href = page.url;
         const titleText = page.title || page.url;
@@ -1517,10 +1600,21 @@ function renderSessionPageList(pages, session) {
         }
         pageDetails.appendChild(urlText);
         
-        const visitTimeText = document.createElement('span');
-        visitTimeText.className = 'page-visit-time';
-        visitTimeText.textContent = `Visited: ${new Date(page.visitTime).toLocaleString()}`;
-        pageDetails.appendChild(visitTimeText);
+        // Format the current page time and check if it's different from the last shown time
+        const currentTime = new Date(page.visitTime);
+        const timeFormatted = currentTime.toLocaleString();
+        const timeKey = currentTime.getHours() + ':' + currentTime.getMinutes();
+        
+        // Only show time if it's different from the last one we showed
+        if (!lastShownTime || timeKey !== lastShownTime) {
+            const visitTimeText = document.createElement('span');
+            visitTimeText.className = 'page-visit-time';
+            visitTimeText.textContent = `Visited: ${timeFormatted}`;
+            pageDetails.appendChild(visitTimeText);
+            
+            // Update the last shown time
+            lastShownTime = timeKey;
+        }
 
         // Display Dwell Time
         if (page.dwellTimeMs && page.dwellTimeMs > 0) {
@@ -1528,6 +1622,86 @@ function renderSessionPageList(pages, session) {
             dwellTimeText.className = 'page-dwell-time';
             dwellTimeText.textContent = `Dwell time: ${formatDuration(page.dwellTimeMs)}`;
             pageDetails.appendChild(dwellTimeText);
+        }
+        
+        // Check for hero images if page has significant dwell time (≥60s)
+        // Only if not already rendered elsewhere (like in the session mosaic)
+        if (page.dwellTimeMs && page.dwellTimeMs >= 60000 && !page.heroImagesRendered) {
+            // Add a loading placeholder that will be replaced asynchronously
+            const heroImagePlaceholder = document.createElement('div');
+            heroImagePlaceholder.className = 'hero-image-placeholder';
+            heroImagePlaceholder.setAttribute('data-url', page.url);
+            pageDetails.appendChild(heroImagePlaceholder);
+            
+            // Asynchronously load hero images
+            getHeroImagesForUrl(page.url).then(heroImages => {
+                if (heroImages && heroImages.length > 0) {
+                    // Create a horizontal strip of thumbnails
+                    const strip = document.createElement('div');
+                    strip.className = 'hero-image-strip';
+                    
+                    // Add each thumbnail
+                    heroImages.forEach((image, index) => {
+                        // Skip invalid images
+                        if (!image.src) return;
+                        
+                        const thumb = document.createElement('img');
+                        thumb.className = 'hero-image-thumbnail';
+                        thumb.src = image.src;
+                        thumb.alt = image.alt || '';
+                        thumb.dataset.index = index;
+                        
+                        // Add click handler to expand image
+                        thumb.addEventListener('click', (e) => {
+                            e.stopPropagation(); // Prevent bubbling
+                            
+                            // Find or create container for expanded image
+                            let container = strip.nextElementSibling;
+                            if (!container || !container.classList.contains('hero-image-container')) {
+                                container = document.createElement('div');
+                                container.className = 'hero-image-container';
+                                strip.insertAdjacentElement('afterend', container);
+                            } else {
+                                // Clear existing content
+                                container.innerHTML = '';
+                            }
+                            
+                            // Create expanded image
+                            const expandedImg = document.createElement('img');
+                            expandedImg.className = 'hero-image-expanded';
+                            expandedImg.src = image.src;
+                            expandedImg.alt = image.alt || '';
+                            
+                            // Add close button
+                            const closeBtn = document.createElement('button');
+                            closeBtn.className = 'hero-image-close';
+                            closeBtn.textContent = '\u00d7'; // × symbol
+                            closeBtn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent bubbling
+                                container.remove();
+                            });
+                            
+                            container.appendChild(expandedImg);
+                            container.appendChild(closeBtn);
+                        });
+                        
+                        strip.appendChild(thumb);
+                    });
+                    
+                    // Replace placeholder with actual content
+                    if (strip.children.length > 0) {
+                        heroImagePlaceholder.replaceWith(strip);
+                    } else {
+                        heroImagePlaceholder.remove();
+                    }
+                } else {
+                    // No images found, remove placeholder
+                    heroImagePlaceholder.remove();
+                }
+            });
+            
+            // Mark this page as having its hero images rendered
+            page.heroImagesRendered = true;
         }
 
         // Display Referral Info
@@ -1622,8 +1796,10 @@ function renderSessions(sessions, isRefresh = false) {
     const container = document.getElementById('sessions-container');
     if (!container) return;
 
-    // Show loading indicator if not a refresh
+    // If not a refresh (initial load), clear the global seen hero images registry
+    // This ensures a clean state for the initial session rendering
     if (!isRefresh) {
+        clearSeenHeroImages();
         container.innerHTML = '<p class="loading-message">Loading sessions data...</p>';
     } else {
         // If this is a refresh, show indicator and keep existing content
@@ -1715,6 +1891,10 @@ function setupSessionsAutoRefresh() {
  */
 async function refreshSessionsData(activeTabUrls) {
     try {
+        // Clear the global seen hero images registry before refreshing
+        // This ensures we don't carry over duplicate detection from previous renderings
+        clearSeenHeroImages();
+        
         // Get fresh data
         const { sessions } = await processSessionsData(activeTabUrls, true);
         sessionsData = sessions; // Update global sessions data

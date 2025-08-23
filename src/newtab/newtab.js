@@ -862,6 +862,7 @@ chrome.windows.getAll({ populate: true }, async (windows) => {
         for (const tab of currentData.windowSwimlanes[window.id]) {
             chrome.runtime.sendMessage({
                 type: 'getTabHistory',
+                action: 'getTabHistory',
                 tabId: tab.id
             }, (response) => {
                 if (response?.history) {
@@ -883,6 +884,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         console.log("Looking up tab history for tabId:", tabId); // Debug
         chrome.runtime.sendMessage({
             type: 'getTabHistory',
+            action: 'getTabHistory',
             tabId: tabId
         }, (response) => {
             if (response?.history) {

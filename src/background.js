@@ -522,8 +522,20 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         };
         
         // Update or initialize tab activity log
-        const activityLog = browserState.tabActivityLog.get(activeInfo.tabId) || [];
-        activityLog.push(focusEvent);
+        const activityLog = browserState.tabActivityLog.get(activeInfo.tabId) || {
+            totalTimeSpent: 0,
+            firstSeen: Date.now(),
+            lastTouch: null,
+            events: []
+        };
+        
+        // Ensure events array exists
+        if (!activityLog.events) {
+            activityLog.events = [];
+        }
+        
+        // Add the focus event to the events array
+        activityLog.events.push(focusEvent);
         browserState.tabActivityLog.set(activeInfo.tabId, activityLog);
         
         // Log for debugging
@@ -1416,16 +1428,28 @@ function checkAndUpdateFavicon(tabId, url) {
 
 // Listen for runtime messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Ensure we have a valid message
-    if (!message || !message.action) {
+    // Ensure we have a valid message (check both action and type fields)
+    if (!message || (!message.action && !message.type)) {
         console.warn("Invalid message received:", message);
         return false;
     }
     
     // Handle tab activity events from newtab pages
     if (message.action === 'updateTabActivity' && message.tabId && message.event) {
-        const activityLog = browserState.tabActivityLog.get(message.tabId) || [];
-        activityLog.push(message.event);
+        const activityLog = browserState.tabActivityLog.get(message.tabId) || {
+            totalTimeSpent: 0,
+            firstSeen: Date.now(),
+            lastTouch: null,
+            events: []
+        };
+        
+        // Ensure events array exists
+        if (!activityLog.events) {
+            activityLog.events = [];
+        }
+        
+        // Add the event to the events array
+        activityLog.events.push(message.event);
         browserState.tabActivityLog.set(message.tabId, activityLog);
         console.log(`Tab ${message.tabId} activity updated from message:`, message.event);
         return true;
@@ -1443,6 +1467,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ tabId: sender.tab?.id });
                 break;
             case "getTabHistory":
+                if (!message.tabId) {
+                    console.warn("getTabHistory called without tabId", message);
+                    sendResponse({ error: "No tabId provided" });
+                    break;
+                }
                 const history = browserState.tabHistory.get(message.tabId) || [];
                 const relationship = browserState.tabRelationships.get(message.tabId);
                 sendResponse({ history, relationship });
@@ -1586,7 +1615,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 browserState.heroImages.set(message.data.url, heroImageData);
                 
                 // Notify all listeners about new hero image data
-                browserState.notifyListeners('heroImage', {
+                browserState.notifyChange('heroImage', {
                     type: 'added',
                     url: message.data.url,
                     data: heroImageData

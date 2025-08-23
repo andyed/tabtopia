@@ -278,11 +278,21 @@ async function populateModalContent(session, container) {
   // Process the session data if not already done
   const processedSession = session.formattedDuration ? session : preprocessSessionData(session);
   
-  // Add hero image if available
-  if (processedSession.heroImageUrl) {
+  // Create and add hero image
+  const heroImageSection = await createModalHeroImage(processedSession);
+  if (heroImageSection) {
+    detailsContainer.appendChild(heroImageSection);
+  } else if (processedSession.heroImageUrl) {
     const heroContainer = document.createElement('div');
     heroContainer.className = 'session-modal-hero';
-    heroContainer.innerHTML = `<img src="${processedSession.heroImageUrl}" alt="" onerror="this.style.display='none'">`;
+    const heroImg = document.createElement('img');
+    heroImg.src = processedSession.heroImageUrl;
+    heroImg.alt = '';
+    heroImg.className = 'modal-hero-image';
+    heroImg.addEventListener('error', function() {
+      this.style.display = 'none';
+    });
+    heroContainer.appendChild(heroImg);
     detailsContainer.appendChild(heroContainer);
   }
   const pagesUl = document.createElement('ul');
@@ -303,9 +313,18 @@ async function populateModalContent(session, container) {
   // Sort pages chronologically
   const sortedPages = [...processedSession.pages].sort((a, b) => a.processedTimestamp - b.processedTimestamp);
   
+  // Track the last displayed timestamp to avoid showing duplicate times
+  let lastTimeStr = null;
+  
   for (const page of sortedPages) {
-    const pageItem = createPageListItem(page, processedSession);
+    const pageItem = createPageListItem(page, processedSession, lastTimeStr);
     pagesUl.appendChild(pageItem);
+    
+    // Update the last displayed timestamp if this page showed one
+    if (page.processedTimestamp) {
+      const currentTimeStr = page.processedTimestamp.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+      lastTimeStr = currentTimeStr;
+    }
   }
   
   pagesList.appendChild(pagesUl);
@@ -320,17 +339,47 @@ async function populateModalContent(session, container) {
 async function createModalHeroImage(session) {
   // Find the most significant page with an image
   for (const page of session.pages) {
-    const images = await getHeroImagesForUrl(page.url);
-    if (images && images.length > 0) {
-      const heroSection = document.createElement('div');
-      heroSection.className = 'session-modal-hero';
-      
-      const img = document.createElement('img');
-      img.src = images[0].src;
-      img.alt = page.title || 'Session image';
-      
-      heroSection.appendChild(img);
-      return heroSection;
+    try {
+      const images = await getHeroImagesForUrl(page.url);
+      if (images && images.length > 0) {
+        // Validate image URL before using it
+        const heroImage = images[0];
+        if (!heroImage || !heroImage.src) {
+          console.warn('Hero image missing src attribute:', heroImage);
+          continue;
+        }
+        
+        // Validate URL format
+        let isValidUrl = false;
+        try {
+          if (heroImage.src.startsWith('data:') || new URL(heroImage.src)) {
+            isValidUrl = true;
+          }
+        } catch (e) {
+          console.warn('Invalid hero image URL:', heroImage.src);
+        }
+        
+        if (!isValidUrl) continue;
+        
+        const heroSection = document.createElement('div');
+        heroSection.className = 'session-modal-hero';
+        
+        const img = document.createElement('img');
+        img.src = heroImage.src;
+        img.alt = page.title || 'Session image';
+        img.onerror = function() {
+          console.error(`Failed to load hero image: ${img.src}`);
+          this.style.display = 'none';
+          if (heroSection.parentElement) {
+            heroSection.parentElement.removeChild(heroSection);
+          }
+        };
+        
+        heroSection.appendChild(img);
+        return heroSection;
+      }
+    } catch (error) {
+      console.error(`Error creating hero image for ${page.url}:`, error);
     }
   }
   
@@ -338,44 +387,124 @@ async function createModalHeroImage(session) {
 }
 
 /**
- * Creates a domains section for the modal
+ * Creates a domains section for the modal with proportionally sized favicons in the header
  * @param {Object} session - The session object
  * @returns {HTMLElement} - The domains section element
  */
 function createModalDomains(session) {
-  const domainsSection = document.createElement('div');
-  domainsSection.className = 'session-modal-domains';
+  // Create container with flex row layout for icons
+  const domainsContainer = document.createElement('div');
+  domainsContainer.className = 'session-domains-container';
   
-  // Calculate domain counts
+  // Calculate domain counts and time spent
   const domains = session.pages.map(page => {
     try {
-      return new URL(page.url).hostname;
+      return {
+        domain: new URL(page.url).hostname.replace('www.', ''),
+        dwellTimeMs: page.dwellTimeMs || 0,
+        url: page.url
+      };
     } catch (e) {
       return null;
     }
   }).filter(Boolean);
   
-  const domainCounts = {};
-  domains.forEach(domain => {
-    domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+  // Process domain statistics
+  const domainStats = {};
+  let totalPageCount = 0;
+  let totalTimeMs = 0;
+  
+  domains.forEach(item => {
+    if (!domainStats[item.domain]) {
+      domainStats[item.domain] = { 
+        count: 0, 
+        timeMs: 0, 
+        url: item.url 
+      };
+    }
+    domainStats[item.domain].count++;
+    domainStats[item.domain].timeMs += item.dwellTimeMs;
+    totalPageCount++;
+    totalTimeMs += item.dwellTimeMs;
   });
   
   // Convert to array and sort by count
-  const topDomains = Object.entries(domainCounts)
-    .sort((a, b) => b[1] - a[1]);
+  const topDomains = Object.entries(domainStats)
+    .map(([domain, stats]) => ({
+      domain,
+      count: stats.count,
+      timeMs: stats.timeMs,
+      percentCount: (stats.count / totalPageCount) * 100,
+      percentTime: totalTimeMs ? (stats.timeMs / totalTimeMs) * 100 : 0,
+      url: stats.url
+    }))
+    .sort((a, b) => b.count - a.count);
   
-  // Create domain tags
-  topDomains.forEach(([domain, count]) => {
-    const tag = document.createElement('span');
-    tag.className = 'domain-tag';
-    tag.innerHTML = `
-      <img src="https://www.google.com/s2/favicons?domain=${domain}&sz=16" class="domain-favicon" alt="" />
-      ${domain.replace('www.', '')} (${count})
-    `;
-    domainsSection.appendChild(tag);
+  // Only create domain visualization if we have domains
+  if (topDomains.length === 0) {
+    return domainsContainer; // Return empty container
+  }
+  
+  // Take only the top 8 domains for visualization
+  const topDomainsList = topDomains.slice(0, 8);
+  
+  // Find the maximum count for scaling
+  const maxCount = Math.max(...topDomainsList.map(d => d.count));
+  
+  // Create the domain icons container
+  const domainIcons = document.createElement('div');
+  domainIcons.className = 'domain-icons-container';
+  
+  // Create proportionally sized favicons for top domains
+  topDomainsList.forEach(domain => {
+    // Calculate size based on count relative to max count
+    // Min size is 24px, max is 40px (reduced max size to prevent pixelation)
+    const minSize = 24;
+    const maxSize = 40;
+    const size = minSize + ((maxSize - minSize) * (domain.count / maxCount));
+    
+    // Create favicon container
+    const iconContainer = document.createElement('div');
+    iconContainer.className = 'domain-icon-container';
+    
+    // Add badge with count - positioned above favicon
+    const countBadge = document.createElement('span');
+    countBadge.className = 'domain-count-badge';
+    countBadge.textContent = domain.count;
+    
+    // Create favicon image with reduced max size to prevent pixelation
+    const faviconImg = document.createElement('img');
+    faviconImg.src = getFaviconDisplayUrl(domain.domain);
+    faviconImg.className = 'domain-icon';
+    faviconImg.width = size;
+    faviconImg.height = size;
+    faviconImg.title = `${domain.domain}: ${domain.count} visits`;
+    faviconImg.alt = domain.domain;
+    faviconImg.style.width = `${size}px`;
+    faviconImg.style.height = `${size}px`;
+    
+    // Add error handler
+    faviconImg.addEventListener('error', function() {
+      // If favicon fails to load, create a domain initial fallback
+      this.style.display = 'none';
+      const fallback = document.createElement('div');
+      fallback.className = 'domain-icon-fallback';
+      fallback.style.width = `${size}px`;
+      fallback.style.height = `${size}px`;
+      fallback.style.fontSize = `${Math.max(12, size / 2)}px`;
+      fallback.textContent = domain.domain.charAt(0).toUpperCase();
+      fallback.title = `${domain.domain}: ${domain.count} visits`;
+      iconContainer.appendChild(fallback);
+    });
+    
+    // Append elements
+    iconContainer.appendChild(countBadge);
+    iconContainer.appendChild(faviconImg);
+    domainIcons.appendChild(iconContainer);
   });
   
-  return domainsSection;
+  domainsContainer.appendChild(domainIcons);
+  return domainsContainer;
 }
 
 /**
@@ -439,27 +568,34 @@ function extractTitleFromURL(url) {
     
     return domain;
   } catch (e) {
-    return null;
+    return url; // Return original URL as fallback
   }
 }
 
 /**
- * Creates a list item for a page visit
+ * Creates a page list item for the modal
  * @param {Object} page - The page object
  * @param {Object} session - The session object
+ * @param {string} lastTimeStr - The last displayed timestamp string
  * @returns {HTMLElement} - The page list item
  */
-function createPageListItem(page, session) {
+function createPageListItem(page, session, lastTimeStr) {
   const item = document.createElement('li');
   item.className = 'session-page-item';
   
   // Format timestamp with time of day
   let timeStr = '--:--';
   let timeOfDay = '';
+  let showTime = true;
   
   if (page.processedTimestamp) {
     timeStr = page.processedTimestamp.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
     timeOfDay = getTimeOfDay(page.processedTimestamp);
+    
+    // Only show the time if it's different from the last displayed time
+    if (lastTimeStr && timeStr === lastTimeStr) {
+      showTime = false;
+    }
   }
   
   // Format dwell time string
@@ -482,28 +618,94 @@ function createPageListItem(page, session) {
   
   // This code has been moved to the preprocessSessionData function
 
-  // Create favicon
+  // Create favicon and extract search term if available
   let domain = '';
+  let searchTerm = null;
+  
   try {
-    domain = new URL(page.url).hostname;
+    const urlObj = new URL(page.url);
+    domain = urlObj.hostname;
+    
+    // Extract search terms from common search engines
+    searchTerm = extractSearchTerm(urlObj);
   } catch (e) {
     // Use fallback
   }
   
-  // Add time of day to time display
+  // Only use the time without time of day label
   let timeDisplay = timeStr;
-  if (timeOfDay) {
-    timeDisplay = `<span class="time-of-day">${timeOfDay}</span><br>${timeStr}`;
+  
+  // Initialize variables for domain pill
+  let domainPillDiv = null;
+  
+  if (domain) {
+    const pillClass = searchTerm ? 'session-page-domain-pill search-term' : 'session-page-domain-pill';
+    const pillText = searchTerm || domain;
+    // Use Google's favicon service like in the main sessions view
+    const faviconUrl = getFaviconDisplayUrl(domain);
+    
+    // Create domain pill content using DOM API instead of innerHTML
+    domainPillDiv = document.createElement('div');
+    domainPillDiv.className = 'session-page-domain';
+    
+    const faviconImg = document.createElement('img');
+    faviconImg.src = faviconUrl;
+    faviconImg.className = 'session-page-favicon';
+    faviconImg.alt = '';
+    faviconImg.addEventListener('error', function() {
+      this.style.display = 'none';
+    });
+    
+    const pillSpan = document.createElement('span');
+    pillSpan.className = pillClass;
+    pillSpan.title = domain;
+    pillSpan.textContent = pillText;
+    
+    domainPillDiv.appendChild(faviconImg);
+    domainPillDiv.appendChild(pillSpan);
+  }
+
+  // Create elements using DOM API instead of innerHTML
+  const timeDomainContainer = document.createElement('div');
+  timeDomainContainer.className = 'session-page-time-domain-container';
+  
+  const timeDiv = document.createElement('div');
+  timeDiv.className = 'session-page-time';
+  timeDiv.style.alignSelf = 'flex-start';
+  timeDiv.title = timeOfDay;
+  timeDiv.textContent = timeDisplay;
+  
+  // Only add the time div if we're showing the time
+  if (showTime) {
+    timeDomainContainer.appendChild(timeDiv);
   }
   
-  item.innerHTML = `
-    <div class="session-page-time" title="${timeOfDay}">${timeDisplay}</div>
-    ${domain ? `<img src="chrome://favicon/size/16@2x/${page.url}" class="session-page-favicon" onerror="this.style.display='none'" alt="">` : ''}
-    <div class="session-page-title">
-      <a href="${page.url}" class="session-page-link" target="_blank">${page.processedTitle || page.title || domain || page.url}</a>
-    </div>
-    <div class="session-page-dwell">${dwellStr}</div>
-  `;
+  // If we have domain info, add the domain pill we created earlier
+  if (domainPillDiv) {
+    timeDomainContainer.appendChild(domainPillDiv);
+  }
+  
+  // Create title section
+  const titleDiv = document.createElement('div');
+  titleDiv.className = 'session-page-title';
+  
+  const titleLink = document.createElement('a');
+  titleLink.href = page.url;
+  titleLink.className = 'session-page-link';
+  titleLink.target = '_blank';
+  titleLink.textContent = page.processedTitle || page.title || domain || page.url;
+  
+  titleDiv.appendChild(titleLink);
+  
+  // Create dwell time section
+  const dwellDiv = document.createElement('div');
+  dwellDiv.className = 'session-page-dwell';
+  dwellDiv.textContent = dwellStr;
+  
+  // Add all sections to the item
+  item.appendChild(timeDomainContainer);
+  item.appendChild(titleDiv);
+  item.appendChild(dwellDiv);
   
   // Add link to full URL as tooltip
   item.title = page.url;
@@ -566,6 +768,7 @@ async function getHeroImagesForUrl(url) {
     if (typeof browserState !== 'undefined' && browserState.heroImages && browserState.heroImages.get) {
       const heroImageData = browserState.heroImages.get(url);
       if (heroImageData && heroImageData.images) {
+        console.log(`🖼️ Found hero images for ${url} in browserState`, heroImageData.images);
         return resolve(heroImageData.images);
       }
     }
@@ -574,20 +777,43 @@ async function getHeroImagesForUrl(url) {
     chrome.storage.local.get(['heroImages'], (result) => {
       const heroImagesStore = result.heroImages || {};
       if (heroImagesStore[url]) {
+        console.log(`🖼️ Found hero images for ${url} in local storage`, heroImagesStore[url].images);
         resolve(heroImagesStore[url].images);
       } else {
         // If not in storage, try asking background script directly
+        console.log(`🔄 Requesting hero images for ${url} from background script`);
         chrome.runtime.sendMessage({ action: 'getHeroImagesForUrl', url: url }, (response) => {
           if (chrome.runtime.lastError) {
             console.error('❌ Error getting hero images:', chrome.runtime.lastError);
             resolve(null);
           } else if (response && response.images) {
+            console.log(`✅ Received hero images for ${url} from background script`, response.images);
             resolve(response.images);
           } else {
+            console.warn(`⚠️ No hero images found for ${url}`);
             resolve(null);
           }
         });
       }
     });
   });
+}
+
+/**
+ * Gets a favicon URL for a domain or URL
+ * @param {string} pageUrlOrDomain - Domain or full URL
+ * @returns {string} - URL to favicon
+ */
+function getFaviconDisplayUrl(pageUrlOrDomain) {
+  try {
+    let domain = pageUrlOrDomain;
+    // If it's a full URL, extract the hostname
+    if (pageUrlOrDomain.includes('://')) {
+      domain = new URL(pageUrlOrDomain).hostname;
+    }
+    return `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
+  } catch (e) {
+    console.warn('Could not generate favicon URL for:', pageUrlOrDomain, e);
+    return ''; // Return empty or a default placeholder icon URL
+  }
 }

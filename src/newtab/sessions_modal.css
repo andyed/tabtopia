@@ -53,10 +53,12 @@
 }
 
 .session-modal-title {
-  font-size: 1.8em;
+  font-size: 2.4em;
   font-weight: 500;
   color: var(--modal-text-color, #ffffff);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  line-height: 1.2;
+  margin-bottom: 10px;
 }
 
 .session-modal-stats {
@@ -117,6 +119,136 @@
   object-fit: cover;
 }
 
+.session-domains-container {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 20px;
+}
+
+.domain-icons-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 15px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  margin: 10px 0;
+}
+
+.domain-icon-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px;
+}
+
+.domain-icon {
+  border-radius: 50%;
+  object-fit: contain;
+  background-color: white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 1;
+  /* Add slight blur filter to reduce pixelation for larger icons */
+  filter: blur(0.2px);
+}
+
+.domain-icon:hover {
+  transform: scale(1.1); /* Reduced scale factor */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.domain-icon-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: #4a8fff;
+  color: white;
+  font-weight: bold;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.domain-icon-fallback:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.domain-count-badge {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #ff6b6b;
+  color: white;
+  border-radius: 12px;
+  min-width: 18px;
+  height: 18px;
+  font-size: 11px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  z-index: 5;
+}
+
+.domain-histogram {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.domain-bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.domain-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.domain-favicon {
+  width: 16px;
+  height: 16px;
+}
+
+.domain-count {
+  margin-left: auto;
+  opacity: 0.8;
+}
+
+.domain-bar-graph {
+  height: 8px;
+  width: 100%;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.domain-bar {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.domain-bar.count {
+  background-color: rgba(74, 144, 226, 0.6);
+}
+
+.domain-bar.time {
+  background-color: rgba(255, 204, 102, 0.6);
+}
+
 .session-modal-domains {
   display: flex;
   flex-wrap: wrap;
@@ -137,15 +269,24 @@
   align-items: center;
   color: var(--modal-text-color, #ffffff);
   background-color: rgba(255, 255, 255, 0.05);
+  gap: 10px;
+}
+
+.session-page-time-domain-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 130px;
 }
 
 .session-page-time {
-  min-width: 110px;
   color: var(--modal-text-color, #ffffff);
   opacity: 0.85;
   font-size: 0.85em;
   font-weight: 500;
   line-height: 1.4;
+  white-space: nowrap;
+  align-self: flex-start;
 }
 
 .time-of-day {
@@ -159,14 +300,15 @@
 }
 
 .session-page-favicon {
-  margin: 0 15px;
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .session-page-title {
   flex-grow: 1;
   margin-right: 15px;
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -176,8 +318,9 @@
   text-decoration: none;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.85em;
+  white-space: normal;
+  font-size: 1.2em;
+  line-height: 1.3;
 }
 
 .session-page-link:hover {
@@ -208,4 +351,29 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   justify-content: flex-end;
+}
+
+.session-page-domain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 180px;
+}
+
+.session-page-domain-pill {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 3px 8px;
+  font-size: 0.8em;
+  color: var(--modal-text-color, #ffffff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.session-page-domain-pill.search-term {
+  background-color: rgba(74, 144, 226, 0.3);
+  color: #ffffff;
 }
