@@ -952,7 +952,7 @@ function createSessionGraph(session, container) {
   const graphContainer = document.createElement('div');
   graphContainer.className = 'session-graph-container';
   
-  // Create header
+  // Create header - this will be our main heading container
   const header = document.createElement('div');
   header.className = 'session-graph-heading';
   
@@ -986,12 +986,12 @@ function createSessionGraph(session, container) {
   
   // Add view mode buttons
   const timeBtn = document.createElement('button');
-  timeBtn.className = 'session-graph-btn active';
+  timeBtn.className = 'session-graph-btn';
   timeBtn.textContent = 'Time';
   timeBtn.addEventListener('click', () => switchViewMode('time'));
   
   const domainBtn = document.createElement('button');
-  domainBtn.className = 'session-graph-btn';
+  domainBtn.className = 'session-graph-btn active';
   domainBtn.textContent = 'Domain';
   domainBtn.addEventListener('click', () => switchViewMode('domain'));
   
@@ -1012,14 +1012,13 @@ function createSessionGraph(session, container) {
   svg.setAttribute('width', '100%');
   svg.setAttribute('height', '100%');
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  graphContainer.appendChild(svg);
   
   // Create tooltip
   tooltipElement = document.createElement('div');
   tooltipElement.className = 'graph-tooltip';
   
-  // Add all elements to the graph container
-  graphContainer.appendChild(header);
+  // Add SVG and tooltip to the graph container
+  // Note: we don't append header here since graphViewModes is our header
   graphContainer.appendChild(svg);
   graphContainer.appendChild(tooltipElement);
   
@@ -1029,7 +1028,7 @@ function createSessionGraph(session, container) {
   // Process session data to create nodes and links
   let currentSession = session;
   let currentSessionPages = [];
-  let currentViewMode = 'time'; // or 'domain'
+  let currentViewMode = 'domain'; // Default to domain view
   // Use the global graphNodesReady variable instead of declaring a local one
   
   // Create a D3 selection for the SVG
@@ -1117,12 +1116,9 @@ function createSessionGraph(session, container) {
     
     // Create links between consecutive pages
     for (let i = 0; i < nodes.length - 1; i++) {
-      const source = nodes[i];
-      const target = nodes[i + 1];
-      
       links.push({
-        source: source.id,
-        target: target.id,
+        source: nodes[i], // Use direct node references instead of IDs
+        target: nodes[i + 1],
         value: 1
       });
     }
@@ -1131,12 +1127,12 @@ function createSessionGraph(session, container) {
     nodes.forEach((node, i) => {
       if (node.referral && node.referral.referringURL) {
         // Try to find the referring node
-        const referringIndex = nodes.findIndex(n => n.url === node.referral.referringURL);
-        if (referringIndex >= 0 && referringIndex !== i) {
+        const referringNode = nodes.find(n => n.url === node.referral.referringURL);
+        if (referringNode && referringNode !== node) {
           // Add a stronger link for actual referrals
           links.push({
-            source: referringIndex,
-            target: i,
+            source: referringNode,
+            target: node,
             value: 2, // Stronger connection
             isReferral: true
           });
@@ -1178,17 +1174,45 @@ function createSessionGraph(session, container) {
       .domain(timeExtent)
       .range([50, width - 50]);
     
-    // Create force simulation
+    // Assign initial positions with jitter to prevent clumping
+    nodes.forEach(node => {
+      // Position x with random jitter across width
+      const jitterX = Math.random() * 80 - 40; // Random offset between -40 and 40
+      node.x = (width / 2) + jitterX;
+      
+      // Position y with domain-based spread plus jitter
+      const domainHash = hashString(node.domain);
+      const heightSpread = height * 0.7;
+      const centerY = height * 0.5;
+      const jitterY = Math.random() * 50 - 25; // Random offset between -25 and 25
+      node.y = centerY + (domainHash * heightSpread - heightSpread/2) / 100 + jitterY;
+    });
+
+    // Create simulation with optimized parameters based on graph.js
+    // First ensure all links reference node objects, not just URLs or IDs
+    links.forEach(link => {
+      // Convert source/target from ID/URL to direct object references
+      if (typeof link.source === 'string') {
+        const sourceNode = nodes.find(n => n.url === link.source || n.id === link.source);
+        if (sourceNode) link.source = sourceNode;
+      }
+      if (typeof link.target === 'string') {
+        const targetNode = nodes.find(n => n.url === link.target || n.id === link.target);
+        if (targetNode) link.target = targetNode;
+      }
+    });
+    
     const simulation = window.d3.forceSimulation(nodes)
       .force('link', window.d3.forceLink(links)
-        .id(d => d.id)
-        .distance(50))
-      .force('charge', window.d3.forceManyBody().strength(-150))
-      .force('center', window.d3.forceCenter(Math.min(width / 2, 300), height / 2))
-      .force('collision', window.d3.forceCollide().radius(20))
-      .force('x', window.d3.forceX(Math.min(width / 2, 300)).strength(0.1))
-      .force('y', window.d3.forceY(height / 2).strength(0.1))
-      .stop(); // Stop simulation initially to warm it up
+        .id(d => d.url)
+        .distance(90)
+        .strength(0.7)) // Increased strength for faster stabilization
+      .force('charge', window.d3.forceManyBody().strength(-100))
+      .force('center', window.d3.forceCenter(width / 2, height / 2).strength(0.1)) // Stronger centering
+      .force('collision', window.d3.forceCollide().radius(12))
+      .alphaDecay(0.05) // Faster decay like in graph.js
+      .velocityDecay(0.4) // Better damping
+      .alpha(1); // Start with maximum heat
     
     // Add time-based positioning force for time view
     if (viewMode === 'time') {
@@ -1222,51 +1246,27 @@ function createSessionGraph(session, container) {
     // Helper function to check if a value is valid for rendering
     const isValid = (val) => typeof val === 'number' && !isNaN(val) && isFinite(val);
     
-    // Warm up the simulation with more iterations before rendering
-    // This helps nodes and links to be perfectly aligned from the start
-    const warmupIterations = 100;
-    const alphaStart = 0.3;
-    const alphaEnd = 0.005;
-    const alphaStep = (alphaStart - alphaEnd) / warmupIterations;
-    
-    // Run multiple ticks with decreasing alpha to stabilize the layout
-    for (let i = 0; i < warmupIterations; ++i) {
-      simulation.alpha(alphaStart - (i * alphaStep)).tick();
-    }
-    
-    // After warm-up, decrease the alpha to slow the simulation
-    simulation.alphaDecay(0.02);
-    
-    // Create links
-    const link = linksGroup.selectAll('line')
+    // Create SVG elements for graph visualization
+    // Draw links as SVG path elements for more flexibility than lines
+    // This approach works better with the transform-based node positioning
+    const link = linksGroup.selectAll('path')
       .data(links)
-      .enter().append('line')
-      .attr('class', d => `graph-link${d.isReferral ? ' referral' : ''}`)
+      .enter()
+      .append('path')
+      .attr('class', 'graph-link')
+      .attr('fill', 'none')
       .attr('stroke', d => d.isReferral ? '#ffcc00' : '#ffffff')
       .attr('stroke-opacity', d => d.isReferral ? 0.8 : 0.5)
-      .attr('stroke-width', d => d.isReferral ? 2 : 1)
-      // Set initial positions immediately to avoid visual jump
-      .attr('x1', d => d.source.x || 0)
-      .attr('y1', d => d.source.y || 0)
-      .attr('x2', d => d.target.x || 0)
-      .attr('y2', d => d.target.y || 0);
+      .attr('stroke-width', d => d.isReferral ? 2 : 1);
     
     // Create node groups
     const node = nodesGroup.selectAll('.graph-node')
       .data(nodes)
       .enter().append('g')
       .attr('class', 'graph-node')
-      // Apply initial positions immediately from the warmed-up simulation
-      .attr('transform', d => {
-        const x = isValid(d.x) ? d.x : Math.min(width / 2, 300);
-        const y = isValid(d.y) ? d.y : height / 2;
-        return `translate(${x},${y})`;
-      })
-      .call(window.d3.drag()
-        .on('start', dragstarted)
-        .on('drag', dragged)
-        .on('end', dragended));
-    
+      // Default position (will be updated after warmup)
+      .attr('transform', `translate(${width/2},${height/2})`);
+      
     // Add circles to nodes
     node.append('circle')
       .attr('r', 8)
@@ -1288,6 +1288,86 @@ function createSessionGraph(session, container) {
       .attr('width', 16)
       .attr('height', 16)
       .attr('href', d => d.favicon);
+      
+    // Pre-initialize node positions before warmup
+    // This positions nodes with intentional separation based on domain
+    nodes.forEach((node, i) => {
+      // Use angle-based positioning for better initial spread
+      const angle = (i / nodes.length) * 2 * Math.PI;
+      const radius = Math.min(width, height) * 0.4; // 40% of smaller dimension
+      
+      // Convert polar to cartesian coordinates with center offset
+      node.x = width/2 + radius * Math.cos(angle);
+      node.y = height/2 + radius * Math.sin(angle);
+      
+      // Add small jitter to prevent perfect overlaps
+      node.x += (Math.random() - 0.5) * 20;
+      node.y += (Math.random() - 0.5) * 20;
+    });
+    
+    // Shorter but more intense warmup phase like in graph.js
+    const warmupIterations = 120;
+    const alphaStart = 0.8; // Higher start heat
+    const alphaEnd = 0.01;
+    const alphaStep = (alphaStart - alphaEnd) / warmupIterations;
+    
+    // Define the tick function that will be used both for warmup and animation
+    function ticked() {
+      // Update node positions with bounds checking
+      node.attr('transform', d => {
+        // Ensure node coordinates are valid and within bounds
+        const x = Math.max(10, Math.min(width - 10, isValid(d.x) ? d.x : width/2));
+        const y = Math.max(10, Math.min(height - 10, isValid(d.y) ? d.y : height/2));
+        
+        // Store bounded positions back to the node object for link consistency
+        d.x = x;
+        d.y = y;
+        
+        return `translate(${x},${y})`;
+      });
+      
+      // Update link positions with path drawing for better edge-node alignment
+      link.attr('d', d => {
+        // Get valid source and target coordinates
+        const sourceX = isValid(d.source.x) ? d.source.x : 0;
+        const sourceY = isValid(d.source.y) ? d.source.y : 0;
+        const targetX = isValid(d.target.x) ? d.target.x : 0;
+        const targetY = isValid(d.target.y) ? d.target.y : 0;
+        
+        // Create a straight line path
+        return `M${sourceX},${sourceY}L${targetX},${targetY}`;
+      });
+    }
+    
+    // Run multiple ticks with decreasing alpha to stabilize the layout
+    for (let i = 0; i < warmupIterations; ++i) {
+      simulation.alpha(alphaStart - (i * alphaStep)).tick();
+    }
+    
+    // Apply the final positions from warmup immediately
+    ticked();
+    
+    // After warm-up, adjust forces for smoother running simulation
+    simulation
+      .alphaDecay(0.02) // Slightly faster decay for normal operation
+      .velocityDecay(0.35) // Lower velocity decay for smoother motion
+      .force('charge', window.d3.forceManyBody().strength(-120)) // Stronger repulsion
+      .force('link', window.d3.forceLink(links)
+        .id(d => d.url)
+        .distance(90) // Slightly longer links
+        .strength(0.6)); // Stronger link forces
+        
+    // Set up the tick function for ongoing animation
+    simulation.on('tick', ticked);
+    
+    // Apply drag behavior to nodes
+    node.call(window.d3.drag()
+      .on('start', dragstarted)
+      .on('drag', dragged)
+      .on('end', dragended));
+    
+    // Force an initial tick to set everything in the right position
+    ticked();
     
     // Add hover effects and tooltips
     node
@@ -1378,22 +1458,36 @@ function createSessionGraph(session, container) {
       };
     });
     
-    // Update positions on simulation tick
-    simulation.on('tick', () => {
-      // Update link positions with validation
-      link
-        .attr('x1', d => isValid(d.source.x) ? d.source.x : 0)
-        .attr('y1', d => isValid(d.source.y) ? d.source.y : 0)
-        .attr('x2', d => isValid(d.target.x) ? d.target.x : 0)
-        .attr('y2', d => isValid(d.target.y) ? d.target.y : 0);
-      
-      // Update node positions with validation
+    // Create optimized tick function for better edge-node synchronization
+    function ticked() {
+      // Update node positions with bounds checking
       node.attr('transform', d => {
-        const x = isValid(d.x) ? d.x : width/2;
-        const y = isValid(d.y) ? d.y : height/2;
+        // Ensure node coordinates are valid and within bounds
+        const x = Math.max(10, Math.min(width - 10, isValid(d.x) ? d.x : width/2));
+        const y = Math.max(10, Math.min(height - 10, isValid(d.y) ? d.y : height/2));
+        
+        // Store bounded positions back to the node object for link consistency
+        d.x = x;
+        d.y = y;
+        
         return `translate(${x},${y})`;
       });
-    });
+      
+      // Update link positions with path drawing for better edge-node alignment
+      link.attr('d', d => {
+        // Get valid source and target coordinates
+        const sourceX = isValid(d.source.x) ? d.source.x : 0;
+        const sourceY = isValid(d.source.y) ? d.source.y : 0;
+        const targetX = isValid(d.target.x) ? d.target.x : 0;
+        const targetY = isValid(d.target.y) ? d.target.y : 0;
+        
+        // Create a straight line path
+        return `M${sourceX},${sourceY}L${targetX},${targetY}`;
+      });
+    }
+    
+    // Set up the tick function
+    simulation.on('tick', ticked);
     
     // Create drag behaviors with simulation passed as context
     const drag = window.d3.drag()
@@ -1406,20 +1500,46 @@ function createSessionGraph(session, container) {
     
     // Drag functions with simulation in scope
     function dragstarted(event) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      event.subject.fx = event.subject.x;
-      event.subject.fy = event.subject.y;
+      // Higher alpha target makes nodes respond more immediately
+      if (!event.active) simulation.alphaTarget(0.8).restart();
+      
+      // Pin the node in place at start of drag
+      const d = event.subject;
+      d.fx = d.x;
+      d.fy = d.y;
+      
+      // Increase node size temporarily to show it's being dragged
+      window.d3.select(event.sourceEvent.target.closest('.graph-node'))
+        .select('circle')
+        .transition().duration(200)
+        .attr('r', 10);
     }
     
     function dragged(event) {
-      event.subject.fx = event.x;
-      event.subject.fy = event.y;
+      // Update fixed position to drag position (bounded to prevent going offscreen)
+      const d = event.subject;
+      d.fx = Math.max(10, Math.min(width - 10, event.x));
+      d.fy = Math.max(10, Math.min(height - 10, event.y));
+      
+      // Force an immediate tick to update connected links
+      simulation.alpha(0.5).restart();
+      ticked();
     }
     
     function dragended(event) {
+      // Gradually cool down the simulation
       if (!event.active) simulation.alphaTarget(0);
-      event.subject.fx = null;
-      event.subject.fy = null;
+      
+      // Release the node if we're not pinning nodes
+      const d = event.subject;
+      d.fx = null;
+      d.fy = null;
+      
+      // Reset node size
+      window.d3.select(event.sourceEvent.target.closest('.graph-node'))
+        .select('circle')
+        .transition().duration(300)
+        .attr('r', 8);
     }
     
     // Function to create domain clustering force
@@ -1524,40 +1644,10 @@ function createSessionGraph(session, container) {
       };
     });
     
-    // Update positions on simulation tick
-    simulation.on('tick', () => {
-      // Update link positions with validation
-      link
-        .attr('x1', d => isValid(d.source.x) ? d.source.x : 0)
-        .attr('y1', d => isValid(d.source.y) ? d.source.y : 0)
-        .attr('x2', d => isValid(d.target.x) ? d.target.x : 0)
-        .attr('y2', d => isValid(d.target.y) ? d.target.y : 0);
-      
-      // Update node positions with validation
-      node.attr('transform', d => {
-        const x = isValid(d.x) ? d.x : width/2;
-        const y = isValid(d.y) ? d.y : height/2;
-        return `translate(${x},${y})`;
-      });
-    });
+    // Using the shared ticked function defined earlier for consistent behavior
+    simulation.on('tick', ticked);
     
-    // Drag functions - defined inside the createVisualization scope
-    function dragstarted(event) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      event.subject.fx = event.subject.x;
-      event.subject.fy = event.subject.y;
-    }
-    
-    function dragged(event) {
-      event.subject.fx = event.x;
-      event.subject.fy = event.y;
-    }
-    
-    function dragended(event) {
-      if (!event.active) simulation.alphaTarget(0);
-      event.subject.fx = null;
-      event.subject.fy = null;
-    }
+    // Drag behavior is already defined and applied to nodes earlier in the code
     
     // Function to create domain clustering force
     function createDomainClusterForce() {
