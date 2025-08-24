@@ -22,7 +22,7 @@ const MAX_SUMMARY_LINES = 5;
 const LINE_HEIGHT = 20; // Approximate height of a line in pixels
 
 // Add at the top with other constants
-const summaryQueue = new Set();
+export const summaryQueue = new Set();
 let isProcessingQueue = false;
 
 // Update the summarizer options with more specificity for on-device models
@@ -409,7 +409,7 @@ async function generateVisitMetricFallback(url) {
 }
 
 // Update the queue processing function to be more aggressive
-async function processSummaryQueue() {
+export async function processSummaryQueue() {
     if (isProcessingQueue) return;
     isProcessingQueue = true;
 
@@ -554,7 +554,7 @@ async function summarizeUrl(url) {
 }
 
 // Add this helper function for summary display
-function createTruncatedSummary(summary) {
+export function createTruncatedSummary(summary) {
     if (!summary) return '';
     
     const lines = summary.split('\n');

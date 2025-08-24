@@ -1,11 +1,21 @@
 // Session Modal functionality for expanded card view
+import { getCachedSummary, createTruncatedSummary, summaryCache } from './readout.js';
+// Note: D3 is loaded globally via script tag in HTML files
+
+// Global variables for graph state
+let graphNodesReady = false;
+let tooltipElement = null; // Global reference to the tooltip element
+
+// Exports
+export { showSessionModal, highlightGraphNodeForUrl, unhighlightAllGraphNodes };
+
 
 /**
  * Creates and shows a modal with expanded session details
  * @param {Object} session - The session to display in the modal
  * @returns {HTMLElement} - The created modal overlay element
  */
-export function showSessionModal(session) {
+function showSessionModal(session) {
   // Check if a modal already exists, if so, remove it
   removeExistingModals();
   
@@ -272,8 +282,35 @@ function formatDuration(durationMs) {
 async function populateModalContent(session, container) {
   if (!session || !container) return;
   
-  const detailsContainer = container;
-  detailsContainer.innerHTML = ''; // Clear loading message
+  // Clear existing content
+  container.innerHTML = '';
+  
+  // Check if session is long enough to warrant a graph
+  const GRAPH_THRESHOLD = 8;
+  const shouldShowGraph = session.pages && session.pages.length >= GRAPH_THRESHOLD;
+  
+  // Create a flex container for side-by-side layout
+  const flexContainer = document.createElement('div');
+  flexContainer.className = 'session-content-flex-container';
+  container.appendChild(flexContainer);
+  
+  // If the session is long enough, add a graph visualization
+  if (shouldShowGraph) {
+    // Create a column for the graph
+    const graphColumn = document.createElement('div');
+    graphColumn.className = 'session-graph-column';
+    flexContainer.appendChild(graphColumn);
+    
+    createSessionGraph(session, graphColumn);
+    
+    // Create a column for the session details
+    const detailsColumn = document.createElement('div');
+    detailsColumn.className = 'session-details-column';
+    flexContainer.appendChild(detailsColumn);
+    
+    // Use detailsColumn as the container for page list
+    container = detailsColumn;
+  }
   
   // Process the session data if not already done
   const processedSession = session.formattedDuration ? session : preprocessSessionData(session);
@@ -281,7 +318,7 @@ async function populateModalContent(session, container) {
   // Create and add hero image
   const heroImageSection = await createModalHeroImage(processedSession);
   if (heroImageSection) {
-    detailsContainer.appendChild(heroImageSection);
+    container.appendChild(heroImageSection);
   } else if (processedSession.heroImageUrl) {
     const heroContainer = document.createElement('div');
     heroContainer.className = 'session-modal-hero';
@@ -293,7 +330,7 @@ async function populateModalContent(session, container) {
       this.style.display = 'none';
     });
     heroContainer.appendChild(heroImg);
-    detailsContainer.appendChild(heroContainer);
+    container.appendChild(heroContainer);
   }
   const pagesUl = document.createElement('ul');
   pagesUl.className = 'session-page-list';
@@ -582,6 +619,38 @@ function extractTitleFromURL(url) {
 function createPageListItem(page, session, lastTimeStr) {
   const item = document.createElement('li');
   item.className = 'session-page-item';
+  item.setAttribute('data-url', page.url);
+  
+  // Set a consistent ID to enable bidirectional highlighting
+  const safeId = `page-item-${btoa(page.url).replace(/[=+/]/g, '-')}`;
+  item.id = safeId;
+  
+  // We'll use direct event handlers on the item to make sure they're applied
+  const pageUrl = page.url; // Store URL in closure to ensure it's available in event handlers
+  
+  // These are the event handlers for the list item
+  function handleMouseEnter() {
+    console.log('Page item mouseenter:', pageUrl);
+    if (graphNodesReady) {
+      highlightGraphNodeForUrl(pageUrl);
+      // Also highlight the list item itself
+      item.classList.add('highlighted');
+    } else {
+      console.log('Graph not ready yet, skipping highlight');
+    }
+  }
+  
+  function handleMouseLeave() {
+    console.log('Page item mouseleave:', pageUrl);
+    // Remove highlight from this item
+    item.classList.remove('highlighted');
+    // Small delay to prevent flickering
+    setTimeout(() => unhighlightAllGraphNodes(), 50);
+  }
+  
+  // Attach event handlers directly
+  item.onmouseenter = handleMouseEnter;
+  item.onmouseleave = handleMouseLeave;
   
   // Format timestamp with time of day
   let timeStr = '--:--';
@@ -731,6 +800,51 @@ function createPageListItem(page, session, lastTimeStr) {
     }
   }
   
+  // Add page summary if available
+  if (page.url && !page.url.startsWith('chrome://') && !page.url.startsWith('chrome-extension://')) {
+    const summaryContainer = document.createElement('div');
+    summaryContainer.className = 'session-page-summary';
+    
+    // Check if we already have a cached summary
+    const cachedSummary = getCachedSummary(page.url);
+    
+    if (cachedSummary) {
+      // If we have a cached summary, display it
+      summaryContainer.innerHTML = createTruncatedSummary(cachedSummary);
+    } else {
+      // Otherwise show a placeholder and attempt to queue the summary generation
+      summaryContainer.innerHTML = '<div class="summary-loading">Generating summary...</div>';
+      
+      // Try to generate a summary asynchronously
+      setTimeout(() => {
+        // Add this URL to the summary queue in readout.js
+        if (typeof summaryQueue !== 'undefined') {
+          summaryQueue.add(page.url);
+          if (typeof processSummaryQueue === 'function') {
+            processSummaryQueue().catch(console.error);
+          }
+          
+          // Poll for summary updates
+          const checkInterval = setInterval(() => {
+            const newSummary = getCachedSummary(page.url);
+            if (newSummary) {
+              clearInterval(checkInterval);
+              summaryContainer.innerHTML = createTruncatedSummary(newSummary);
+            }
+          }, 2000);
+          
+          // Clean up the interval after 30 seconds if summary never arrives
+          setTimeout(() => clearInterval(checkInterval), 30000);
+        } else {
+          summaryContainer.innerHTML = ''; // Hide placeholder if queue isn't available
+        }
+      }, 100);
+    }
+    
+    // Add summary container after the list item
+    item.insertAdjacentElement('afterend', summaryContainer);
+  }
+  
   return item;
 }
 
@@ -816,4 +930,795 @@ function getFaviconDisplayUrl(pageUrlOrDomain) {
     console.warn('Could not generate favicon URL for:', pageUrlOrDomain, e);
     return ''; // Return empty or a default placeholder icon URL
   }
+}
+
+/**
+ * Creates a force-directed graph visualization for session navigation
+ * @param {Object} session - The session object containing pages
+ * @param {HTMLElement} container - The container element to place the graph
+ */
+function createSessionGraph(session, container) {
+  // Check for required dependencies and parameters
+  if (!session || !session.pages || !container || !window.d3) {
+    console.error('Missing dependencies or parameters for graph creation');
+    return;
+  }
+  
+  // Set dimensions
+  const width = container.clientWidth;
+  const height = container.clientHeight || 400; // Use container height or default to 400px
+  
+  // Create graph container
+  const graphContainer = document.createElement('div');
+  graphContainer.className = 'session-graph-container';
+  
+  // Create header
+  const header = document.createElement('div');
+  header.className = 'session-graph-heading';
+  
+  // Create title element
+  const title = document.createElement('h3');
+  title.className = 'session-graph-title';
+  title.textContent = 'Session Graph';
+  
+  // Create view modes container
+  const graphViewModes = document.createElement('div');
+  graphViewModes.className = 'session-graph-controls';
+  
+  // Create controls
+  const controls = document.createElement('div');
+  controls.className = 'session-graph-mode-buttons';
+  
+  // Define switchViewMode function at this scope level so it's accessible to the button event listeners
+  function switchViewMode(mode) {
+    if (mode === currentViewMode) return;
+    currentViewMode = mode;
+    
+    // Update button styles
+    timeBtn.className = mode === 'time' ? 'session-graph-btn active' : 'session-graph-btn';
+    domainBtn.className = mode === 'domain' ? 'session-graph-btn active' : 'session-graph-btn';
+    
+    // Update visualization
+    // Re-process data with the new view mode
+    const { nodes, links } = processSessionData(session, width, height);
+    createVisualization(nodes, links, mode, linksGroup, nodesGroup, width, height, { value: graphNodesReady });
+  }
+  
+  // Add view mode buttons
+  const timeBtn = document.createElement('button');
+  timeBtn.className = 'session-graph-btn active';
+  timeBtn.textContent = 'Time';
+  timeBtn.addEventListener('click', () => switchViewMode('time'));
+  
+  const domainBtn = document.createElement('button');
+  domainBtn.className = 'session-graph-btn';
+  domainBtn.textContent = 'Domain';
+  domainBtn.addEventListener('click', () => switchViewMode('domain'));
+  
+  // Add buttons to controls
+  controls.appendChild(timeBtn);
+  controls.appendChild(domainBtn);
+  
+  // Add title and controls to header
+  graphViewModes.appendChild(title);
+  graphViewModes.appendChild(controls);
+  
+  // Add header to container
+  graphContainer.appendChild(graphViewModes);
+  
+  // Create SVG for the graph
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.classList.add('session-graph-svg');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  graphContainer.appendChild(svg);
+  
+  // Create tooltip
+  tooltipElement = document.createElement('div');
+  tooltipElement.className = 'graph-tooltip';
+  
+  // Add all elements to the graph container
+  graphContainer.appendChild(header);
+  graphContainer.appendChild(svg);
+  graphContainer.appendChild(tooltipElement);
+  
+  // Add the graph container to the provided container
+  container.appendChild(graphContainer);
+  
+  // Process session data to create nodes and links
+  let currentSession = session;
+  let currentSessionPages = [];
+  let currentViewMode = 'time'; // or 'domain'
+  // Use the global graphNodesReady variable instead of declaring a local one
+  
+  // Create a D3 selection for the SVG
+  const svgSelection = window.d3.select(svg);
+  
+  // Create containers for links and nodes
+  const g = svgSelection.append('g');
+  const linksGroup = g.append('g').attr('class', 'graph-links');
+  const nodesGroup = g.append('g').attr('class', 'graph-nodes');
+  
+  // Create zoom behavior
+  const zoom = window.d3.zoom()
+    .scaleExtent([0.1, 3])
+    .on('zoom', (event) => {
+      g.attr('transform', event.transform);
+    });
+  
+  svgSelection.call(zoom);
+  
+  // Process data and create the visualization
+  const { nodes, links } = processSessionData(session, width, height);
+  // Reset the global flag when creating a new visualization
+  graphNodesReady = false;
+  
+  // Simply pass needed parameters
+  createVisualization(nodes, links, currentViewMode, linksGroup, nodesGroup, width, height);
+  
+  // Add a small delay to make sure event listeners are attached properly
+  console.log('Initializing graph event handling with a small delay');
+  setTimeout(() => {
+    // Force the graphNodesReady flag to true after a delay
+    graphNodesReady = true;
+    console.log('Delayed graph initialization complete, ready for interactions. graphNodesReady =', graphNodesReady);
+  }, 500);
+}
+  /**
+   * Process the session data to create nodes and links
+   * @param {Object} session - The session object containing pages data
+   * @param {number} width - The width of the graph container
+   * @param {number} height - The height of the graph container
+   */
+  function processSessionData(session, width, height) {
+    if (!session.pages || session.pages.length === 0) return { nodes: [], links: [] };
+    
+    // Define nodes and links arrays
+    const nodes = [];
+    const links = [];
+    
+    const nodesMap = new Map();
+    const timeExtent = window.d3.extent(session.pages, p => p.timestamp);
+    
+    // Function to get the domain from a URL
+    function getDomainFromUrl(url) {
+      try {
+        return new URL(url).hostname;
+      } catch (e) {
+        return '';
+      }
+    }
+    
+    // Create nodes from pages
+    session.pages.forEach((page, index) => {
+      if (!page.url) return;
+      
+      const domain = getDomainFromUrl(page.url);
+      if (!domain) return;
+      
+      const timestamp = page.timestamp || page.visitTimestamp || Date.now();
+      const node = {
+        id: index, // Use index as ID to ensure uniqueness
+        url: page.url,
+        title: page.title || page.url,
+        domain: domain,
+        timestamp: timestamp, // Ensure a valid timestamp
+        favicon: getFaviconDisplayUrl(domain),
+        referral: page.referral,
+        // Set initial positions to prevent NaN
+        x: Math.random() * width,
+        y: Math.random() * height
+      };
+      
+      nodes.push(node);
+      nodesMap.set(index, node);
+    });
+    
+    // Create links between consecutive pages
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const source = nodes[i];
+      const target = nodes[i + 1];
+      
+      links.push({
+        source: source.id,
+        target: target.id,
+        value: 1
+      });
+    }
+    
+    // Add links based on referral information
+    nodes.forEach((node, i) => {
+      if (node.referral && node.referral.referringURL) {
+        // Try to find the referring node
+        const referringIndex = nodes.findIndex(n => n.url === node.referral.referringURL);
+        if (referringIndex >= 0 && referringIndex !== i) {
+          // Add a stronger link for actual referrals
+          links.push({
+            source: referringIndex,
+            target: i,
+            value: 2, // Stronger connection
+            isReferral: true
+          });
+        }
+      }
+    });
+    
+    // Return the processed nodes and links
+    return { nodes, links };
+  }
+  
+  /**
+   * Create the force-directed graph visualization
+   * @param {Array} nodes - Array of node objects
+   * @param {Array} links - Array of link objects
+   * @param {string} viewMode - The current view mode ('time' or 'domain')
+   * @param {Object} linksGroup - D3 selection for links container
+   * @param {Object} nodesGroup - D3 selection for nodes container
+   * @param {number} width - The width of the graph container
+   * @param {number} height - The height of the graph container
+   */
+  function createVisualization(nodes, links, viewMode, linksGroup, nodesGroup, width, height) {
+    if (!nodes || nodes.length === 0) return;
+    
+    // Clear any existing visualization
+    linksGroup.selectAll('*').remove();
+    nodesGroup.selectAll('*').remove();
+    
+    // Create a time scale for the x-axis with safety checks
+    let timeExtent = window.d3.extent(nodes, d => d.timestamp);
+    
+    // Handle edge cases where timestamps might be invalid
+    if (!timeExtent[0] || !timeExtent[1] || timeExtent[0] === timeExtent[1]) {
+      const now = Date.now();
+      timeExtent = [now - 3600000, now]; // Default to a 1-hour range
+    }
+    
+    const timeScale = window.d3.scaleLinear()
+      .domain(timeExtent)
+      .range([50, width - 50]);
+    
+    // Create force simulation
+    const simulation = window.d3.forceSimulation(nodes)
+      .force('link', window.d3.forceLink(links)
+        .id(d => d.id)
+        .distance(50))
+      .force('charge', window.d3.forceManyBody().strength(-150))
+      .force('center', window.d3.forceCenter(Math.min(width / 2, 300), height / 2))
+      .force('collision', window.d3.forceCollide().radius(20))
+      .force('x', window.d3.forceX(Math.min(width / 2, 300)).strength(0.1))
+      .force('y', window.d3.forceY(height / 2).strength(0.1))
+      .stop(); // Stop simulation initially to warm it up
+    
+    // Add time-based positioning force for time view
+    if (viewMode === 'time') {
+      // Cap the x-position to keep nodes within the visible area
+      const maxX = width - 50;
+      const minX = 50;
+      
+      simulation
+        .force('x', window.d3.forceX(d => {
+          // Ensure timestamp is valid and apply time scale safely
+          if (d.timestamp && !isNaN(d.timestamp)) {
+            // Map to time scale but constrain to visible width
+            const xPos = timeScale(d.timestamp);
+            return Math.min(Math.max(xPos, minX), maxX);
+          }
+          // Fallback to center if timestamp is invalid
+          return Math.min(width / 2, 300);
+        }).strength(0.5))
+        .force('y', window.d3.forceY(height / 2).strength(0.1));
+    } else {
+      // For domain view, create domain clusters
+      // Constrain the center to be within the visible area
+      const centerX = Math.min(width / 2, 300);
+      
+      simulation
+        .force('x', window.d3.forceX(centerX).strength(0.2))
+        .force('y', window.d3.forceY(height / 2).strength(0.2))
+        .force('domain', createDomainClusterForce());
+    }
+    
+    // Helper function to check if a value is valid for rendering
+    const isValid = (val) => typeof val === 'number' && !isNaN(val) && isFinite(val);
+    
+    // Warm up the simulation with more iterations before rendering
+    // This helps nodes and links to be perfectly aligned from the start
+    const warmupIterations = 100;
+    const alphaStart = 0.3;
+    const alphaEnd = 0.005;
+    const alphaStep = (alphaStart - alphaEnd) / warmupIterations;
+    
+    // Run multiple ticks with decreasing alpha to stabilize the layout
+    for (let i = 0; i < warmupIterations; ++i) {
+      simulation.alpha(alphaStart - (i * alphaStep)).tick();
+    }
+    
+    // After warm-up, decrease the alpha to slow the simulation
+    simulation.alphaDecay(0.02);
+    
+    // Create links
+    const link = linksGroup.selectAll('line')
+      .data(links)
+      .enter().append('line')
+      .attr('class', d => `graph-link${d.isReferral ? ' referral' : ''}`)
+      .attr('stroke', d => d.isReferral ? '#ffcc00' : '#ffffff')
+      .attr('stroke-opacity', d => d.isReferral ? 0.8 : 0.5)
+      .attr('stroke-width', d => d.isReferral ? 2 : 1)
+      // Set initial positions immediately to avoid visual jump
+      .attr('x1', d => d.source.x || 0)
+      .attr('y1', d => d.source.y || 0)
+      .attr('x2', d => d.target.x || 0)
+      .attr('y2', d => d.target.y || 0);
+    
+    // Create node groups
+    const node = nodesGroup.selectAll('.graph-node')
+      .data(nodes)
+      .enter().append('g')
+      .attr('class', 'graph-node')
+      // Apply initial positions immediately from the warmed-up simulation
+      .attr('transform', d => {
+        const x = isValid(d.x) ? d.x : Math.min(width / 2, 300);
+        const y = isValid(d.y) ? d.y : height / 2;
+        return `translate(${x},${y})`;
+      })
+      .call(window.d3.drag()
+        .on('start', dragstarted)
+        .on('drag', dragged)
+        .on('end', dragended));
+    
+    // Add circles to nodes
+    node.append('circle')
+      .attr('r', 8)
+      .attr('fill', d => {
+        // Color by domain using a simple hash function
+        const hash = hashString(d.domain) % 10;
+        const colors = [
+          '#4285F4', '#EA4335', '#FBBC05', '#34A853', '#FF6D01',  // Google colors
+          '#46BDC6', '#7B66FF', '#FB724A', '#FFBD5C', '#36B37E'   // Additional colors
+        ];
+        return colors[hash];
+      });
+    
+    // Add favicon images to nodes
+    node.append('image')
+      .attr('class', 'graph-node-image')
+      .attr('x', -8)
+      .attr('y', -8)
+      .attr('width', 16)
+      .attr('height', 16)
+      .attr('href', d => d.favicon);
+    
+    // Add hover effects and tooltips
+    node
+      .on('mouseover', function(event, d) {
+        // Show tooltip
+        window.d3.select(tooltipElement)
+          .style('opacity', 1)
+          .style('left', (event.pageX + 10) + 'px')
+          .style('top', (event.pageY + 10) + 'px')
+          .html(`
+            <div class="graph-tooltip-title">${d.title || 'Untitled'}</div>
+            <div class="graph-tooltip-url">${d.url}</div>
+            <div>${new Date(d.timestamp).toLocaleTimeString()}</div>
+          `);
+        
+        // Add highlighting class to the graph node
+        window.d3.select(this).classed('highlighted', true);
+        const circle = this.querySelector('circle');
+        if (circle) {
+          circle.setAttribute('r', 10);
+        }
+        
+        // Find and highlight corresponding page list item
+        const safeId = `page-item-${btoa(d.url).replace(/[=+\/]/g, '-')}`;
+        const pageItem = document.getElementById(safeId);
+        
+        if (pageItem) {
+          // Remove highlight from any previously highlighted items
+          const previouslyHighlighted = document.querySelectorAll('.session-page-item.highlighted');
+          previouslyHighlighted.forEach(item => item.classList.remove('highlighted'));
+          
+          // Add highlight to this item
+          pageItem.classList.add('highlighted');
+          
+          // Scroll the item into view with smooth behavior
+          pageItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      })
+      .on('mousemove', function(event) {
+        window.d3.select(tooltipElement)
+          .style('left', (event.pageX + 10) + 'px')
+          .style('top', (event.pageY + 10) + 'px');
+      })
+      .on('mouseout', function() {
+        window.d3.select(tooltipElement).style('opacity', 0);
+        
+        // Remove graph node highlighting immediately
+        unhighlightAllGraphNodes();
+        
+        // Remove page list item highlighting
+        const highlighted = document.querySelectorAll('.session-page-item.highlighted');
+        highlighted.forEach(item => item.classList.remove('highlighted'));
+      })
+      .on('click', function(event, d) {
+        window.open(d.url, '_blank');
+      });
+    
+    // Restart the simulation with a lower alpha
+    simulation.alpha(0.3).restart();
+    
+    // Signal that graph nodes are ready for highlighting
+    graphNodesReady = true; // Set the global flag
+    console.log('Graph nodes ready for highlighting: ', graphNodesReady);
+    
+    // Initialize event handlers for all existing page items
+    document.querySelectorAll('.session-page-item').forEach(item => {
+      const url = item.getAttribute('data-url');
+      if (!url) return;
+      
+      // Re-initialize event handlers now that graph is ready
+      item.onmouseenter = function() {
+        console.log('Page item mouseenter (re-attached):', url);
+        if (graphNodesReady) {
+          highlightGraphNodeForUrl(url);
+          // Also highlight the list item itself
+          item.classList.add('highlighted');
+        } else {
+          console.log('Graph not ready yet, skipping highlight');
+        }
+      };
+      
+      item.onmouseleave = function() {
+        console.log('Page item mouseleave (re-attached):', url);
+        // Remove highlight from this item
+        item.classList.remove('highlighted');
+        // Small delay to prevent flickering
+        setTimeout(() => unhighlightAllGraphNodes(), 50);
+      };
+    });
+    
+    // Update positions on simulation tick
+    simulation.on('tick', () => {
+      // Update link positions with validation
+      link
+        .attr('x1', d => isValid(d.source.x) ? d.source.x : 0)
+        .attr('y1', d => isValid(d.source.y) ? d.source.y : 0)
+        .attr('x2', d => isValid(d.target.x) ? d.target.x : 0)
+        .attr('y2', d => isValid(d.target.y) ? d.target.y : 0);
+      
+      // Update node positions with validation
+      node.attr('transform', d => {
+        const x = isValid(d.x) ? d.x : width/2;
+        const y = isValid(d.y) ? d.y : height/2;
+        return `translate(${x},${y})`;
+      });
+    });
+    
+    // Create drag behaviors with simulation passed as context
+    const drag = window.d3.drag()
+      .on('start', dragstarted)
+      .on('drag', dragged)
+      .on('end', dragended);
+    
+    // Apply the drag behavior to nodes
+    node.call(drag);
+    
+    // Drag functions with simulation in scope
+    function dragstarted(event) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      event.subject.fx = event.subject.x;
+      event.subject.fy = event.subject.y;
+    }
+    
+    function dragged(event) {
+      event.subject.fx = event.x;
+      event.subject.fy = event.y;
+    }
+    
+    function dragended(event) {
+      if (!event.active) simulation.alphaTarget(0);
+      event.subject.fx = null;
+      event.subject.fy = null;
+    }
+    
+    // Function to create domain clustering force
+    function createDomainClusterForce() {
+      const domainGroups = {};
+      const centerX = Math.min(width / 2, 300); // Constrained center X position
+      
+      // Group nodes by domain
+      nodes.forEach(node => {
+        if (!domainGroups[node.domain]) {
+          domainGroups[node.domain] = [];
+        }
+        domainGroups[node.domain].push(node);
+      });
+      
+      // Calculate initial offset positions for each domain group
+      const domainCount = Object.keys(domainGroups).length;
+      const angleStep = (2 * Math.PI) / Math.max(domainCount, 1);
+      const radius = Math.min(width, height) / 4;
+      
+      const domainCenters = {};
+      let i = 0;
+      
+      // Assign domain centers in a circular pattern around the main center
+      Object.keys(domainGroups).forEach(domain => {
+        const angle = i * angleStep;
+        // Use constrained centerX instead of width/2
+        domainCenters[domain] = {
+          x: centerX + radius * Math.cos(angle),
+          y: height/2 + radius * Math.sin(angle)
+        };
+        i++;
+      });
+      
+      return function(alpha) {
+        // For each domain group, pull nodes toward their domain center
+        Object.entries(domainGroups).forEach(([domain, domainNodes]) => {
+          if (domainNodes.length <= 1) return;
+          
+          // Use the pre-calculated domain center
+          const center = domainCenters[domain] || { x: centerX, y: height/2 };
+          
+          // Pull each node toward the center
+          domainNodes.forEach(node => {
+            node.x += (center.x - node.x) * alpha * 0.5;
+            node.y += (center.y - node.y) * alpha * 0.5;
+          });
+        });
+      };
+    }
+    
+    // Add hover effects and tooltips for nodes
+    node.on('mousemove', function(event) {
+      window.d3.select(tooltipElement)
+        .style('left', (event.pageX + 10) + 'px')
+        .style('top', (event.pageY + 10) + 'px');
+    })
+    .on('mouseout', function() {
+      window.d3.select(tooltipElement).style('opacity', 0);
+      
+      // Remove graph node highlighting immediately
+      unhighlightAllGraphNodes();
+      
+      // Remove page list item highlighting
+      const highlighted = document.querySelectorAll('.session-page-item.highlighted');
+      highlighted.forEach(item => item.classList.remove('highlighted'));
+    })
+    .on('click', function(event, d) {
+      window.open(d.url, '_blank');
+    });
+    
+    // Restart the simulation with a lower alpha
+    simulation.alpha(0.3).restart();
+    
+    // Signal that graph nodes are ready for highlighting
+    graphNodesReady = true; // Set the global flag
+    console.log('Graph nodes ready for highlighting: ', graphNodesReady);
+    
+    // Initialize event handlers for all existing page items
+    document.querySelectorAll('.session-page-item').forEach(item => {
+      const url = item.getAttribute('data-url');
+      if (!url) return;
+      
+      // Re-initialize event handlers now that graph is ready
+      item.onmouseenter = function() {
+        console.log('Page item mouseenter (re-attached):', url);
+        if (graphNodesReady) {
+          highlightGraphNodeForUrl(url);
+          // Also highlight the list item itself
+          item.classList.add('highlighted');
+        } else {
+          console.log('Graph not ready yet, skipping highlight');
+        }
+      };
+      
+      item.onmouseleave = function() {
+        console.log('Page item mouseleave (re-attached):', url);
+        // Remove highlight from this item
+        item.classList.remove('highlighted');
+        // Small delay to prevent flickering
+        setTimeout(() => unhighlightAllGraphNodes(), 50);
+      };
+    });
+    
+    // Update positions on simulation tick
+    simulation.on('tick', () => {
+      // Update link positions with validation
+      link
+        .attr('x1', d => isValid(d.source.x) ? d.source.x : 0)
+        .attr('y1', d => isValid(d.source.y) ? d.source.y : 0)
+        .attr('x2', d => isValid(d.target.x) ? d.target.x : 0)
+        .attr('y2', d => isValid(d.target.y) ? d.target.y : 0);
+      
+      // Update node positions with validation
+      node.attr('transform', d => {
+        const x = isValid(d.x) ? d.x : width/2;
+        const y = isValid(d.y) ? d.y : height/2;
+        return `translate(${x},${y})`;
+      });
+    });
+    
+    // Drag functions - defined inside the createVisualization scope
+    function dragstarted(event) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      event.subject.fx = event.subject.x;
+      event.subject.fy = event.subject.y;
+    }
+    
+    function dragged(event) {
+      event.subject.fx = event.x;
+      event.subject.fy = event.y;
+    }
+    
+    function dragended(event) {
+      if (!event.active) simulation.alphaTarget(0);
+      event.subject.fx = null;
+      event.subject.fy = null;
+    }
+    
+    // Function to create domain clustering force
+    function createDomainClusterForce() {
+      const domainGroups = {};
+      const centerX = Math.min(width / 2, 300); // Constrained center X position
+      
+      // Group nodes by domain
+      nodes.forEach(node => {
+        if (!domainGroups[node.domain]) {
+          domainGroups[node.domain] = [];
+        }
+        domainGroups[node.domain].push(node);
+      });
+      
+      // Calculate initial offset positions for each domain group
+      const domainCount = Object.keys(domainGroups).length;
+      const angleStep = (2 * Math.PI) / Math.max(domainCount, 1);
+      const radius = Math.min(width, height) / 4;
+      
+      const domainCenters = {};
+      let i = 0;
+      
+      // Assign domain centers in a circular pattern around the main center
+      Object.keys(domainGroups).forEach(domain => {
+        const angle = i * angleStep;
+        // Use constrained centerX instead of width/2
+        domainCenters[domain] = {
+          x: centerX + radius * Math.cos(angle),
+          y: height/2 + radius * Math.sin(angle)
+        };
+        i++;
+      });
+      
+      return function(alpha) {
+        // For each domain group, pull nodes toward their domain center
+        Object.entries(domainGroups).forEach(([domain, domainNodes]) => {
+          if (domainNodes.length <= 1) return;
+          
+          // Use the pre-calculated domain center
+          const center = domainCenters[domain] || { x: centerX, y: height/2 };
+          
+          // Pull each node toward the center
+          domainNodes.forEach(node => {
+            node.x += (center.x - node.x) * alpha * 0.5;
+            node.y += (center.y - node.y) * alpha * 0.5;
+          });
+        });
+      };
+    }
+  } // End of createVisualization function
+
+// Highlights a graph node that corresponds to a specific URL
+function highlightGraphNodeForUrl(url) {
+  console.log('highlightGraphNodeForUrl called for URL:', url, 'graphNodesReady:', graphNodesReady);
+  if (!graphNodesReady) {
+    console.log('Graph nodes not ready yet, will not highlight:', url);
+    return false;
+  }
+  
+  console.log('Highlighting graph node for URL:', url);
+  
+  // Find graph nodes that match this URL
+  let found = false;
+  
+  try {
+    // Use D3 to select nodes and filter by URL
+    const matchingNodes = window.d3.selectAll('.graph-node')
+      .filter(function(d) {
+        return d && d.url === url;
+      });
+    
+    if (!matchingNodes.empty()) {
+      // Clear any previous highlights
+      window.d3.selectAll('.graph-node').classed('highlighted', false)
+        .selectAll('circle').attr('r', 7);
+      
+      // Apply highlighting
+      matchingNodes.classed('highlighted', true)
+        .selectAll('circle').attr('r', 10);
+      
+      found = true;
+      console.log('Found and highlighted node for URL:', url);
+    } else {
+      console.log('No matching nodes found for URL:', url);
+    }
+  } catch (e) {
+    console.error('Error highlighting graph node:', e);
+  }
+  
+  return found;
+}
+
+// Removes highlighting from all graph nodes
+function unhighlightAllGraphNodes() {
+  console.log('unhighlightAllGraphNodes called, graphNodesReady:', graphNodesReady);
+  if (!graphNodesReady) return;
+  
+  try {
+    // Use D3 to select and unhighlight all nodes
+    window.d3.selectAll('.graph-node')
+      .classed('highlighted', false)
+      .selectAll('circle')
+      .attr('r', 7);
+    
+    console.log('Removed all node highlights');
+  } catch (e) {
+    console.error('Error unhighlighting nodes:', e);
+  }
+}
+
+// Utility function to hash a string
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash) / 2147483647; // Normalize between 0 and 1
+}
+
+/**
+ * Extract search terms from common search engine URLs
+ * @param {URL} urlObj - A parsed URL object
+ * @returns {string|null} - The extracted search term or null if none found
+ */
+function extractSearchTerm(urlObj) {
+  if (!urlObj) return null;
+  
+  const hostname = urlObj.hostname;
+  const searchParams = urlObj.searchParams;
+  
+  // Google
+  if (hostname.includes('google.')) {
+    return searchParams.get('q');
+  }
+  
+  // Bing
+  if (hostname.includes('bing.')) {
+    return searchParams.get('q');
+  }
+  
+  // Yahoo
+  if (hostname.includes('yahoo.')) {
+    return searchParams.get('p');
+  }
+  
+  // DuckDuckGo
+  if (hostname.includes('duckduckgo.')) {
+    return searchParams.get('q');
+  }
+  
+  // Baidu
+  if (hostname.includes('baidu.')) {
+    return searchParams.get('wd');
+  }
+  
+  // YouTube search
+  if (hostname.includes('youtube.')) {
+    return searchParams.get('search_query');
+  }
+  
+  return null;
 }
