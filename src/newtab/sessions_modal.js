@@ -1113,18 +1113,55 @@ function createSessionGraph(session, container) {
       nodes.push(node);
       nodesMap.set(index, node);
     });
+
+    // Track domains for domain transitions
+    let lastDomainNode = null;
+    let currentDomain = null;
+    let domainNodes = new Map(); // domain -> first node in that domain
     
-    // Create links between consecutive pages
+    // Process links between pages with meaningful connectivity model
     for (let i = 0; i < nodes.length - 1; i++) {
-      links.push({
-        source: nodes[i], // Use direct node references instead of IDs
-        target: nodes[i + 1],
-        value: 1
-      });
+      const currentNode = nodes[i];
+      const nextNode = nodes[i + 1];
+      const timeDiff = nextNode.timestamp - currentNode.timestamp;
+      const isDomainChange = currentNode.domain !== nextNode.domain;
+      
+      // Track the first node we see for each domain
+      if (!domainNodes.has(currentNode.domain)) {
+        domainNodes.set(currentNode.domain, currentNode);
+      }
+      
+      // Sequential link - only add for significant transitions
+      if (isDomainChange || timeDiff > 30000) { // Domain change or >30s gap
+        links.push({
+          source: currentNode,
+          target: nextNode,
+          value: isDomainChange ? 1.8 : 1.2, // Stronger for domain changes
+          type: 'sequential'
+        });
+      }
+      
+      // Track domain transitions for domain-transition links
+      if (isDomainChange) {
+        if (currentDomain !== currentNode.domain) {
+          currentDomain = currentNode.domain;
+          lastDomainNode = currentNode;
+        }
+        
+        // When we change domains, add a domain transition link if within time window
+        if (lastDomainNode && lastDomainNode !== currentNode && timeDiff < 300000) { // 5 minutes
+          links.push({
+            source: lastDomainNode,
+            target: nextNode,
+            value: 0.7, // Weaker connection
+            type: 'domain-transition'
+          });
+        }
+      }
     }
     
-    // Add links based on referral information
-    nodes.forEach((node, i) => {
+    // Add referral links - these are high-value connections
+    nodes.forEach((node) => {
       if (node.referral && node.referral.referringURL) {
         // Try to find the referring node
         const referringNode = nodes.find(n => n.url === node.referral.referringURL);
@@ -1133,8 +1170,8 @@ function createSessionGraph(session, container) {
           links.push({
             source: referringNode,
             target: node,
-            value: 2, // Stronger connection
-            isReferral: true
+            value: 2.5, // Strongest connection
+            type: 'referral'
           });
         }
       }
@@ -1253,11 +1290,34 @@ function createSessionGraph(session, container) {
       .data(links)
       .enter()
       .append('path')
-      .attr('class', 'graph-link')
+      .attr('class', d => `graph-link ${d.type ? `${d.type}-link` : ''}`)
       .attr('fill', 'none')
-      .attr('stroke', d => d.isReferral ? '#ffcc00' : '#ffffff')
-      .attr('stroke-opacity', d => d.isReferral ? 0.8 : 0.5)
-      .attr('stroke-width', d => d.isReferral ? 2 : 1);
+      .attr('stroke', d => {
+        // Color links differently based on type
+        if (d.type === 'referral') return '#ff7043';       // Orange for referrals
+        if (d.type === 'sequential') return '#42a5f5';     // Blue for sequential
+        if (d.type === 'domain-transition') return '#b0bec5'; // Light gray for domain transitions
+        return '#78909c'; // Default gray
+      })
+      .attr('stroke-opacity', d => {
+        // Vary opacity based on link strength
+        if (d.type === 'referral') return 0.9;
+        if (d.type === 'sequential') return 0.7;
+        if (d.type === 'domain-transition') return 0.5;
+        return 0.6;
+      })
+      .attr('stroke-width', d => {
+        // Set stroke width based on value/type of link
+        if (d.type === 'referral') return 2.5;
+        if (d.type === 'sequential' && d.value > 1) return 2;
+        if (d.type === 'domain-transition') return 1;
+        return 1.5;
+      })
+      .attr('stroke-dasharray', d => {
+        // Use dashed lines for certain link types
+        if (d.type === 'domain-transition') return '3,3';
+        return null;
+      });
     
     // Create node groups
     const node = nodesGroup.selectAll('.graph-node')
