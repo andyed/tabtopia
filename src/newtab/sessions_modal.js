@@ -2,9 +2,12 @@
 import { getCachedSummary, createTruncatedSummary, summaryCache } from './readout.js';
 // Note: D3 is loaded globally via script tag in HTML files
 
-// Global variables for graph state
+// Global variables
+let lastModalId = 0;
 let graphNodesReady = false;
 let tooltipElement = null; // Global reference to the tooltip element
+let hoverTimeout = null; // For debouncing hover effects
+let activeHighlightURL = null; // Track currently highlighted URL
 
 // Exports
 export { showSessionModal, highlightGraphNodeForUrl, unhighlightAllGraphNodes };
@@ -232,7 +235,7 @@ function preprocessSessionData(session) {
   }
   
   // Format the session duration
-  processedSession.formattedDuration = formatDuration(processedSession.duration);
+  processedSession.formattedDuration = formatDwellDuration(processedSession.duration);
   
   // Ensure we have valid timestamps for each page transition (for dwell times)
   processedSession.pages = processedSession.pages.map((page, index, pages) => {
@@ -256,7 +259,7 @@ function preprocessSessionData(session) {
  * @param {number} durationMs - Duration in milliseconds
  * @returns {string} - Formatted duration string
  */
-function formatDuration(durationMs) {
+function formatDwellDuration(durationMs) {
   if (!durationMs || durationMs <= 0) {
     return 'Duration unknown';
   } 
@@ -630,6 +633,15 @@ function createPageListItem(page, session, lastTimeStr) {
   
   // These are the event handlers for the list item
   function handleMouseEnter() {
+    // Clear any pending unhighlight operations
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout);
+      hoverTimeout = null;
+    }
+    
+    // Set this as the active highlighted URL
+    activeHighlightURL = pageUrl;
+    
     console.log('Page item mouseenter:', pageUrl);
     if (graphNodesReady) {
       highlightGraphNodeForUrl(pageUrl);
@@ -644,8 +656,15 @@ function createPageListItem(page, session, lastTimeStr) {
     console.log('Page item mouseleave:', pageUrl);
     // Remove highlight from this item
     item.classList.remove('highlighted');
-    // Small delay to prevent flickering
-    setTimeout(() => unhighlightAllGraphNodes(), 50);
+    
+    // Only unhighlight if this is still the active URL
+    if (activeHighlightURL === pageUrl) {
+      // Use longer delay and debounce to prevent flickering
+      hoverTimeout = setTimeout(() => {
+        unhighlightAllGraphNodes();
+        activeHighlightURL = null;
+      }, 150); // Increased timeout for better stability
+    }
   }
   
   // Attach event handlers directly
@@ -1097,6 +1116,9 @@ function createSessionGraph(session, container) {
       if (!domain) return;
       
       const timestamp = page.timestamp || page.visitTimestamp || Date.now();
+      // Calculate normalized dwell time for node sizing
+      const dwellTimeMs = page.dwellTimeMs || 0;
+      
       const node = {
         id: index, // Use index as ID to ensure uniqueness
         url: page.url,
@@ -1105,6 +1127,7 @@ function createSessionGraph(session, container) {
         timestamp: timestamp, // Ensure a valid timestamp
         favicon: getFaviconDisplayUrl(domain),
         referral: page.referral,
+        dwellTimeMs: dwellTimeMs, // Store dwell time for node sizing
         // Set initial positions to prevent NaN
         x: Math.random() * width,
         y: Math.random() * height
@@ -1119,37 +1142,59 @@ function createSessionGraph(session, container) {
     let currentDomain = null;
     let domainNodes = new Map(); // domain -> first node in that domain
     
-    // Process links between pages with meaningful connectivity model
+    // Process links between pages with a more selective connectivity model
+    // This creates a sparser, more meaningful graph
     for (let i = 0; i < nodes.length - 1; i++) {
       const currentNode = nodes[i];
       const nextNode = nodes[i + 1];
       const timeDiff = nextNode.timestamp - currentNode.timestamp;
       const isDomainChange = currentNode.domain !== nextNode.domain;
       
+      // Get dwell times to use for link importance evaluation
+      const currentDwellTime = currentNode.dwellTimeMs || 0;
+      const isSignificantDwell = currentDwellTime > 20000; // > 20 seconds is significant
+      
       // Track the first node we see for each domain
       if (!domainNodes.has(currentNode.domain)) {
         domainNodes.set(currentNode.domain, currentNode);
       }
       
-      // Sequential link - only add for significant transitions
-      if (isDomainChange || timeDiff > 30000) { // Domain change or >30s gap
+      // IMPROVED FILTERING: Balance between showing relevant links and not being too sparse
+      // 1. Always show domain changes (relaxed from requiring dwell time)
+      // 2. Same domain with moderate time gap (30+ seconds)
+      // 3. Any page with moderate dwell time
+      if (isDomainChange || 
+          timeDiff > 30000 || 
+          currentDwellTime > 10000) { // Relaxed threshold to ensure we see connections
+        
         links.push({
           source: currentNode,
           target: nextNode,
           value: isDomainChange ? 1.8 : 1.2, // Stronger for domain changes
-          type: 'sequential'
+          type: 'sequential',
+          // Store dwell time for tooltip/debug
+          timeDiff: timeDiff,
+          dwellTime: currentDwellTime
         });
       }
       
       // Track domain transitions for domain-transition links
+      // IMPROVED: More selective about domain transition links
       if (isDomainChange) {
         if (currentDomain !== currentNode.domain) {
           currentDomain = currentNode.domain;
-          lastDomainNode = currentNode;
+          // Only track as last domain node if there was significant dwell
+          if (currentDwellTime > 10000) {
+            lastDomainNode = currentNode;
+          }
         }
         
-        // When we change domains, add a domain transition link if within time window
-        if (lastDomainNode && lastDomainNode !== currentNode && timeDiff < 300000) { // 5 minutes
+        // When we change domains, add domain transition links more liberally
+        // to ensure graph connectivity isn't too sparse
+        if (lastDomainNode && 
+            lastDomainNode !== currentNode && 
+            timeDiff < 300000) { // Back to 5 min window to ensure we see connections
+          
           links.push({
             source: lastDomainNode,
             target: nextNode,
@@ -1160,7 +1205,10 @@ function createSessionGraph(session, container) {
       }
     }
     
-    // Add referral links - these are high-value connections
+    // Add referral links - these are high-value connections and should ALWAYS be shown
+    // We'll track the referrals we find to ensure we have some connectivity
+    let referralCount = 0;
+    
     nodes.forEach((node) => {
       if (node.referral && node.referral.referringURL) {
         // Try to find the referring node
@@ -1173,9 +1221,25 @@ function createSessionGraph(session, container) {
             value: 2.5, // Strongest connection
             type: 'referral'
           });
+          referralCount++;
         }
       }
     });
+    
+    // If we still have no links at all, ensure minimum connectivity by adding sequential links
+    // between all adjacent pages
+    if (links.length === 0) {
+      console.log('No links found, adding minimum sequential links for connectivity');
+      for (let i = 0; i < nodes.length - 1; i++) {
+        links.push({
+          source: nodes[i],
+          target: nodes[i + 1],
+          value: 1.0, // Basic connection
+          type: 'sequential',
+          isBackupLink: true // Mark as backup link for debugging
+        });
+      }
+    }
     
     // Return the processed nodes and links
     return { nodes, links };
@@ -1242,13 +1306,16 @@ function createSessionGraph(session, container) {
     const simulation = window.d3.forceSimulation(nodes)
       .force('link', window.d3.forceLink(links)
         .id(d => d.url)
-        .distance(90)
-        .strength(0.7)) // Increased strength for faster stabilization
-      .force('charge', window.d3.forceManyBody().strength(-100))
-      .force('center', window.d3.forceCenter(width / 2, height / 2).strength(0.1)) // Stronger centering
-      .force('collision', window.d3.forceCollide().radius(12))
-      .alphaDecay(0.05) // Faster decay like in graph.js
-      .velocityDecay(0.4) // Better damping
+        .distance(100) // Increased distance for better node separation
+        .strength(0.6)) // Slightly reduced to maintain structured layout better
+      .force('charge', window.d3.forceManyBody()
+        .strength(-130) // Stronger repulsion
+        .distanceMin(20) // Minimum distance for charge effect
+        .distanceMax(300)) // Maximum distance for charge effect
+      .force('center', window.d3.forceCenter(width / 2, height / 2).strength(0.08)) // Reduced center pull
+      .force('collision', window.d3.forceCollide().radius(15).strength(0.8)) // Stronger collision avoidance
+      .alphaDecay(0.04) // Slightly slower decay for better relaxation
+      .velocityDecay(0.35) // Slightly reduced damping
       .alpha(1); // Start with maximum heat
     
     // Add time-based positioning force for time view
@@ -1257,18 +1324,74 @@ function createSessionGraph(session, container) {
       const maxX = width - 50;
       const minX = 50;
       
+      // Create a time scale for y-axis for top-down distribution (recent at top)
+      const timeScaleY = window.d3.scaleLinear()
+        .domain(timeExtent)
+        .range([80, height - 80]); // Top to bottom with more padding
+      
+      // Group nodes by domain for domain-based horizontal positioning
+      const domainMap = {};
+      nodes.forEach(node => {
+        if (!domainMap[node.domain]) {
+          domainMap[node.domain] = [];
+        }
+        domainMap[node.domain].push(node);
+      });
+      
+      // Calculate horizontal positions for domains
+      const domains = Object.keys(domainMap);
+      const domainScale = window.d3.scalePoint()
+        .domain(domains)
+        .range([minX + 50, maxX - 50])
+        .padding(0.5);
+        
       simulation
+        // Use very strong horizontal force to maintain strict domain columns
         .force('x', window.d3.forceX(d => {
-          // Ensure timestamp is valid and apply time scale safely
+          // Get exact fixed position for this domain with zero jitter
+          const domainPosition = domainScale(d.domain) || width / 2;
+          // Ensure the position is valid and store it as a fixed position
+          d.fx = domainPosition; // Fixed X position for perfect column alignment
+          return domainPosition;
+        }).strength(1.0)) // Maximum strength for perfect column alignment
+        .force('y', window.d3.forceY(d => {
+          // Top-down distribution: most recent (highest timestamp) at top
           if (d.timestamp && !isNaN(d.timestamp)) {
-            // Map to time scale but constrain to visible width
-            const xPos = timeScale(d.timestamp);
-            return Math.min(Math.max(xPos, minX), maxX);
+            // Use timestamp for accurate vertical positioning
+            const yPos = timeScaleY(d.timestamp);
+            const boundedY = Math.max(80, Math.min(height - 80, yPos));
+            
+            // Store as semi-fixed position (we'll allow some minor adjustment)
+            // Using fy with high strength rather than perfect fixing to allow small adjustments
+            // between nodes with very similar timestamps
+            if (!d.dragging) { // Don't fix Y during active dragging
+              d.fy = boundedY;
+            }
+            return boundedY;
           }
-          // Fallback to center if timestamp is invalid
-          return Math.min(width / 2, 300);
-        }).strength(0.5))
-        .force('y', window.d3.forceY(height / 2).strength(0.1));
+          // Fallback for nodes without timestamp
+          return height / 2;
+        }).strength(1.0)); // Maximum strength for perfect vertical ordering
+        
+        // Add additional separation force to prevent overlapping in columns
+        simulation.force('domainSeparation', window.d3.forceY(d => {
+          // Get all nodes in this domain
+          const domainNodes = domainMap[d.domain] || [];
+          if (domainNodes.length <= 1) return d.y; // No need for separation with single node
+          
+          // Sort domain nodes by timestamp
+          const sortedNodes = [...domainNodes].sort((a, b) => b.timestamp - a.timestamp);
+          const nodeIndex = sortedNodes.findIndex(n => n.url === d.url);
+          if (nodeIndex === -1) return d.y;
+          
+          // Calculate ideal vertical spacing between nodes in the same domain
+          const availableHeight = height - 160; // Leave padding
+          const nodeSpacing = Math.min(50, availableHeight / (sortedNodes.length + 1));
+          
+          // Return position with proper spacing
+          const baseY = timeScaleY(d.timestamp) || height/2;
+          return baseY + (nodeIndex * nodeSpacing * 0.2); // Small additional offset for same-timestamp nodes
+        }).strength(0.3)); // Light force just to add some separation
     } else {
       // For domain view, create domain clusters
       // Constrain the center to be within the visible area
@@ -1327,9 +1450,40 @@ function createSessionGraph(session, container) {
       // Default position (will be updated after warmup)
       .attr('transform', `translate(${width/2},${height/2})`);
       
-    // Add circles to nodes
+    // Helper function to calculate node radius based on dwell time
+    function calculateNodeRadius(dwellTimeMs) {
+      // Define min and max radius for nodes
+      const minRadius = 5;
+      const maxRadius = 14;
+      
+      // Define dwell time thresholds in milliseconds
+      const minDwell = 0;                 // 0 seconds
+      const lowDwell = 10 * 1000;          // 10 seconds
+      const mediumDwell = 60 * 1000;       // 1 minute
+      const highDwell = 5 * 60 * 1000;     // 5 minutes
+      const maxDwell = 30 * 60 * 1000;     // 30 minutes (cap)
+      
+      // Map dwell time to radius using logarithmic scale for better visual distribution
+      if (dwellTimeMs <= minDwell) return minRadius;
+      if (dwellTimeMs >= maxDwell) return maxRadius;
+      
+      // Use different scales for different ranges to create better visual distinction
+      if (dwellTimeMs < lowDwell) {
+        return minRadius + 1;  // Just slightly larger than minimum
+      } else if (dwellTimeMs < mediumDwell) {
+        return minRadius + 2;  // Small
+      } else if (dwellTimeMs < highDwell) {
+        return minRadius + 4;  // Medium
+      } else {
+        // For high dwell times, scale more dramatically
+        const scale = (dwellTimeMs - highDwell) / (maxDwell - highDwell);
+        return minRadius + 4 + (scale * (maxRadius - minRadius - 4));
+      }
+    }
+    
+    // Add circles to nodes with size based on dwell time
     node.append('circle')
-      .attr('r', 8)
+      .attr('r', d => calculateNodeRadius(d.dwellTimeMs || 0))
       .attr('fill', d => {
         // Color by domain using a simple hash function
         const hash = hashString(d.domain) % 10;
@@ -1338,6 +1492,24 @@ function createSessionGraph(session, container) {
           '#46BDC6', '#7B66FF', '#FB724A', '#FFBD5C', '#36B37E'   // Additional colors
         ];
         return colors[hash];
+      });
+      
+    // Add a tooltip attribute to show dwell time
+    node.append('title')
+      .text(d => {
+        const dwellTime = d.dwellTimeMs || 0;
+        const dwellSeconds = Math.round(dwellTime / 1000);
+        const dwellMinutes = Math.floor(dwellSeconds / 60);
+        const remainingSeconds = dwellSeconds % 60;
+        
+        let timeString = '';
+        if (dwellMinutes > 0) {
+          timeString = `${dwellMinutes}m ${remainingSeconds}s`;
+        } else {
+          timeString = `${dwellSeconds}s`;
+        }
+        
+        return `${d.title}\nDwell time: ${timeString}`;
       });
     
     // Add favicon images to nodes
@@ -1350,26 +1522,85 @@ function createSessionGraph(session, container) {
       .attr('href', d => d.favicon);
       
     // Pre-initialize node positions before warmup
-    // This positions nodes with intentional separation based on domain
-    nodes.forEach((node, i) => {
-      // Use angle-based positioning for better initial spread
-      const angle = (i / nodes.length) * 2 * Math.PI;
-      const radius = Math.min(width, height) * 0.4; // 40% of smaller dimension
+    // Position based on view mode - time (top-down) or domain (circular)
+    if (viewMode === 'time') {
+      // Sort nodes by timestamp for time-based view
+      const sortedNodes = [...nodes].sort((a, b) => b.timestamp - a.timestamp);
       
-      // Convert polar to cartesian coordinates with center offset
-      node.x = width/2 + radius * Math.cos(angle);
-      node.y = height/2 + radius * Math.sin(angle);
+      // Get domains for better horizontal distribution
+      const uniqueDomains = new Set(nodes.map(n => n.domain));
+      const domainArray = Array.from(uniqueDomains);
+      const domainPositions = {};
       
-      // Add small jitter to prevent perfect overlaps
-      node.x += (Math.random() - 0.5) * 20;
-      node.y += (Math.random() - 0.5) * 20;
-    });
+      // Assign horizontal positions to domains, spaced evenly
+      domainArray.forEach((domain, i) => {
+        // Map domains across 80% of width
+        const position = (width * 0.1) + (i / Math.max(1, domainArray.length - 1)) * (width * 0.8);
+        domainPositions[domain] = position;
+      });
+      
+      // Distribute nodes top to bottom based on recency with more structured horizontal positioning
+      sortedNodes.forEach((node, i) => {
+        // Position vertically based on index in sorted array (newer at top)
+        const verticalPosition = (i / sortedNodes.length) * (height * 0.8) + height * 0.1;
+        
+        // Position horizontally based on domain
+        let horizontalPosition;
+        if (domainPositions[node.domain]) {
+          // Use pre-calculated domain position with small jitter
+          horizontalPosition = domainPositions[node.domain] + (Math.random() - 0.5) * 50;
+        } else {
+          // Fallback center position
+          horizontalPosition = width / 2 + (Math.random() - 0.5) * 40;
+        }
+        
+        // Apply calculated positions
+        node.x = horizontalPosition;
+        node.y = verticalPosition;
+      });
+    } else {
+      // Domain view - use improved domain-based circular layout
+      const uniqueDomains = new Set(nodes.map(n => n.domain));
+      const domainGroups = {};
+      
+      // Group nodes by domain
+      nodes.forEach(node => {
+        if (!domainGroups[node.domain]) {
+          domainGroups[node.domain] = [];
+        }
+        domainGroups[node.domain].push(node);
+      });
+      
+      // Position domains in a circular layout
+      const domainCount = Object.keys(domainGroups).length;
+      const angleStep = (2 * Math.PI) / Math.max(domainCount, 1);
+      const radius = Math.min(width, height) * 0.35;
+      
+      // Place each domain's nodes in their own cluster
+      let domainIndex = 0;
+      for (const domain in domainGroups) {
+        const domainNodes = domainGroups[domain];
+        const domainAngle = domainIndex * angleStep;
+        const domainX = width/2 + radius * Math.cos(domainAngle);
+        const domainY = height/2 + radius * Math.sin(domainAngle);
+        
+        // Position nodes in a small cluster around domain center
+        domainNodes.forEach((node, i) => {
+          const nodeAngle = (i / domainNodes.length) * Math.PI * 0.5 + domainAngle - Math.PI * 0.25;
+          const nodeRadius = 30 + Math.random() * 20;
+          
+          node.x = domainX + nodeRadius * Math.cos(nodeAngle);
+          node.y = domainY + nodeRadius * Math.sin(nodeAngle);
+        });
+        
+        domainIndex++;
+      }
+    }
     
-    // Shorter but more intense warmup phase like in graph.js
-    const warmupIterations = 120;
-    const alphaStart = 0.8; // Higher start heat
-    const alphaEnd = 0.01;
-    const alphaStep = (alphaStart - alphaEnd) / warmupIterations;
+    // Improve warmup phase with staged relaxation
+    // First stage: high repulsion to separate nodes
+    // Second stage: gradually reduce forces to settle
+    // Third stage: fine-tune positions with weak forces
     
     // Define the tick function that will be used both for warmup and animation
     function ticked() {
@@ -1399,91 +1630,30 @@ function createSessionGraph(session, container) {
       });
     }
     
-    // Run multiple ticks with decreasing alpha to stabilize the layout
-    for (let i = 0; i < warmupIterations; ++i) {
-      simulation.alpha(alphaStart - (i * alphaStep)).tick();
+    // Stage 1: High repulsion to ensure nodes separate properly
+    simulation.force('charge').strength(-200);
+    for (let i = 0; i < 50; ++i) {
+      simulation.alpha(0.9).tick();
+    }
+    
+    // Stage 2: Reduced forces, focus on applying constraints
+    simulation.force('charge').strength(-150);
+    if (viewMode === 'time') {
+      // Strengthen y-positioning in time mode
+      simulation.force('y').strength(0.95);
+    }
+    for (let i = 0; i < 50; ++i) {
+      simulation.alpha(0.7).tick();
+    }
+    
+    // Stage 3: Fine tuning with gentler forces
+    simulation.force('charge').strength(-130);
+    for (let i = 0; i < 50; ++i) {
+      simulation.alpha(0.5).tick();
     }
     
     // Apply the final positions from warmup immediately
     ticked();
-    
-    // After warm-up, adjust forces for smoother running simulation
-    simulation
-      .alphaDecay(0.02) // Slightly faster decay for normal operation
-      .velocityDecay(0.35) // Lower velocity decay for smoother motion
-      .force('charge', window.d3.forceManyBody().strength(-120)) // Stronger repulsion
-      .force('link', window.d3.forceLink(links)
-        .id(d => d.url)
-        .distance(90) // Slightly longer links
-        .strength(0.6)); // Stronger link forces
-        
-    // Set up the tick function for ongoing animation
-    simulation.on('tick', ticked);
-    
-    // Apply drag behavior to nodes
-    node.call(window.d3.drag()
-      .on('start', dragstarted)
-      .on('drag', dragged)
-      .on('end', dragended));
-    
-    // Force an initial tick to set everything in the right position
-    ticked();
-    
-    // Add hover effects and tooltips
-    node
-      .on('mouseover', function(event, d) {
-        // Show tooltip
-        window.d3.select(tooltipElement)
-          .style('opacity', 1)
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY + 10) + 'px')
-          .html(`
-            <div class="graph-tooltip-title">${d.title || 'Untitled'}</div>
-            <div class="graph-tooltip-url">${d.url}</div>
-            <div>${new Date(d.timestamp).toLocaleTimeString()}</div>
-          `);
-        
-        // Add highlighting class to the graph node
-        window.d3.select(this).classed('highlighted', true);
-        const circle = this.querySelector('circle');
-        if (circle) {
-          circle.setAttribute('r', 10);
-        }
-        
-        // Find and highlight corresponding page list item
-        const safeId = `page-item-${btoa(d.url).replace(/[=+\/]/g, '-')}`;
-        const pageItem = document.getElementById(safeId);
-        
-        if (pageItem) {
-          // Remove highlight from any previously highlighted items
-          const previouslyHighlighted = document.querySelectorAll('.session-page-item.highlighted');
-          previouslyHighlighted.forEach(item => item.classList.remove('highlighted'));
-          
-          // Add highlight to this item
-          pageItem.classList.add('highlighted');
-          
-          // Scroll the item into view with smooth behavior
-          pageItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      })
-      .on('mousemove', function(event) {
-        window.d3.select(tooltipElement)
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY + 10) + 'px');
-      })
-      .on('mouseout', function() {
-        window.d3.select(tooltipElement).style('opacity', 0);
-        
-        // Remove graph node highlighting immediately
-        unhighlightAllGraphNodes();
-        
-        // Remove page list item highlighting
-        const highlighted = document.querySelectorAll('.session-page-item.highlighted');
-        highlighted.forEach(item => item.classList.remove('highlighted'));
-      })
-      .on('click', function(event, d) {
-        window.open(d.url, '_blank');
-      });
     
     // Restart the simulation with a lower alpha
     simulation.alpha(0.3).restart();
@@ -1499,6 +1669,15 @@ function createSessionGraph(session, container) {
       
       // Re-initialize event handlers now that graph is ready
       item.onmouseenter = function() {
+        // Clear any pending unhighlight operations
+        if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+          hoverTimeout = null;
+        }
+        
+        // Set this as the active highlighted URL
+        activeHighlightURL = url;
+        
         console.log('Page item mouseenter (re-attached):', url);
         if (graphNodesReady) {
           highlightGraphNodeForUrl(url);
@@ -1513,8 +1692,15 @@ function createSessionGraph(session, container) {
         console.log('Page item mouseleave (re-attached):', url);
         // Remove highlight from this item
         item.classList.remove('highlighted');
-        // Small delay to prevent flickering
-        setTimeout(() => unhighlightAllGraphNodes(), 50);
+        
+        // Only unhighlight if this is still the active URL
+        if (activeHighlightURL === url) {
+          // Use longer delay and debounce to prevent flickering
+          hoverTimeout = setTimeout(() => {
+            unhighlightAllGraphNodes();
+            activeHighlightURL = null;
+          }, 150); // Increased timeout for better stability
+        }
       };
     });
     
@@ -1555,24 +1741,31 @@ function createSessionGraph(session, container) {
       .on('drag', dragged)
       .on('end', dragended);
     
-    // Apply the drag behavior to nodes
+    // Apply drag behavior to nodes
     node.call(drag);
     
-    // Drag functions with simulation in scope
+    // Function to handle drag start
     function dragstarted(event) {
-      // Higher alpha target makes nodes respond more immediately
-      if (!event.active) simulation.alphaTarget(0.8).restart();
+      // Warm up the simulation when drag starts
+      if (!event.active) simulation.alphaTarget(0.3).restart();
       
-      // Pin the node in place at start of drag
+      // Mark the node as being dragged and store original positions
       const d = event.subject;
+      d.dragging = true;
+      
+      // Remember original fixed positions if any
+      d._originalFx = d.fx;
+      d._originalFy = d.fy;
+      
+      // Fix position for dragging
       d.fx = d.x;
       d.fy = d.y;
       
-      // Increase node size temporarily to show it's being dragged
+      // Visually indicate the node is being dragged
       window.d3.select(event.sourceEvent.target.closest('.graph-node'))
         .select('circle')
         .transition().duration(200)
-        .attr('r', 10);
+        .attr('r', 12);
     }
     
     function dragged(event) {
@@ -1581,8 +1774,26 @@ function createSessionGraph(session, container) {
       d.fx = Math.max(10, Math.min(width - 10, event.x));
       d.fy = Math.max(10, Math.min(height - 10, event.y));
       
-      // Force an immediate tick to update connected links
-      simulation.alpha(0.5).restart();
+      // During dragging, directly update the node position for immediate visual feedback
+      d.x = d.fx;
+      d.y = d.fy;
+      
+      // Force immediate update of this node's visual representation
+      window.d3.select(event.sourceEvent.target.closest('.graph-node'))
+        .attr('transform', `translate(${d.x},${d.y})`);
+      
+      // Update all connected links to this node
+      link.filter(l => l.source === d || l.target === d)
+        .attr('d', linkLine => {
+          const sourceX = isValid(linkLine.source.x) ? linkLine.source.x : 0;
+          const sourceY = isValid(linkLine.source.y) ? linkLine.source.y : 0;
+          const targetX = isValid(linkLine.target.x) ? linkLine.target.x : 0;
+          const targetY = isValid(linkLine.target.y) ? linkLine.target.y : 0;
+          return `M${sourceX},${sourceY}L${targetX},${targetY}`;
+        });
+      
+      // Force an immediate tick with higher alpha for more responsive movement
+      simulation.alpha(0.7).restart();
       ticked();
     }
     
@@ -1590,87 +1801,184 @@ function createSessionGraph(session, container) {
       // Gradually cool down the simulation
       if (!event.active) simulation.alphaTarget(0);
       
-      // Release the node if we're not pinning nodes
+      // Handle node release based on view mode
       const d = event.subject;
-      d.fx = null;
-      d.fy = null;
       
-      // Reset node size
+      if (viewMode === 'time') {
+        // In time view, maintain domain column alignment by restoring x position
+        // but allow y position to be adjusted
+        d.fx = d._originalFx; // Restore domain column position
+        d.fy = null; // Allow vertical adjustment based on time forces
+      } else {
+        // In domain view, fully release node to forces
+        d.fx = null;
+        d.fy = null;
+      }
+      
+      // Mark as no longer dragging
+      d.dragging = false;
+      
+      // Reset node appearance
       window.d3.select(event.sourceEvent.target.closest('.graph-node'))
         .select('circle')
-        .transition().duration(300)
-        .attr('r', 8);
-    }
-    
-    // Function to create domain clustering force
-    function createDomainClusterForce() {
-      const domainGroups = {};
-      const centerX = Math.min(width / 2, 300); // Constrained center X position
+        .transition().duration(200)
+        .attr('r', 7);
       
-      // Group nodes by domain
-      nodes.forEach(node => {
-        if (!domainGroups[node.domain]) {
-          domainGroups[node.domain] = [];
-        }
-        domainGroups[node.domain].push(node);
-      });
-      
-      // Calculate initial offset positions for each domain group
-      const domainCount = Object.keys(domainGroups).length;
-      const angleStep = (2 * Math.PI) / Math.max(domainCount, 1);
-      const radius = Math.min(width, height) / 4;
-      
-      const domainCenters = {};
-      let i = 0;
-      
-      // Assign domain centers in a circular pattern around the main center
-      Object.keys(domainGroups).forEach(domain => {
-        const angle = i * angleStep;
-        // Use constrained centerX instead of width/2
-        domainCenters[domain] = {
-          x: centerX + radius * Math.cos(angle),
-          y: height/2 + radius * Math.sin(angle)
-        };
-        i++;
-      });
-      
-      return function(alpha) {
-        // For each domain group, pull nodes toward their domain center
-        Object.entries(domainGroups).forEach(([domain, domainNodes]) => {
-          if (domainNodes.length <= 1) return;
-          
-          // Use the pre-calculated domain center
-          const center = domainCenters[domain] || { x: centerX, y: height/2 };
-          
-          // Pull each node toward the center
-          domainNodes.forEach(node => {
-            node.x += (center.x - node.x) * alpha * 0.5;
-            node.y += (center.y - node.y) * alpha * 0.5;
-          });
-        });
-      };
+      // Reheat simulation slightly to allow positions to settle after drag
+      simulation.alpha(0.3).restart();
     }
     
     // Add hover effects and tooltips for nodes
-    node.on('mousemove', function(event) {
+    node.on('mouseenter', function(event, d) {
+      // Clear any pending unhighlight operations
+      if (hoverTimeout) {
+        clearTimeout(hoverTimeout);
+        hoverTimeout = null;
+      }
+      
+      // Set this as the active highlighted URL
+      activeHighlightURL = d.url;
+      
+      // Find the corresponding page item in the list
+      const pageItem = document.querySelector(`.session-page-item[data-url="${d.url}"]`);
+      
+      if (pageItem) {
+        // Remove highlight from any previously highlighted items
+        const previouslyHighlighted = document.querySelectorAll('.session-page-item.highlighted');
+        previouslyHighlighted.forEach(item => item.classList.remove('highlighted'));
+        
+        // Add highlight to this item
+        pageItem.classList.add('highlighted');
+        
+        // Scroll the item into view with smooth behavior
+        pageItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      
+      // Create enhanced tooltip with rich referral information
+      let tooltipHtml = `
+        <div class="tooltip-title">${d.title || 'Unknown Title'}</div>
+        <div class="tooltip-url">${d.url}</div>
+        <div class="tooltip-section">Domain: <span class="tooltip-highlight">${d.domain || 'Unknown'}</span></div>
+        <div class="tooltip-section">Dwell time: <span class="tooltip-highlight">${formatDwellDuration(d.dwellTimeMs || 0)}</span></div>
+      `;
+      
+      // Check for search terms in current URL
+      try {
+        const urlObj = new URL(d.url);
+        const searchTerm = extractSearchTerm(urlObj);
+        if (searchTerm) {
+          tooltipHtml += `<div class="tooltip-section">Search: <span class="tooltip-highlight">${searchTerm}</span></div>`;
+        }
+      } catch (e) {}
+      
+      // Add rich referral information if available
+      if (d.referral) {
+        tooltipHtml += '<hr/><div class="tooltip-section-header">Referral Information</div>';
+        
+        if (d.referral.type === 'tabOpen') {
+          tooltipHtml += `<div class="tooltip-section">Type: <span class="tooltip-highlight">Tab opened from another tab</span></div>`;
+          if (d.referral.sourceUrl) {
+            tooltipHtml += `<div class="tooltip-section">Source: <span class="tooltip-highlight">${formatSourceUrl(d.referral.sourceUrl)}</span></div>`;
+            
+            // Check for search terms in the referrer URL
+            try {
+              const refUrlObj = new URL(d.referral.sourceUrl);
+              const refSearchTerm = extractSearchTerm(refUrlObj);
+              if (refSearchTerm) {
+                tooltipHtml += `<div class="tooltip-section">Search query: <span class="tooltip-highlight">${refSearchTerm}</span></div>`;
+                // Add this to the referral object for consistency
+                if (!d.referral.searchQuery) {
+                  d.referral.searchQuery = refSearchTerm;
+                }
+              }
+            } catch (e) {}
+          }
+          if (d.referral.linkText) {
+            tooltipHtml += `<div class="tooltip-section">Link text: <span class="tooltip-highlight">${d.referral.linkText}</span></div>`;
+          }
+        } 
+        else if (d.referral.type === 'intraTab') {
+          tooltipHtml += `<div class="tooltip-section">Type: <span class="tooltip-highlight">Same-tab navigation</span></div>`;
+          if (d.referral.sourceUrl) {
+            tooltipHtml += `<div class="tooltip-section">Source: <span class="tooltip-highlight">${formatSourceUrl(d.referral.sourceUrl)}</span></div>`;
+            
+            // Check for search terms in the source URL
+            try {
+              const srcUrlObj = new URL(d.referral.sourceUrl);
+              const srcSearchTerm = extractSearchTerm(srcUrlObj);
+              if (srcSearchTerm) {
+                tooltipHtml += `<div class="tooltip-section">From search: <span class="tooltip-highlight">${srcSearchTerm}</span></div>`;
+                // Add this to the referral object for consistency
+                if (!d.referral.searchQuery) {
+                  d.referral.searchQuery = srcSearchTerm;
+                }
+              }
+            } catch (e) {}
+          }
+          if (d.referral.interactionType) {
+            tooltipHtml += `<div class="tooltip-section">Interaction: <span class="tooltip-highlight">${d.referral.interactionType}</span></div>`;
+          }
+          if (d.referral.linkText) {
+            tooltipHtml += `<div class="tooltip-section">Link text: <span class="tooltip-highlight">${d.referral.linkText}</span></div>`;
+          }
+          if (d.referral.surroundingText) {
+            const shortenedText = d.referral.surroundingText.length > 100 
+              ? d.referral.surroundingText.substring(0, 97) + '...' 
+              : d.referral.surroundingText;
+            tooltipHtml += `<div class="tooltip-section">Context: <span class="tooltip-highlight">${shortenedText}</span></div>`;
+          }
+        }
+        else if (d.referral.type === 'navigation') {
+          tooltipHtml += `<div class="tooltip-section">Type: <span class="tooltip-highlight">${d.referral.transitionType || 'Navigation'}</span></div>`;
+          if (d.referral.isTypedEntry) {
+            tooltipHtml += `<div class="tooltip-section"><span class="tooltip-highlight">Directly typed URL</span></div>`;
+          }
+          if (d.referral.isBookmark) {
+            tooltipHtml += `<div class="tooltip-section"><span class="tooltip-highlight">From bookmark</span></div>`;
+          }
+          if (d.referral.isReload) {
+            tooltipHtml += `<div class="tooltip-section"><span class="tooltip-highlight">Page reload or back/forward</span></div>`;
+          }
+        }
+        
+        // If search query was already extracted and stored
+        if (d.referral.searchQuery) {
+          tooltipHtml += `<div class="tooltip-section">Search query: <span class="tooltip-highlight">${d.referral.searchQuery}</span></div>`;
+        }
+      }
+      
+      // Display the tooltip
       window.d3.select(tooltipElement)
+        .style('opacity', 0.9)
         .style('left', (event.pageX + 10) + 'px')
-        .style('top', (event.pageY + 10) + 'px');
+        .style('top', (event.pageY + 10) + 'px')
+        .html(tooltipHtml);
     })
-    .on('mouseout', function() {
-      window.d3.select(tooltipElement).style('opacity', 0);
-      
-      // Remove graph node highlighting immediately
-      unhighlightAllGraphNodes();
-      
-      // Remove page list item highlighting
-      const highlighted = document.querySelectorAll('.session-page-item.highlighted');
-      highlighted.forEach(item => item.classList.remove('highlighted'));
-    })
-    .on('click', function(event, d) {
-      window.open(d.url, '_blank');
-    });
+  .on('mousemove', function(event) {
+    window.d3.select(tooltipElement)
+      .style('left', (event.pageX + 10) + 'px')
+      .style('top', (event.pageY + 10) + 'px');
+  })
+  .on('mouseout', function(event, d) {
+    window.d3.select(tooltipElement).style('opacity', 0);
     
+    // Remove page list item highlighting immediately
+    const highlighted = document.querySelectorAll('.session-page-item.highlighted');
+    highlighted.forEach(item => item.classList.remove('highlighted'));
+    
+    // Only unhighlight if this is still the active URL
+    if (activeHighlightURL === d.url) {
+      // Use debounce to prevent flickering when moving between node and list item
+      hoverTimeout = setTimeout(() => {
+        unhighlightAllGraphNodes();
+        activeHighlightURL = null;
+      }, 150);
+    }
+  })
+  .on('click', function(event, d) {
+    window.open(d.url, '_blank');
+  });
+      
     // Restart the simulation with a lower alpha
     simulation.alpha(0.3).restart();
     
@@ -1685,6 +1993,15 @@ function createSessionGraph(session, container) {
       
       // Re-initialize event handlers now that graph is ready
       item.onmouseenter = function() {
+        // Clear any pending unhighlight operations
+        if (hoverTimeout) {
+          clearTimeout(hoverTimeout);
+          hoverTimeout = null;
+        }
+        
+        // Set this as the active highlighted URL
+        activeHighlightURL = url;
+        
         console.log('Page item mouseenter (re-attached):', url);
         if (graphNodesReady) {
           highlightGraphNodeForUrl(url);
@@ -1699,15 +2016,17 @@ function createSessionGraph(session, container) {
         console.log('Page item mouseleave (re-attached):', url);
         // Remove highlight from this item
         item.classList.remove('highlighted');
-        // Small delay to prevent flickering
-        setTimeout(() => unhighlightAllGraphNodes(), 50);
+        
+        // Only unhighlight if this is still the active URL
+        if (activeHighlightURL === url) {
+          // Use longer delay and debounce to prevent flickering
+          hoverTimeout = setTimeout(() => {
+            unhighlightAllGraphNodes();
+            activeHighlightURL = null;
+          }, 150); // Increased timeout for better stability
+        }
       };
     });
-    
-    // Using the shared ticked function defined earlier for consistent behavior
-    simulation.on('tick', ticked);
-    
-    // Drag behavior is already defined and applied to nodes earlier in the code
     
     // Function to create domain clustering force
     function createDomainClusterForce() {
@@ -1767,6 +2086,15 @@ function highlightGraphNodeForUrl(url) {
     return false;
   }
   
+  // Clear any pending unhighlight operations
+  if (hoverTimeout) {
+    clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+  }
+  
+  // Update active highlight tracking
+  activeHighlightURL = url;
+  
   console.log('Highlighting graph node for URL:', url);
   
   // Find graph nodes that match this URL
@@ -1805,6 +2133,12 @@ function unhighlightAllGraphNodes() {
   console.log('unhighlightAllGraphNodes called, graphNodesReady:', graphNodesReady);
   if (!graphNodesReady) return;
   
+  // Clear any existing hover timeout to prevent race conditions
+  if (hoverTimeout) {
+    clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+  }
+  
   try {
     // Use D3 to select and unhighlight all nodes
     window.d3.selectAll('.graph-node')
@@ -1812,13 +2146,25 @@ function unhighlightAllGraphNodes() {
       .selectAll('circle')
       .attr('r', 7);
     
+    // Reset active highlight tracking
+    activeHighlightURL = null;
+    
     console.log('Removed all node highlights');
   } catch (e) {
     console.error('Error unhighlighting nodes:', e);
   }
+  
+  // Add a small delay before allowing re-highlighting to prevent flicker
+  hoverTimeout = setTimeout(() => {
+    hoverTimeout = null;
+  }, 50);
 }
 
-// Utility function to hash a string
+/**
+ * Hash a string to a number between 0 and 1
+ * @param {string} str - The string to hash
+ * @returns {number} A value between 0 and 1
+ */
 function hashString(str) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -1826,7 +2172,25 @@ function hashString(str) {
     hash = ((hash << 5) - hash) + char;
     hash = hash & hash; // Convert to 32bit integer
   }
-  return Math.abs(hash) / 2147483647; // Normalize between 0 and 1
+  return Math.abs(hash % 100) / 100; // Normalize to 0-1
+}
+
+/**
+ * Format a source URL to be more readable in the tooltip
+ * @param {string} url - The URL to format
+ * @returns {string} Formatted URL
+ */
+function formatSourceUrl(url) {
+  try {
+    if (!url) return 'Unknown';
+    
+    const urlObj = new URL(url);
+    // Show hostname plus truncated pathname if it's too long
+    const path = urlObj.pathname.length > 20 ? urlObj.pathname.substring(0, 17) + '...' : urlObj.pathname;
+    return urlObj.hostname + path;
+  } catch (e) {
+    return url.substring(0, 30) + (url.length > 30 ? '...' : '');
+  }
 }
 
 /**
@@ -1840,34 +2204,52 @@ function extractSearchTerm(urlObj) {
   const hostname = urlObj.hostname;
   const searchParams = urlObj.searchParams;
   
-  // Google
-  if (hostname.includes('google.')) {
-    return searchParams.get('q');
+  // Google search
+  if (hostname.includes('google.com') || hostname.includes('google.') && !hostname.includes('mail.google')) {
+    const q = searchParams.get('q');
+    if (q) return q;
   }
   
-  // Bing
-  if (hostname.includes('bing.')) {
-    return searchParams.get('q');
+  // Bing search
+  if (hostname.includes('bing.com')) {
+    const q = searchParams.get('q');
+    if (q) return q;
   }
   
-  // Yahoo
-  if (hostname.includes('yahoo.')) {
-    return searchParams.get('p');
+  // Yahoo search
+  if (hostname.includes('yahoo.com') && urlObj.pathname.includes('/search')) {
+    const p = searchParams.get('p');
+    if (p) return p;
   }
   
   // DuckDuckGo
-  if (hostname.includes('duckduckgo.')) {
-    return searchParams.get('q');
+  if (hostname.includes('duckduckgo.com')) {
+    const q = searchParams.get('q');
+    if (q) return q;
+  }
+  
+  // YouTube
+  if (hostname.includes('youtube.com') && urlObj.pathname.includes('/results')) {
+    const search_query = searchParams.get('search_query');
+    if (search_query) return search_query;
+  }
+  
+  // Amazon search
+  if (hostname.includes('amazon.') && urlObj.pathname.includes('/s')) {
+    const k = searchParams.get('k');
+    if (k) return k;
   }
   
   // Baidu
-  if (hostname.includes('baidu.')) {
-    return searchParams.get('wd');
+  if (hostname.includes('baidu.com')) {
+    const wd = searchParams.get('wd');
+    if (wd) return wd;
   }
   
-  // YouTube search
-  if (hostname.includes('youtube.')) {
-    return searchParams.get('search_query');
+  // Yandex
+  if (hostname.includes('yandex.')) {
+    const text = searchParams.get('text');
+    if (text) return text;
   }
   
   return null;

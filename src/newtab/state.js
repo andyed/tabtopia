@@ -841,7 +841,6 @@ export const browserState = {
 
       // Find the tabId and specific navigation entry for this page visit
       // by searching through all tab histories.
-      // Assumes page.visitTimestamp is reasonably accurate.
       if (this._store.tabHistory && this._store.tabHistory.size > 0) {
         for (const [tabId, historyArray] of this._store.tabHistory.entries()) {
           // tabHistory entries are typically newest first (unshifted)
@@ -862,41 +861,162 @@ export const browserState = {
         }
       }
 
+      // Calculate dwell time with improved fallback mechanisms
       let dwellTimeMs = null;
       if (navigationEntry && nextNavigationEntry) {
+        // Standard dwell time calculation: time between this navigation and the next one
         const duration = nextNavigationEntry.timestamp - navigationEntry.timestamp;
         if (duration > 0) {
           dwellTimeMs = duration;
         }
       } else if (navigationEntry) {
-        // This page was the last recorded in its tab's history or tab still open.
-        // Dwell time calculation here is less certain without tab closure/session end times.
-        // For now, we'll leave it null. sessions.js might refine this later.
+        // IMPROVED: Fallback dwell time calculation for the last navigation in a tab
+        // Use either the session end time from page data, tab close time, or current time
+        const endTime = page.sessionEndTime || Date.now();
+        dwellTimeMs = endTime - navigationEntry.timestamp;
+        
+        // Only use this value if it's reasonable (positive and not excessive)
+        if (dwellTimeMs <= 0 || dwellTimeMs > 24 * 60 * 60 * 1000) { // Cap at 24 hours
+          // If the calculated time is unreasonable, try to get better data from tabActivityLog
+          if (visitTabId && this._store.tabActivityLog && this._store.tabActivityLog.has(visitTabId)) {
+            const activityLog = this._store.tabActivityLog.get(visitTabId);
+            if (Array.isArray(activityLog)) {
+              // Try to find interaction events after this navigation to better estimate dwell time
+              const afterEvents = activityLog.filter(event => 
+                (event.type === 'focus' || event.type === 'link_interaction') && 
+                event.timestamp > navigationEntry.timestamp
+              );
+              
+              if (afterEvents.length > 0) {
+                // Sort by timestamp
+                afterEvents.sort((a, b) => a.timestamp - b.timestamp);
+                // Use the time between navigation and last interaction as dwell time
+                const lastEvent = afterEvents[afterEvents.length - 1];
+                const eventDwell = lastEvent.timestamp - navigationEntry.timestamp;
+                // Only use if reasonable
+                if (eventDwell > 0 && eventDwell < 24 * 60 * 60 * 1000) {
+                  dwellTimeMs = eventDwell;
+                }
+              }
+            }
+          }
+        }
       }
 
+      // Find the most relevant referral data with enhanced context
       let referral = null;
+      
+      // 1. First check tab relationships (tab-to-tab navigations)
       if (visitTabId && this._store.tabRelationships && this._store.tabRelationships.has(visitTabId)) {
         const relationship = this._store.tabRelationships.get(visitTabId);
-        // This relationship describes how the 'visitTabId' itself was opened.
+        // This relationship describes how the 'visitTabId' itself was opened
         if (relationship && relationship.referringTabId) {
           referral = {
-            type: 'tabOpen', // Indicates this referral is about how the tab was initiated
+            type: 'tabOpen',
             sourceTabId: relationship.referringTabId,
             sourceUrl: relationship.referringURL,
             linkText: relationship.linkText || null,
-            timestamp: relationship.timestamp
+            timestamp: relationship.timestamp,
+            interactionData: relationship.interactionData || null
           };
+          
+          // ENHANCED: If lastClickedLink data is available, merge in rich context
+          if (relationship.lastClickedLink) {
+            const clickData = relationship.lastClickedLink;
+            referral = {
+              ...referral,
+              linkText: clickData.text || clickData.linkText || referral.linkText,
+              surroundingText: clickData.surroundingText || null,
+              interactionType: clickData.interactionType || 'click',
+              elementType: clickData.elementType || clickData.sourceElementType || 'link',
+              sourceDomain: clickData.sourceDomain || null,
+              targetDomain: clickData.targetDomain || null,
+              attributes: clickData.attributes || null
+            };
+          }
         }
       }
-      // Note: For intra-tab navigations (link clicks not opening new tabs),
-      // specific link text might not be available via tabRelationships.
-      // The transitionType on the navigationEntry itself (e.g., 'link') can indicate this.
+      
+      // 2. ENHANCED: Find the most relevant link_interaction event for this navigation
+      // This helps with intra-tab navigations that don't create new tabs
+      if (!referral && navigationEntry && visitTabId && this._store.tabActivityLog?.has(visitTabId)) {
+        const activityLog = this._store.tabActivityLog.get(visitTabId);
+        if (Array.isArray(activityLog)) {
+          // Look for link interactions just before this navigation (within 5 seconds)
+          // Increased window to catch more interactions that might be related
+          const relevantEvents = activityLog.filter(event => 
+            event.type === 'link_interaction' && 
+            event.data?.targetUrl && // Ensure we have target URL data
+            event.timestamp <= navigationEntry.timestamp && 
+            navigationEntry.timestamp - event.timestamp < 5000 && // Expanded window to 5s
+            // If we have target URL, try to match it to the navigation
+            // This helps confirm this interaction actually led to this page
+            (!event.data.targetUrl || 
+              event.data.targetUrl === navigationEntry.url ||
+              new URL(event.data.targetUrl).pathname === new URL(navigationEntry.url).pathname)
+          );
+          
+          // Sort by recency to get the most immediate predecessor
+          if (relevantEvents.length > 0) {
+            relevantEvents.sort((a, b) => b.timestamp - a.timestamp);
+            const mostRelevantEvent = relevantEvents[0];
+            const eventData = mostRelevantEvent.data;
+            
+            referral = {
+              type: 'intraTab',
+              sourceUrl: eventData.sourceUrl,
+              sourceDomain: eventData.sourceDomain || (eventData.sourceUrl ? new URL(eventData.sourceUrl).hostname : null),
+              linkText: eventData.text || eventData.linkText || null,
+              timestamp: mostRelevantEvent.timestamp,
+              interactionType: eventData.interactionType || 'click',
+              elementType: eventData.elementType || eventData.sourceElementType || 'link',
+              // Include rich context data
+              surroundingText: eventData.surroundingText || null,
+              attributes: eventData.attributes || null,
+              isFormSubmission: eventData.isFormSubmission || false,
+              formData: eventData.formData || null,
+              pageContext: eventData.pageContext || null
+            };
+            
+            // If this was a search form, extract query
+            if (referral.isFormSubmission && referral.formData && referral.formData.searchQuery) {
+              referral.searchQuery = referral.formData.searchQuery;
+            }
+          }
+        }
+      }
+      
+      // 3. Fallback to navigation entry transition info if available
+      if (!referral && navigationEntry && navigationEntry.transitionType) {
+        referral = {
+          type: 'navigation',
+          transitionType: navigationEntry.transitionType,
+          transitionQualifiers: navigationEntry.transitionQualifiers || [],
+          timestamp: navigationEntry.timestamp,
+          // Check for special transition types
+          isTypedEntry: navigationEntry.transitionType === 'typed',
+          isReload: navigationEntry.transitionQualifiers?.includes('forward_back') || 
+                   navigationEntry.transitionType === 'reload',
+          isBookmark: navigationEntry.transitionType === 'auto_bookmark'
+        };
+      }
+
+      // Include domain information for the page itself
+      let pageDomain = null;
+      try {
+        if (page.url) {
+          pageDomain = new URL(page.url).hostname;
+        }
+      } catch (e) {
+        console.warn('Error extracting domain from URL:', e);
+      }
 
       return {
         ...page, // Keep original page info (pageId, url, visitTimestamp)
         originalTabId: visitTabId, // The tabId in which this specific page visit occurred
         dwellTimeMs,
         referral,
+        domain: pageDomain,  // Include domain for easier grouping/analysis
       };
     });
 

@@ -741,34 +741,68 @@ function updateTabInWindows(tabData) {
  * @param {Object} sender - Sender information
  */
 function handleLinkContext(message, sender) {
-    lastClickedLink = {
+    // Create enriched click data with additional context
+    const clickTimestamp = Date.now();
+    const enrichedData = {
         ...message.data,
         sourceTabId: sender.tab.id,
         sourceWindowId: sender.tab.windowId,
         // Enhanced with more metadata
         linkText: message.data.text || null,
         sourceTitle: sender.tab.title || null,
+        sourceUrl: sender.tab.url || null,
         interactionType: message.data.interactionType || "click",
         isFormSubmission: !!message.data.formData,
         formData: message.data.formData || null,
-        sourceElementType: message.data.elementType || "link"
+        sourceElementType: message.data.elementType || "link",
+        // Add timestamp for better correlation
+        clickTimestamp: clickTimestamp,
+        // Add context about the link's surrounding text if available
+        surroundingText: message.data.surroundingText || null,
+        // Store hostname of both source and target for easier domain matching
+        sourceDomain: sender.tab.url ? new URL(sender.tab.url).hostname : null,
+        targetDomain: message.data.targetUrl ? new URL(message.data.targetUrl).hostname : null
     };
     
-    // Store in tab activity log for correlation
-    const tabActivity = browserState.tabActivityLog.get(sender.tab.id) || { events: [] };
-    if (!tabActivity.events) tabActivity.events = [];
+    // Set as lastClickedLink for correlation with new tab creation events
+    lastClickedLink = enrichedData;
     
-    tabActivity.events.push({
+    // Ensure tabActivityLog is properly initialized
+    if (!browserState.tabActivityLog.has(sender.tab.id)) {
+        browserState.tabActivityLog.set(sender.tab.id, []);
+    }
+    
+    let activityLog = browserState.tabActivityLog.get(sender.tab.id);
+    
+    // Verify that activityLog is an array, recreate if not
+    if (!Array.isArray(activityLog)) {
+        console.warn(`tabActivityLog for tab ${sender.tab.id} was not an array, resetting it`);
+        activityLog = [];
+        browserState.tabActivityLog.set(sender.tab.id, activityLog);
+    }
+    
+    // Add a detailed link_interaction event
+    const linkEvent = {
         type: "link_interaction",
-        timestamp: Date.now(),
-        data: lastClickedLink
+        timestamp: clickTimestamp,
+        data: enrichedData
+    };
+    
+    activityLog.push(linkEvent);
+    console.log(`Recorded link interaction in tab ${sender.tab.id}: ${enrichedData.linkText || enrichedData.targetUrl}`);
+    
+    // Send this data to any listening components
+    sendMessageWithErrorHandling({
+        action: "linkInteractionRecorded",
+        tabId: sender.tab.id,
+        event: linkEvent
     });
     
-    browserState.tabActivityLog.set(sender.tab.id, tabActivity);
-    
-    // Clear after 5 seconds if not used to prevent memory leaks
+    // Clear lastClickedLink reference after 5 seconds if not used
+    // This prevents memory leaks while giving enough time for correlation
     setTimeout(() => {
-        if (lastClickedLink?.timestamp === message.data.timestamp) {
+        if (lastClickedLink?.clickTimestamp === clickTimestamp) {
+            console.log("Clearing unused lastClickedLink reference");
             lastClickedLink = null;
         }
     }, 5000);

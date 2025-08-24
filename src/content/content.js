@@ -1,60 +1,178 @@
-// Modify the link click handler to use event capturing and avoid interference
+// Enhanced link click handler with rich context capture
 document.addEventListener('click', function(event) {
   // Find closest anchor in case we clicked on a child element
   const target = event.target.closest('a');
   if (!target || !target.href) return;
   
-  // Collect essential link data
-  const linkData = {
-    href: target.href,
-    text: target.innerText || target.textContent || '',
-    title: target.title || '',
-    timestamp: Date.now()
-  };
+  // Get surrounding text context (up to 100 chars before and after)
+  let surroundingText = '';
+  if (target.parentElement) {
+    const parentText = target.parentElement.innerText || target.parentElement.textContent || '';
+    const targetText = target.innerText || target.textContent || '';
+    const targetIndex = parentText.indexOf(targetText);
+    
+    if (targetIndex !== -1) {
+      const startIndex = Math.max(0, targetIndex - 100);
+      const endIndex = Math.min(parentText.length, targetIndex + targetText.length + 100);
+      surroundingText = parentText.substring(startIndex, endIndex);
+    }
+  }
   
-  // Send data to background script without blocking
-  chrome.runtime.sendMessage({
-    type: 'LINK_TEXT_CAPTURED',
-    data: linkData
-  });
+  try {
+    // Collect rich link data
+    const linkData = {
+      sourceUrl: window.location.href,
+      targetUrl: target.href,
+      text: (target.innerText || target.textContent || '').trim().substring(0, 200),
+      title: target.title || '',
+      timestamp: Date.now(),
+      interactionType: 'click',
+      elementType: 'link',
+      surroundingText,
+      // Include attributes that might help with context
+      attributes: {
+        id: target.id,
+        className: target.className,
+        rel: target.rel,
+        ariaLabel: target.getAttribute('aria-label')
+      },
+      // Add page context
+      pageContext: {
+        title: document.title,
+        path: window.location.pathname
+      }
+    };
+    
+    // Send the enriched data to the background script
+    chrome.runtime.sendMessage({
+      type: 'store_link_context',
+      data: linkData
+    });
+    
+    // Also send for legacy support
+    chrome.runtime.sendMessage({
+      type: 'LINK_TEXT_CAPTURED',
+      data: linkData
+    });
+    
+    console.log('Link click captured with rich context:', linkData.text);
+  } catch (err) {
+    console.warn('Error capturing link context:', err);
+  }
   
   // Don't interfere with normal event flow
 }, true); // true = use capturing phase to get event first
 
-// Track form submissions
+// Enhanced form submission tracking
 document.addEventListener('submit', (event) => {
   const form = event.target;
   const submitButton = form.querySelector('input[type="submit"], button[type="submit"]');
   
-  const formInfo = {
-    type: 'form',
-    url: form.action,
-    text: submitButton ? (submitButton.value || submitButton.innerText || 'Submit') : 'Form Submit',
-    sourceUrl: window.location.href,
-    timestamp: Date.now()
-  };
+  try {
+    // Extract form fields (non-sensitive) to provide context
+    const formFields = {};
+    const fieldElements = form.querySelectorAll('input:not([type="password"]), select, textarea');
+    fieldElements.forEach(el => {
+      if (el.name && el.value && el.type !== 'password') {
+        // Only include non-sensitive fields with names and values
+        // Skip password fields for privacy
+        formFields[el.name] = el.type === 'text' || el.type === 'search' ? el.value : '[FIELD_VALUE]';
+      }
+    });
+    
+    // Look for search inputs specifically
+    const searchInputs = Array.from(form.querySelectorAll('input[type="search"], input[name*="search"], input[placeholder*="search" i]'));
+    const searchQuery = searchInputs.length > 0 ? searchInputs[0].value : null;
+    
+    const formInfo = {
+      type: 'form',
+      url: form.action,
+      targetUrl: form.action,
+      sourceUrl: window.location.href,
+      text: submitButton ? (submitButton.value || submitButton.innerText || 'Submit') : 'Form Submit',
+      elementType: 'form',
+      interactionType: 'submit',
+      timestamp: Date.now(),
+      isFormSubmission: true,
+      formData: {
+        id: form.id,
+        method: form.method || 'get',
+        action: form.action,
+        // Only include field info if there's a search query to avoid privacy concerns
+        searchQuery: searchQuery,
+        fieldCount: fieldElements.length
+      },
+      // Add page context
+      pageContext: {
+        title: document.title,
+        path: window.location.pathname
+      }
+    };
 
-  chrome.runtime.sendMessage({
-    type: 'navigation_event',
-    data: formInfo
-  });
+    // Send to background script for both tabs and navigation tracking
+    chrome.runtime.sendMessage({
+      type: 'store_link_context', // Use the same handler for consistency
+      data: formInfo
+    });
+
+    // Also send via legacy format for compatibility
+    chrome.runtime.sendMessage({
+      type: 'navigation_event',
+      data: formInfo
+    });
+    
+    console.log('Form submission captured:', form.action);
+  } catch (err) {
+    console.warn('Error capturing form submission:', err);
+  }
 }, true);
 
-// Track right-clicks for context menu opens
+// Enhanced right-click context menu handler
 document.addEventListener('contextmenu', (event) => {
   let target = event.target;
   while (target && target !== document.body) {
     if (target.tagName === 'A') {
-      // Store the link info temporarily in background script
+      // Get surrounding text context (up to 100 chars before and after)
+      let surroundingText = '';
+      if (target.parentElement) {
+        const parentText = target.parentElement.innerText || target.parentElement.textContent || '';
+        const targetText = target.innerText || target.textContent || '';
+        const targetIndex = parentText.indexOf(targetText);
+        
+        if (targetIndex !== -1) {
+          const startIndex = Math.max(0, targetIndex - 100);
+          const endIndex = Math.min(parentText.length, targetIndex + targetText.length + 100);
+          surroundingText = parentText.substring(startIndex, endIndex);
+        }
+      }
+
+      // Store the enhanced link info in background script
       chrome.runtime.sendMessage({
         type: 'store_link_context',
         data: {
           sourceUrl: window.location.href,
           targetUrl: target.href,
-          text: target.innerText.trim() || target.title || target.href,
-          timestamp: Date.now()
+          text: (target.innerText || target.textContent || '').trim().substring(0, 200),
+          title: target.title || '',
+          timestamp: Date.now(),
+          interactionType: 'contextmenu',
+          elementType: 'link',
+          surroundingText,
+          // Include attributes that might help with context
+          attributes: {
+            id: target.id,
+            className: target.className,
+            rel: target.rel,
+            ariaLabel: target.getAttribute('aria-label')
+          },
+          // Add page context
+          pageContext: {
+            title: document.title,
+            path: window.location.pathname
+          }
         }
       });
+      console.log('Context menu on link captured:', target.href);
       break;
     }
     target = target.parentElement;
