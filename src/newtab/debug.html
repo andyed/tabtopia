@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabtopia Debug Tools</title>
+    <link rel="stylesheet" href="debug.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background: #fff;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .storage-panel {
+            background: #fff;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .storage-header {
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .storage-content {
+            padding: 0;
+            overflow: auto;
+            max-height: 500px;
+        }
+        .storage-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+        }
+        .storage-item:hover {
+            background-color: #f8f9fa;
+        }
+        .storage-key {
+            font-weight: bold;
+            width: 30%;
+            word-break: break-all;
+            padding-right: 15px;
+        }
+        .storage-value {
+            width: 60%;
+            word-break: break-all;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow: auto;
+            background-color: #f8f9fa;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        .storage-actions {
+            width: 10%;
+            display: flex;
+            justify-content: flex-end;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button.delete {
+            background-color: #e74c3c;
+        }
+        button.delete:hover {
+            background-color: #c0392b;
+        }
+        input[type="text"] {
+            padding: 8px;
+            border-radius: 3px;
+            border: 1px solid #ddd;
+            width: 300px;
+        }
+        .filter-container {
+            margin-bottom: 15px;
+        }
+        .size-info {
+            font-size: 12px;
+            color: #777;
+            margin-left: 10px;
+        }
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .expanded {
+            max-height: 2000px;
+        }
+        .toggle-btn {
+            cursor: pointer;
+            user-select: none;
+        }
+        .toggle-btn:before {
+            content: '▶';
+            display: inline-block;
+            margin-right: 5px;
+            transition: transform 0.3s;
+        }
+        .toggle-btn.active:before {
+            transform: rotate(90deg);
+        }
+        .tab-container {
+            margin-bottom: 20px;
+        }
+        .tab-buttons {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 15px;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            color: #333;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .tab-btn.active {
+            border-bottom: 2px solid #3498db;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .graph-subtabs {
+            margin-top: 10px;
+            border-bottom: none;
+        }
+        .graph-subtabs .tab-btn {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        .subtab-content {
+            display: none;
+            padding: 10px 0;
+        }
+        .subtab-content.active {
+            display: block;
+        }
+        .relationship-item {
+            display: flex;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .tab-id {
+            font-weight: bold;
+            background: #e8f4fc;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-right: 5px;
+        }
+        .referring-tab {
+            color: #2980b9;
+        }
+        .dwell-time {
+            font-weight: bold;
+            color: #27ae60;
+            margin-left: 10px;
+        }
+        .activity-timestamp {
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-right: 10px;
+        }
+        .link-text {
+            background: #fff3cd;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        .summary-stats {
+            background: #fff;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        .stat-card {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 3px;
+            border-left: 3px solid #3498db;
+        }
+        .stat-title {
+            font-size: 12px;
+            color: #777;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tabtopia Debug Tools</h1>
+    
+    <div class="tab-container">
+        <div class="tab-buttons">
+            <button class="tab-btn active" data-tab="history">Browsing History</button>
+            <button class="tab-btn" data-tab="relationships">Tab Relationships</button>
+            <button class="tab-btn" data-tab="activity">Activity Log</button>
+            <button class="tab-btn" data-tab="graphs">Graph Data</button>
+            <button class="tab-btn" data-tab="nanoSummaries">Nano Summaries</button>
+            <button class="tab-btn" data-tab="localStorage">Raw Storage</button>
+        </div>
+        
+        <div class="summary-stats">
+            <h3>Storage Summary</h3>
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-title">localStorage Items</div>
+                    <div id="localStorage-count" class="stat-value">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">localStorage Size</div>
+                    <div id="localStorage-size" class="stat-value">0 KB</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">Largest Key</div>
+                    <div id="largest-key" class="stat-value">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">Extension Install Date</div>
+                    <div id="install-date" class="stat-value">Unknown</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="localStorage" class="tab-content active">
+            <div class="controls">
+                <div class="filter-container">
+                    <input type="text" id="storage-filter" placeholder="Filter keys...">
+                    <span class="size-info">Showing <span id="filtered-count">0</span> of <span id="total-count">0</span> items</span>
+                </div>
+                <button id="refresh-storage">Refresh</button>
+                <button id="export-json">Export as JSON</button>
+                <button id="clear-all" class="delete">Clear All Storage</button>
+            </div>
+            
+            <div class="storage-panel">
+                <div class="storage-header">
+                    <h3>Local Storage Contents</h3>
+                </div>
+                <div id="storage-items" class="storage-content">
+                    <!-- Storage items will be displayed here -->
+                </div>
+            </div>
+        </div>
+        
+        <div id="sessionStorage" class="tab-content">
+            <p>Session storage inspection coming soon.</p>
+        </div>
+        
+        <div id="indexedDB" class="tab-content">
+            <p>IndexedDB inspection coming soon.</p>
+        </div>
+        
+        <div id="chrome" class="tab-content">
+            <p>Chrome storage API inspection coming soon.</p>
+        </div>
+        
+        <!-- Histospire-specific tabs -->
+        <div id="history" class="tab-content active">
+            <div class="controls">
+                <div class="filter-container">
+                    <input type="text" id="history-filter" placeholder="Filter URLs...">
+                    <span class="size-info">Showing <span id="history-filtered-count">0</span> of <span id="history-total-count">0</span> entries</span>
+                </div>
+                <button id="refresh-history">Refresh</button>
+                <button id="clear-history" class="delete">Clear History</button>
+            </div>
+            
+            <div class="storage-panel">
+                <div class="storage-header">
+                    <h3>Browsing History</h3>
+                </div>
+                <div id="history-entries" class="storage-content">
+                    <!-- History entries will be displayed here -->
+                </div>
+            </div>
+        </div>
+        
+        <div id="relationships" class="tab-content">
+            <div class="controls">
+                <div class="filter-container">
+                    <input type="text" id="relationships-filter" placeholder="Filter by tab ID...">
+                </div>
+                <button id="refresh-relationships">Refresh</button>
+                <button id="visualize-relationships">Visualize</button>
+            </div>
+            
+            <div class="storage-panel">
+                <div class="storage-header">
+                    <h3>Tab Relationships</h3>
+                </div>
+                <div id="relationship-entries" class="storage-content">
+                    <!-- Relationship entries will be displayed here -->
+                </div>
+            </div>
+        </div>
+        
+        <div id="activity" class="tab-content">
+            <div class="controls">
+                <div class="filter-container">
+                    <input type="text" id="activity-filter" placeholder="Filter by tab ID...">
+                    <select id="activity-type-filter">
+                        <option value="all">All events</option>
+                        <option value="focus">Focus events</option>
+                        <option value="navigation">Navigation events</option>
+                        <option value="link_interaction">Link interactions</option>
+                    </select>
+                </div>
+                <button id="refresh-activity">Refresh</button>
+                <button id="clear-activity" class="delete">Clear Activity</button>
+            </div>
+            
+            <div class="storage-panel">
+                <div class="storage-header">
+                    <h3>Tab Activity Log</h3>
+                </div>
+                <div id="activity-entries" class="storage-content">
+                    <!-- Activity entries will be displayed here -->
+                </div>
+            </div>
+        </div>
+        
+        <div id="graphs" class="tab-content">
+            <div class="controls">
+                <button id="refresh-graph-data">Refresh</button>
+                <button id="export-graph-data">Export</button>
+                <button id="clear-graph-data" class="delete">Clear Graph Data</button>
+            </div>
+            
+            <div class="storage-panel">
+                <div class="storage-header">
+                    <h3>Graph Data</h3>
+                    <div class="tab-buttons graph-subtabs">
+                        <button class="tab-btn active" data-subtab="graph-summaries">Summaries</button>
+                        <button class="tab-btn" data-subtab="graph-edges">Custom Edges</button>
+                        <button class="tab-btn" data-subtab="graph-positions">Node Positions</button>
+                    </div>
+                </div>
+                <div id="graph-data" class="storage-content">
+                    <div id="graph-summaries-content" class="subtab-content active"></div>
+                    <div id="graph-edges-content" class="subtab-content"></div>
+                    <div id="graph-positions-content" class="subtab-content"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="nanoSummaries" class="tab-content">
+            <div class="controls">
+                <div class="filter-container">
+                    <input type="text" id="nano-summaries-filter" placeholder="Filter URLs...">
+                    <span class="size-info">Showing <span id="nano-summaries-filtered-count">0</span> of <span id="nano-summaries-total-count">0</span> summaries</span>
+                </div>
+                <button id="refresh-nano-summaries">Refresh</button>
+                <button id="clear-nano-summaries" class="delete">Clear All Summaries</button>
+            </div>
+            
+            <div class="storage-panel">
+                <div class="storage-header">
+                    <h3>Nano Summaries (Chrome Summarizer API)</h3>
+                </div>
+                <div id="nano-summaries-entries" class="storage-content">
+                    <!-- Nano summaries will be displayed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="debug-state-bridge.js"></script>
+    <script src="debug.js"></script>
+</body>
+</html>

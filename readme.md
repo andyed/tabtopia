@@ -37,6 +37,19 @@ Tabtopia is a Chrome extension that visualizes your browser history and open tab
    - Hover over nodes for details
    - Click to focus on specific domains or time periods
 
+### Session View
+1. **Smart Session Organization**
+   - Automatic session grouping based on user activity
+   - Micro-sessions for more granular activity tracking
+   - Window and tab context-aware separation
+   - Search query and clicked link tracking
+
+2. **Visual Representation**
+   - Descriptive session titles based on link text and search queries
+   - Graph visualization with dwell time-based node sizing
+   - Domain grouping and session timelines
+   - Favicon and hero image enrichment
+
 ## Technical Architecture
 
 ### Core Components
@@ -51,6 +64,8 @@ Tabtopia is a Chrome extension that visualizes your browser history and open tab
    - Domain-based aggregation
    - Temporal pattern analysis
    - Search indexing
+   - Dwell time tracking and page importance scoring
+   - Navigation source classification (link clicks, search results, direct entry)
 
 3. **AI Integration**
    - Built-in Chrome AI Summarizer API for URL content
@@ -103,7 +118,34 @@ The underlying synchronization and history trail system can be leveraged for var
 - **D3.js Visualizations**: Interactive treemaps and force-directed graph layouts
 - **Chrome Extension APIs**: Integration with browser history, tabs, windows, and bookmarks
 - **Responsive Design**: Dynamic layout management with window resize handling
+- **Data Enrichment Layer**: 
+  - Page dwell time calculation for relevance scoring
+  - Navigation referral tracking (link text, search queries)
+  - Session boundary detection and organization
+  - Visual hierarchy based on interaction metrics
 
+
+## Session View Implementation
+
+The session view provides an enhanced way to visualize and explore browsing history organized into meaningful sessions:
+
+### Smart Session Titles
+- **Link-based Titles**: Uses referral link text to create descriptive titles (e.g., "example.com → 'Interesting Article'") 
+- **Search-based Titles**: Falls back to search queries when no link text is available
+- **Domain-based Titles**: Uses domain and page title as final fallback
+- **Automatic truncation** of overly long titles for better UI presentation
+
+### Graph Visualization
+- **Dwell Time Node Sizing**: Page importance visually indicated through node size
+  - Base size: < 30 seconds
+  - Larger sizes: > 30 seconds, > 3 minutes, > 6 minutes, > 12 minutes
+- **Edge Direction**: Shows navigation flow between pages
+- **Interactive tooltips**: Displays page title, URL, and search queries
+
+### Data Collection
+- **Dwell Time**: Time spent on each page calculated through tab focus events and navigation
+- **Referral Information**: How users arrived at pages (link clicks, search, direct navigation)
+- **Search Queries**: Extraction and association with resulting page visits
 
 ## Development Notes
 

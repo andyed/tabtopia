@@ -321,6 +321,15 @@ export function flushSummaryCache(notifyState = true) {
     // Clear the in-memory cache
     summaryCache.clear();
     
+    // Clear persisted nano summaries from storage
+    chrome.storage.local.remove(['nanoSummaries'], () => {
+        if (chrome.runtime.lastError) {
+            console.error('Error clearing nano summaries from storage:', chrome.runtime.lastError);
+        } else {
+            console.log('✅ Cleared nano summaries from storage');
+        }
+    });
+    
     // Optionally clear the summaries in Redux state
     if (notifyState && window.browserState) {
         // Dispatch an action to clear state summaries
@@ -337,6 +346,67 @@ function cacheSummary(url, summary) {
     // Add summary to search index if the function exists
     if (typeof tabSearch.addSummaryToIndex === 'function') {
         tabSearch.addSummaryToIndex(url, summary);
+    }
+    
+    // Persist summary to storage for persistence across browser restarts
+    persistSummaryToStorage(url, summary);
+}
+
+/**
+ * Persist summary to chrome.storage.local for persistence across browser restarts
+ * @param {string} url - The URL the summary is for
+ * @param {string} summary - The summary text
+ */
+async function persistSummaryToStorage(url, summary) {
+    try {
+        // Get existing summaries from storage
+        const result = await chrome.storage.local.get(['nanoSummaries']);
+        const summaries = result.nanoSummaries || {};
+        
+        // Add new summary
+        summaries[url] = {
+            summary,
+            timestamp: Date.now(),
+            source: 'chrome-summarizer'
+        };
+        
+        // Save back to storage
+        await chrome.storage.local.set({ nanoSummaries: summaries });
+        console.log(`✅ Persisted nano summary for ${url}`);
+        
+    } catch (error) {
+        console.error('Error persisting nano summary:', error);
+    }
+}
+
+/**
+ * Load nano summaries from storage on startup
+ * This ensures summaries are available after browser restart
+ */
+export async function loadNanoSummariesFromStorage() {
+    try {
+        const result = await chrome.storage.local.get(['nanoSummaries']);
+        const summaries = result.nanoSummaries || {};
+        
+        console.log(`Loading ${Object.keys(summaries).length} nano summaries from storage...`);
+        
+        // Add to in-memory cache
+        Object.entries(summaries).forEach(([url, data]) => {
+            summaryCache.set(url, {
+                summary: data.summary,
+                timestamp: data.timestamp
+            });
+            
+            // Add to search index if available
+            if (typeof tabSearch.addSummaryToIndex === 'function') {
+                tabSearch.addSummaryToIndex(url, data.summary);
+            }
+        });
+        
+        console.log(`✅ Loaded ${Object.keys(summaries).length} nano summaries from storage`);
+        
+    } catch (error) {
+        console.error('Error loading nano summaries from storage:', error);
     }
 }
 

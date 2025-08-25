@@ -25,12 +25,21 @@ import { extractSearchQuery, isLikelyRedirect } from './lib/url-utils.js';
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Tabtopia installed successfully.");
   
+  // Load any previously saved state
+  loadStateFromStorage();
+  
   // Initialize current active tab tracking for dwell time calculations
   initializeActiveTabTracking();
 });
 
 // Also initialize active tab tracking when the background script starts
+loadStateFromStorage();
 initializeActiveTabTracking();
+
+// Set up periodic state saving to ensure data persistence
+setInterval(() => {
+  saveStateToStorage();
+}, 30000); // Save every 30 seconds
 
 // Handle browser suspend/resume events
 chrome.runtime.onSuspend.addListener(() => {
@@ -510,6 +519,9 @@ async function updateGraphWithNewEdge(edge) {
       });
       browserState.tabRelationships.set(sourceTab.id, sourceRelationships);
       
+      // Save state to persist relationship data
+      saveStateToStorage();
+      
       console.log("Added enhanced tab relationship:", browserState.tabRelationships.get(targetTab.id));
     }
   } catch (error) {
@@ -544,6 +556,9 @@ function updateTabActivity(tabId, isActive) {
   }
 
   browserState.tabActivityLog.set(tabId, activity);
+  
+  // Save state to persist activity data
+  saveStateToStorage();
 }
 
 /**
@@ -636,6 +651,9 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
                         // Replace the entry
                         history[0] = updatedEntry;
                         browserState.tabHistory.set(previousTabId, history);
+                        
+                        // Save state to persist dwell time data
+                        saveStateToStorage();
                         
                         // Broadcast the dwell time update
                         sendMessageWithErrorHandling({
@@ -1695,8 +1713,111 @@ function checkAndUpdateFavicon(tabId, url) {
 
 // Tab focus events are handled by the main chrome.tabs.onActivated listener above
 
-// Listen for runtime messages
+// Message handler for various actions
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Handle debug state requests
+    if (message.action === 'getDebugState') {
+      console.log('Message received (getDebugState) from tab', sender.tab.id);
+      
+      // Prepare the response with detailed logging
+      const stateToSend = {
+        tabs: browserState.tabs ? [...browserState.tabs.values()] : [],
+        windows: browserState.windows ? [...browserState.windows.values()] : [],
+        tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
+        tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
+        tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
+        graphData: browserState.graphData
+      };
+      
+      // Log what we're sending
+      console.log('Sending debug state response with:', {
+        'tabHistory': stateToSend.tabHistory ? `present (${Array.isArray(stateToSend.tabHistory) ? 'array' : typeof stateToSend.tabHistory})` : 'missing',
+        'tabRelationships': stateToSend.tabRelationships ? `present (${Array.isArray(stateToSend.tabRelationships) ? 'array' : typeof stateToSend.tabRelationships})` : 'missing',
+        'tabActivityLog': stateToSend.tabActivityLog ? `present (${Array.isArray(stateToSend.tabActivityLog) ? 'array' : typeof stateToSend.tabActivityLog})` : 'missing',
+        'graphData': stateToSend.graphData ? 'present' : 'missing',
+        'tabs count': stateToSend.tabs ? (Array.isArray(stateToSend.tabs) ? stateToSend.tabs.length : 'not array') : 'missing',
+        'windows count': stateToSend.windows ? (Array.isArray(stateToSend.windows) ? stateToSend.windows.length : 'not array') : 'missing'
+      });
+      
+      // Convert Maps to Arrays for serialization if needed
+      if (browserState.tabHistory instanceof Map) {
+        console.log('Converting tabHistory Map to Array for serialization');
+        const historyArray = [];
+        browserState.tabHistory.forEach((entries, tabId) => {
+          entries.forEach(entry => {
+            historyArray.push({
+              tabId: tabId,
+              ...entry
+            });
+          });
+        });
+        stateToSend.tabHistory = historyArray;
+      }
+      
+      if (browserState.tabRelationships instanceof Map) {
+        console.log('Converting tabRelationships Map to Array for serialization');
+        const relationshipsArray = [];
+        browserState.tabRelationships.forEach((relationship, tabId) => {
+          relationshipsArray.push({
+            tabId: tabId,
+            ...relationship
+          });
+        });
+        stateToSend.tabRelationships = relationshipsArray;
+      }
+      
+      if (browserState.tabActivityLog instanceof Map) {
+        console.log('Converting tabActivityLog Map to Array for serialization');
+        const activityArray = [];
+        browserState.tabActivityLog.forEach((activities, tabId) => {
+          if (Array.isArray(activities)) {
+            activities.forEach(activity => {
+              activityArray.push({
+                tabId: tabId,
+                ...activity
+              });
+            });
+          } else if (activities && typeof activities === 'object') {
+            activityArray.push({
+              tabId: tabId,
+              ...activities
+            });
+          }
+        });
+        stateToSend.tabActivityLog = activityArray;
+      }
+      
+      sendResponse({
+        success: true,
+        state: stateToSend
+      });
+      return true; // Keep the message channel open for async response
+    }
+    
+    // Handle clearing graph data
+    if (message.action === 'clearGraphData') {
+        browserState.graphData = { nodePositions: {}, customEdges: [], summaries: {} };
+        saveStateToStorage();
+        sendResponse({ success: true });
+        return true;
+    }
+    
+    // Handle clearing history data
+    if (message.action === 'clearHistoryData') {
+        browserState.tabHistory = [];
+        saveStateToStorage();
+        sendResponse({ success: true });
+        return true;
+    }
+    
+    // Handle clearing activity log
+    if (message.action === 'clearActivityLog') {
+        browserState.tabActivityLog = [];
+        saveStateToStorage();
+        sendResponse({ success: true });
+        return true;
+    }
+    
     // Ensure we have a valid message (check both action and type fields)
     if (!message || (!message.action && !message.type)) {
         console.warn("Invalid message received:", message);
@@ -1923,6 +2044,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Update browserState with hero image data
                 browserState.heroImages.set(message.data.url, heroImageData);
                 
+                // Save state to persist hero image data
+                saveStateToStorage();
+                
                 // Notify all listeners about new hero image data
                 browserState.notifyChange('heroImage', {
                     type: 'added',
@@ -1952,6 +2076,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
     } catch (error) {
         console.error("Error handling message:", error);
+        // Always send a response to close the message channel properly
+        sendResponse({ success: false, error: error.toString() });
     }
     return true; // Keep the message channel open for async responses
 });
@@ -1968,7 +2094,12 @@ function sendMessageWithErrorHandling(message) {
         // Don't log common expected errors
         const isSilent = message.silent === true;
         
-        return chrome.runtime.sendMessage(message).catch(error => {
+        // Implement timeout to prevent hanging message channels
+        const timeoutPromise = new Promise((resolve) => {
+            setTimeout(() => resolve(null), 1000); // 1 second timeout
+        });
+        
+        const messagePromise = chrome.runtime.sendMessage(message).catch(error => {
             // Check for the specific connection error that happens when no receivers exist
             if (error && error.message && error.message.includes("Receiving end does not exist")) {
                 if (!isSilent) {
@@ -1981,6 +2112,9 @@ function sendMessageWithErrorHandling(message) {
             }
             return null;
         });
+        
+        // Race between the message and the timeout
+        return Promise.race([messagePromise, timeoutPromise]);
     } catch (error) {
         console.log("Error in sendMessageWithErrorHandling:", error);
         return Promise.resolve(null);
@@ -2208,3 +2342,145 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
     });
   });
 });
+
+/**
+ * Save browserState to persistent storage
+ * This ensures all incremental data (dwell time, relationships, activity) is preserved
+ */
+function saveStateToStorage() {
+  try {
+    console.log('Saving browserState to persistent storage...');
+    
+    // Convert Maps to serializable objects for storage
+    const stateToSave = {
+      // Convert tabHistory Map to object
+      tabHistory: {},
+      // Convert tabRelationships Map to object  
+      tabRelationships: {},
+      // Convert tabActivityLog Map to object
+      tabActivityLog: {},
+      // Convert heroImages Map to object
+      heroImages: {},
+      // Include other state data
+      lastActive: browserState.lastActive,
+      lastSaved: Date.now()
+    };
+    
+    // Convert tabHistory Map
+    if (browserState.tabHistory instanceof Map) {
+      browserState.tabHistory.forEach((entries, tabId) => {
+        stateToSave.tabHistory[tabId] = entries;
+      });
+    }
+    
+    // Convert tabRelationships Map
+    if (browserState.tabRelationships instanceof Map) {
+      browserState.tabRelationships.forEach((relationship, tabId) => {
+        stateToSave.tabRelationships[tabId] = relationship;
+      });
+    }
+    
+    // Convert tabActivityLog Map
+    if (browserState.tabActivityLog instanceof Map) {
+      browserState.tabActivityLog.forEach((activities, tabId) => {
+        stateToSave.tabActivityLog[tabId] = activities;
+      });
+    }
+    
+    // Convert heroImages Map
+    if (browserState.heroImages instanceof Map) {
+      browserState.heroImages.forEach((imageData, url) => {
+        stateToSave.heroImages[url] = imageData;
+      });
+    }
+    
+    // Save to chrome.storage.local
+    chrome.storage.local.set({ 
+      'browserState': stateToSave 
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Error saving browserState:', chrome.runtime.lastError);
+      } else {
+        console.log('✅ browserState saved successfully');
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error in saveStateToStorage:', error);
+  }
+}
+
+/**
+ * Load browserState from persistent storage
+ * This restores all incremental data when the browser starts
+ */
+function loadStateFromStorage() {
+  try {
+    console.log('Loading browserState from persistent storage...');
+    
+    chrome.storage.local.get(['browserState'], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error loading browserState:', chrome.runtime.lastError);
+        return;
+      }
+      
+      const savedState = result.browserState;
+      if (!savedState) {
+        console.log('No saved browserState found, starting fresh');
+        return;
+      }
+      
+      console.log('Found saved browserState, restoring data...');
+      
+      // Restore tabHistory
+      if (savedState.tabHistory) {
+        browserState.tabHistory = new Map();
+        Object.entries(savedState.tabHistory).forEach(([tabId, entries]) => {
+          browserState.tabHistory.set(parseInt(tabId), entries);
+        });
+        console.log(`Restored ${browserState.tabHistory.size} tab history entries`);
+      }
+      
+      // Restore tabRelationships
+      if (savedState.tabRelationships) {
+        browserState.tabRelationships = new Map();
+        Object.entries(savedState.tabRelationships).forEach(([tabId, relationship]) => {
+          browserState.tabRelationships.set(parseInt(tabId), relationship);
+        });
+        console.log(`Restored ${browserState.tabRelationships.size} tab relationships`);
+      }
+      
+      // Restore tabActivityLog
+      if (savedState.tabActivityLog) {
+        browserState.tabActivityLog = new Map();
+        Object.entries(savedState.tabActivityLog).forEach(([tabId, activities]) => {
+          browserState.tabActivityLog.set(parseInt(tabId), activities);
+        });
+        console.log(`Restored ${browserState.tabActivityLog.size} tab activity logs`);
+      }
+      
+      // Restore heroImages
+      if (savedState.heroImages) {
+        browserState.heroImages = new Map();
+        Object.entries(savedState.heroImages).forEach(([url, imageData]) => {
+          browserState.heroImages.set(url, imageData);
+        });
+        console.log(`Restored ${browserState.heroImages.size} hero images`);
+      }
+      
+      // Restore lastActive if recent (within last hour)
+      if (savedState.lastActive && savedState.lastSaved) {
+        const timeSinceSave = Date.now() - savedState.lastSaved;
+        if (timeSinceSave < 3600000) { // 1 hour
+          browserState.lastActive = savedState.lastActive;
+          console.log('Restored lastActive tab state');
+        }
+      }
+      
+      console.log('✅ browserState restoration complete');
+    });
+    
+  } catch (error) {
+    console.error('Error in loadStateFromStorage:', error);
+  }
+}

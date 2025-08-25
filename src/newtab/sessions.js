@@ -770,7 +770,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
     }
 
     // Enrich sessions with dwell time and referral data
-    if (typeof browserState !== 'undefined' && browserState.getPageActivityAndReferrals) {
+    if (typeof window.browserState !== 'undefined' && window.browserState.getPageActivityAndReferrals) {
         console.log('Enriching sessions with activity and referral data...');
         for (let i = 0; i < processedSessions.length; i++) {
             const session = processedSessions[i];
@@ -781,7 +781,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                 }));
 
                 try {
-                    const enrichedPages = await browserState.getPageActivityAndReferrals(pageInfoForEnrichment);
+                    const enrichedPages = await window.browserState.getPageActivityAndReferrals(pageInfoForEnrichment);
                     session.pages = session.pages.map((originalPage, index) => ({
                         ...originalPage,
                         ...enrichedPages[index] // Adds originalTabId, dwellTimeMs, referral
@@ -794,6 +794,12 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         }
     } else {
         console.warn('browserState.getPageActivityAndReferrals not available. Skipping session enrichment.');
+        // More detailed diagnostics
+        console.warn(`window.browserState exists: ${typeof window.browserState !== 'undefined'}`);
+        if (typeof window.browserState !== 'undefined') {
+            console.warn(`window.browserState properties:`, Object.keys(window.browserState));
+            console.warn(`getPageActivityAndReferrals is function: ${typeof window.browserState.getPageActivityAndReferrals === 'function'}`);
+        }
     }
     
     console.log('Processed sessions (enriched):', processedSessions);

@@ -1,11 +1,14 @@
 import { drawTreemap } from './treemap.js';
-import { displayReadout } from './readout.js';
+import { displayReadout, loadNanoSummariesFromStorage } from './readout.js';
 
 // Make this a module-level variable so it's accessible to all functions
 let categorizedDataCache = null;
 
 export async function initializeApp() {
     console.log('Initializing app...');
+    
+    // Load nano summaries from storage first
+    await loadNanoSummariesFromStorage();
     
     // Only fetch the categorized tab data on load - this is necessary
     categorizedDataCache = await fetchCategorizedData();
