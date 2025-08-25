@@ -24,6 +24,21 @@ const LINE_HEIGHT = 20; // Approximate height of a line in pixels
 // Add at the top with other constants
 export const summaryQueue = new Set();
 let isProcessingQueue = false;
+let queueProcessingStats = {
+    totalProcessed: 0,
+    totalFailed: 0,
+    lastProcessed: null,
+    isActive: false
+};
+
+// Queue configuration
+const QUEUE_CONFIG = {
+    MAX_CONCURRENT: 2,           // Process max 2 summaries at once
+    MAX_QUEUE_SIZE: 50,          // Don't let queue get too large
+    RETRY_DELAY: 5000,           // 5 seconds between retries
+    MAX_RETRIES: 3,              // Max 3 retries per URL
+    PROCESS_INTERVAL: 2000       // Check queue every 2 seconds
+};
 
 // Update the summarizer options with more specificity for on-device models
 const SUMMARIZER_OPTIONS = {
@@ -31,6 +46,12 @@ const SUMMARIZER_OPTIONS = {
     format: 'plain-text', // Keep it simple
     length: 'short'      // Don't make it too verbose
 };
+
+// Track summarizer crashes to implement backoff
+let summarizerCrashCount = 0;
+let lastCrashTime = 0;
+const CRASH_BACKOFF_DURATION = 30000; // 30 seconds
+const MAX_CRASHES_BEFORE_BACKOFF = 3;
 
 // Utility function to extract and clean words from a URL for better search recall
 function extractWordsFromUrl(url) {
@@ -311,6 +332,101 @@ export function getCachedSummary(url) {
 }
 
 /**
+ * Add URL to summary queue with size limits and validation
+ * @param {string} url - The URL to add to the queue
+ * @returns {boolean} - Whether the URL was successfully added
+ */
+export function addToSummaryQueue(url) {
+    if (!url || typeof url !== 'string') {
+        console.warn('Invalid URL provided to summary queue:', url);
+        return false;
+    }
+    
+    // Check if already in queue
+    if (summaryQueue.has(url)) {
+        console.log(`⏭️ URL already in queue: ${url}`);
+        return false;
+    }
+    
+    // Check if already cached
+    if (getCachedSummary(url)) {
+        console.log(`⏭️ URL already cached: ${url}`);
+        return false;
+    }
+    
+    // Check queue size limit
+    if (summaryQueue.size >= QUEUE_CONFIG.MAX_QUEUE_SIZE) {
+        console.warn(`⚠️ Queue full (${summaryQueue.size}/${QUEUE_CONFIG.MAX_QUEUE_SIZE}), dropping oldest item`);
+        // Remove oldest item (first in Set)
+        const firstItem = summaryQueue.values().next().value;
+        summaryQueue.delete(firstItem);
+    }
+    
+    // Add to queue
+    summaryQueue.add(url);
+    console.log(`📋 Added to queue: ${url} (${summaryQueue.size}/${QUEUE_CONFIG.MAX_QUEUE_SIZE})`);
+    
+    // Trigger processing if not already running
+    if (!isProcessingQueue) {
+        setTimeout(() => {
+            processSummaryQueue().catch(console.error);
+        }, 100); // Small delay to batch multiple additions
+    }
+    
+    return true;
+}
+
+/**
+ * Get queue statistics for debugging and monitoring
+ * @returns {Object} - Queue statistics
+ */
+export function getQueueStats() {
+    return {
+        queueSize: summaryQueue.size,
+        isProcessing: isProcessingQueue,
+        stats: { ...queueProcessingStats },
+        config: { ...QUEUE_CONFIG }
+    };
+}
+
+/**
+ * Clear the summary queue
+ */
+export function clearSummaryQueue() {
+    const size = summaryQueue.size;
+    summaryQueue.clear();
+    console.log(`🗑️ Cleared summary queue (${size} items)`);
+}
+
+/**
+ * Reset summarizer crash counter (useful for debugging)
+ */
+export function resetSummarizerCrashCounter() {
+    summarizerCrashCount = 0;
+    lastCrashTime = 0;
+    console.log('🔄 Summarizer crash counter reset');
+}
+
+/**
+ * Get summarizer status including crash information
+ */
+export function getSummarizerStatus() {
+    const now = Date.now();
+    const inBackoff = summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF && 
+                     (now - lastCrashTime) < CRASH_BACKOFF_DURATION;
+    const backoffRemaining = inBackoff ? 
+        Math.max(0, Math.ceil((CRASH_BACKOFF_DURATION - (now - lastCrashTime)) / 1000)) : 0;
+    
+    return {
+        crashCount: summarizerCrashCount,
+        maxCrashes: MAX_CRASHES_BEFORE_BACKOFF,
+        inBackoff,
+        backoffRemainingSeconds: backoffRemaining,
+        lastCrashTime: lastCrashTime ? new Date(lastCrashTime).toISOString() : null
+    };
+}
+
+/**
  * Flushes all summary caches (both in-memory and Redux state)
  * Call this when you want to force re-generation of summaries
  * @param {boolean} notifyState - Whether to notify the state system to clear summaries
@@ -320,6 +436,9 @@ export function flushSummaryCache(notifyState = true) {
     
     // Clear the in-memory cache
     summaryCache.clear();
+    
+    // Clear the queue
+    clearSummaryQueue();
     
     // Clear persisted nano summaries from storage
     chrome.storage.local.remove(['nanoSummaries'], () => {
@@ -478,43 +597,115 @@ async function generateVisitMetricFallback(url) {
     }
 }
 
-// Update the queue processing function to be more aggressive
+// Enhanced queue processing with rate limiting and error recovery
 export async function processSummaryQueue() {
-    if (isProcessingQueue) return;
+    if (isProcessingQueue) {
+        console.log('Queue processing already in progress, skipping...');
+        return;
+    }
+    
     isProcessingQueue = true;
+    queueProcessingStats.isActive = true;
+    
+    console.log(`🔄 Starting queue processing with ${summaryQueue.size} items`);
 
     try {
+        // Don't clear the queue immediately - process items one by one
         const urls = Array.from(summaryQueue);
-        summaryQueue.clear();
-
-        await Promise.all(urls.map(async (url) => {
-            // Skip if already cached
-            if (getCachedSummary(url)) return;
-
-            // Skip chrome URLs
-            if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) return;
-
-            try {
-                const summary = await summarizeUrl(url);
-                if (summary) {
-                    cacheSummary(url, summary);
-                    // Update current readout if it's showing this URL
-                    const readout = document.getElementById('readout');
-                    const summaryContent = document.getElementById('summary-content');
-                    const currentUrl = readout?.querySelector('.readout-url')?.textContent;
-                    if (summaryContent && formatUrlForDisplay(url) === currentUrl) {
-                        summaryContent.innerHTML = createTruncatedSummary(summary);
+        
+        // Process URLs in batches to avoid overwhelming the system
+        for (let i = 0; i < urls.length; i += QUEUE_CONFIG.MAX_CONCURRENT) {
+            const batch = urls.slice(i, i + QUEUE_CONFIG.MAX_CONCURRENT);
+            
+            console.log(`Processing batch ${Math.floor(i / QUEUE_CONFIG.MAX_CONCURRENT) + 1}: ${batch.length} URLs`);
+            
+            // Process batch concurrently but with individual error handling
+            const batchPromises = batch.map(async (url) => {
+                try {
+                    // Remove from queue immediately to prevent reprocessing
+                    summaryQueue.delete(url);
+                    
+                    // Skip if already cached
+                    if (getCachedSummary(url)) {
+                        console.log(`⏭️ Skipping ${url} - already cached`);
+                        return;
                     }
+
+                    // Skip chrome URLs
+                    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
+                        console.log(`⏭️ Skipping chrome URL: ${url}`);
+                        return;
+                    }
+
+                    console.log(`📝 Generating summary for: ${url}`);
+                    const summary = await summarizeUrl(url);
+                    
+                    if (summary) {
+                        cacheSummary(url, summary);
+                        queueProcessingStats.totalProcessed++;
+                        queueProcessingStats.lastProcessed = Date.now();
+                        
+                        console.log(`✅ Summary generated for: ${url}`);
+                        
+                        // Update current readout if it's showing this URL
+                        updateReadoutIfNeeded(url, summary);
+                    } else {
+                        console.log(`⚠️ No summary generated for: ${url}`);
+                        queueProcessingStats.totalFailed++;
+                    }
+                } catch (error) {
+                    console.error(`❌ Error generating summary for ${url}:`, error);
+                    queueProcessingStats.totalFailed++;
+                    
+                    // Don't re-add to queue immediately - could cause infinite loops
+                    // Instead, we'll let the user retry manually or through other mechanisms
                 }
-            } catch (error) {
-                console.error('Error generating summary for:', url, error);
+            });
+            
+            // Wait for batch to complete before processing next batch
+            await Promise.allSettled(batchPromises);
+            
+            // Small delay between batches to be nice to the system
+            if (i + QUEUE_CONFIG.MAX_CONCURRENT < urls.length) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
-        }));
+        }
+        
+        console.log(`✅ Queue processing complete. Processed: ${queueProcessingStats.totalProcessed}, Failed: ${queueProcessingStats.totalFailed}`);
+        
+    } catch (error) {
+        console.error('❌ Critical error in queue processing:', error);
     } finally {
         isProcessingQueue = false;
+        queueProcessingStats.isActive = false;
+        
+        // If more items were added during processing, schedule another run
         if (summaryQueue.size > 0) {
-            processSummaryQueue().catch(console.error);
+            console.log(`🔄 ${summaryQueue.size} items remaining, scheduling next run...`);
+            setTimeout(() => {
+                processSummaryQueue().catch(console.error);
+            }, QUEUE_CONFIG.PROCESS_INTERVAL);
         }
+    }
+}
+
+/**
+ * Update readout if it's currently showing the URL that just got a summary
+ * @param {string} url - The URL that was summarized
+ * @param {string} summary - The generated summary
+ */
+function updateReadoutIfNeeded(url, summary) {
+    try {
+        const readout = document.getElementById('readout');
+        const summaryContent = document.getElementById('summary-content');
+        const currentUrl = readout?.querySelector('.readout-url')?.textContent;
+        
+        if (summaryContent && currentUrl && formatUrlForDisplay(url) === currentUrl) {
+            summaryContent.innerHTML = createTruncatedSummary(summary);
+            console.log(`🔄 Updated readout for: ${url}`);
+        }
+    } catch (error) {
+        console.error('Error updating readout:', error);
     }
 }
 
@@ -527,10 +718,18 @@ async function summarizeUrl(url) {
             return null;
         }
 
+        // Check for crash backoff
+        const now = Date.now();
+        if (summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF && 
+            (now - lastCrashTime) < CRASH_BACKOFF_DURATION) {
+            console.log(`⚠️ Summarizer in backoff mode due to crashes. Skipping: ${url}`);
+            return await generateVisitMetricFallback(url);
+        }
+
         // Check if the global Summarizer API is available
         if (!window.Summarizer) {
             console.log('Chrome Summarizer API not available in this browser');
-            return null;
+            return await generateVisitMetricFallback(url);
         }
 
         // Check if model is available using correct API method
@@ -539,7 +738,7 @@ async function summarizeUrl(url) {
         
         if (availability === 'unavailable') {
             console.log('Summarizer API not usable on this system');
-            return null;
+            return await generateVisitMetricFallback(url);
         }
 
         // Get tab content to summarize
@@ -556,17 +755,37 @@ async function summarizeUrl(url) {
         const MAX_CONTENT_LENGTH = 12000; // ~12KB max based on API limits
         let trimmedContent = content;
         
-        if (content.length > MAX_CONTENT_LENGTH) {
-            console.log(`Content too large (${content.length} chars), trimming to ${MAX_CONTENT_LENGTH} chars`);
+        // Filter out problematic content that might cause crashes
+        const filteredContent = content
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove script tags
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')   // Remove style tags
+            .replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '') // Remove iframes
+            .replace(/<object[^>]*>[\s\S]*?<\/object>/gi, '') // Remove objects
+            .replace(/<embed[^>]*>/gi, '')                    // Remove embeds
+            .replace(/<applet[^>]*>[\s\S]*?<\/applet>/gi, '') // Remove applets
+            .replace(/[^\x00-\x7F]/g, ' ')                    // Remove non-ASCII characters
+            .replace(/\s+/g, ' ')                             // Normalize whitespace
+            .trim();
+        
+        if (filteredContent.length > MAX_CONTENT_LENGTH) {
+            console.log(`Content too large (${filteredContent.length} chars), trimming to ${MAX_CONTENT_LENGTH} chars`);
             // Take first part for better context
             const firstPart = Math.floor(MAX_CONTENT_LENGTH * 0.7);
             // Take last part to include conclusions
             const lastPart = MAX_CONTENT_LENGTH - firstPart;
-            trimmedContent = content.substring(0, firstPart) + "\n[...content trimmed...]\n" + 
-                           content.substring(content.length - lastPart);
+            trimmedContent = filteredContent.substring(0, firstPart) + "\n[...content trimmed...]\n" + 
+                           filteredContent.substring(filteredContent.length - lastPart);
+        } else {
+            trimmedContent = filteredContent;
         }
         
-        // Initialize the summarizer
+        // Additional safety check - if content is too short, use fallback
+        if (trimmedContent.length < 50) {
+            console.log('Content too short after filtering, using fallback summary');
+            return await generateVisitMetricFallback(url);
+        }
+        
+                // Initialize the summarizer
         let summarizer;
         try {
             // Create the summarizer with proper monitoring of download
@@ -606,15 +825,35 @@ async function summarizeUrl(url) {
             
             // Create a more detailed context prompt
             const contextPrompt = `Summarize this webpage${pageTitle ? ' about "' + pageTitle + '"' : ''} from ${domain} in one concise sentence. ` +
-                               `Focus on the main topic and key information. ` + 
+                               `Focus on the main topic and key information. ` +
                                `Include what makes this page unique or valuable to the reader. ` +
                                `Ensure your summary is factual, informative, and directly based on the content.`;
                                
-            return await summarizer.summarize(trimmedContent, {
+            const summary = await summarizer.summarize(trimmedContent, {
                 context: contextPrompt
             });
+            
+            // Reset crash count on successful summary
+            if (summary) {
+                summarizerCrashCount = 0;
+                console.log('✅ Summarizer crash count reset - successful summary generated');
+            }
+            
+            return summary;
         } catch (error) {
             console.error('Error during summarization:', error);
+            
+            // Check if this is a model crash error
+            if (error.message && error.message.includes('crashed')) {
+                summarizerCrashCount++;
+                lastCrashTime = Date.now();
+                console.warn(`🚨 Summarizer crash detected (${summarizerCrashCount}/${MAX_CRASHES_BEFORE_BACKOFF})`);
+                
+                if (summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF) {
+                    console.warn(`⚠️ Entering backoff mode for ${CRASH_BACKOFF_DURATION/1000} seconds`);
+                }
+            }
+            
             return null;
         }
     } catch (error) {
@@ -818,8 +1057,7 @@ export async function displayReadout(d, event) {
 
     // Queue summary generation if needed (even if not showing summary section)
     if (!isChromePage && !url.startsWith('file://') && !cachedSummary) {
-        summaryQueue.add(url);
-        processSummaryQueue().catch(console.error);
+        addToSummaryQueue(url);
         
         // If we're not showing the summary section yet, set up a timer to show it when summary is ready
         if (!showSummarySection) {
@@ -994,6 +1232,14 @@ function handleTabSearch(event) {
         }
     });
 }
+
+// Make queue functions available globally for console access and debug tools
+window.getQueueStats = getQueueStats;
+window.addToSummaryQueue = addToSummaryQueue;
+window.clearSummaryQueue = clearSummaryQueue;
+window.processSummaryQueue = processSummaryQueue;
+window.resetSummarizerCrashCounter = resetSummarizerCrashCounter;
+window.getSummarizerStatus = getSummarizerStatus;
 
 // Make browserState.clearSummaries available globally for console access
 window.flushSummaryCache = function() {

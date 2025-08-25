@@ -1715,9 +1715,24 @@ function checkAndUpdateFavicon(tabId, url) {
 
 // Message handler for various actions
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('🔍 Background script received message:', message);
+    console.log('🔍 Message action:', message.action);
+    console.log('🔍 Message type:', message.type);
+    console.log('🔍 Sender tab ID:', sender.tab?.id);
+    
+    // Handle ping requests for testing
+    if (message.action === 'ping') {
+      console.log('Ping received from debug tools');
+      sendResponse({ success: true, message: 'pong', timestamp: Date.now() });
+      return true;
+    }
+    
     // Handle debug state requests
     if (message.action === 'getDebugState') {
+      console.log('✅ getDebugState action detected!');
       console.log('Message received (getDebugState) from tab', sender.tab.id);
+      console.log('browserState available:', !!browserState);
+      console.log('browserState properties:', browserState ? Object.keys(browserState) : 'null');
       
       // Prepare the response with detailed logging
       const stateToSend = {
@@ -1726,7 +1741,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
         tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
         tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
-        graphData: browserState.graphData
+        graphData: browserState.graphData || { summaries: {}, customEdges: [], nodePositions: {} }
       };
       
       // Log what we're sending
@@ -1787,10 +1802,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         stateToSend.tabActivityLog = activityArray;
       }
       
-      sendResponse({
+      const response = {
         success: true,
         state: stateToSend
-      });
+      };
+      
+      console.log('Sending response to debug tools:', response);
+      console.log('Response keys:', Object.keys(response));
+      console.log('State keys:', Object.keys(stateToSend));
+      
+      sendResponse(response);
       return true; // Keep the message channel open for async response
     }
     
@@ -1881,6 +1902,77 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // graphData: browserState.graphData || {},
                     // cache: browserState.cache || {}
                 });
+                break;
+            case "getDebugState":
+                console.log('✅ getDebugState case in switch statement triggered!');
+                // Prepare the response with detailed logging
+                const stateToSend = {
+                    tabs: browserState.tabs ? [...browserState.tabs.values()] : [],
+                    windows: browserState.windows ? [...browserState.windows.values()] : [],
+                    tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
+                    tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
+                    tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
+                    graphData: browserState.graphData || { summaries: {}, customEdges: [], nodePositions: {} }
+                };
+                
+                // Convert Maps to Arrays for serialization if needed
+                if (browserState.tabHistory instanceof Map) {
+                    console.log('Converting tabHistory Map to Array for serialization');
+                    const historyArray = [];
+                    browserState.tabHistory.forEach((entries, tabId) => {
+                        entries.forEach(entry => {
+                            historyArray.push({
+                                tabId: tabId,
+                                ...entry
+                            });
+                        });
+                    });
+                    stateToSend.tabHistory = historyArray;
+                }
+                
+                if (browserState.tabRelationships instanceof Map) {
+                    console.log('Converting tabRelationships Map to Array for serialization');
+                    const relationshipsArray = [];
+                    browserState.tabRelationships.forEach((relationship, tabId) => {
+                        relationshipsArray.push({
+                            tabId: tabId,
+                            ...relationship
+                        });
+                    });
+                    stateToSend.tabRelationships = relationshipsArray;
+                }
+                
+                if (browserState.tabActivityLog instanceof Map) {
+                    console.log('Converting tabActivityLog Map to Array for serialization');
+                    const activityArray = [];
+                    browserState.tabActivityLog.forEach((activities, tabId) => {
+                        if (Array.isArray(activities)) {
+                            activities.forEach(activity => {
+                                activityArray.push({
+                                    tabId: tabId,
+                                    ...activity
+                                });
+                            });
+                        } else if (activities && typeof activities === 'object') {
+                            activityArray.push({
+                                tabId: tabId,
+                                ...activities
+                            });
+                        }
+                    });
+                    stateToSend.tabActivityLog = activityArray;
+                }
+                
+                const response = {
+                    success: true,
+                    state: stateToSend
+                };
+                
+                console.log('Sending response to debug tools:', response);
+                console.log('Response keys:', Object.keys(response));
+                console.log('State keys:', Object.keys(stateToSend));
+                
+                sendResponse(response);
                 break;
             case "LINK_TEXT_CAPTURED":
                 if (sender.tab) {
@@ -2073,12 +2165,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                 });
                 break;
+            default:
+                console.warn('Unknown message type:', messageType);
+                sendResponse({ received: true, error: 'Unknown message type' });
+                break;
         }
     } catch (error) {
         console.error("Error handling message:", error);
         // Always send a response to close the message channel properly
         sendResponse({ success: false, error: error.toString() });
     }
+    
+    // If we get here, no handler responded
+    console.warn('No message handler responded, sending fallback response');
+    sendResponse({ received: true, warning: 'No specific handler for this message' });
     return true; // Keep the message channel open for async responses
 });
 

@@ -6,6 +6,31 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Debug UI initializing...');
     
+    // Check if we're running in the Chrome extension context
+    if (typeof chrome === 'undefined' || !chrome.runtime) {
+        console.error('❌ Debug page opened outside Chrome extension context');
+        document.body.innerHTML = `
+            <div style="padding: 40px; text-align: center; font-family: Arial, sans-serif;">
+                <h1 style="color: #e74c3c;">⚠️ Chrome Extension Context Required</h1>
+                <p style="font-size: 18px; margin: 20px 0;">
+                    This debug page must be opened within the Chrome extension context.
+                </p>
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <h3>How to access debug tools:</h3>
+                    <ol style="text-align: left; max-width: 500px; margin: 0 auto;">
+                        <li>Open a new tab in Chrome (the extension's newtab page will load)</li>
+                        <li>Look for a debug button or link in the extension interface</li>
+                        <li>Click the debug button to open the debug tools</li>
+                    </ol>
+                </div>
+                <p style="color: #666;">
+                    Current URL: ${window.location.href}
+                </p>
+            </div>
+        `;
+        return;
+    }
+    
     // Force browserState init check
     setTimeout(async () => {
         console.log('Checking browserState initialization...');
@@ -52,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadGraphData();
                     loadNanoSummariesData();
                     loadLocalStorageData();
+                    updateQueueStatus();
                     
                     // Flash animation to show refresh happened
                     refreshButton.classList.add('refreshing');
@@ -104,6 +130,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('refresh-nano-summaries').addEventListener('click', loadNanoSummariesData);
     document.getElementById('clear-nano-summaries').addEventListener('click', clearNanoSummariesData);
     document.getElementById('nano-summaries-filter').addEventListener('input', filterNanoSummariesItems);
+    document.getElementById('clear-summary-queue').addEventListener('click', clearSummaryQueueFromDebug);
+    document.getElementById('process-summary-queue').addEventListener('click', processSummaryQueueFromDebug);
+    document.getElementById('reset-crash-counter').addEventListener('click', resetCrashCounterFromDebug);
     document.getElementById('clear-all').addEventListener('click', clearAllStorage);
     document.getElementById('storage-filter').addEventListener('input', filterStorageItems);
     
@@ -302,6 +331,9 @@ async function loadHistoryData() {
         // Get state from browserState
         const state = await window.browserState.getState();
         console.log('Retrieved state for history:', state);
+        console.log('tabHistory data:', state.tabHistory);
+        console.log('tabHistory type:', typeof state.tabHistory);
+        console.log('tabHistory length/size:', Array.isArray(state.tabHistory) ? state.tabHistory.length : state.tabHistory?.size || 'unknown');
         const tabHistory = state.tabHistory;
         
         if (!tabHistory || (Array.isArray(tabHistory) && tabHistory.length === 0) || 
@@ -315,8 +347,11 @@ async function loadHistoryData() {
         const historyEntries = [];
         let totalEntries = 0;
         
+        console.log('Processing tabHistory...');
+        
         // Handle both Map and Array formats
         if (tabHistory instanceof Map) {
+            console.log('Processing as Map format');
             // Process as Map (original format)
             for (const [tabId, entries] of tabHistory.entries()) {
                 totalEntries += entries.length;
@@ -328,6 +363,7 @@ async function loadHistoryData() {
                 });
             }
         } else if (Array.isArray(tabHistory)) {
+            console.log('Processing as Array format');
             // Process as Array (format from background script)
             totalEntries = tabHistory.length;
             tabHistory.forEach(entry => {
@@ -339,6 +375,9 @@ async function loadHistoryData() {
             return;
         }
         
+        console.log('Processed history entries:', historyEntries.length);
+        console.log('Sample entry:', historyEntries[0]);
+        
         // Sort by timestamp (descending)
         historyEntries.sort((a, b) => b.timestamp - a.timestamp);
         
@@ -346,11 +385,19 @@ async function loadHistoryData() {
         updateHistoryStats(historyEntries.length, totalEntries);
         
         // Render history entries
+        console.log('Rendering history entries...');
         historyContainer.innerHTML = '';
-        historyEntries.forEach(entry => {
+        console.log('History container element:', historyContainer);
+        console.log('History container innerHTML cleared');
+        
+        historyEntries.forEach((entry, index) => {
+            console.log(`Creating element for entry ${index}:`, entry);
             const entryElement = createHistoryEntryElement(entry);
             historyContainer.appendChild(entryElement);
         });
+        
+        console.log('Finished rendering history entries');
+        console.log('Final container innerHTML length:', historyContainer.innerHTML.length);
         
         // Add filter counts
         document.getElementById('history-total-count').textContent = historyEntries.length;
@@ -1098,10 +1145,18 @@ async function loadGraphSummaries() {
         
         const state = await window.browserState.getState();
         console.log('Retrieved state for graph summaries:', state);
+        console.log('graphData object:', state.graphData);
+        console.log('graphData type:', typeof state.graphData);
+        console.log('graphData keys:', state.graphData ? Object.keys(state.graphData) : 'null');
         const graphData = state.graphData?.summaries;
         
         if (!graphData || Object.keys(graphData).length === 0) {
-            container.innerHTML = '<div class="info-message">No graph summaries found</div>';
+            container.innerHTML = `
+                <div class="info-message">
+                    <h4>No graph summaries found</h4>
+                    <p>Graph summaries are generated when you browse websites and the Chrome Summarizer API creates nano summaries.</p>
+                    <p>Try browsing some websites and then check back here to see generated summaries.</p>
+                </div>`;
             return;
         }
         
@@ -1155,10 +1210,16 @@ async function loadGraphEdges() {
         
         const state = await window.browserState.getState();
         console.log('Retrieved state for graph edges:', state);
+        console.log('graphData for edges:', state.graphData);
         const graphData = state.graphData?.customEdges || (state.graphData && Array.isArray(state.graphData.edges) ? state.graphData.edges : []);
         
         if (!graphData || graphData.length === 0) {
-            container.innerHTML = '<div class="info-message">No custom graph edges found</div>';
+            container.innerHTML = `
+                <div class="info-message">
+                    <h4>No custom graph edges found</h4>
+                    <p>Custom edges are created when you interact with the graph visualization and create connections between nodes.</p>
+                    <p>Try using the graph visualization feature to create some custom edges.</p>
+                </div>`;
             return;
         }
         
@@ -1220,10 +1281,16 @@ async function loadGraphPositions() {
         
         const state = await window.browserState.getState();
         console.log('Retrieved state for graph positions:', state);
+        console.log('graphData for positions:', state.graphData);
         const graphData = state.graphData?.nodePositions || (state.graphData && state.graphData.positions ? state.graphData.positions : {});
         
         if (!graphData || Object.keys(graphData).length === 0) {
-            container.innerHTML = '<div class="info-message">No node positions found</div>';
+            container.innerHTML = `
+                <div class="info-message">
+                    <h4>No node positions found</h4>
+                    <p>Node positions are saved when you move nodes around in the graph visualization.</p>
+                    <p>Try using the graph visualization feature and moving some nodes to save their positions.</p>
+                </div>`;
             return;
         }
         
@@ -1360,18 +1427,27 @@ async function loadActivityData() {
         // Process activity log into an array
         const activityEntries = [];
         
+        console.log('Processing tabActivityLog:', tabActivityLog);
+        console.log('tabActivityLog type:', typeof tabActivityLog);
+        console.log('tabActivityLog is Array:', Array.isArray(tabActivityLog));
+        console.log('tabActivityLog is Map:', tabActivityLog instanceof Map);
+        
         // Handle both Map and Array formats
         if (tabActivityLog instanceof Map) {
+            console.log('Processing as Map format');
             // Process as Map (original format)
             for (const [tabId, activities] of tabActivityLog.entries()) {
+                console.log(`Processing tab ${tabId}:`, activities);
                 if (Array.isArray(activities)) {
                     activities.forEach(activity => {
+                        console.log('Activity from array:', activity);
                         activityEntries.push({
                             tabId,
                             ...activity
                         });
                     });
                 } else if (typeof activities === 'object' && activities !== null) {
+                    console.log('Activity from object:', activities);
                     activityEntries.push({
                         tabId,
                         ...activities
@@ -1379,8 +1455,10 @@ async function loadActivityData() {
                 }
             }
         } else if (Array.isArray(tabActivityLog)) {
+            console.log('Processing as Array format');
             // Process as Array (format from background script)
-            tabActivityLog.forEach(entry => {
+            tabActivityLog.forEach((entry, index) => {
+                console.log(`Activity entry ${index}:`, entry);
                 activityEntries.push(entry);
             });
         } else {
@@ -1389,12 +1467,17 @@ async function loadActivityData() {
             return;
         }
         
+        console.log('Processed activity entries:', activityEntries);
+        console.log('Sample activity entry:', activityEntries[0]);
+        
         // Sort by timestamp (descending)
         activityEntries.sort((a, b) => b.timestamp - a.timestamp);
         
         // Render activity entries
+        console.log('Rendering activity entries...');
         activityContainer.innerHTML = '';
-        activityEntries.forEach(entry => {
+        activityEntries.forEach((entry, index) => {
+            console.log(`Creating element for activity ${index}:`, entry);
             const entryElement = createActivityElement(entry);
             activityContainer.appendChild(entryElement);
         });
@@ -1411,49 +1494,49 @@ async function loadActivityData() {
  * @returns {HTMLElement} - The entry element
  */
 function createActivityElement(activity) {
+    console.log('Creating activity element for:', activity);
+    console.log('Activity properties:', Object.keys(activity));
+    
     const itemElement = document.createElement('div');
     itemElement.className = 'storage-item';
-    itemElement.dataset.tabId = activity.tabId;
-    itemElement.dataset.type = activity.type || 'unknown';
+    itemElement.dataset.tabId = activity.tabId || 'unknown';
     
-    // Format timestamp
-    const date = new Date(activity.timestamp);
-    const formattedTime = date.toLocaleTimeString();
-    const formattedDate = date.toLocaleDateString();
+    // Format timestamps
+    const firstSeenDate = activity.firstSeen ? new Date(activity.firstSeen) : null;
+    const lastTouchDate = activity.lastTouch ? new Date(activity.lastTouch) : null;
     
-    // Determine activity type icon/indicator
-    let activityTypeIcon = '❓';
-    let activityTypeClass = 'unknown';
+    const formattedFirstSeen = firstSeenDate ? firstSeenDate.toLocaleString() : 'Unknown';
+    const formattedLastTouch = lastTouchDate ? lastTouchDate.toLocaleString() : 'Unknown';
     
-    switch (activity.type) {
-        case 'focus':
-            activityTypeIcon = '👁️';
-            activityTypeClass = 'focus';
-            break;
-        case 'blur':
-            activityTypeIcon = '💤';
-            activityTypeClass = 'blur';
-            break;
-        case 'navigation':
-            activityTypeIcon = '🔄';
-            activityTypeClass = 'navigation';
-            break;
-        case 'link_interaction':
-            activityTypeIcon = '🔗';
-            activityTypeClass = 'link';
-            break;
+    // Count events and navigations
+    const eventCount = activity.events ? activity.events.length : 0;
+    const navigationCount = activity.navigations ? activity.navigations.length : 0;
+    
+    // Format total time spent
+    const totalTimeFormatted = activity.totalTimeSpent ? 
+        Math.round(activity.totalTimeSpent / 1000) + 's' : '0s';
+    
+    // Get sample event info
+    let sampleEvent = 'No events';
+    if (activity.events && activity.events.length > 0) {
+        const firstEvent = activity.events[0];
+        sampleEvent = firstEvent.type || 'Unknown event';
+        if (firstEvent.url) {
+            sampleEvent += ` - ${firstEvent.url.substring(0, 50)}...`;
+        }
     }
     
     // Create content
     itemElement.innerHTML = `
         <div class="storage-key">
-            <span class="tab-id">${activity.tabId}</span>
-            <span class="activity-timestamp">${formattedTime}<br>${formattedDate}</span>
+            <span class="tab-id">${activity.tabId || 'Unknown'}</span>
+            <br><small>First seen: ${formattedFirstSeen}</small>
+            <br><small>Last touch: ${formattedLastTouch}</small>
         </div>
         <div class="storage-value">
-            <span class="activity-type ${activityTypeClass}">${activityTypeIcon} ${activity.type || 'Event'}</span>
-            ${activity.url ? `<br><small>${escapeHtml(activity.url)}</small>` : ''}
-            ${activity.linkText ? `<br><span class="link-text">${escapeHtml(activity.linkText)}</span>` : ''}
+            <strong>Total time: ${totalTimeFormatted}</strong><br>
+            <small>Events: ${eventCount} | Navigations: ${navigationCount}</small><br>
+            <small>Sample: ${escapeHtml(sampleEvent)}</small>
         </div>
         <div class="storage-actions">
             <button class="view-details" title="View details">👁️</button>
@@ -1502,8 +1585,52 @@ function filterActivityItems() {
  * @param {Object} activity - The activity entry
  */
 function showActivityDetails(activity) {
-    // Reuse the same modal as history details
-    showHistoryEntryDetails(activity);
+    // Create a detailed view of the activity
+    let detailsHtml = `
+        <h3>Activity Details for Tab ${activity.tabId || 'Unknown'}</h3>
+        <div class="activity-summary">
+            <p><strong>Total Time Spent:</strong> ${activity.totalTimeSpent ? Math.round(activity.totalTimeSpent / 1000) + 's' : '0s'}</p>
+            <p><strong>First Seen:</strong> ${activity.firstSeen ? new Date(activity.firstSeen).toLocaleString() : 'Unknown'}</p>
+            <p><strong>Last Touch:</strong> ${activity.lastTouch ? new Date(activity.lastTouch).toLocaleString() : 'Unknown'}</p>
+            <p><strong>Total Events:</strong> ${activity.events ? activity.events.length : 0}</p>
+            <p><strong>Total Navigations:</strong> ${activity.navigations ? activity.navigations.length : 0}</p>
+        </div>
+    `;
+    
+    // Show events if available
+    if (activity.events && activity.events.length > 0) {
+        detailsHtml += '<h4>Events:</h4><div class="events-list">';
+        activity.events.forEach((event, index) => {
+            detailsHtml += `
+                <div class="event-item">
+                    <strong>Event ${index + 1}:</strong> ${event.type || 'Unknown'}<br>
+                    <small>Time: ${event.timestamp ? new Date(event.timestamp).toLocaleString() : 'Unknown'}</small>
+                    ${event.url ? `<br><small>URL: ${escapeHtml(event.url)}</small>` : ''}
+                    ${event.linkText ? `<br><small>Link: ${escapeHtml(event.linkText)}</small>` : ''}
+                </div>
+            `;
+        });
+        detailsHtml += '</div>';
+    }
+    
+    // Show navigations if available
+    if (activity.navigations && activity.navigations.length > 0) {
+        detailsHtml += '<h4>Navigations:</h4><div class="navigations-list">';
+        activity.navigations.forEach((nav, index) => {
+            detailsHtml += `
+                <div class="navigation-item">
+                    <strong>Navigation ${index + 1}:</strong><br>
+                    <small>Time: ${nav.timestamp ? new Date(nav.timestamp).toLocaleString() : 'Unknown'}</small>
+                    ${nav.url ? `<br><small>URL: ${escapeHtml(nav.url)}</small>` : ''}
+                    ${nav.title ? `<br><small>Title: ${escapeHtml(nav.title)}</small>` : ''}
+                </div>
+            `;
+        });
+        detailsHtml += '</div>';
+    }
+    
+    // Show the details in a modal
+    showModal('Activity Details', detailsHtml);
 }
 
 /**
@@ -1760,6 +1887,17 @@ async function loadNanoSummariesData() {
     container.innerHTML = '<div class="loading">Loading nano summaries...</div>';
     
     try {
+        // Check if Chrome API is available
+        if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+            container.innerHTML = `
+                <div class="info-message">
+                    <h4>Chrome API Not Available</h4>
+                    <p>This debug page must be opened within the Chrome extension context.</p>
+                    <p>Please open this page from the extension's newtab page or popup.</p>
+                </div>`;
+            return;
+        }
+        
         const result = await chrome.storage.local.get(['nanoSummaries']);
         const summaries = result.nanoSummaries || {};
         
@@ -1940,6 +2078,47 @@ function updateNanoSummariesStats(count) {
 }
 
 /**
+ * Clear summary queue from debug tools
+ */
+function clearSummaryQueueFromDebug() {
+    if (confirm('Are you sure you want to clear the summary queue?')) {
+        if (typeof window.clearSummaryQueue === 'function') {
+            window.clearSummaryQueue();
+            alert('Summary queue cleared successfully');
+        } else {
+            alert('Summary queue functions not available');
+        }
+    }
+}
+
+/**
+ * Manually trigger summary queue processing from debug tools
+ */
+function processSummaryQueueFromDebug() {
+    if (typeof window.processSummaryQueue === 'function') {
+        window.processSummaryQueue().catch(error => {
+            console.error('Error processing queue:', error);
+            alert('Error processing queue: ' + error.message);
+        });
+        alert('Queue processing started');
+    } else {
+        alert('Summary queue functions not available');
+    }
+}
+
+/**
+ * Reset summarizer crash counter from debug tools
+ */
+function resetCrashCounterFromDebug() {
+    if (typeof window.resetSummarizerCrashCounter === 'function') {
+        window.resetSummarizerCrashCounter();
+        alert('Summarizer crash counter reset successfully');
+    } else {
+        alert('Summarizer functions not available');
+    }
+}
+
+/**
  * Format URL for display (remove http:// and www.)
  * @param {string} url - The URL to format
  * @returns {string} - Formatted URL
@@ -1951,3 +2130,72 @@ function formatUrlForDisplay(url) {
         .replace(/^https?:\/\//, '')
         .replace(/^www\./, '');
 }
+
+/**
+ * Update queue status display in debug tools
+ */
+function updateQueueStatus() {
+    try {
+        // Check if we have access to the queue functions
+        if (typeof window.getQueueStats === 'function') {
+            const stats = window.getQueueStats();
+            
+            const queueStatusElement = document.getElementById('summary-queue-status');
+            const processingStatusElement = document.getElementById('queue-processing-status');
+            
+            if (queueStatusElement) {
+                queueStatusElement.textContent = `${stats.queueSize} items`;
+                queueStatusElement.style.color = stats.queueSize > 0 ? '#e67e22' : '#27ae60';
+            }
+            
+            if (processingStatusElement) {
+                processingStatusElement.textContent = stats.isProcessing ? 'Processing...' : 'Idle';
+                processingStatusElement.style.color = stats.isProcessing ? '#e67e22' : '#27ae60';
+            }
+        } else {
+            // Fallback if queue functions aren't available
+            const queueStatusElement = document.getElementById('summary-queue-status');
+            const processingStatusElement = document.getElementById('queue-processing-status');
+            
+            if (queueStatusElement) {
+                queueStatusElement.textContent = 'Unknown';
+                queueStatusElement.style.color = '#7f8c8d';
+            }
+            
+            if (processingStatusElement) {
+                processingStatusElement.textContent = 'Unknown';
+                processingStatusElement.style.color = '#7f8c8d';
+            }
+        }
+        
+        // Update summarizer status
+        if (typeof window.getSummarizerStatus === 'function') {
+            const summarizerStatus = window.getSummarizerStatus();
+            const summarizerStatusElement = document.getElementById('summarizer-status');
+            
+            if (summarizerStatusElement) {
+                if (summarizerStatus.inBackoff) {
+                    summarizerStatusElement.textContent = `Backoff (${summarizerStatus.backoffRemainingSeconds}s)`;
+                    summarizerStatusElement.style.color = '#e74c3c';
+                } else if (summarizerStatus.crashCount > 0) {
+                    summarizerStatusElement.textContent = `Crashes: ${summarizerStatus.crashCount}`;
+                    summarizerStatusElement.style.color = '#f39c12';
+                } else {
+                    summarizerStatusElement.textContent = 'Ready';
+                    summarizerStatusElement.style.color = '#27ae60';
+                }
+            }
+        } else {
+            const summarizerStatusElement = document.getElementById('summarizer-status');
+            if (summarizerStatusElement) {
+                summarizerStatusElement.textContent = 'Unknown';
+                summarizerStatusElement.style.color = '#7f8c8d';
+            }
+        }
+    } catch (error) {
+        console.error('Error updating queue status:', error);
+    }
+}
+
+// Set up periodic queue status updates
+setInterval(updateQueueStatus, 2000); // Update every 2 seconds

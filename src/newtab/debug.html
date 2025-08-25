@@ -262,6 +262,18 @@
                     <div class="stat-title">Extension Install Date</div>
                     <div id="install-date" class="stat-value">Unknown</div>
                 </div>
+                <div class="stat-card">
+                    <div class="stat-title">Summary Queue</div>
+                    <div id="summary-queue-status" class="stat-value">0 items</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">Queue Status</div>
+                    <div id="queue-processing-status" class="stat-value">Idle</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">Summarizer Status</div>
+                    <div id="summarizer-status" class="stat-value">Ready</div>
+                </div>
             </div>
         </div>
         
@@ -395,6 +407,9 @@
                 </div>
                 <button id="refresh-nano-summaries">Refresh</button>
                 <button id="clear-nano-summaries" class="delete">Clear All Summaries</button>
+                <button id="clear-summary-queue">Clear Queue</button>
+                <button id="process-summary-queue">Process Queue</button>
+                <button id="reset-crash-counter">Reset Crash Counter</button>
             </div>
             
             <div class="storage-panel">
