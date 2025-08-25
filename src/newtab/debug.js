@@ -3,6 +3,29 @@
  * Provides UI for inspecting and managing localStorage data
  */
 
+// Mock queue and summarizer functions for debug tools
+// These will be replaced with real implementations when readout.js is available
+window.getQueueStats = function() {
+    return {
+        queueSize: 0,
+        isProcessing: false,
+        totalProcessed: 0,
+        totalFailed: 0
+    };
+};
+
+window.getSummarizerStatus = function() {
+    return {
+        inBackoff: false,
+        backoffRemainingSeconds: 0,
+        crashCount: 0
+    };
+};
+
+window.resetSummarizerCrashCounter = function() {
+    console.log('Mock resetSummarizerCrashCounter called');
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Debug UI initializing...');
     
@@ -121,6 +144,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const activeTab = document.querySelector('.tab-btn.active');
     const activeTabId = activeTab ? activeTab.getAttribute('data-tab') : 'history';
     loadTabData(activeTabId);
+    
+    // Update summary statistics
+    updateAllSummaryStats();
     
     // Initialize event listeners
     document.getElementById('refresh-storage').addEventListener('click', loadLocalStorageData);
@@ -436,7 +462,7 @@ function createHistoryEntryElement(entry) {
     
     // Get favicon if available
     const faviconUrl = getFaviconUrl(entry.url);
-    const faviconImg = faviconUrl ? `<img src="${faviconUrl}" class="favicon" onerror="this.style.display='none'" alt="" />` : '';
+    const faviconImg = faviconUrl ? `<img src="${faviconUrl}" class="favicon" alt="" />` : '';
     
     // Create content
     itemElement.innerHTML = `
@@ -453,6 +479,14 @@ function createHistoryEntryElement(entry) {
             <button class="view-details" title="View details">👁️</button>
         </div>
     `;
+    
+    // Add error handling for favicon images
+    const faviconElement = itemElement.querySelector('.favicon');
+    if (faviconElement) {
+        faviconElement.addEventListener('error', function() {
+            this.style.display = 'none';
+        });
+    }
     
     // Add event listeners
     const viewDetailsButton = itemElement.querySelector('.view-details');
@@ -1949,7 +1983,7 @@ function createNanoSummaryElement(entry) {
     
     // Get favicon if available
     const faviconUrl = getFaviconUrl(entry.url);
-    const faviconImg = faviconUrl ? `<img src="${faviconUrl}" class="favicon" onerror="this.style.display='none'" alt="" />` : '';
+    const faviconImg = faviconUrl ? `<img src="${faviconUrl}" class="favicon" alt="" />` : '';
     
     // Truncate summary for display
     const truncatedSummary = entry.summary.length > 200 
@@ -1971,6 +2005,14 @@ function createNanoSummaryElement(entry) {
             <button class="delete-item" title="Delete this summary">🗑️</button>
         </div>
     `;
+    
+    // Add error handling for favicon images
+    const faviconElement = itemElement.querySelector('.favicon');
+    if (faviconElement) {
+        faviconElement.addEventListener('error', function() {
+            this.style.display = 'none';
+        });
+    }
     
     // Add event listeners
     const viewDetailsButton = itemElement.querySelector('.view-details');
@@ -2195,6 +2237,54 @@ function updateQueueStatus() {
     } catch (error) {
         console.error('Error updating queue status:', error);
     }
+}
+
+/**
+ * Update all summary statistics
+ */
+function updateAllSummaryStats() {
+    // Update localStorage stats
+    try {
+        const keys = Object.keys(localStorage);
+        document.getElementById('localStorage-count').textContent = keys.length;
+        
+        // Calculate total size
+        let totalSize = 0;
+        let largestKey = '';
+        let largestSize = 0;
+        
+        keys.forEach(key => {
+            try {
+                const value = localStorage.getItem(key);
+                const size = new Blob([value]).size;
+                totalSize += size;
+                
+                if (size > largestSize) {
+                    largestSize = size;
+                    largestKey = key;
+                }
+            } catch (e) {
+                console.error(`Error processing key: ${key}`, e);
+            }
+        });
+        
+        document.getElementById('localStorage-size').textContent = formatSize(totalSize);
+        document.getElementById('largest-key').textContent = largestKey ? `${largestKey} (${formatSize(largestSize)})` : '-';
+        
+        // Try to get install date
+        try {
+            const installDate = localStorage.getItem('installDate') || 'Unknown';
+            document.getElementById('install-date').textContent = installDate !== 'Unknown' ? 
+                new Date(parseInt(installDate)).toLocaleDateString() : 'Unknown';
+        } catch (e) {
+            document.getElementById('install-date').textContent = 'Error parsing date';
+        }
+    } catch (e) {
+        console.error('Error updating localStorage stats:', e);
+    }
+    
+    // Update queue and summarizer status
+    updateQueueStatus();
 }
 
 // Set up periodic queue status updates
