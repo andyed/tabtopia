@@ -407,7 +407,7 @@
 }
 
 /* Search queries styling */
-.search-query-item {
+.search-query-item, .search-query {
     display: inline-flex;
     align-items: center;
     background-color: #3a3a50; /* Slightly bluish background to distinguish from other items */
@@ -416,6 +416,11 @@
     margin-right: 6px;
     margin-bottom: 5px;
     font-size: 0.85em;
+    color: #d0d8ff; /* Light blue text */
+}
+
+.detail.search-queries {
+    margin-top: 4px;
 }
 
 .search-query-icon {

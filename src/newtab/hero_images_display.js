@@ -1,5 +1,5 @@
 // Hero images display for sessions view
-import { showSessionModal } from './sessions_modal.js';
+import { showSessionModal, extractTitleFromSession } from './sessions_modal.js';
 import { getDomainFromUrl, getUniqueColors } from './utils.js';
 import { formatTimeAgo } from './timeago.js';
 
@@ -282,7 +282,7 @@ export async function createSessionCard(session, options = {}) {
           }
         </div>
         <div class="card-content-section"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ''}>
-          <h3 class="card-title">${session.name || 'Browsing Session'}</h3>
+          <h3 class="card-title">${session.name || extractTitleFromSession(session) || 'Browsing Session'}</h3>
           
           <div class="card-stats">
             <!-- Combined page count and favicon stack -->
@@ -316,6 +316,11 @@ export async function createSessionCard(session, options = {}) {
           
           <div class="card-summary">
             <div class="journey-summary">From "${firstPageTitle.substring(0, 30)}${firstPageTitle.length > 30 ? '...' : ''}" to "${lastPageTitle.substring(0, 30)}${lastPageTitle.length > 30 ? '...' : ''}"</div>
+            ${session.summary ? `
+            <div class="session-page-summary">
+              <h4>Session Summary</h4>
+              <div class="summary-content">${session.summary.substring(0, 200)}${session.summary.length > 200 ? '...' : ''}</div>
+            </div>` : ''}
           </div>
         </div>
       `;
@@ -343,7 +348,7 @@ export async function createSessionCard(session, options = {}) {
           }
         </div>
         <div class="card-content-section compact"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ''}>
-          <h3 class="card-title compact">${session.name || 'Browsing Session'}</h3>
+          <h3 class="card-title compact">${session.name || extractTitleFromSession(session) || 'Browsing Session'}</h3>
           
           <div class="card-stats compact">
             <!-- Combined page count and favicon stack (compact version) -->
@@ -373,6 +378,11 @@ export async function createSessionCard(session, options = {}) {
           <div class="card-domains compact">
             ${topDomains.slice(0, 2).map(domain => `<span class="domain-tag"><img src="https://www.google.com/s2/favicons?domain=${domain}&sz=16" class="domain-favicon" alt="" />${domain.replace('www.', '')}</span>`).join('')}
           </div>
+          
+          ${session.summary ? `
+          <div class="session-page-summary compact">
+            <div class="summary-content">${session.summary.substring(0, 100)}${session.summary.length > 100 ? '...' : ''}</div>
+          </div>` : ''}
         </div>
       `;
     }
@@ -380,7 +390,7 @@ export async function createSessionCard(session, options = {}) {
     // Fallback layout for cards without images
     card.innerHTML = `
       <div class="card-content-section full-width">
-        <h3 class="card-title">${session.name || 'Browsing Session'}</h3>
+        <h3 class="card-title">${session.name || extractTitleFromSession(session) || 'Browsing Session'}</h3>
         
         <div class="card-stats">
           <!-- Combined page count and favicon stack -->
@@ -412,9 +422,17 @@ export async function createSessionCard(session, options = {}) {
           ${topDomains.map(domain => `<span class="domain-tag"><img src="https://www.google.com/s2/favicons?domain=${domain}&sz=16" class="domain-favicon" alt="" />${domain.replace('www.', '')}</span>`).join('')}
         </div>
         
-        <div class="card-summary">
-          <div class="journey-summary">From "${firstPageTitle.substring(0, 40)}${firstPageTitle.length > 40 ? '...' : ''}" to "${lastPageTitle.substring(0, 40)}${lastPageTitle.length > 40 ? '...' : ''}"</div>
+        <div class="card-journey">
+          <span class="first-page" title="${firstPageTitle}">${firstPageTitle.substring(0, 20)}${firstPageTitle.length > 20 ? '...' : ''}</span>
+          <span class="journey-arrow">→</span>
+          <span class="last-page" title="${lastPageTitle}">${lastPageTitle.substring(0, 20)}${lastPageTitle.length > 20 ? '...' : ''}</span>
         </div>
+        
+        ${session.summary ? `
+        <div class="session-page-summary">
+          <h4>Session Summary</h4>
+          <div class="summary-content">${session.summary.substring(0, 200)}${session.summary.length > 200 ? '...' : ''}</div>
+        </div>` : ''}
       </div>
     `;
   }
@@ -596,6 +614,13 @@ export function clearSeenHeroImages() {
   globalSeenImageUrls.clear();
 }
 
+// Cache for in-flight hero image requests and recent results
+const heroImageRequestCache = {
+  inFlight: new Map(), // URL -> Promise
+  lastRequested: new Map(), // URL -> timestamp
+  cooldownPeriod: 2000 // ms between allowed repeat requests
+};
+
 /**
  * Get hero images for a URL
  * Helper function copied from sessions.js to avoid circular dependencies
@@ -603,13 +628,34 @@ export function clearSeenHeroImages() {
  * @returns {Promise<Array>} - Hero images or null
  */
 async function getHeroImagesForUrl(url) {
-  return new Promise((resolve) => {
+  // Don't allow rapid repeated requests for the same URL
+  const now = Date.now();
+  const lastRequested = heroImageRequestCache.lastRequested.get(url) || 0;
+  if (now - lastRequested < heroImageRequestCache.cooldownPeriod) {
+    // Request made too recently, return cached result or null
+    const existingRequest = heroImageRequestCache.inFlight.get(url);
+    if (existingRequest) {
+      return existingRequest;
+    }
+    return null;
+  }
+  
+  // Check for in-flight request for this URL
+  if (heroImageRequestCache.inFlight.has(url)) {
+    return heroImageRequestCache.inFlight.get(url);
+  }
+  
+  // Create a new request promise
+  const requestPromise = new Promise((resolve) => {
+    // Update cache
+    heroImageRequestCache.lastRequested.set(url, now);
+    
     // First check browserState if available (core shared data structure)
     if (typeof browserState !== 'undefined' && browserState.heroImages && browserState.heroImages.get) {
       const heroImageData = browserState.heroImages.get(url);
       if (heroImageData && heroImageData.images) {
-        console.log(`🖼️ Found hero images for ${url} in browserState`, heroImageData.images);
-        return resolve(heroImageData.images);
+        resolve(heroImageData.images);
+        return;
       }
     }
     
@@ -617,24 +663,34 @@ async function getHeroImagesForUrl(url) {
     chrome.storage.local.get(['heroImages'], (result) => {
       const heroImagesStore = result.heroImages || {};
       if (heroImagesStore[url]) {
-        console.log(`🖼️ Found hero images for ${url} in local storage`, heroImagesStore[url].images);
         resolve(heroImagesStore[url].images);
       } else {
         // If not in storage, try asking background script directly
-        console.log(`🔄 Requesting hero images for ${url} from background script`);
         chrome.runtime.sendMessage({ action: 'getHeroImagesForUrl', url: url }, (response) => {
           if (chrome.runtime.lastError) {
             console.error('❌ Error getting hero images:', chrome.runtime.lastError);
             resolve(null);
           } else if (response && response.images) {
-            console.log(`✅ Received hero images for ${url} from background script`, response.images);
             resolve(response.images);
           } else {
-            console.warn(`⚠️ No hero images found for ${url}`);
             resolve(null);
           }
         });
       }
     });
   });
+  
+  // Store the promise in the cache
+  heroImageRequestCache.inFlight.set(url, requestPromise);
+  
+  // Remove from in-flight cache once resolved
+  requestPromise.then(result => {
+    heroImageRequestCache.inFlight.delete(url);
+    return result;
+  }).catch(() => {
+    heroImageRequestCache.inFlight.delete(url);
+    return null;
+  });
+  
+  return requestPromise;
 }

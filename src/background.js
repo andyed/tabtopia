@@ -19,9 +19,104 @@
  * 4. UI updates reflect current browser state
  */
 
+// Import utility functions
+import { extractSearchQuery, isLikelyRedirect } from './lib/url-utils.js';
+
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Tabtopia installed successfully.");
+  
+  // Initialize current active tab tracking for dwell time calculations
+  initializeActiveTabTracking();
 });
+
+// Also initialize active tab tracking when the background script starts
+initializeActiveTabTracking();
+
+// Handle browser suspend/resume events
+chrome.runtime.onSuspend.addListener(() => {
+  console.log('[DwellTime] Browser suspending, saving last active state');
+  // Save the last active state when the browser is closing
+  if (browserState.lastActive) {
+    // Calculate final dwell time for the currently active tab
+    const dwellTimeMs = Date.now() - browserState.lastActive.timestamp;
+    if (dwellTimeMs > 500) {
+      const tabId = browserState.lastActive.tabId;
+      const tabData = browserState.tabs.get(tabId);
+      
+      if (tabData && tabData.url) {
+        console.log(`[DwellTime] Saving final dwell time for tab ${tabId}: ${dwellTimeMs}ms`);
+        
+        // Update the tab history with the final dwell time
+        const history = browserState.tabHistory.get(tabId) || [];
+        if (history.length > 0) {
+          history[0].dwellTimeMs = (history[0].dwellTimeMs || 0) + dwellTimeMs;
+          history[0].dwellTimeUpdated = Date.now();
+          browserState.tabHistory.set(tabId, history);
+        }
+      }
+    }
+    
+    // Store last active data for potential restoration
+    chrome.storage.local.set({
+      lastActiveTab: {
+        tabId: browserState.lastActive.tabId,
+        url: browserState.tabs.get(browserState.lastActive.tabId)?.url || '',
+        timestamp: Date.now()
+      }
+    });
+  }
+});
+
+// Handle browser resume
+chrome.runtime.onStartup.addListener(() => {
+  console.log('[DwellTime] Browser starting up, checking for previous session');
+  
+  // Try to restore last active tab information
+  chrome.storage.local.get(['lastActiveTab'], (result) => {
+    if (result.lastActiveTab) {
+      console.log('[DwellTime] Found previous session data:', result.lastActiveTab);
+      
+      // Set a reasonable timestamp for the new session
+      const previousData = result.lastActiveTab;
+      const currentTime = Date.now();
+      
+      // We'll only try to match by URL since tab IDs will have changed
+      chrome.tabs.query({}, (tabs) => {
+        for (const tab of tabs) {
+          if (tab.url === previousData.url) {
+            console.log('[DwellTime] Found matching tab for previous session:', tab.id);
+            // Initialize tracking with this tab
+            browserState.lastActive = {
+              tabId: tab.id,
+              windowId: tab.windowId,
+              timestamp: currentTime
+            };
+            break;
+          }
+        }
+      });
+    }
+  });
+});
+
+/**
+ * Initializes tracking of the currently active tab for dwell time calculations
+ */
+function initializeActiveTabTracking() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs && tabs.length > 0) {
+      const activeTab = tabs[0];
+      console.log('[DwellTime] Initializing active tab tracking with tab:', activeTab.id);
+      
+      // Set the currently active tab
+      browserState.lastActive = {
+        tabId: activeTab.id,
+        windowId: activeTab.windowId,
+        timestamp: Date.now()
+      };
+    }
+  });
+}
 
 /**
  * Navigation deduplication system
@@ -70,7 +165,7 @@ const browserState = {
   heroImages: new Map(),        // Hero images by URL
   tabRelationships: new Map(),  // Parent/child and sibling relationships between tabs
   tabActivityLog: new Map(),    // User interaction and time-spent data
-  lastActive: null,             // Last active tab and window reference
+  lastActive: null,             // Tracks the currently active tab for dwell time calculations
   listeners: [],                // State change subscribers
 
   /**
@@ -512,6 +607,56 @@ chrome.history.onVisited.addListener((result) => {
  */
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
     try {
+        // Store previous active tab for dwell time tracking
+        const previousTabId = browserState.lastActive?.tabId;
+        const previousTabTimestamp = browserState.lastActive?.timestamp;
+        
+        // If there was a previously active tab, calculate dwell time and update
+        if (previousTabId && previousTabTimestamp) {
+            const dwellTimeMs = Date.now() - previousTabTimestamp;
+            
+            // Only update if dwell time is significant (> 500ms)
+            if (dwellTimeMs > 500) {
+                console.log(`[DwellTime] Tab ${previousTabId} was active for ${dwellTimeMs}ms`);
+                
+                // Get the URL of the previously active tab
+                const prevTabData = browserState.tabs.get(previousTabId);
+                if (prevTabData && prevTabData.url) {
+                    // Update the tab history with the dwell time
+                    const history = browserState.tabHistory.get(previousTabId) || [];
+                    if (history.length > 0) {
+                        // Update the most recent navigation entry
+                        const mostRecentEntry = history[0];
+                        const updatedEntry = {
+                            ...mostRecentEntry,
+                            dwellTimeMs: dwellTimeMs,
+                            dwellTimeUpdated: Date.now()
+                        };
+                        
+                        // Replace the entry
+                        history[0] = updatedEntry;
+                        browserState.tabHistory.set(previousTabId, history);
+                        
+                        // Broadcast the dwell time update
+                        sendMessageWithErrorHandling({
+                            action: "dwellTimeUpdated",
+                            tabId: previousTabId,
+                            url: mostRecentEntry.url,
+                            dwellTimeMs: dwellTimeMs,
+                            timestamp: Date.now()
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Update the lastActive tracking
+        browserState.lastActive = {
+            tabId: activeInfo.tabId,
+            windowId: activeInfo.windowId,
+            timestamp: Date.now()
+        };
+        
         // Track active time immediately
         updateTabActivity(activeInfo.tabId, true);
         
@@ -618,6 +763,35 @@ function handleContentUpdate(data, sender) {
             changeInfo: { title, url, favIconUrl },
             tab: tabData
         });
+        
+        // Update collection
+        const history = browserState.tabHistory.get(tabId) || [];
+        history.push({
+            url,
+            title,
+            timestamp: Date.now()
+        });
+        browserState.tabHistory.set(tabId, history);
+        
+        // Broadcast updates
+        sendMessageWithErrorHandling({
+            action: "tabHistoryUpdated",
+            tabId,
+            history
+        });
+        
+        // Broadcast specific dwell time update if available
+        const dwellTimeMs = data.dwellTimeMs;
+        if (dwellTimeMs) {
+            console.log(`[DwellTime] Broadcasting dwellTime update for tab ${tabId}, url ${url}: ${dwellTimeMs}ms`);
+            sendMessageWithErrorHandling({
+                action: "dwellTimeUpdated",
+                tabId,
+                url,
+                dwellTimeMs,
+                timestamp: Date.now()
+            });
+        }
     }
 }
 
@@ -818,6 +992,40 @@ chrome.tabs.onCreated.addListener((tab) => {
   
   if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
     // This tab was created from a link click we tracked
+    // Determine a more specific context based on the interaction
+    let intentContext = "new_tab"; // Default
+    
+    if (lastClickedLink.interactionType === "middle_click" || lastClickedLink.interactionType === "ctrl_click") {
+      intentContext = "background_reading";
+    } else if (lastClickedLink.sourceElementType === "button" && lastClickedLink.linkText?.toLowerCase().includes("sign in")) {
+      intentContext = "authentication";
+    } else if (lastClickedLink.sourceElementType === "button" && 
+              (lastClickedLink.linkText?.toLowerCase().includes("search") || 
+               lastClickedLink.linkText?.toLowerCase().includes("find"))) {
+      intentContext = "search_action";
+    }
+    
+    // Detect if this might be a navigational action (menu, navbar, etc.)
+    if (lastClickedLink.sourceElementType === "nav" ||
+        lastClickedLink.sourceElementType === "menu" ||
+        lastClickedLink.sourceUrl === tab.pendingUrl.split("#")[0]) { // Same page but different anchor
+      intentContext = "site_navigation";
+    }
+    
+    // Check if URL seems to be a redirect
+    if (lastClickedLink.sourceUrl && tab.pendingUrl && 
+        isLikelyRedirect(lastClickedLink.sourceUrl, tab.pendingUrl)) {
+      intentContext = "automatic_redirect";
+    }
+    
+    // Log the detected intent context for debugging
+    console.log(`[UserIntent] Classified tab creation as '${intentContext}' based on:`, {
+      linkText: lastClickedLink.linkText,
+      elementType: lastClickedLink.sourceElementType,
+      interactionType: lastClickedLink.interactionType,
+      redirect: isLikelyRedirect(lastClickedLink.sourceUrl, tab.pendingUrl)
+    });
+    
     const edge = {
       source: lastClickedLink.sourceTabId,
       target: tab.id,
@@ -827,7 +1035,7 @@ chrome.tabs.onCreated.addListener((tab) => {
       sourceUrl: lastClickedLink.sourceUrl,
       targetUrl: tab.pendingUrl,
       timestamp: lastClickedLink.timestamp,
-      openContext: "new_tab",
+      openContext: intentContext,
       transitionType: "link",
       isFormSubmission: lastClickedLink.isFormSubmission,
       formData: lastClickedLink.formData,
@@ -844,12 +1052,37 @@ chrome.tabs.onCreated.addListener((tab) => {
     lastClickedLink = null; // Clear after use
   } else {
     // For tabs created without a detected link click
-    // (e.g. Ctrl+T or New Tab button)
+    // Determine a more specific context based on tab properties
+    let intentContext = "user_command"; // Default
+    
+    // Analyze how this tab was created
+    if (tab.openerTabId && previousActiveTab !== tab.openerTabId) {
+      // Tab was opened programmatically by a website
+      intentContext = "site_initiated";
+    } else if (tab.pendingUrl === "chrome://newtab/" || tab.pendingUrl === "") {
+      // Likely opened via keyboard shortcut or new tab button
+      intentContext = "explicit_new_tab";
+    } else if (tab.pendingUrl && tab.pendingUrl.startsWith("chrome://")) {
+      // Browser UI navigation
+      intentContext = "browser_ui_navigation";
+    } else if (tab.pendingUrl && tab.pendingUrl.includes("extension")) {
+      // Extension related
+      intentContext = "extension_action";
+    }
+    
+    // Log the detected intent context for non-link clicks
+    console.log(`[UserIntent] Classified non-link tab creation as '${intentContext}' based on:`, {
+      pendingUrl: tab.pendingUrl || "(empty)",
+      openerTabId: tab.openerTabId,
+      isChromePage: tab.pendingUrl?.startsWith("chrome://"),
+      isExtension: tab.pendingUrl?.includes("extension")
+    });
+    
     const edge = {
       target: tab.id,
       type: "new_tab_command",
       timestamp: Date.now(),
-      openContext: "user_command",
+      openContext: intentContext,
       transitionType: "generated",
       previousTab: previousActiveTab
     };
@@ -1340,7 +1573,9 @@ chrome.webNavigation.onCommitted.addListener((details) => {
             transitionType,
             transitionQualifiers,
             timestamp: Date.now(),
-            navigationId
+            navigationId,
+            // Add dwell time if available from previous navigation
+            dwellTimeMs: browserState.lastActive?.tabId === tabId ? Date.now() - browserState.lastActive.timestamp : null
         });
     });
 });
@@ -1365,7 +1600,7 @@ function handleLoadComplete(tabId, tab) {
                         tabData.favIconUrl = updatedTab.favIconUrl;
                         browserState.tabs.set(tabId, tabData);
                         
-                        // Explicitly notify about favicon update
+                        // Explicit notification
                         sendMessageWithErrorHandling({
                             action: "tabFaviconUpdated",
                             tabId,
@@ -1486,6 +1721,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         activityLog.events.push(message.event);
         browserState.tabActivityLog.set(message.tabId, activityLog);
         console.log(`Tab ${message.tabId} activity updated from message:`, message.event);
+        sendResponse({ success: true });
         return true;
     }
 
@@ -1560,13 +1796,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 };
                 break;
             case "navigation_event":
-                const { tabId, windowId } = sender.tab;
+                // Extract tab information, ensuring we capture the proper tabId
+                const tabId = sender.tab?.id;
+                const windowId = sender.tab?.windowId;
+                
                 console.log("Navigation event:", {
                     tabId,
                     windowId,
                     url: message.data.targetUrl
                 });
         
+                // Only proceed if we have a valid tabId
+                if (!tabId) {
+                    console.error("Navigation event missing tabId, cannot process:", message);
+                    break;
+                }
+
                 // Force treemap update
                 sendMessageWithErrorHandling({
                     action: "tabUpdated",
@@ -1591,21 +1836,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
                 
             case "getHeroImagesForUrl":
-                // First check the browserState (in-memory cache)
+                // First check browserState for cached hero images
                 if (browserState.heroImages && browserState.heroImages.get && message.url) {
                     const heroImageData = browserState.heroImages.get(message.url);
-                    if (heroImageData && heroImageData.images) {
-                        console.log("🔍 Returning hero images from browserState for URL:", message.url);
+                    if (heroImageData && heroImageData.images && heroImageData.images.length > 0) {
+                        console.log("🔍 Found hero images in browserState for URL:", message.url, {
+                            count: heroImageData.images.length,
+                            title: heroImageData.title
+                        });
                         sendResponse(heroImageData);
                         return;
                     }
                 }
                 
-                // Then check storage
+                // If not in browserState, check storage
                 chrome.storage.local.get(["heroImages"], (result) => {
                     const heroImagesStore = result.heroImages || {};
-                    if (heroImagesStore[message.url]) {
-                        console.log("📦 Returning hero images from storage for URL:", message.url);
+                    if (heroImagesStore[message.url] && 
+                        heroImagesStore[message.url].images && 
+                        heroImagesStore[message.url].images.length > 0) {
+                        
+                        console.log("📦 Found hero images in storage for URL:", message.url, {
+                            count: heroImagesStore[message.url].images.length,
+                            title: heroImagesStore[message.url].title
+                        });
                         
                         // Update browserState for next time (cache warming)
                         if (browserState.heroImages && browserState.heroImages.set) {
@@ -1614,27 +1868,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         
                         sendResponse(heroImagesStore[message.url]);
                     } else {
-                        console.log("⚠️ No hero images found for URL:", message.url);
+                        // No need to log a warning for every URL without hero images
+                        // Silently return empty result
                         sendResponse({ images: null });
                     }
                 });
                 break;
             case "storeHeroImages":
-                console.log("📸 HERO IMAGE EXTRACTION:", {
-                    url: message.data.url,
-                    title: message.data.title,
-                    imageCount: message.data.heroImages.length,
-                    dwellTime: Math.round(message.data.dwellTime/1000) + "s",
-                    scrollDepth: message.data.scrollDepth + "px"
-                });
-                
-                // Log the actual images being extracted
-                console.log("📸 Hero images found:", message.data.heroImages.map(img => ({
-                    src: img.src.substring(0, 100) + (img.src.length > 100 ? '...' : ''),
-                    score: img.score,
-                    dimensions: `${img.width}x${img.height}`,
-                    isMetaImage: !!img.isMetaImage
-                })));
+                // Only log hero image extraction if we actually found some images
+                if (message.data.heroImages && message.data.heroImages.length > 0) {
+                    console.log("📸 HERO IMAGE EXTRACTION:", {
+                        url: message.data.url,
+                        title: message.data.title,
+                        imageCount: message.data.heroImages.length,
+                        dwellTime: Math.round(message.data.dwellTime/1000) + "s",
+                        scrollDepth: message.data.scrollDepth + "px"
+                    });
+                    
+                    // Log the actual images being extracted
+                    console.log("📸 Hero images found:", message.data.heroImages.map(img => ({
+                        src: img.src.substring(0, 100) + (img.src.length > 100 ? '...' : ''),
+                        score: img.score,
+                        dimensions: `${img.width}x${img.height}`,
+                        isMetaImage: !!img.isMetaImage
+                    })));
+                    
+                    // Log the tab history for this URL to provide context
+                    const tabId = sender.tab?.id;
+                    if (tabId) {
+                        const history = browserState.tabHistory.get(tabId) || [];
+                        if (history.length > 0) {
+                            const recentNav = history[0];
+                            console.log("📸 Tab history for hero image URL:", {
+                                tabId,
+                                dwellTimeMs: recentNav.dwellTimeMs,
+                                dwellTimeFormatted: recentNav.dwellTimeMs ? Math.round(recentNav.dwellTimeMs/1000) + "s" : "N/A",
+                                url: recentNav.url,
+                                title: recentNav.title,
+                                totalNavigations: history.length
+                            });
+                        }
+                    }
+                }
                 
                 // Add to browserState (core shared data structure)
                 const heroImageData = {
@@ -1745,7 +2020,8 @@ function cleanupDataStructures() {
         
         // Clean processedNavigations
         for (const [id, data] of processedNavigations) {
-            if (now - data.timestamp > 10000) { // 10 seconds
+            // Remove entries older than 5 seconds
+            if (now - data.timestamp > 5000) {
                 processedNavigations.delete(id);
             }
         }
@@ -1783,9 +2059,12 @@ function processDirectNavigation(tabData, details) {
 
 // Focused navigation recorder that only updates state - no edge creation
 function recordNavigation(details) {
-    const { tabId, url, title, transitionType, transitionQualifiers, timestamp } = details;
+    const { tabId, url, title, transitionType, transitionQualifiers, timestamp, dwellTimeMs } = details;
     
     try {
+        // Extract search query if this is a search engine URL
+        const searchQuery = extractSearchQuery(url);
+        
         // Update the tab history collection
         const history = browserState.tabHistory.get(tabId) || [];
         
@@ -1794,8 +2073,10 @@ function recordNavigation(details) {
             url,
             title: title || "",
             timestamp,
-            transitionType,
-            transitionQualifiers: transitionQualifiers || []
+            transitionType: transitionType || "unknown",
+            transitionQualifiers: transitionQualifiers || [],
+            dwellTimeMs: dwellTimeMs || 0, // Include dwell time if available
+            searchQuery: searchQuery // Add search query if present
         });
         
         // Limit history size
@@ -1830,6 +2111,18 @@ function recordNavigation(details) {
             transitionType,
             timestamp
         });
+        
+        // Broadcast specific dwell time update if available
+        if (dwellTimeMs) {
+            console.log(`[DwellTime] Broadcasting dwellTime update for tab ${tabId}, url ${url}: ${dwellTimeMs}ms`);
+            sendMessageWithErrorHandling({
+                action: "dwellTimeUpdated",
+                tabId,
+                url,
+                dwellTimeMs,
+                timestamp: Date.now()
+            });
+        }
         
         // Handle different navigation types
         processNavigationType(tabId, url, transitionType, transitionQualifiers);
@@ -1915,4 +2208,3 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
     });
   });
 });
-

@@ -669,7 +669,8 @@ function showTooltip(event, d) {
         .style('top', (event.pageY + 10) + 'px')
         .style('opacity', 1);
     
-    tooltip.html(`
+    // Build tooltip content
+    let tooltipContent = `
         <div class="tooltip-title">${d.title || 'Untitled'}</div>
         <div class="tooltip-url">${d.url}</div>
         <div>Domain: ${d.domain}</div>
@@ -677,7 +678,19 @@ function showTooltip(event, d) {
         <div>Last visit: ${new Date(d.lastVisitTime).toLocaleString()}</div>
         ${d.isActive ? '<div><strong>Currently open</strong></div>' : ''}
         ${d.type === 'bookmark' ? '<div><strong>Bookmarked</strong></div>' : ''}
-    `);
+    `;
+    
+    // Add search query information if available
+    if (d.searchQuery) {
+        tooltipContent += `<div class="tooltip-search"><strong>Search Query:</strong> ${d.searchQuery}</div>`;
+    }
+    
+    // Show intent classification if available
+    if (d.openContext && d.openContext !== 'user_command') {
+        tooltipContent += `<div class="tooltip-intent"><strong>User Intent:</strong> ${d.openContext.replace(/_/g, ' ')}</div>`;
+    }
+    
+    tooltip.html(tooltipContent);
 }
 
 function hideTooltip() {

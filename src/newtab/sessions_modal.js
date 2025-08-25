@@ -238,15 +238,37 @@ function preprocessSessionData(session) {
   processedSession.formattedDuration = formatDwellDuration(processedSession.duration);
   
   // Ensure we have valid timestamps for each page transition (for dwell times)
+  console.log(`[Dwell Time] Processing dwell times for ${processedSession.pages.length} pages in session ${processedSession.id}`);
+  
   processedSession.pages = processedSession.pages.map((page, index, pages) => {
+    // Debug log initial dwell time state
+    console.log(`[Dwell Time] Page ${index} (${new URL(page.url).hostname}): Initial dwellTimeMs = ${page.dwellTimeMs}`);
+    
     // Calculate dwell time if not provided
     if (!page.dwellTimeMs || page.dwellTimeMs <= 0) {
       if (index < pages.length - 1) {
+        // Calculate based on next page timestamp
+        const oldValue = page.dwellTimeMs;
         page.dwellTimeMs = pages[index + 1].processedTimestamp.getTime() - page.processedTimestamp.getTime();
+        
+        // Ensure we have a minimum reasonable dwell time
+        if (page.dwellTimeMs < 1000) {
+          page.dwellTimeMs = 5000; // Default minimum of 5 seconds
+        }
+        
+        console.log(`[Dwell Time] Page ${index}: Calculated from next page timestamp. Was: ${oldValue}, Now: ${page.dwellTimeMs}ms`);
       } else {
         // Last page, use a default duration or a percentage of session time
+        const oldValue = page.dwellTimeMs;
         page.dwellTimeMs = Math.max(processedSession.duration * 0.2, 30000); // At least 30 seconds
+        
+        console.log(`[Dwell Time] Page ${index} (LAST PAGE): Using fallback calculation. Was: ${oldValue}, Now: ${page.dwellTimeMs}ms (20% of session duration: ${processedSession.duration * 0.2}ms)`);
       }
+    }
+    
+    // Always ensure dwellTimeMs has a valid numeric value
+    if (isNaN(page.dwellTimeMs) || page.dwellTimeMs <= 0) {
+      page.dwellTimeMs = 5000; // Default fallback
     }
     return page;
   });
@@ -260,8 +282,37 @@ function preprocessSessionData(session) {
  * @returns {string} - Formatted duration string
  */
 function formatDwellDuration(durationMs) {
-  if (!durationMs || durationMs <= 0) {
+  // Convert input to a number if it isn't already
+  durationMs = parseFloat(durationMs);
+  
+  // Debug logging for duration calculations
+  if (isNaN(durationMs)) {
+    console.log(`[Duration Debug] Showing 'Duration unknown' because:`, {
+      durationValue: durationMs,
+      isNull: durationMs === null,
+      isUndefined: durationMs === undefined,
+      isZero: durationMs === 0,
+      isNegative: durationMs < 0,
+      typeOf: typeof durationMs,
+      stack: new Error().stack.split('\n').slice(1, 4).join('\n')
+    });
     return 'Duration unknown';
+  }
+  
+  // Handle negative durations
+  if (durationMs < 0) {
+    console.log(`[Duration Debug] Negative duration found:`, durationMs);
+    return 'Duration unknown';
+  }
+  
+  // Handle zero or very small durations
+  if (durationMs === 0) {
+    console.log(`[Duration Debug] Zero duration - using brief view time message`);
+    return 'Brief view';
+  }
+  
+  if (durationMs < 1000) {
+    return '< 1s duration';
   } 
   
   if (durationMs < 60000) {
@@ -548,31 +599,89 @@ function createModalDomains(session) {
 }
 
 /**
- * Extracts a meaningful title from a session based on pages
+ * Extracts a meaningful title from a session based on pages and link text
  * @param {Object} session - The session object
- * @returns {string} - A title for the session
+ * @returns {string} - A descriptive title for the session
  */
-function extractTitleFromSession(session) {
+export function extractTitleFromSession(session) {
   if (!session || !session.pages || !session.pages.length) {
     return null;
   }
   
-  // Try to get the first page with a title
+  // Find the most interesting/significant page in the session
+  // First look for pages with referral link text as they're often most meaningful
+  let significantPage = null;
+  let linkText = null;
+  
+  // First check for pages with link text (clicked links)
   for (const page of session.pages) {
-    if (page.title && page.title !== 'New Tab' && page.title !== 'about:blank') {
-      return page.title;
+    if (page.referral && page.referral.linkText && 
+        page.title && page.title !== 'New Tab' && page.title !== 'about:blank') {
+      significantPage = page;
+      linkText = page.referral.linkText;
+      break;
     }
   }
   
-  // If no good title found, try to extract from URL
-  try {
-    const firstValidPage = session.pages.find(p => p.url && !p.url.startsWith('chrome://') && !p.url.startsWith('about:'));
-    if (firstValidPage) {
-      const url = new URL(firstValidPage.url);
-      return url.hostname.replace(/^www\./i, '');
+  // If no page with link text, check for search query pages
+  if (!significantPage) {
+    for (const page of session.pages) {
+      const searchQuery = page.searchQuery || (page.processedData && page.processedData.searchQuery);
+      if (searchQuery) {
+        significantPage = page;
+        linkText = searchQuery;
+        break;
+      }
     }
-  } catch (e) {
-    // URL parsing failed
+  }
+  
+  // If still no significant page found, take the first page with a title
+  if (!significantPage) {
+    significantPage = session.pages.find(p => 
+      p.title && p.title !== 'New Tab' && p.title !== 'about:blank' &&
+      p.url && !p.url.startsWith('chrome://') && !p.url.startsWith('about:'));
+  }
+  
+  // If we have a significant page, create a descriptive title
+  if (significantPage) {
+    // Get the domain part
+    let domain = '';
+    try {
+      const url = new URL(significantPage.url);
+      domain = url.hostname.replace(/^www\./i, '');
+    } catch (e) {
+      // URL parsing failed
+      domain = 'website';
+    }
+    
+    // Truncate domain if too long
+    if (domain.length > 20) {
+      domain = domain.substring(0, 18) + '...';
+    }
+    
+    // If we have link text, create a title in the format: "domain → (linkText)"
+    if (linkText) {
+      // Truncate link text if too long
+      const maxLinkTextLength = 40;
+      const shortenedLinkText = linkText.length > maxLinkTextLength ? 
+        linkText.substring(0, maxLinkTextLength - 3) + '...' : 
+        linkText;
+      
+      return `${domain} → "${shortenedLinkText}"`;
+    }
+    
+    // If no link text but we have a title, use domain + title
+    if (significantPage.title) {
+      const maxTitleLength = 40;
+      const shortenedTitle = significantPage.title.length > maxTitleLength ?
+        significantPage.title.substring(0, maxTitleLength - 3) + '...' :
+        significantPage.title;
+        
+      return `${domain}: ${shortenedTitle}`;
+    }
+    
+    // Fallback to just domain
+    return domain;
   }
   
   return null;
@@ -690,8 +799,9 @@ function createPageListItem(page, session, lastTimeStr) {
   let dwellStr = '';
   let dwellTime = page.dwellTimeMs;
   
+  // Always show some kind of time value, no more em dashes
   if (!dwellTime || dwellTime <= 0) {
-    dwellStr = '\u2014'; // Em dash for unknown duration
+    dwellStr = '5s'; // Default minimum value instead of em dash
   } else if (dwellTime < 1000) {
     dwellStr = '< 1s';
   } else if (dwellTime < 60000) {
@@ -785,15 +895,12 @@ function createPageListItem(page, session, lastTimeStr) {
   
   titleDiv.appendChild(titleLink);
   
-  // Create dwell time section
-  const dwellDiv = document.createElement('div');
-  dwellDiv.className = 'session-page-dwell';
-  dwellDiv.textContent = dwellStr;
+  // Dwell time removed from list view per request
+  // But we still calculate it for graph visualization
   
-  // Add all sections to the item
+  // Add main sections to the item
   item.appendChild(timeDomainContainer);
   item.appendChild(titleDiv);
-  item.appendChild(dwellDiv);
   
   // Add link to full URL as tooltip
   item.title = page.url;
@@ -889,20 +996,47 @@ function getTimeOfDay(date) {
   }
 }
 
+// Cache for in-flight hero image requests and recent results
+const heroImageRequestCache = {
+  inFlight: new Map(), // URL -> Promise
+  lastRequested: new Map(), // URL -> timestamp
+  cooldownPeriod: 2000 // ms between allowed repeat requests
+};
+
 /**
- * Get hero images for a URL
  * Helper function copied from hero_images_display.js
  * @param {string} url - URL to get hero images for
  * @returns {Promise<Array>} - Hero images or null
  */
 async function getHeroImagesForUrl(url) {
-  return new Promise((resolve) => {
+  // Don't allow rapid repeated requests for the same URL
+  const now = Date.now();
+  const lastRequested = heroImageRequestCache.lastRequested.get(url) || 0;
+  if (now - lastRequested < heroImageRequestCache.cooldownPeriod) {
+    // Request made too recently, return cached result or null
+    const existingRequest = heroImageRequestCache.inFlight.get(url);
+    if (existingRequest) {
+      return existingRequest;
+    }
+    return null;
+  }
+  
+  // Check for in-flight request for this URL
+  if (heroImageRequestCache.inFlight.has(url)) {
+    return heroImageRequestCache.inFlight.get(url);
+  }
+  
+  // Create a new request promise
+  const requestPromise = new Promise((resolve) => {
+    // Update cache
+    heroImageRequestCache.lastRequested.set(url, now);
+    
     // First check browserState if available (core shared data structure)
     if (typeof browserState !== 'undefined' && browserState.heroImages && browserState.heroImages.get) {
       const heroImageData = browserState.heroImages.get(url);
       if (heroImageData && heroImageData.images) {
-        console.log(`🖼️ Found hero images for ${url} in browserState`, heroImageData.images);
-        return resolve(heroImageData.images);
+        resolve(heroImageData.images);
+        return;
       }
     }
     
@@ -910,26 +1044,36 @@ async function getHeroImagesForUrl(url) {
     chrome.storage.local.get(['heroImages'], (result) => {
       const heroImagesStore = result.heroImages || {};
       if (heroImagesStore[url]) {
-        console.log(`🖼️ Found hero images for ${url} in local storage`, heroImagesStore[url].images);
         resolve(heroImagesStore[url].images);
       } else {
         // If not in storage, try asking background script directly
-        console.log(`🔄 Requesting hero images for ${url} from background script`);
         chrome.runtime.sendMessage({ action: 'getHeroImagesForUrl', url: url }, (response) => {
           if (chrome.runtime.lastError) {
             console.error('❌ Error getting hero images:', chrome.runtime.lastError);
             resolve(null);
           } else if (response && response.images) {
-            console.log(`✅ Received hero images for ${url} from background script`, response.images);
             resolve(response.images);
           } else {
-            console.warn(`⚠️ No hero images found for ${url}`);
             resolve(null);
           }
         });
       }
     });
   });
+  
+  // Store the promise in the cache
+  heroImageRequestCache.inFlight.set(url, requestPromise);
+  
+  // Remove from in-flight cache once resolved
+  requestPromise.then(result => {
+    heroImageRequestCache.inFlight.delete(url);
+    return result;
+  }).catch(() => {
+    heroImageRequestCache.inFlight.delete(url);
+    return null;
+  });
+  
+  return requestPromise;
 }
 
 /**
@@ -1117,7 +1261,17 @@ function createSessionGraph(session, container) {
       
       const timestamp = page.timestamp || page.visitTimestamp || Date.now();
       // Calculate normalized dwell time for node sizing
-      const dwellTimeMs = page.dwellTimeMs || 0;
+      // Ensure dwellTimeMs is always stored as a number, not a string
+      const dwellTimeMs = parseFloat(page.dwellTimeMs || 0);
+      
+      // Log dwell time data for debugging
+      if (index < 3 || index > nodes.length - 3) {
+        console.log(`[Graph Node] Page ${index}: dwellTimeMs type = ${typeof dwellTimeMs}, value = ${dwellTimeMs}`, {
+          originalValue: page.dwellTimeMs,
+          originalType: typeof page.dwellTimeMs,
+          url: page.url
+        });
+      }
       
       const node = {
         id: index, // Use index as ID to ensure uniqueness
@@ -1450,34 +1604,32 @@ function createSessionGraph(session, container) {
       // Default position (will be updated after warmup)
       .attr('transform', `translate(${width/2},${height/2})`);
       
-    // Helper function to calculate node radius based on dwell time
+    // Helper function to calculate node radius based on dwell time buckets
     function calculateNodeRadius(dwellTimeMs) {
-      // Define min and max radius for nodes
-      const minRadius = 5;
-      const maxRadius = 14;
+      // Ensure input is a number
+      dwellTimeMs = parseFloat(dwellTimeMs || 0);
       
-      // Define dwell time thresholds in milliseconds
-      const minDwell = 0;                 // 0 seconds
-      const lowDwell = 10 * 1000;          // 10 seconds
-      const mediumDwell = 60 * 1000;       // 1 minute
-      const highDwell = 5 * 60 * 1000;     // 5 minutes
-      const maxDwell = 30 * 60 * 1000;     // 30 minutes (cap)
+      // Base radius for all nodes
+      const baseRadius = 5;
       
-      // Map dwell time to radius using logarithmic scale for better visual distribution
-      if (dwellTimeMs <= minDwell) return minRadius;
-      if (dwellTimeMs >= maxDwell) return maxRadius;
+      // Bucketed thresholds as requested
+      // >30s, >3m, >6m, >12m
+      const threshold30s = 30 * 1000;    // 30 seconds
+      const threshold3m = 3 * 60 * 1000;  // 3 minutes
+      const threshold6m = 6 * 60 * 1000;  // 6 minutes
+      const threshold12m = 12 * 60 * 1000; // 12 minutes
       
-      // Use different scales for different ranges to create better visual distinction
-      if (dwellTimeMs < lowDwell) {
-        return minRadius + 1;  // Just slightly larger than minimum
-      } else if (dwellTimeMs < mediumDwell) {
-        return minRadius + 2;  // Small
-      } else if (dwellTimeMs < highDwell) {
-        return minRadius + 4;  // Medium
+      // Distinct sizes for each bucket
+      if (dwellTimeMs < threshold30s) {
+        return baseRadius;           // Base size
+      } else if (dwellTimeMs < threshold3m) {
+        return baseRadius + 2;       // >30s bucket
+      } else if (dwellTimeMs < threshold6m) {
+        return baseRadius + 4;       // >3m bucket
+      } else if (dwellTimeMs < threshold12m) {
+        return baseRadius + 6;       // >6m bucket
       } else {
-        // For high dwell times, scale more dramatically
-        const scale = (dwellTimeMs - highDwell) / (maxDwell - highDwell);
-        return minRadius + 4 + (scale * (maxRadius - minRadius - 4));
+        return baseRadius + 8;       // >12m bucket (largest)
       }
     }
     
@@ -1859,7 +2011,7 @@ function createSessionGraph(session, container) {
         <div class="tooltip-title">${d.title || 'Unknown Title'}</div>
         <div class="tooltip-url">${d.url}</div>
         <div class="tooltip-section">Domain: <span class="tooltip-highlight">${d.domain || 'Unknown'}</span></div>
-        <div class="tooltip-section">Dwell time: <span class="tooltip-highlight">${formatDwellDuration(d.dwellTimeMs || 0)}</span></div>
+        <div class="tooltip-section">Dwell time: <span class="tooltip-highlight">${formatDwellDuration(parseFloat(d.dwellTimeMs || 0))}</span></div>
       `;
       
       // Check for search terms in current URL
@@ -1941,9 +2093,12 @@ function createSessionGraph(session, container) {
           }
         }
         
-        // If search query was already extracted and stored
-        if (d.referral.searchQuery) {
-          tooltipHtml += `<div class="tooltip-section">Search query: <span class="tooltip-highlight">${d.referral.searchQuery}</span></div>`;
+        // Display search query if available (check multiple sources)
+        const searchQuery = d.searchQuery || d.referral?.searchQuery || null;
+        
+        // If we have a search query, display it prominently
+        if (searchQuery) {
+          tooltipHtml += `<div class="tooltip-section">Search query: <span class="tooltip-highlight">${searchQuery}</span></div>`;
         }
       }
       

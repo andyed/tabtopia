@@ -38,6 +38,7 @@ export const ActionTypes = {
   // Data actions
   SUMMARY_STORED: 'SUMMARY_STORED',
   NODE_POSITION_UPDATED: 'NODE_POSITION_UPDATED',
+  DWELL_TIME_UPDATED: 'DWELL_TIME_UPDATED', // New action type
   
   // Batch actions
   BATCH_STATE_UPDATE: 'BATCH_STATE_UPDATE',
@@ -185,6 +186,11 @@ export const browserState = {
           type: ActionTypes.WINDOW_UPDATED,
           payload: message.data
         });
+      } else if (message.action === 'dwellTimeUpdated') {
+        this._dispatch({
+          type: ActionTypes.DWELL_TIME_UPDATED,
+          payload: message.data
+        });
       }
       
       // Forward original message to maintain backward compatibility
@@ -287,6 +293,7 @@ export const browserState = {
       [ActionTypes.TAB_UPDATED]: 'tabUpdated',
       [ActionTypes.TAB_REMOVED]: 'tabRemoved',
       [ActionTypes.WINDOW_UPDATED]: 'windowUpdated',
+      [ActionTypes.DWELL_TIME_UPDATED]: 'dwellTimeUpdated', // New mapping
       // Add more mappings as needed
     };
     return mapping[actionType] || 'stateChanged';
@@ -325,6 +332,9 @@ export const browserState = {
         
       case ActionTypes.NODE_POSITION_UPDATED:
         return this._reducers.nodePositionUpdated(state, action.payload);
+        
+      case ActionTypes.DWELL_TIME_UPDATED:
+        return this._reducers.dwellTimeUpdated(state, action.payload); // New reducer
         
       case ActionTypes.BATCH_STATE_UPDATE:
         return this._reducers.batchStateUpdate(state, action.payload);
@@ -426,11 +436,20 @@ export const browserState = {
      * @returns {Object} New state
      */
     uiSelectTab(state, payload) {
+      // Ensure dwellTimeMs is always a number
+      const finalDwellTimeMs = state.ui.dwellTimeMs !== null ? Number(state.ui.dwellTimeMs) : null;
+      
+      if (finalDwellTimeMs !== null) {
+        console.log(`[DwellTime] Final value for ${state.ui.url}: ${finalDwellTimeMs}ms (${typeof finalDwellTimeMs}) - source: ${state.ui.dwellTimeSource}`);
+      }
+      
+      // Return the enriched page data
       return {
         ...state,
         ui: {
           ...state.ui,
-          selectedTab: payload
+          selectedTab: payload,
+          dwellTimeMs: finalDwellTimeMs
         }
       };
     },
@@ -512,6 +531,69 @@ export const browserState = {
           nodePositions,
           lastUpdated: Date.now()
         }
+      };
+    },
+    
+    /**
+     * Handle dwell time updates
+     * @param {Object} state - Current state
+     * @param {Object} payload - Dwell time update data
+     * @returns {Object} New state
+     */
+    dwellTimeUpdated(state, payload) {
+      console.log('[DwellTime] Received real-time update:', payload);
+      
+      const { tabId, url, dwellTimeMs, timestamp } = payload;
+      
+      // Skip invalid payloads
+      if (!tabId || !url || !dwellTimeMs) {
+        console.warn('[DwellTime] Invalid dwell time update payload:', payload);
+        return state;
+      }
+      
+      // Make sure we have tabHistory data to update
+      if (!state.tabHistory || !state.tabHistory.has(tabId)) {
+        console.warn(`[DwellTime] No tab history for tab ${tabId} to update dwellTime`);
+        return state;
+      }
+      
+      // Create a new copy of the tab history map
+      const newTabHistory = new Map(state.tabHistory);
+      
+      // Get the history array for this tab
+      const tabHistory = [...newTabHistory.get(tabId)];
+      
+      // Find the matching navigation entry
+      let updated = false;
+      const updatedTabHistory = tabHistory.map(entry => {
+        // Match the navigation entry by URL
+        if (entry.url === url) {
+          console.log(`[DwellTime] Updating dwell time for ${url} in tab ${tabId} from ${entry.dwellTimeMs || 0}ms to ${dwellTimeMs}ms`);
+          
+          // Return a new entry with updated dwellTimeMs
+          updated = true;
+          return {
+            ...entry,
+            dwellTimeMs: dwellTimeMs,
+            dwellTimeUpdated: timestamp
+          };
+        }
+        return entry;
+      });
+      
+      // If we didn't find and update any entries, log a warning
+      if (!updated) {
+        console.warn(`[DwellTime] Couldn't find matching navigation entry for ${url} in tab ${tabId}`);
+        return state;
+      }
+      
+      // Update the tab history
+      newTabHistory.set(tabId, updatedTabHistory);
+      
+      // Return updated state
+      return {
+        ...state,
+        tabHistory: newTabHistory
       };
     },
     
@@ -831,8 +913,45 @@ export const browserState = {
   },
 
   async getPageActivityAndReferrals(pageInfoArray) {
+    console.log(`[PageActivity] Starting getPageActivityAndReferrals for ${pageInfoArray.length} pages`);
+    console.log(`[PageActivity] Current state of _store:`, {
+      hasTabHistory: !!this._store.tabHistory,
+      tabHistorySize: this._store.tabHistory ? this._store.tabHistory.size : 0,
+      hasTabActivityLog: !!this._store.tabActivityLog,
+      tabActivityLogSize: this._store.tabActivityLog ? this._store.tabActivityLog.size : 0,
+      hasTabRelationships: !!this._store.tabRelationships,
+      tabRelationshipsSize: this._store.tabRelationships ? this._store.tabRelationships.size : 0
+    });
+    
     // Ensure the local store (_store) is up-to-date with the latest from background.js
     await this.getState();
+    
+    console.log(`[PageActivity] After getState() refresh:`, {
+      hasTabHistory: !!this._store.tabHistory,
+      tabHistorySize: this._store.tabHistory ? this._store.tabHistory.size : 0,
+      hasTabActivityLog: !!this._store.tabActivityLog,
+      tabActivityLogSize: this._store.tabActivityLog ? this._store.tabActivityLog.size : 0,
+      hasTabRelationships: !!this._store.tabRelationships,
+      tabRelationshipsSize: this._store.tabRelationships ? this._store.tabRelationships.size : 0
+    });
+    
+    // Helper function for formatting duration in logs
+    function formatDurationLog(milliseconds) {
+      if (milliseconds < 0 || isNaN(milliseconds)) return 'N/A';
+      let totalSeconds = Math.floor(milliseconds / 1000);
+      let hours = Math.floor(totalSeconds / 3600);
+      let minutes = Math.floor((totalSeconds % 3600) / 60);
+      let seconds = totalSeconds % 60;
+
+      let parts = [];
+      if (hours > 0) parts.push(`${hours}h`);
+      if (minutes > 0) parts.push(`${minutes}m`);
+      if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+          
+      return parts.join(' ');
+    }
+    
+    console.log(`[PageActivity] Processing activity data for ${pageInfoArray.length} pages`);
 
     const enrichedPages = pageInfoArray.map(page => {
       let visitTabId = null;
@@ -863,40 +982,72 @@ export const browserState = {
 
       // Calculate dwell time with improved fallback mechanisms
       let dwellTimeMs = null;
+      let dwellTimeSource = 'unknown';
+      
+      // Debug the navigation entries
+      console.log(`[DwellTime DEBUG] Navigation entries for ${page.url}:`, { 
+        hasNavigationEntry: !!navigationEntry,
+        hasNextNavigationEntry: !!nextNavigationEntry,
+        navigationTimestamp: navigationEntry ? navigationEntry.timestamp : null,
+        nextNavigationTimestamp: nextNavigationEntry ? nextNavigationEntry.timestamp : null,
+        pageVisitTimestamp: page.visitTimestamp
+      });
+
       if (navigationEntry && nextNavigationEntry) {
         // Standard dwell time calculation: time between this navigation and the next one
         const duration = nextNavigationEntry.timestamp - navigationEntry.timestamp;
+        console.log(`[DwellTime] Calculating standard duration: ${nextNavigationEntry.timestamp} - ${navigationEntry.timestamp} = ${duration}ms`);
+        
         if (duration > 0) {
           dwellTimeMs = duration;
+          dwellTimeSource = 'next-navigation';
+          console.log(`[DwellTime] Standard calculation for ${page.url}: ${dwellTimeMs}ms (${formatDurationLog(dwellTimeMs)}) - from next navigation`);
+        } else {
+          console.log(`[DwellTime] Warning: Invalid standard duration (${duration}ms) - timestamps may be out of order`);
         }
       } else if (navigationEntry) {
         // IMPROVED: Fallback dwell time calculation for the last navigation in a tab
         // Use either the session end time from page data, tab close time, or current time
         const endTime = page.sessionEndTime || Date.now();
-        dwellTimeMs = endTime - navigationEntry.timestamp;
+        console.log(`[DwellTime] Fallback calculation inputs:`, {
+          sessionEndTime: page.sessionEndTime,
+          currentTime: Date.now(),
+          endTimeUsed: endTime,
+          navigationTimestamp: navigationEntry.timestamp,
+          difference: endTime - navigationEntry.timestamp
+        });
         
-        // Only use this value if it's reasonable (positive and not excessive)
-        if (dwellTimeMs <= 0 || dwellTimeMs > 24 * 60 * 60 * 1000) { // Cap at 24 hours
-          // If the calculated time is unreasonable, try to get better data from tabActivityLog
-          if (visitTabId && this._store.tabActivityLog && this._store.tabActivityLog.has(visitTabId)) {
-            const activityLog = this._store.tabActivityLog.get(visitTabId);
-            if (Array.isArray(activityLog)) {
-              // Try to find interaction events after this navigation to better estimate dwell time
-              const afterEvents = activityLog.filter(event => 
-                (event.type === 'focus' || event.type === 'link_interaction') && 
-                event.timestamp > navigationEntry.timestamp
-              );
+        dwellTimeMs = endTime - navigationEntry.timestamp;
+        dwellTimeSource = 'session-end';
+        console.log(`[DwellTime] Fallback calculation for ${page.url}: ${dwellTimeMs}ms (${formatDurationLog(dwellTimeMs)}) - from session end/current time`);
+        
+        // Additional check: If we have tab activity logs for this tab, we might be able to get a more accurate dwell time
+        if (visitTabId && this._store.tabActivityLog && this._store.tabActivityLog.has(visitTabId)) {
+          const activityLog = this._store.tabActivityLog.get(visitTabId);
+          
+          // Find the last relevant event for this navigation
+          if (activityLog && activityLog.length > 0) {
+            // Filter events relevant to this navigation (after it happened)
+            const relevantEvents = activityLog.filter(event => 
+              event.timestamp >= navigationEntry.timestamp && 
+              (event.type === 'tab_focus' || event.type === 'tab_blur' || event.type === 'link_interaction')
+            );
+            
+            // Get the last relevant event (if any)
+            if (relevantEvents.length > 0) {
+              const lastEvent = relevantEvents[relevantEvents.length - 1];
               
-              if (afterEvents.length > 0) {
-                // Sort by timestamp
-                afterEvents.sort((a, b) => a.timestamp - b.timestamp);
-                // Use the time between navigation and last interaction as dwell time
-                const lastEvent = afterEvents[afterEvents.length - 1];
-                const eventDwell = lastEvent.timestamp - navigationEntry.timestamp;
-                // Only use if reasonable
-                if (eventDwell > 0 && eventDwell < 24 * 60 * 60 * 1000) {
-                  dwellTimeMs = eventDwell;
-                }
+              // Calculate dwell time based on the time difference
+              const activityDwellTimeMs = lastEvent.timestamp - navigationEntry.timestamp;
+              
+              // Only use this value if it's reasonable (positive and not excessive)
+              if (activityDwellTimeMs > 0 && activityDwellTimeMs < 24 * 60 * 60 * 1000) {
+                // Success: We found a better dwell time estimate
+                console.log(`[DwellTime] Found better dwell time from activity log for ${page.url}: ${activityDwellTimeMs}ms (${formatDurationLog(activityDwellTimeMs)}) - from ${lastEvent.type} event`);
+                dwellTimeMs = activityDwellTimeMs;
+                dwellTimeSource = 'activity-log';
+              } else {
+                console.log(`[DwellTime] Activity log calculation failed for ${page.url}: ${activityDwellTimeMs}ms - out of reasonable range`);
               }
             }
           }
@@ -1010,11 +1161,24 @@ export const browserState = {
       } catch (e) {
         console.warn('Error extracting domain from URL:', e);
       }
+      
+      // Apply minimum dwell time if calculated as zero or invalid
+      if (!dwellTimeMs || dwellTimeMs <= 0) {
+        const oldValue = dwellTimeMs;
+        // Set a minimum value of 5 seconds as fallback - better than zero
+        dwellTimeMs = 5000;
+        dwellTimeSource = 'minimum-fallback';
+        console.log(`[DwellTime] Applied minimum fallback: ${oldValue} → ${dwellTimeMs}ms - for ${page.url}`);
+      }
 
+      // Final value for this page
+      console.log(`[DwellTime] Final value for ${page.url}: ${dwellTimeMs}ms (${formatDurationLog(dwellTimeMs)}) - source: ${dwellTimeSource}`);
+      
       return {
-        ...page, // Keep original page info (pageId, url, visitTimestamp)
-        originalTabId: visitTabId, // The tabId in which this specific page visit occurred
-        dwellTimeMs,
+        ...page,
+        originalTabId: visitTabId,
+        dwellTimeMs: parseFloat(dwellTimeMs),
+        dwellTimeSource,
         referral,
         domain: pageDomain,  // Include domain for easier grouping/analysis
       };
@@ -1138,3 +1302,20 @@ export const browserState = {
     console.error('Error initializing state:', error);
   }
 })();
+
+// Initialize message listener for dwell time updates
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message && message.action === 'dwellTimeUpdated') {
+    console.log('[DwellTime] Received dwellTimeUpdated message:', message);
+    browserState.dispatch({
+      type: ActionTypes.DWELL_TIME_UPDATED,
+      payload: {
+        tabId: message.tabId,
+        url: message.url,
+        dwellTimeMs: message.dwellTimeMs,
+        timestamp: message.timestamp
+      }
+    });
+    return true;
+  }
+});
