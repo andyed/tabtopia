@@ -37,9 +37,8 @@ export async function initializeApp() {
         const freshData = await refreshData(categorizedDataCache); // More efficient refresh
         if (freshData) categorizedDataCache = freshData;
     }, 500);
-    if ('ai' in self && 'summarizer' in self.ai) {
-        console.log("---\n\n---\n---\nSummarizer API is supported");
-      }
+    // Removed immediate AI/Summarizer check to prevent startup crashes
+    // The API will be checked when actually needed during summarization
 }
 
 // Set up listeners for Chrome tab events

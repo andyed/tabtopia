@@ -109,6 +109,77 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 /**
+ * Audio tracking functions
+ * Tracks audio playback duration per tab regardless of focus
+ */
+
+/**
+ * Update audio tracking for a tab when audio state changes
+ * @param {number} tabId - Tab ID
+ * @param {boolean} isAudible - Whether audio is currently playing
+ */
+function updateAudioTracking(tabId, isAudible) {
+    const currentTime = Date.now();
+    let audioData = browserState.tabAudioTracking.get(tabId) || {
+        totalAudioDuration: 0,
+        isCurrentlyAudible: false,
+        audioStartTime: null
+    };
+    
+    console.log(`[AudioTracking] Tab ${tabId} audio state changed: ${audioData.isCurrentlyAudible} -> ${isAudible}`);
+    
+    if (isAudible && !audioData.isCurrentlyAudible) {
+        // Audio started playing
+        audioData.isCurrentlyAudible = true;
+        audioData.audioStartTime = currentTime;
+        console.log(`[AudioTracking] Audio started for tab ${tabId}`);
+    } else if (!isAudible && audioData.isCurrentlyAudible) {
+        // Audio stopped playing
+        if (audioData.audioStartTime) {
+            const duration = currentTime - audioData.audioStartTime;
+            audioData.totalAudioDuration += duration;
+            console.log(`[AudioTracking] Audio stopped for tab ${tabId}, session duration: ${duration}ms, total: ${audioData.totalAudioDuration}ms`);
+        }
+        audioData.isCurrentlyAudible = false;
+        audioData.audioStartTime = null;
+    }
+    
+    browserState.tabAudioTracking.set(tabId, audioData);
+    
+    // Save state to persist audio tracking data
+    saveStateToStorage();
+    
+    // Broadcast audio tracking update
+    sendMessageWithErrorHandling({
+        action: "audioTrackingUpdated",
+        tabId,
+        audioData: {
+            totalAudioDuration: audioData.totalAudioDuration,
+            isCurrentlyAudible: audioData.isCurrentlyAudible
+        }
+    });
+}
+
+/**
+ * Get current audio duration for a tab (including ongoing playback)
+ * @param {number} tabId - Tab ID
+ * @returns {number} Total audio duration in milliseconds
+ */
+function getCurrentAudioDuration(tabId) {
+    const audioData = browserState.tabAudioTracking.get(tabId);
+    if (!audioData) return 0;
+    
+    let totalDuration = audioData.totalAudioDuration;
+    
+    // If audio is currently playing, include ongoing duration
+    if (audioData.isCurrentlyAudible && audioData.audioStartTime) {
+        totalDuration += Date.now() - audioData.audioStartTime;
+    }
+    
+    return totalDuration;
+}
+
+/**
  * Initializes tracking of the currently active tab for dwell time calculations
  */
 function initializeActiveTabTracking() {
@@ -174,6 +245,7 @@ const browserState = {
   heroImages: new Map(),        // Hero images by URL
   tabRelationships: new Map(),  // Parent/child and sibling relationships between tabs
   tabActivityLog: new Map(),    // User interaction and time-spent data
+  tabAudioTracking: new Map(),  // Audio playback duration tracking per tab
   lastActive: null,             // Tracks the currently active tab for dwell time calculations
   listeners: [],                // State change subscribers
 
@@ -449,6 +521,13 @@ function sanitizeTabData(tab) {
         return null;
     }
 
+    // Get existing audio tracking data
+    const audioData = browserState.tabAudioTracking.get(tab.id) || {
+        totalAudioDuration: 0,
+        isCurrentlyAudible: false,
+        audioStartTime: null
+    };
+    
     return {
         id: tab.id,
         windowId: tab.windowId,
@@ -456,8 +535,11 @@ function sanitizeTabData(tab) {
         url: tab.url || "",
         favIconUrl: tab.favIconUrl,
         active: tab.active,
+        audible: tab.audible || false,
+        mutedInfo: tab.mutedInfo,
         lastAccessed: Date.now(),
-        timeSpent: browserState.tabs.get(tab.id)?.timeSpent || 0
+        timeSpent: browserState.tabs.get(tab.id)?.timeSpent || 0,
+        totalAudioDuration: audioData.totalAudioDuration
     };
 }
 
@@ -1215,6 +1297,18 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     const removedTab = browserState.tabs.get(tabId);
     const tabHistoryData = browserState.tabHistory.get(tabId);
     const relationships = browserState.tabRelationships.get(tabId);
+    
+    // Handle any ongoing audio tracking before cleanup
+    const audioData = browserState.tabAudioTracking.get(tabId);
+    if (audioData && audioData.isCurrentlyAudible && audioData.audioStartTime) {
+        // Finalize audio duration for removed tab
+        const finalDuration = Date.now() - audioData.audioStartTime;
+        audioData.totalAudioDuration += finalDuration;
+        audioData.isCurrentlyAudible = false;
+        audioData.audioStartTime = null;
+        browserState.tabAudioTracking.set(tabId, audioData);
+        console.log(`[AudioTracking] Finalized audio tracking for removed tab ${tabId}: ${audioData.totalAudioDuration}ms total`);
+    }
 
     // Send removal event with complete data
     sendMessageWithErrorHandling({
@@ -1233,6 +1327,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     browserState.tabs.delete(tabId);
     browserState.tabHistory.delete(tabId);
     browserState.tabActivityLog.delete(tabId);
+    browserState.tabAudioTracking.delete(tabId);  // Clean up audio tracking
     navigationEvents.delete(tabId);
     browserState.tabRelationships.delete(tabId);
     browserState.tabHistory.delete(tabId);
@@ -1326,6 +1421,24 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
     // Clean up after using
     delete pendingLinkData[details.tabId];
   }
+});
+
+// Listen for tab audio state changes
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Track audio state changes
+    if (changeInfo.audible !== undefined) {
+        console.log(`[AudioTracking] Tab ${tabId} audible state changed to: ${changeInfo.audible}`);
+        updateAudioTracking(tabId, changeInfo.audible);
+    }
+    
+    // Also initialize audio tracking for new tabs
+    if (changeInfo.status === 'complete' && tab.audible !== undefined) {
+        const existingAudioData = browserState.tabAudioTracking.get(tabId);
+        if (!existingAudioData && tab.audible) {
+            console.log(`[AudioTracking] Initializing audio tracking for tab ${tabId} (already audible)`);
+            updateAudioTracking(tabId, true);
+        }
+    }
 });
 
 // Update tab metadata without recording a new navigation
@@ -1741,6 +1854,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
         tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
         tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
+        tabAudioTracking: browserState.tabAudioTracking ? [...browserState.tabAudioTracking.entries()] : [],
         graphData: browserState.graphData || { summaries: {}, customEdges: [], nodePositions: {} }
       };
       
@@ -1914,17 +2028,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         console.log(`📋 Found ${currentTabs.length} current tabs`);
                         
                         // Transform tabs to the expected format
-                        const formattedTabs = currentTabs.map(tab => ({
-                            id: tab.id,
-                            windowId: tab.windowId,
-                            title: tab.title || 'Untitled',
-                            url: tab.url || '',
-                            favIconUrl: tab.favIconUrl,
-                            active: tab.active,
-                            lastAccessed: Date.now(),
-                            timeSpent: browserState.tabs.get(tab.id)?.timeSpent || 0,
-                            index: tab.index
-                        }));
+                        const formattedTabs = currentTabs.map(tab => {
+                            // Get audio tracking data
+                            const audioData = browserState.tabAudioTracking.get(tab.id) || {
+                                totalAudioDuration: 0,
+                                isCurrentlyAudible: false,
+                                audioStartTime: null
+                            };
+                            
+                            return {
+                                id: tab.id,
+                                windowId: tab.windowId,
+                                title: tab.title || 'Untitled',
+                                url: tab.url || '',
+                                favIconUrl: tab.favIconUrl,
+                                active: tab.active,
+                                audible: tab.audible || false,
+                                mutedInfo: tab.mutedInfo,
+                                lastAccessed: Date.now(),
+                                timeSpent: 0, // Fresh session - start with 0
+                                sessionStartTime: Date.now(), // Track session boundary
+                                totalAudioDuration: audioData.totalAudioDuration,
+                                isCurrentlyAudible: audioData.isCurrentlyAudible,
+                                index: tab.index
+                            };
+                        });
                         
                         // Add bookmark fallback data if needed
                         const bookmarkFallback = {
@@ -2261,6 +2389,72 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                 });
                 return true; // Prevent fallback handler
+                
+            case "getAudioTrackingStats":
+                console.log('🔍 getAudioTrackingStats request received');
+                
+                const audioStats = {
+                    totalTrackedTabs: browserState.tabAudioTracking.size,
+                    currentlyAudibleTabs: 0,
+                    totalAudioDuration: 0,
+                    trackedTabs: []
+                };
+                
+                browserState.tabAudioTracking.forEach((audioData, tabId) => {
+                    if (audioData.isCurrentlyAudible) {
+                        audioStats.currentlyAudibleTabs++;
+                    }
+                    audioStats.totalAudioDuration += getCurrentAudioDuration(tabId);
+                    audioStats.trackedTabs.push({
+                        tabId,
+                        totalAudioDuration: audioData.totalAudioDuration,
+                        isCurrentlyAudible: audioData.isCurrentlyAudible,
+                        currentDuration: getCurrentAudioDuration(tabId)
+                    });
+                });
+                
+                sendResponse({ success: true, data: audioStats });
+                return true;
+                
+            case "getCurrentAudioDuration":
+                console.log('🔍 getCurrentAudioDuration request received for tab:', message.tabId);
+                
+                if (!message.tabId) {
+                    sendResponse({ success: false, error: 'Tab ID required' });
+                    return true;
+                }
+                
+                const duration = getCurrentAudioDuration(message.tabId);
+                sendResponse({ success: true, duration });
+                return true;
+                
+            case "resetAudioTracking":
+                console.log('🔍 resetAudioTracking request received');
+                
+                if (message.tabId) {
+                    // Reset specific tab
+                    const audioData = browserState.tabAudioTracking.get(message.tabId);
+                    if (audioData) {
+                        browserState.tabAudioTracking.set(message.tabId, {
+                            totalAudioDuration: 0,
+                            isCurrentlyAudible: false,
+                            audioStartTime: null
+                        });
+                        console.log(`[AudioTracking] Reset audio tracking for tab ${message.tabId}`);
+                        sendResponse({ success: true, message: `Audio tracking reset for tab ${message.tabId}` });
+                    } else {
+                        sendResponse({ success: false, error: `No audio tracking data found for tab ${message.tabId}` });
+                    }
+                } else {
+                    // Reset all audio tracking
+                    browserState.tabAudioTracking.clear();
+                    console.log('[AudioTracking] Reset all audio tracking data');
+                    sendResponse({ success: true, message: 'All audio tracking data reset' });
+                }
+                
+                saveStateToStorage();
+                return true;
+                
             default:
                 console.warn('Unknown message type:', messageType);
                 sendResponse({ received: true, error: 'Unknown message type' });
@@ -2939,6 +3133,8 @@ function saveStateToStorage() {
       tabRelationships: {},
       // Convert tabActivityLog Map to object
       tabActivityLog: {},
+      // Convert tabAudioTracking Map to object
+      tabAudioTracking: {},
       // Convert heroImages Map to object
       heroImages: {},
       // Include other state data
@@ -2964,6 +3160,13 @@ function saveStateToStorage() {
     if (browserState.tabActivityLog instanceof Map) {
       browserState.tabActivityLog.forEach((activities, tabId) => {
         stateToSave.tabActivityLog[tabId] = activities;
+      });
+    }
+    
+    // Convert tabAudioTracking Map
+    if (browserState.tabAudioTracking instanceof Map) {
+      browserState.tabAudioTracking.forEach((audioData, tabId) => {
+        stateToSave.tabAudioTracking[tabId] = audioData;
       });
     }
     
@@ -3039,6 +3242,21 @@ function loadStateFromStorage() {
         console.log(`Restored ${browserState.tabActivityLog.size} tab activity logs`);
       }
       
+      // Restore tabAudioTracking
+      if (savedState.tabAudioTracking) {
+        browserState.tabAudioTracking = new Map();
+        Object.entries(savedState.tabAudioTracking).forEach(([tabId, audioData]) => {
+          // Reset any ongoing audio sessions after restart (tab IDs change)
+          const restoredAudioData = {
+            ...audioData,
+            isCurrentlyAudible: false,
+            audioStartTime: null
+          };
+          browserState.tabAudioTracking.set(parseInt(tabId), restoredAudioData);
+        });
+        console.log(`Restored ${browserState.tabAudioTracking.size} audio tracking entries`);
+      }
+      
       // Restore heroImages
       if (savedState.heroImages) {
         browserState.heroImages = new Map();
@@ -3063,4 +3281,60 @@ function loadStateFromStorage() {
   } catch (error) {
     console.error('Error in loadStateFromStorage:', error);
   }
+}
+
+function createRefreshIndicator() {
+    // Check if it already exists
+    let indicator = document.getElementById('refresh-indicator');
+    if (indicator) return indicator;
+    
+    // ... creates DOM element ...
+    
+    return indicator; // ❌ Returns DOM element without show/hide methods
+}
+
+// Enhanced content extraction with pure innerText approach
+function extractContentFromPage() {
+    let content = '';
+    
+    // Phase 1: Try semantic elements (keep current approach)
+    const semanticSelectors = [
+        'main', 'article', 'section[role="main"]', 
+        '[role="main"]', '[role="article"]'
+    ];
+    
+    for (const selector of semanticSelectors) {
+        const element = document.querySelector(selector);
+        if (element && element.innerText.trim().length > 300) {
+            content = element.innerText.trim();
+            console.log(`✅ Found content via ${selector}: ${content.length} chars`);
+            break;
+        }
+    }
+    
+    // Phase 2: Content-specific selectors (if needed)
+    if (!content) {
+        const contentSelectors = [
+            '.post-content', '.entry-content', '.article-content',
+            '#content', '#main-content', '.content'
+        ];
+        
+        for (const selector of contentSelectors) {
+            const element = document.querySelector(selector);
+            if (element && element.innerText.trim().length > 200) {
+                content = element.innerText.trim();
+                break;
+            }
+        }
+    }
+    
+    // Phase 3: Simple text cleaning (no HTML regex needed!)
+    if (content) {
+        content = content
+            .replace(/\s+/g, ' ')                    // Normalize whitespace
+            .replace(/[^\x00-\x7F\u00C0-\u017F]/g, ' ')  // Basic char filtering
+            .trim();
+    }
+    
+    return content;
 }

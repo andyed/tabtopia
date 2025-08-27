@@ -2,6 +2,18 @@
     --header-height: 48px;
 }
 
+/* Header icon styles - shared across all pages */
+.icon-tabler-chart-treemap {
+    transform: scale(2);
+}
+
+/* Debug link styles - shared across all pages */
+#debug-link {
+    opacity: 0.05;
+    font-size: 10px;
+    margin-left: 10px;
+}
+
 body {
     margin: 0;
     padding: 0;

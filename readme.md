@@ -145,6 +145,21 @@ resetSummarizerCrashCounter()
 flushSummaryCache()
 ```
 
+### Audio Playback Tracking
+```javascript
+// View audio playback statistics for all tabs
+getAudioTrackingStats()
+// Returns: { totalTrackedTabs, currentlyAudibleTabs, totalAudioDuration, trackedTabs[] }
+
+// Get current audio duration for a specific tab (includes ongoing playback)
+getCurrentAudioDuration(tabId)
+// Returns: duration in milliseconds
+
+// Reset audio tracking data (optionally for specific tab)
+resetAudioTracking()        // Reset all tabs
+resetAudioTracking(tabId)   // Reset specific tab only
+```
+
 ### Debug Access
 - **Triple-click the "Debug" link** in the header to access debug tools
 - Navigate to `chrome-extension://[extension-id]/src/newtab/debug.html` directly
@@ -237,6 +252,7 @@ When reporting bugs, please include:
 - **Data Enrichment Layer**: 
   - Page dwell time calculation for relevance scoring
   - Navigation referral tracking (link text, search queries)
+  - Audio playback duration tracking across all tabs (focus-independent)
   - Session boundary detection and organization
   - Visual hierarchy based on interaction metrics
 - **Robust Error Handling**:

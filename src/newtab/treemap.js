@@ -91,7 +91,15 @@ let lastValidTargetTime = 0;
 // Initialize state from background
 async function initializeState() {
     try {
+        console.log('🔍 Requesting initial state from background...');
         const initialState = await chrome.runtime.sendMessage({ type: 'getInitialState' });
+        
+        console.log('📋 Received initial state:', {
+            hasState: !!initialState,
+            type: typeof initialState,
+            keys: initialState ? Object.keys(initialState) : [],
+            fullState: initialState
+        });
         
         // More robust validation with better error handling
         if (!initialState) {
@@ -115,6 +123,37 @@ async function initializeState() {
                 if (initialState.data?.activeWindows) {
                     console.log('Found activeWindows in nested data structure');
                     initialState.activeWindows = initialState.data.activeWindows;
+                } else if (initialState.browserState?.activeWindows) {
+                    console.log('Found activeWindows in browserState structure');
+                    initialState.activeWindows = initialState.browserState.activeWindows;
+                } else if (initialState.tabs && Array.isArray(initialState.tabs)) {
+                    // Convert tabs array to activeWindows structure
+                    console.log('Converting tabs array to activeWindows structure', {
+                        tabCount: initialState.tabs.length,
+                        sampleTab: initialState.tabs[0]
+                    });
+                    const windowMap = new Map();
+                    
+                    initialState.tabs.forEach(tab => {
+                        const windowId = tab.windowId || 'default';
+                        if (!windowMap.has(windowId)) {
+                            windowMap.set(windowId, {
+                                id: windowId,
+                                tabs: []
+                            });
+                        }
+                        windowMap.get(windowId).tabs.push({
+                            ...tab,
+                            timeSpent: tab.timeSpent || 100, // Default time spent for sizing
+                            lastAccessed: tab.lastAccessed || Date.now()
+                        });
+                    });
+                    
+                    initialState.activeWindows = Array.from(windowMap.values());
+                    console.log('✅ Created activeWindows structure:', {
+                        windowCount: initialState.activeWindows.length,
+                        totalTabs: initialState.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0)
+                    });
                 } else {
                     // Create empty state structure
                     console.log('Creating empty activeWindows structure');
@@ -329,6 +368,10 @@ export async function drawTreemap(data) {
     });
 
     const container = document.getElementById('treemap');
+    if (!container) {
+        console.warn('Treemap container not found - cannot draw treemap');
+        return;
+    }
     const viewportHeight = window.innerHeight - 48;
     const width = container.offsetWidth || 800;
     const totalTabs = data.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
@@ -871,6 +914,17 @@ function initializeMessageHandling() {
 
 // Update the DOMContentLoaded handler to initialize message handling
 document.addEventListener('DOMContentLoaded', async () => {
+    // Diagnostic: Log what page we're on
+    console.log('🔍 treemap.js DOMContentLoaded fired on page:', window.location.href);
+    console.log('🔍 Available elements:', document.querySelectorAll('[id]'));
+    
+    // Guard: Only initialize if we're on a page with the treemap container
+    const treemapContainer = document.getElementById('treemap');
+    if (!treemapContainer) {
+        console.log('Treemap container not found - skipping treemap initialization on', window.location.href);
+        return;
+    }
+    
     try {
         await initializeState();
         initializeMessageHandling();  // Add this line
@@ -1333,6 +1387,10 @@ async function handleWindowRemoved(windowId) {
 
 function showEmptyState() {
     const container = document.getElementById('treemap');
+    if (!container) {
+        console.warn('Treemap container not found - cannot show empty state');
+        return;
+    }
     d3.select('#treemap').selectAll('*').remove();
 
     const svg = d3.select('#treemap')

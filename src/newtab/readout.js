@@ -53,11 +53,52 @@ let lastCrashTime = 0;
 const CRASH_BACKOFF_DURATION = 300000; // 5 minutes (increased from 30 seconds)
 const MAX_CRASHES_BEFORE_BACKOFF = 1; // Immediate fallback after first crash
 
-// Use global crash state from newtab.html (loaded earlier)
-// This avoids duplication and ensures crash suppression works from page load
-let globalSummarizerDisabled = false;
+// GLOBAL DISABLE: Prevent all Summarizer API calls to stop crashes entirely
+let globalSummarizerDisabled = false; // START ENABLED but will disable on first crash
 let crashMessageCount = 0;
 const GLOBAL_DISABLE_DURATION = 600000; // 10 minutes
+
+// Allow manual re-enable via console for testing
+window.enableSummarizer = function() {
+    globalSummarizerDisabled = false;
+    console.log('🔄 Summarizer manually re-enabled for testing');
+    updateSummarizerStatus();
+};
+
+window.disableSummarizer = function() {
+    globalSummarizerDisabled = true;
+    console.log('🚫 Summarizer manually disabled');
+    updateSummarizerStatus();
+};
+
+// Show summarizer status to users
+function updateSummarizerStatus() {
+    const status = globalSummarizerDisabled ? 'DISABLED (prevents crashes)' : 'ENABLED';
+    console.log(`📊 Summarizer Status: ${status}`);
+}
+
+// Show initial status
+updateSummarizerStatus();
+
+// EMERGENCY: Global error handler to prevent app crashes
+window.addEventListener('error', function(event) {
+    if (event.error && event.error.message && event.error.message.includes('summarizer')) {
+        console.error('🚨 Summarizer-related error caught, disabling API:', event.error);
+        globalSummarizerDisabled = true;
+        updateSummarizerStatus();
+        event.preventDefault();
+        return false;
+    }
+});
+
+window.addEventListener('unhandledrejection', function(event) {
+    if (event.reason && String(event.reason).toLowerCase().includes('summarizer')) {
+        console.error('🚨 Summarizer-related promise rejection caught, disabling API:', event.reason);
+        globalSummarizerDisabled = true;
+        updateSummarizerStatus();
+        event.preventDefault();
+    }
+});
 
 // Check if global crash state is available from newtab.html
 if (typeof window !== 'undefined' && window.summarizerCrashState) {
@@ -559,6 +600,12 @@ export function addToSummaryQueue(url) {
         return false;
     }
     
+    // Check if summarizer is globally disabled (but allow queue addition for fallbacks)
+    if (globalSummarizerDisabled) {
+        console.log('ℹ️ Summarizer disabled - will use fallback for:', url);
+        // Still add to queue, but processSummaryQueue will use fallbacks
+    }
+    
     // Check if already in queue
     if (summaryQueue.has(url)) {
         console.log(`⏭️ URL already in queue: ${url}`);
@@ -826,6 +873,11 @@ export async function processSummaryQueue() {
         return;
     }
     
+    // If summarizer is globally disabled, process queue with fallbacks only
+    if (globalSummarizerDisabled) {
+        console.log('ℹ️ Summarizer disabled - processing queue with fallbacks only');
+    }
+    
     isProcessingQueue = true;
     queueProcessingStats.isActive = true;
     
@@ -933,6 +985,7 @@ function updateReadoutIfNeeded(url, summary) {
 
 // Update summarizeUrl to use the Chrome Summarizer API correctly
 async function summarizeUrl(url) {
+    // NUCLEAR SAFETY: Wrap entire function in try-catch to prevent app crashes
     try {
         // Skip restricted URLs
         if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('file://')) {
@@ -942,7 +995,13 @@ async function summarizeUrl(url) {
 
         // Check for crash backoff (now triggers after 1 crash)
         const now = Date.now();
-        if (globalSummarizerDisabled) {
+        
+        // Check global crash state first
+        const isGloballyDisabled = (typeof window !== 'undefined' && window.summarizerCrashState) 
+            ? window.summarizerCrashState.disabled 
+            : globalSummarizerDisabled;
+            
+        if (isGloballyDisabled) {
             console.log(`🚫 Summarizer globally disabled due to repeated crashes. Using fallback: ${url}`);
             return await generateVisitMetricFallback(url);
         }
@@ -950,6 +1009,12 @@ async function summarizeUrl(url) {
         if (summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF && 
             (now - lastCrashTime) < CRASH_BACKOFF_DURATION) {
             console.log(`⚠️ Summarizer in backoff mode due to crashes. Skipping: ${url}`);
+            return await generateVisitMetricFallback(url);
+        }
+
+        // Check if summarizer is globally disabled first
+        if (globalSummarizerDisabled) {
+            console.log('🚫 Summarizer disabled - using fallback:', url);
             return await generateVisitMetricFallback(url);
         }
 
@@ -1551,6 +1616,55 @@ window.flushSummaryCache = function() {
     
     console.log('Summary cache flushed successfully');
     return true;
+};
+
+// Audio tracking debug functions
+window.getAudioTrackingStats = function() {
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'getAudioTrackingStats' }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error('Error getting audio tracking stats:', chrome.runtime.lastError);
+                resolve({ error: chrome.runtime.lastError.message });
+            } else {
+                resolve(response);
+            }
+        });
+    });
+};
+
+window.getCurrentAudioDuration = function(tabId) {
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ 
+            action: 'getCurrentAudioDuration', 
+            tabId: parseInt(tabId) 
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error('Error getting current audio duration:', chrome.runtime.lastError);
+                resolve({ error: chrome.runtime.lastError.message });
+            } else {
+                resolve(response);
+            }
+        });
+    });
+};
+
+window.resetAudioTracking = function(tabId = null) {
+    return new Promise((resolve) => {
+        const message = { action: 'resetAudioTracking' };
+        if (tabId !== null) {
+            message.tabId = parseInt(tabId);
+        }
+        
+        chrome.runtime.sendMessage(message, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error('Error resetting audio tracking:', chrome.runtime.lastError);
+                resolve({ error: chrome.runtime.lastError.message });
+            } else {
+                console.log(tabId ? `Audio tracking reset for tab ${tabId}` : 'All audio tracking data reset');
+                resolve(response);
+            }
+        });
+    });
 };
 
 // Export both the function and timer reset
