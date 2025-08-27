@@ -1874,20 +1874,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         switch (messageType) {
             case "contentUpdate":
                 handleContentUpdate(message.data, sender);
-                break;
+                return true;
             case "getTabId":
                 sendResponse({ tabId: sender.tab?.id });
-                break;
+                return true;
             case "getTabHistory":
                 if (!message.tabId) {
                     console.warn("getTabHistory called without tabId", message);
                     sendResponse({ error: "No tabId provided" });
-                    break;
+                    return true;
                 }
                 const history = browserState.tabHistory.get(message.tabId) || [];
                 const relationship = browserState.tabRelationships.get(message.tabId);
                 sendResponse({ history, relationship });
-                break;
+                return true;
             case "getState":
                 // Ensure browserState and its properties are defined
                 // console.log('Background: getState received. Sending state:', browserState);
@@ -1902,7 +1902,78 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // graphData: browserState.graphData || {},
                     // cache: browserState.cache || {}
                 });
-                break;
+                return true; // Prevent fallback handler
+            case "getInitialState":
+                console.log('🔍 getInitialState request received');
+                
+                // Handle getInitialState request with current tabs and bookmark fallback
+                (async () => {
+                    try {
+                        // Get current tabs from Chrome API
+                        const currentTabs = await chrome.tabs.query({});
+                        console.log(`📋 Found ${currentTabs.length} current tabs`);
+                        
+                        // Transform tabs to the expected format
+                        const formattedTabs = currentTabs.map(tab => ({
+                            id: tab.id,
+                            windowId: tab.windowId,
+                            title: tab.title || 'Untitled',
+                            url: tab.url || '',
+                            favIconUrl: tab.favIconUrl,
+                            active: tab.active,
+                            lastAccessed: Date.now(),
+                            timeSpent: browserState.tabs.get(tab.id)?.timeSpent || 0,
+                            index: tab.index
+                        }));
+                        
+                        // Add bookmark fallback data if needed
+                        const bookmarkFallback = {
+                            id: 'bookmark-fallback',
+                            windowId: 'bookmark',
+                            title: 'Bookmarks',
+                            url: 'chrome://bookmarks/',
+                            favIconUrl: 'chrome://favicon/chrome://bookmarks/',
+                            active: false,
+                            lastAccessed: Date.now(),
+                            timeSpent: 0,
+                            isBookmark: true
+                        };
+                        
+                        const response = {
+                            success: true,
+                            tabs: formattedTabs,
+                            bookmarkFallback: bookmarkFallback,
+                            browserState: {
+                                tabs: browserState.tabs ? [...browserState.tabs.entries()] : [],
+                                windows: browserState.windows ? [...browserState.windows.entries()] : [],
+                                tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
+                                tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
+                                tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : []
+                            },
+                            timestamp: Date.now()
+                        };
+                        
+                        console.log('✅ Sending getInitialState response with', formattedTabs.length, 'tabs');
+                        sendResponse(response);
+                        
+                    } catch (error) {
+                        console.error('❌ Error in getInitialState handler:', error);
+                        sendResponse({
+                            success: false,
+                            error: error.message,
+                            tabs: [],
+                            browserState: {
+                                tabs: [],
+                                windows: [],
+                                tabHistory: [],
+                                tabRelationships: [],
+                                tabActivityLog: []
+                            }
+                        });
+                    }
+                })();
+                
+                return true; // Keep message channel open for async response
             case "getDebugState":
                 console.log('✅ getDebugState case in switch statement triggered!');
                 // Prepare the response with detailed logging
@@ -1973,7 +2044,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 console.log('State keys:', Object.keys(stateToSend));
                 
                 sendResponse(response);
-                break;
+                return true;
             case "LINK_TEXT_CAPTURED":
                 if (sender.tab) {
                     const tabId = sender.tab.id;
@@ -1989,10 +2060,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     }, 5000);
                 }
-                break;
+                return true;
             case "store_link_context":
                 handleLinkContext(message, sender);
-                break;
+                return true;
             case "linkClicked":
                 console.log("Link click detected:", {
                     fromUrl: sender.tab.url,
@@ -2007,7 +2078,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sourceUrl: sender.tab.url,
                     targetUrl: message.url
                 };
-                break;
+                return true;
             case "navigation_event":
                 // Extract tab information, ensuring we capture the proper tabId
                 const tabId = sender.tab?.id;
@@ -2022,7 +2093,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Only proceed if we have a valid tabId
                 if (!tabId) {
                     console.error("Navigation event missing tabId, cannot process:", message);
-                    break;
+                    return true;
                 }
 
                 // Force treemap update
@@ -2040,13 +2111,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         title: message.data.text
                     }
                 });
-                break;
+                return true;
             // Add other message types as needed
             // Add this case for getFavicon
             case "getFavicon":
                 const proxyUrl = chrome.runtime.getURL(`_favicon/?pageUrl=${encodeURIComponent(message.url)}`);
                 sendResponse({ faviconUrl: proxyUrl });
-                break;
+                return true;
                 
             case "getHeroImagesForUrl":
                 // First check browserState for cached hero images
@@ -2086,7 +2157,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({ images: null });
                     }
                 });
-                break;
+                return true;
+            case "extractContent":
+                // Handle content extraction requests from newtab page
+                console.log('🔍 Content extraction request:', message.url);
+                
+                (async () => {
+                    try {
+                        const content = await extractTabContentInWorker(message.url);
+                        sendResponse({ 
+                            success: true, 
+                            content: content,
+                            source: 'background-worker',
+                            timestamp: Date.now()
+                        });
+                    } catch (error) {
+                        console.error('Error extracting content in worker:', error);
+                        sendResponse({ 
+                            success: false, 
+                            error: error.message,
+                            content: null 
+                        });
+                    }
+                })();
+                
+                return true; // Keep channel open for async response
+                
             case "storeHeroImages":
                 // Only log hero image extraction if we actually found some images
                 if (message.data.heroImages && message.data.heroImages.length > 0) {
@@ -2164,22 +2260,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     });
                 });
-                break;
+                return true; // Prevent fallback handler
             default:
                 console.warn('Unknown message type:', messageType);
                 sendResponse({ received: true, error: 'Unknown message type' });
-                break;
+                return true; // Prevent fallback handler
         }
     } catch (error) {
         console.error("Error handling message:", error);
         // Always send a response to close the message channel properly
         sendResponse({ success: false, error: error.toString() });
+        return true;
     }
     
-    // If we get here, no handler responded
-    console.warn('No message handler responded, sending fallback response');
-    sendResponse({ received: true, warning: 'No specific handler for this message' });
-    return true; // Keep the message channel open for async responses
+    // Should not reach here due to return statements in switch cases
+    return false;
 });
 
 /**
@@ -2442,6 +2537,391 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
     });
   });
 });
+
+/**
+ * Enhanced content extraction in background worker
+ * Bypasses many content security restrictions that affect content scripts
+ * @param {string} url - URL to extract content from
+ * @returns {Promise<string>} - Extracted content or null
+ */
+async function extractTabContentInWorker(url) {
+    try {
+        console.log('🔧 Worker extracting content for:', url);
+        
+        if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('file://')) {
+            console.log('⏭️ Skipping restricted URL in worker:', url);
+            return null;
+        }
+
+        // Strategy 1: Find active tab with this URL
+        let tabs = await chrome.tabs.query({ url });
+        
+        // Strategy 2: If exact match fails, try domain-based search
+        if (!tabs || tabs.length === 0) {
+            try {
+                const urlObj = new URL(url);
+                const domain = urlObj.hostname;
+                const allTabs = await chrome.tabs.query({});
+                tabs = allTabs.filter(tab => {
+                    try {
+                        return tab.url && new URL(tab.url).hostname === domain;
+                    } catch (e) {
+                        return false;
+                    }
+                });
+                
+                if (tabs.length > 0) {
+                    console.log(`🔍 Worker found ${tabs.length} tabs for domain ${domain}`);
+                }
+            } catch (e) {
+                console.warn('Error in worker domain search:', e);
+            }
+        }
+        
+        // Strategy 3: If no tabs found, try to get content from history/bookmarks
+        if (!tabs || tabs.length === 0) {
+            console.log('📚 No tabs found, trying metadata extraction in worker');
+            return await extractContentFromMetadataInWorker(url);
+        }
+
+        const tab = tabs[0];
+        console.log('🎯 Worker targeting tab:', tab.id, tab.url);
+
+        try {
+            // Enhanced content extraction script with worker privileges
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    try {
+                        console.log('📄 Worker script executing in tab');
+                        
+                        let content = '';
+                        
+                        // Strategy 1: Try semantic HTML5 elements first
+                        const semanticSelectors = [
+                            'main', 'article', 'section[role="main"]', 
+                            '[role="main"]', '[role="article"]'
+                        ];
+                        
+                        for (const selector of semanticSelectors) {
+                            const elements = document.querySelectorAll(selector);
+                            for (const element of elements) {
+                                if (element && element.innerText.trim().length > 300) {
+                                    content = element.innerText.trim();
+                                    console.log(`✅ Found content via ${selector}: ${content.length} chars`);
+                                    break;
+                                }
+                            }
+                            if (content) break;
+                        }
+                        
+                        // Strategy 2: Try content-specific selectors
+                        if (!content) {
+                            const contentSelectors = [
+                                '.post-content', '.entry-content', '.content-body',
+                                '.article-content', '.story-content', '.post-body',
+                                '#content', '#main-content', '.main-content',
+                                '.content', '.post', '.article'
+                            ];
+                            
+                            for (const selector of contentSelectors) {
+                                const element = document.querySelector(selector);
+                                if (element && element.innerText.trim().length > 200) {
+                                    content = element.innerText.trim();
+                                    console.log(`✅ Found content via ${selector}: ${content.length} chars`);
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // Strategy 3: Smart body traversal with content filtering
+                        if (!content && document.body) {
+                            console.log('📝 Trying smart body traversal');
+                            
+                            // Get all text nodes with smart filtering
+                            const walker = document.createTreeWalker(
+                                document.body,
+                                NodeFilter.SHOW_TEXT,
+                                {
+                                    acceptNode: (node) => {
+                                        const parent = node.parentElement;
+                                        if (!parent) return NodeFilter.FILTER_REJECT;
+                                        
+                                        // Skip hidden elements
+                                        const style = window.getComputedStyle(parent);
+                                        if (style.display === 'none' || style.visibility === 'hidden' || 
+                                            style.opacity === '0') {
+                                            return NodeFilter.FILTER_REJECT;
+                                        }
+                                        
+                                        // Skip elements that are likely not content
+                                        const tag = parent.tagName.toLowerCase();
+                                        if (['script', 'style', 'noscript', 'nav', 'header', 
+                                             'footer', 'aside', 'menu', 'button'].includes(tag)) {
+                                            return NodeFilter.FILTER_REJECT;
+                                        }
+                                        
+                                        // Skip elements with navigation/UI class names
+                                        const className = parent.className.toLowerCase();
+                                        if (className.includes('nav') || className.includes('menu') ||
+                                            className.includes('sidebar') || className.includes('ad') ||
+                                            className.includes('banner') || className.includes('cookie')) {
+                                            return NodeFilter.FILTER_REJECT;
+                                        }
+                                        
+                                        return NodeFilter.FILTER_ACCEPT;
+                                    }
+                                }
+                            );
+
+                            let textContent = '';
+                            let node;
+                            let counter = 0;
+                            const maxNodes = 8000; // Increased limit for worker
+                            
+                            while ((node = walker.nextNode()) && counter < maxNodes) {
+                                const text = node.textContent.trim();
+                                if (text && text.length > 5) { // Filter out very short text
+                                    textContent += text + ' ';
+                                }
+                                counter++;
+                            }
+                            
+                            content = textContent.trim();
+                            console.log(`📝 Smart traversal found ${content.length} chars from ${counter} nodes`);
+                        }
+                        
+                        // Strategy 4: Enhanced metadata extraction
+                        if (!content || content.length < 100) {
+                            console.log('🏷️ Trying enhanced metadata extraction');
+                            
+                            const metadataParts = [];
+                            
+                            // Page title
+                            if (document.title && document.title.length > 3) {
+                                metadataParts.push(document.title);
+                            }
+                            
+                            // Meta description
+                            const metaDesc = document.querySelector('meta[name="description"]')?.content;
+                            if (metaDesc && metaDesc.length > 10) {
+                                metadataParts.push(metaDesc);
+                            }
+                            
+                            // Open Graph data
+                            const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
+                            const ogDesc = document.querySelector('meta[property="og:description"]')?.content;
+                            if (ogTitle && ogTitle !== document.title) metadataParts.push(ogTitle);
+                            if (ogDesc && ogDesc !== metaDesc) metadataParts.push(ogDesc);
+                            
+                            // Twitter Card data
+                            const twitterTitle = document.querySelector('meta[name="twitter:title"]')?.content;
+                            const twitterDesc = document.querySelector('meta[name="twitter:description"]')?.content;
+                            if (twitterTitle && !metadataParts.includes(twitterTitle)) metadataParts.push(twitterTitle);
+                            if (twitterDesc && !metadataParts.includes(twitterDesc)) metadataParts.push(twitterDesc);
+                            
+                            // Main headings
+                            const headings = document.querySelectorAll('h1, h2, h3');
+                            for (const heading of Array.from(headings).slice(0, 5)) {
+                                const headingText = heading.innerText.trim();
+                                if (headingText.length > 5 && headingText.length < 200) {
+                                    metadataParts.push(headingText);
+                                }
+                            }
+                            
+                            // Key paragraphs (first few substantial paragraphs)
+                            const paragraphs = document.querySelectorAll('p');
+                            for (const p of Array.from(paragraphs).slice(0, 3)) {
+                                const pText = p.innerText.trim();
+                                if (pText.length > 50 && pText.length < 500) {
+                                    metadataParts.push(pText);
+                                }
+                            }
+                            
+                            if (metadataParts.length > 0) {
+                                content = metadataParts.join('. ');
+                                console.log(`🏷️ Metadata extraction: ${content.length} chars from ${metadataParts.length} parts`);
+                            }
+                        }
+                        
+                        // Final validation and cleanup
+                        if (content && content.length > 20) {
+                            // Clean up the content
+                            content = content
+                                .replace(/\s+/g, ' ') // Normalize whitespace
+                                .replace(/\n{3,}/g, '\n\n') // Limit consecutive newlines
+                                .trim();
+                            
+                            console.log(`🎉 Worker extraction successful: ${content.length} characters`);
+                            return content;
+                        } else {
+                            console.log('⚠️ Worker extraction insufficient content');
+                            return null;
+                        }
+                        
+                    } catch (err) {
+                        console.error('💥 Worker script error:', err);
+                        return null;
+                    }
+                }
+            });
+            
+            const extractedContent = results?.[0]?.result;
+            
+            if (extractedContent && extractedContent.length > 50) {
+                console.log(`✅ Worker successfully extracted ${extractedContent.length} characters from tab ${tab.id}`);
+                return extractedContent;
+            } else {
+                console.log(`⚠️ Worker tab extraction insufficient, trying metadata fallback`);
+                return await extractContentFromMetadataInWorker(url);
+            }
+            
+        } catch (scriptError) {
+            console.warn('🚫 Worker script injection failed:', scriptError.message);
+            // Try metadata extraction as fallback
+            return await extractContentFromMetadataInWorker(url);
+        }
+        
+    } catch (error) {
+        console.error('💥 Worker content extraction error:', error);
+        // Final fallback
+        return await extractContentFromMetadataInWorker(url);
+    }
+}
+
+/**
+ * Extract content from metadata when direct extraction fails
+ * Enhanced version for background worker
+ * @param {string} url - URL to extract metadata for
+ * @returns {Promise<string>} - Generated content based on metadata
+ */
+async function extractContentFromMetadataInWorker(url) {
+    try {
+        console.log('📊 Worker metadata extraction for:', url);
+        
+        let content = '';
+        
+        // Get history data for this URL
+        const historyItems = await new Promise((resolve) => {
+            chrome.history.search({ text: url, maxResults: 5 }, (results) => {
+                resolve(results || []);
+            });
+        });
+        
+        // Get bookmarks for this URL
+        const bookmarks = await new Promise((resolve) => {
+            chrome.bookmarks.search({ url }, (results) => {
+                resolve(results || []);
+            });
+        });
+        
+        // Extract from history titles
+        if (historyItems.length > 0) {
+            const historyTitles = historyItems
+                .map(item => item.title)
+                .filter(title => title && title !== 'New Tab' && title.length > 3)
+                .slice(0, 3);
+            
+            if (historyTitles.length > 0) {
+                content += historyTitles.join('. ') + '. ';
+            }
+        }
+        
+        // Extract from bookmarks
+        if (bookmarks.length > 0) {
+            const bookmarkTitles = bookmarks
+                .map(bookmark => bookmark.title)
+                .filter(title => title && title !== 'New Tab' && title.length > 3)
+                .slice(0, 2);
+            
+            if (bookmarkTitles.length > 0) {
+                content += bookmarkTitles.join('. ') + '. ';
+            }
+        }
+        
+        // Enhanced URL analysis
+        try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname.replace(/^www\./, '');
+            const pathname = urlObj.pathname;
+            const searchParams = urlObj.searchParams;
+            
+            // Extract search queries with better decoding
+            const searchQueries = [];
+            const searchKeys = ['q', 'query', 'search', 's', 'term', 'keyword'];
+            for (const key of searchKeys) {
+                const value = searchParams.get(key);
+                if (value) {
+                    try {
+                        const decoded = decodeURIComponent(value);
+                        if (decoded.length > 1 && decoded.length < 200) {
+                            searchQueries.push(decoded);
+                        }
+                    } catch (e) {
+                        // Ignore decode errors
+                    }
+                }
+            }
+            
+            if (searchQueries.length > 0) {
+                content += `Search queries: ${searchQueries.join(', ')}. `;
+            }
+            
+            // Enhanced path analysis
+            const pathSegments = pathname.split('/')
+                .filter(segment => segment.length > 2)
+                .filter(segment => !['www', 'com', 'org', 'net', 'html', 'php', 'asp', 'jsp', 'index'].includes(segment.toLowerCase()))
+                .map(segment => segment.replace(/[-_]/g, ' ').replace(/\.[a-z]+$/i, ''))
+                .filter(segment => segment.length > 2)
+                .slice(0, 5);
+            
+            if (pathSegments.length > 0) {
+                content += `Content topics: ${pathSegments.join(', ')}. `;
+            }
+            
+            // Domain context with better categorization
+            const domainParts = domain.split('.');
+            const mainDomain = domainParts.length > 1 ? domainParts[domainParts.length - 2] : domain;
+            
+            content += `This is content from ${domain}`;
+            
+            // Add context based on domain type
+            if (domain.includes('github')) {
+                content += ', a software development platform';
+            } else if (domain.includes('stackoverflow') || domain.includes('stackexchange')) {
+                content += ', a programming Q&A community';
+            } else if (domain.includes('wikipedia')) {
+                content += ', an online encyclopedia';
+            } else if (domain.includes('reddit')) {
+                content += ', a social discussion platform';
+            } else if (domain.includes('youtube')) {
+                content += ', a video sharing platform';
+            } else if (domain.includes('news') || domain.includes('cnn') || domain.includes('bbc')) {
+                content += ', a news publication';
+            }
+            
+            content += '. ';
+            
+        } catch (e) {
+            console.warn('Error in worker URL analysis:', e);
+        }
+        
+        // If still minimal content, create descriptive fallback
+        if (content.trim().length < 100) {
+            const domain = url.split('/')[2]?.replace(/^www\./, '') || 'unknown';
+            content = `This webpage from ${domain} contains content that could not be directly extracted. The page likely contains information relevant to the site's topic and purpose, and may include text, articles, or other content that would be useful for understanding the subject matter discussed on this domain.`;
+        }
+        
+        console.log(`📊 Worker metadata extraction generated ${content.length} characters`);
+        return content.trim();
+        
+    } catch (error) {
+        console.error('💥 Worker metadata extraction error:', error);
+        // Ultimate fallback
+        const domain = url.split('/')[2]?.replace(/^www\./, '') || 'unknown';
+        return `This is a webpage from ${domain} that contains content related to the site's topic and purpose.`;
+    }
+}
 
 /**
  * Save browserState to persistent storage

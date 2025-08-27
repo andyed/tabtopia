@@ -92,9 +92,38 @@ let lastValidTargetTime = 0;
 async function initializeState() {
     try {
         const initialState = await chrome.runtime.sendMessage({ type: 'getInitialState' });
-        if (!initialState?.activeWindows) {
-            console.warn('Invalid initial state:', initialState);
+        
+        // More robust validation with better error handling
+        if (!initialState) {
+            console.warn('No initial state received from background script');
+            showEmptyState();
             return;
+        }
+        
+        if (!initialState.activeWindows || !Array.isArray(initialState.activeWindows)) {
+            console.warn('Invalid initial state - missing or invalid activeWindows:', {
+                hasState: !!initialState,
+                hasActiveWindows: !!initialState.activeWindows,
+                isArray: Array.isArray(initialState.activeWindows),
+                type: typeof initialState.activeWindows,
+                keys: Object.keys(initialState || {})
+            });
+            
+            // Try to fix the state structure if possible
+            if (initialState && typeof initialState === 'object') {
+                // Check if activeWindows is nested elsewhere
+                if (initialState.data?.activeWindows) {
+                    console.log('Found activeWindows in nested data structure');
+                    initialState.activeWindows = initialState.data.activeWindows;
+                } else {
+                    // Create empty state structure
+                    console.log('Creating empty activeWindows structure');
+                    initialState.activeWindows = [];
+                }
+            } else {
+                showEmptyState();
+                return;
+            }
         }
 
         treemapState.data = initialState;
@@ -261,8 +290,35 @@ function getDarkerColor(d, amount = 0.5) {
  * @returns {Promise<void>} - Resolves when treemap is fully rendered
  */
 export async function drawTreemap(data) {
-    if (!data?.activeWindows) {
-        console.warn('Invalid data for treemap:', data);
+    // Enhanced data validation
+    if (!data) {
+        console.warn('No data provided to drawTreemap');
+        showEmptyState();
+        return;
+    }
+    
+    if (!data.activeWindows) {
+        console.warn('No activeWindows in treemap data:', {
+            hasData: !!data,
+            dataKeys: Object.keys(data || {}),
+            activeWindowsType: typeof data.activeWindows
+        });
+        showEmptyState();
+        return;
+    }
+    
+    if (!Array.isArray(data.activeWindows)) {
+        console.warn('activeWindows is not an array:', {
+            type: typeof data.activeWindows,
+            value: data.activeWindows
+        });
+        showEmptyState();
+        return;
+    }
+    
+    if (data.activeWindows.length === 0) {
+        console.log('No active windows available');
+        showEmptyState();
         return;
     }
 
