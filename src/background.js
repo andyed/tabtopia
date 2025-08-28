@@ -1425,9 +1425,17 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 
 // Listen for tab audio state changes
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Debug: Log ALL tab updates to see what's happening
+    console.log(`[TabUpdate] Tab ${tabId} updated:`, {
+        changeInfo: changeInfo,
+        tabTitle: tab.title,
+        tabAudible: tab.audible,
+        changeInfoAudible: changeInfo.audible
+    });
+    
     // Track audio state changes
     if (changeInfo.audible !== undefined) {
-        console.log(`[AudioTracking] Tab ${tabId} audible state changed to: ${changeInfo.audible}`);
+        console.log(`🔊 [AudioTracking] Tab ${tabId} audible state changed to: ${changeInfo.audible}`);
         updateAudioTracking(tabId, changeInfo.audible);
     }
     
@@ -1988,6 +1996,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         switch (messageType) {
             case "contentUpdate":
                 handleContentUpdate(message.data, sender);
+                sendResponse({ success: true });
                 return true;
             case "getTabId":
                 sendResponse({ tabId: sender.tab?.id });
@@ -2018,7 +2027,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
                 return true; // Prevent fallback handler
             case "getInitialState":
-                console.log('🔍 getInitialState request received');
+                console.log('🔍 🔍 🔍 getInitialState request received - AUDIO DEBUG MODE 🔍 🔍 🔍');
                 
                 // Handle getInitialState request with current tabs and bookmark fallback
                 (async () => {
@@ -2027,14 +2036,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         const currentTabs = await chrome.tabs.query({});
                         console.log(`📋 Found ${currentTabs.length} current tabs`);
                         
+                        // Debug: Show current audio tracking state
+                        console.log(`🔊 [getInitialState] Audio tracking map has ${browserState.tabAudioTracking.size} entries:`, 
+                            Array.from(browserState.tabAudioTracking.entries()));
+                        
                         // Transform tabs to the expected format
                         const formattedTabs = currentTabs.map(tab => {
-                            // Get audio tracking data
-                            const audioData = browserState.tabAudioTracking.get(tab.id) || {
+                            // Get audio tracking data - try both numeric and string tab IDs
+                            let audioData = browserState.tabAudioTracking.get(tab.id);
+                            if (!audioData) {
+                                // Try string version if numeric doesn't work
+                                audioData = browserState.tabAudioTracking.get(String(tab.id));
+                            }
+                            if (!audioData) {
+                                // Try "tab" prefixed version
+                                audioData = browserState.tabAudioTracking.get(`tab${tab.id}`);
+                            }
+                            
+                            // Fallback to empty data
+                            audioData = audioData || {
                                 totalAudioDuration: 0,
                                 isCurrentlyAudible: false,
                                 audioStartTime: null
                             };
+                            
+                            // Debug logging for audio data
+                            if (tab.audible || audioData.totalAudioDuration > 0 || audioData.isCurrentlyAudible) {
+                                console.log(`🔊 [getInitialState] Tab ${tab.id} audio data:`, {
+                                    title: tab.title,
+                                    chromeAudible: tab.audible,
+                                    trackedAudible: audioData.isCurrentlyAudible,
+                                    totalDuration: audioData.totalAudioDuration,
+                                    audioStartTime: audioData.audioStartTime
+                                });
+                            }
                             
                             return {
                                 id: tab.id,
@@ -2188,9 +2223,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     }, 5000);
                 }
+                sendResponse({ success: true });
                 return true;
             case "store_link_context":
                 handleLinkContext(message, sender);
+                sendResponse({ success: true });
                 return true;
             case "linkClicked":
                 console.log("Link click detected:", {
@@ -2206,6 +2243,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sourceUrl: sender.tab.url,
                     targetUrl: message.url
                 };
+                sendResponse({ success: true });
                 return true;
             case "navigation_event":
                 // Extract tab information, ensuring we capture the proper tabId
@@ -2221,6 +2259,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Only proceed if we have a valid tabId
                 if (!tabId) {
                     console.error("Navigation event missing tabId, cannot process:", message);
+                    sendResponse({ success: false, error: "Missing tabId" });
                     return true;
                 }
 
@@ -2239,6 +2278,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         title: message.data.text
                     }
                 });
+                sendResponse({ success: true });
                 return true;
             // Add other message types as needed
             // Add this case for getFavicon
@@ -2392,6 +2432,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 
             case "getAudioTrackingStats":
                 console.log('🔍 getAudioTrackingStats request received');
+                console.log('🔊 [DEBUG] Current tabAudioTracking map:', Array.from(browserState.tabAudioTracking.entries()));
                 
                 const audioStats = {
                     totalTrackedTabs: browserState.tabAudioTracking.size,
@@ -3337,4 +3378,91 @@ function extractContentFromPage() {
     }
     
     return content;
+}
+
+/**
+ * Periodic callback to update dwell time based on audio listening
+ * Runs every 2 minutes to credit background audio listening as engagement
+ */
+function updateAudioBasedDwellTime() {
+    const currentTime = Date.now();
+    let updatesCount = 0;
+    
+    console.log('[AudioDwellTime] Starting periodic audio-based dwell time update');
+    
+    // Get currently active tab to exclude from background audio processing
+    const activeTabId = browserState.lastActive?.tabId;
+    
+    browserState.tabAudioTracking.forEach((audioData, tabId) => {
+        // Skip if no audio is playing
+        if (!audioData.isCurrentlyAudible || !audioData.audioStartTime) {
+            return;
+        }
+        
+        // Skip the currently active tab (already tracked by normal dwell time)
+        if (tabId === activeTabId) {
+            console.log(`[AudioDwellTime] Skipping active tab ${tabId}`);
+            return;
+        }
+        
+        // Calculate audio session duration since last update
+        const sessionDuration = currentTime - audioData.audioStartTime;
+        
+        // Only process if significant listening time (> 30 seconds)
+        if (sessionDuration < 30000) {
+            return;
+        }
+        
+        // Get tab data and history
+        const tabData = browserState.tabs.get(tabId);
+        const tabHistory = browserState.tabHistory.get(tabId);
+        
+        if (!tabData || !tabHistory || tabHistory.length === 0) {
+            console.warn(`[AudioDwellTime] No tab data/history for tab ${tabId}`);
+            return;
+        }
+        
+        // Update the most recent navigation entry with audio-based dwell time
+        const mostRecentEntry = tabHistory[0];
+        const currentDwellTime = mostRecentEntry.dwellTimeMs || 0;
+        const audioContribution = Math.min(sessionDuration, 120000); // Cap at 2 minutes per update
+        const newDwellTime = currentDwellTime + audioContribution;
+        
+        // Update the entry
+        const updatedEntry = {
+            ...mostRecentEntry,
+            dwellTimeMs: newDwellTime,
+            dwellTimeUpdated: currentTime,
+            audioContribution: (mostRecentEntry.audioContribution || 0) + audioContribution
+        };
+        
+        // Replace the entry in history
+        tabHistory[0] = updatedEntry;
+        browserState.tabHistory.set(tabId, tabHistory);
+        
+        // Reset audio start time to prevent double-counting
+        audioData.audioStartTime = currentTime;
+        browserState.tabAudioTracking.set(tabId, audioData);
+        
+        console.log(`[AudioDwellTime] Updated tab ${tabId}: +${audioContribution}ms audio dwell time (total: ${newDwellTime}ms)`);
+        
+        // Broadcast the dwell time update
+        sendMessageWithErrorHandling({
+            action: "dwellTimeUpdated",
+            tabId,
+            url: mostRecentEntry.url,
+            dwellTimeMs: newDwellTime,
+            audioContribution,
+            timestamp: currentTime
+        });
+        
+        updatesCount++;
+    });
+    
+    if (updatesCount > 0) {
+        console.log(`[AudioDwellTime] Updated ${updatesCount} tabs with audio-based dwell time`);
+        saveStateToStorage(); // Persist the updates
+    } else {
+        console.log('[AudioDwellTime] No background audio tabs to update');
+    }
 }

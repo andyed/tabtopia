@@ -1148,3 +1148,36 @@ mark {
     50% { opacity: 1; }
     100% { opacity: 0.3; }
 }
+
+/* Audio indicator styling for treemap */
+.audio-indicator {
+    cursor: help;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    opacity: 0.9;
+}
+
+.audio-indicator:hover {
+    opacity: 1 !important;
+    transform: scale(1.1);
+}
+
+/* Animation for currently playing audio */
+.audio-wave {
+    animation: audioWave 1.5s ease-in-out infinite;
+}
+
+@keyframes audioWave {
+    0%, 100% { 
+        transform: scale(1); 
+        opacity: 1; 
+    }
+    50% { 
+        transform: scale(1.1); 
+        opacity: 0.8; 
+    }
+}
+
+/* Show audio indicator on cell hover */
+.cell:hover .audio-indicator {
+    opacity: 1;
+}

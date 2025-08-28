@@ -92,14 +92,30 @@ let lastValidTargetTime = 0;
 async function initializeState() {
     try {
         console.log('🔍 Requesting initial state from background...');
-        const initialState = await chrome.runtime.sendMessage({ type: 'getInitialState' });
+        const response = await chrome.runtime.sendMessage({ action: 'getInitialState' });
         
-        console.log('📋 Received initial state:', {
-            hasState: !!initialState,
-            type: typeof initialState,
-            keys: initialState ? Object.keys(initialState) : [],
-            fullState: initialState
+        console.log('📋 Received getInitialState response:', {
+            hasResponse: !!response,
+            responseType: typeof response,
+            responseKeys: response ? Object.keys(response) : [],
+            success: response?.success,
+            tabsCount: response?.tabs?.length,
+            fullResponse: response
         });
+        
+        // Extract the actual data from the response
+        let initialState;
+        if (response?.success && response?.tabs) {
+            // Convert the response format to the expected treemap format
+            initialState = {
+                tabs: response.tabs,
+                bookmarkFallback: response.bookmarkFallback,
+                browserState: response.browserState,
+                timestamp: response.timestamp
+            };
+        } else {
+            initialState = response; // Fallback to old format
+        }
         
         // More robust validation with better error handling
         if (!initialState) {
@@ -364,7 +380,22 @@ export async function drawTreemap(data) {
     console.log('Drawing treemap with:', {
         data: data,
         windows: data.activeWindows.length,
-        totalTabs: data.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0)
+        totalTabs: data.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0),
+        // Debug: Show sample tab audio data
+        sampleTabAudio: data.activeWindows[0]?.tabs[0] ? {
+            audible: data.activeWindows[0].tabs[0].audible,
+            isCurrentlyAudible: data.activeWindows[0].tabs[0].isCurrentlyAudible,
+            totalAudioDuration: data.activeWindows[0].tabs[0].totalAudioDuration
+        } : 'No tabs',
+        // Debug: Show all tabs with audio data
+        allTabsWithAudio: data.activeWindows.flatMap(w => w.tabs)
+            .filter(tab => tab.totalAudioDuration > 0 || tab.audible || tab.isCurrentlyAudible)
+            .map(tab => ({
+                title: tab.title,
+                audible: tab.audible,
+                isCurrentlyAudible: tab.isCurrentlyAudible,
+                totalAudioDuration: tab.totalAudioDuration
+            }))
     });
 
     const container = document.getElementById('treemap');
@@ -435,6 +466,10 @@ export async function drawTreemap(data) {
                 favIconUrl: tab.favIconUrl,
                 lastAccessed: tab.lastAccessed,
                 timeSpent: tab.totalTimeSpent || 1, // Use actual time spent
+                // Include audio tracking data
+                audible: tab.audible || false,
+                isCurrentlyAudible: tab.isCurrentlyAudible || false,
+                totalAudioDuration: tab.totalAudioDuration || 0,
                 children: []
             }))
         }))
@@ -600,6 +635,84 @@ export async function drawTreemap(data) {
                 d.data?.url ? createLetterFaviconForURL(d.data.url) : createPlaceholderFavicon('?'));
         });
 
+    // Add audio indicator if tab has audio activity
+    cellContent.filter(d => {
+        console.log('🔊 Checking tab:', {
+            title: d.data.title,
+            audible: d.data.audible,
+            isCurrentlyAudible: d.data.isCurrentlyAudible,
+            totalAudioDuration: d.data.totalAudioDuration
+        });
+        
+        // Show indicator if currently audible OR has played audio before
+        const hasAudio = d.data.audible || d.data.isCurrentlyAudible || 
+               (d.data.totalAudioDuration && d.data.totalAudioDuration > 0);
+        
+        return hasAudio;
+    })
+    .append('g')
+    .attr('class', 'audio-indicator')
+    .attr('transform', d => {
+        // Position in top-left corner for better visibility
+        return `translate(5, 5)`;
+    })
+    .each(function(d) {
+        const indicator = d3.select(this);
+        const isCurrentlyPlaying = d.data.audible || d.data.isCurrentlyAudible;
+        const hasPlayedAudio = d.data.totalAudioDuration && d.data.totalAudioDuration > 0;
+        
+        if (isCurrentlyPlaying) {
+            // Red circle for currently playing audio
+            indicator.append('circle')
+                .attr('cx', 15)
+                .attr('cy', 15)
+                .attr('r', 12)
+                .attr('fill', 'rgba(255, 0, 0, 0.9)')
+                .attr('stroke', '#FF0000')
+                .attr('stroke-width', 2);
+                
+            indicator.append('text')
+                .attr('x', 15)
+                .attr('y', 20)
+                .attr('text-anchor', 'middle')
+                .attr('fill', 'white')
+                .attr('font-size', '12px')
+                .attr('font-weight', 'bold')
+                .text('🔊');
+        } else if (hasPlayedAudio) {
+            // Orange circle for tabs that have played audio
+            indicator.append('circle')
+                .attr('cx', 15)
+                .attr('cy', 15)
+                .attr('r', 12)
+                .attr('fill', 'rgba(255, 165, 0, 0.9)')
+                .attr('stroke', '#FFA500')
+                .attr('stroke-width', 2);
+                
+            indicator.append('text')
+                .attr('x', 15)
+                .attr('y', 20)
+                .attr('text-anchor', 'middle')
+                .attr('fill', 'white')
+                .attr('font-size', '12px')
+                .attr('font-weight', 'bold')
+                .text('🎵');
+        }
+    })
+    .attr('title', d => {
+        const isCurrentlyPlaying = d.data.audible || d.data.isCurrentlyAudible;
+        const totalMs = d.data.totalAudioDuration || 0;
+        
+        if (isCurrentlyPlaying && totalMs > 0) {
+            return `Currently playing audio • Total: ${formatAudioDuration(totalMs)}`;
+        } else if (isCurrentlyPlaying) {
+            return 'Currently playing audio';
+        } else if (totalMs > 0) {
+            return `Audio played: ${formatAudioDuration(totalMs)}`;
+        }
+        return 'Audio activity detected';
+    });
+
     // Centered text below favicon
     const textElement = cellContent.append('text')
         .attr('text-anchor', 'middle')
@@ -735,12 +848,26 @@ export async function drawTreemap(data) {
     // Add event handlers right after node creation
     nodes
         .on('mouseenter', function(event, d) {
-            console.log('Node hover:', {
-                data: d.data,
-                id: d.data.id,
+            // Enhanced hover debug logging for audio troubleshooting
+            console.log('📋 HOVER DEBUG - Complete Tab Data:', {
+                // Basic tab info
                 title: d.data.title,
                 url: d.data.url,
-                fullNode: d
+                id: d.data.id,
+                windowId: d.data.windowId,
+                
+                // Audio status flags
+                '🔊 audible': d.data.audible,
+                '🔊 isCurrentlyAudible': d.data.isCurrentlyAudible,
+                '🔊 totalAudioDuration': d.data.totalAudioDuration,
+                
+                // Other tab properties
+                active: d.data.active,
+                timeSpent: d.data.timeSpent,
+                lastAccessed: d.data.lastAccessed,
+                
+                // Raw data for debugging
+                '📊 fullTabData': d.data
             });
             
             if (!interactionState.activeNode) {
@@ -853,7 +980,7 @@ function initializeMessageHandling() {
             console.log('URL bar navigation detected - updating treemap');
             
             // For URL bar navigation, we want to ensure we have the latest data
-            chrome.runtime.sendMessage({ type: 'getInitialState' }, async (freshState) => {
+            chrome.runtime.sendMessage({ action: 'getInitialState' }, async (freshState) => {
                 treemapState.data = freshState;
                 await drawTreemap(treemapState.data);
             });
@@ -933,6 +1060,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Failed to initialize treemap:', error);
     }
 });
+
+// Global debug function to refresh treemap
+window.refreshTreemapDebug = async function() {
+    console.log('🔄 Refreshing treemap with latest data...');
+    const response = await chrome.runtime.sendMessage({ action: 'getInitialState' });
+    if (response && response.data) {
+        console.log('📊 Fresh data received:', response.data);
+        await drawTreemap(response.data);
+    } else {
+        console.error('❌ Failed to get fresh data');
+    }
+};
 
 // Update the handleTabUpdated function with proper change detection
 async function handleTabUpdated(message) {
@@ -2149,5 +2288,30 @@ function createLetterFaviconSVG(letter, bgColor = '#e0e0e0', textColor = '#50505
  */
 function createPlaceholderFavicon(symbol = '?') {
     return createLetterFaviconSVG(symbol, '#eeeeee', '#999999');
+}
+
+/**
+ * Format audio duration in milliseconds to human-readable string
+ * @param {number} milliseconds - Duration in milliseconds
+ * @return {string} - Formatted duration string
+ */
+function formatAudioDuration(milliseconds) {
+    if (!milliseconds || milliseconds < 1000) {
+        return '< 1s';
+    }
+    
+    const seconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    
+    if (hours > 0) {
+        const remainingMinutes = minutes % 60;
+        return `${hours}h${remainingMinutes > 0 ? ` ${remainingMinutes}m` : ''}`;
+    } else if (minutes > 0) {
+        const remainingSeconds = seconds % 60;
+        return `${minutes}m${remainingSeconds > 0 ? ` ${remainingSeconds}s` : ''}`;
+    } else {
+        return `${seconds}s`;
+    }
 }
 
