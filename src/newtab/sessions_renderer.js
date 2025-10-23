@@ -52,6 +52,7 @@ export async function renderSessionCards(sessions, container, isRefresh = false)
   for (const dateKey of sortedDates) {
     const dateDisplay = formatDateDisplay(dateKey);
     const sessionsForDate = sessionsByDate[dateKey];
+    console.log('[Sessions Renderer] Rendering date group', { dateKey, dateDisplay, count: sessionsForDate?.length || 0 });
     
     // Create date milestone if it doesn't exist yet
     let dateGroup = container.querySelector(`[data-date="${dateKey}"]`);
@@ -87,12 +88,18 @@ export async function renderSessionCards(sessions, container, isRefresh = false)
     for (const session of sessionsForDate) {
       try {
         // Calculate relative age for color coding (0 = newest, 1 = oldest)
+        console.log('[Sessions Renderer] Creating card for session', { id: session?.id, pages: Array.isArray(session?.pages) ? session.pages.length : session?.pages });
         const relativeAge = timeRange === 0 ? 0 : (newestTime - session.startTime) / timeRange;
         
         // Create session card element with age info
         const card = await createSessionCard(session, { relativeAge });
         if (card) {
           cardsRow.appendChild(card);
+          
+          // Optional: mark append success for debugging
+          console.log('[Sessions Renderer] Appended card', { id: session?.id });
+        } else {
+          console.warn('[Sessions Renderer] createSessionCard returned null/undefined', { id: session?.id });
         }
       } catch (error) {
         console.error('Error creating session card:', error);

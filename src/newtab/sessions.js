@@ -552,6 +552,15 @@ function createRefreshIndicator() {
     `;
     document.head.appendChild(style);
     
+    // Attach helper methods to control visibility for callers
+    // These are used by setupSessionsAutoRefresh()
+    indicator.show = () => {
+        indicator.classList.add('active');
+    };
+    indicator.hide = () => {
+        indicator.classList.remove('active');
+    };
+
     // Add to DOM
     document.body.appendChild(indicator);
     return indicator;
