@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tabtopia: stars</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="sessions_styles.css">
+    <link rel="stylesheet" href="stars_styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="app-header">
+        <div class="logo">tabtopia</div>
+        <div class="header-controls">
+            <button class="view-toggle" title="Toggle view">
+                <a href="newtab.html"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"  
+                stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-chart-treemap"
+                style="transform: scale(2);"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M12 4v16" /><path d="M4 15h8" /><path d="M12 12h8" /><path d="M16 12v8" /><path d="M16 16h4" /></svg>
+                </a>
+                <a href="graph.html"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-chart-dots-3"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 7m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M16 15m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M18 6m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /><path d="M6 18m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /><path d="M9 17l5 -1.5" /><path d="M6.5 8.5l7.81 5.37" /><path d="M7 7l8 -1" /></svg>
+                </a>
+                <a href="sessions.html"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-timeline-event-exclamation"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 20m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 8m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 4m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M19 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M19 17l0 -2" /></svg></a>
+                <a href="stars.html" class="active"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-star"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg></a>
+                <!-- Hidden debug link - triple click to access -->
+                <a href="debug.html" id="debug-link" style="opacity: 0.05; font-size: 10px; margin-left: 10px;" title="Debug Tools">Debug</a>
+            </button>
+            <div class="search-container">
+                <input type="text" 
+                    id="starsSearch" 
+                    placeholder="Search stars..." 
+                    class="search-input"
+                />
+            </div>
+        </div>
+    </header>
+    <div id="stars-container">
+        <p>Bookmarked pages will go here.</p>
+        <!-- Dynamic content will be loaded by stars.js -->
+    </div>
+
+    <script src="../lib/d3.min.js"></script>
+    <script src="debug-tools.js"></script>
+    <script type="module" src="state.js"></script>
+    <script type="module" src="stars.js"></script>
+    <script src="timeago.js"></script>
+    <script src="debug-access.js"></script>
+</body>
+</html>

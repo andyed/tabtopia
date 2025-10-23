@@ -2325,6 +2325,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({ images: null });
                     }
                 });
+<<<<<<< Updated upstream
                 return true;
             case "extractContent":
                 // Handle content extraction requests from newtab page
@@ -2351,6 +2352,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 
                 return true; // Keep channel open for async response
                 
+=======
+                break;
+            case "getSummaries":
+                if (message.urls && Array.isArray(message.urls)) {
+                    for (const url of message.urls) {
+                        if (!summaryCache.has(url)) {
+                            summaryQueue.add(url);
+                        }
+                    }
+                    processSummaryQueue();
+                }
+                break;
+>>>>>>> Stashed changes
             case "storeHeroImages":
                 // Only log hero image extraction if we actually found some images
                 if (message.data.heroImages && message.data.heroImages.length > 0) {
