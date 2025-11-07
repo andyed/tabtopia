@@ -319,34 +319,57 @@ function addTabGroupStyles() {
     document.head.appendChild(style);
 }
 
+let lastStateUpdateTime = 0;
+const REFRESH_THROTTLE_PERIOD = 10000; // 10 seconds
+
+async function refreshSessionsIfNecessary() {
+    const now = Date.now();
+    
+    // Throttle to avoid refreshing too frequently
+    if (now - lastStateUpdateTime < REFRESH_THROTTLE_PERIOD) {
+        console.log('Refresh throttled');
+        return;
+    }
+
+    // Check if the state has been updated since the last refresh
+    const lastUpdated = await new Promise(resolve => {
+        chrome.storage.local.get('lastStateSave', (result) => {
+            resolve(result.lastStateSave || 0);
+        });
+    });
+
+    if (lastUpdated > lastStateUpdateTime) {
+        console.log('State has been updated, refreshing sessions data...');
+        lastStateUpdateTime = now; // Update time before refresh
+        await initSessions(true);
+    } else {
+        console.log('No state update detected, skipping refresh');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Sessions view DOM fully loaded and parsed');
-    // Add tab group styles to document head
     addTabGroupStyles();
     initSessions();
 
-    // Use the existing search input from the header
-    const searchInput = document.getElementById('sessionSearch'); 
+    const searchInput = document.getElementById('sessionSearch');
     if (searchInput) {
         searchInput.addEventListener('input', (event) => {
             currentSearchTerm = event.target.value.toLowerCase();
             filterAndRenderSessions(currentSearchTerm);
         });
     }
-    
-    // Add focus event listener to refresh data when tab gains focus
-    window.addEventListener('focus', () => {
-        console.log('Tab regained focus, refreshing sessions data...');
-        initSessions(true); // Pass true to indicate this is a refresh
-    });
-    
-    // Also refresh data every 5 minutes if the tab is active
-    setInterval(() => {
-        if (document.hasFocus()) {
-            console.log('Auto-refreshing sessions data (5 minute interval)...');
-            initSessions(true);
+
+    // Check for updates when the tab becomes visible
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            console.log('Tab is visible, checking for session updates...');
+            refreshSessionsIfNecessary();
         }
-    }, 5 * 60 * 1000); // 5 minutes in milliseconds
+    });
+
+    // Also check for updates periodically
+    setInterval(refreshSessionsIfNecessary, 15000); // Check every 15 seconds
 });
 
 function filterAndRenderSessions(searchTerm) {

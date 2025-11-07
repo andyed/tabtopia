@@ -1090,7 +1090,17 @@ chrome.tabs.onCreated.addListener((tab) => {
   // Get the last active tab before this creation
   const previousActiveTab = browserState.lastActive?.tabId;
   
-  if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
+  if (tabsWithOpener.has(tab.id) && tab.openerTabId) {
+    const edge = {
+      source: tab.openerTabId,
+      target: tab.id,
+      type: "opener",
+      timestamp: Date.now(),
+    };
+    tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
+    updateGraphWithNewEdge(edge);
+    tabsWithOpener.delete(tab.id); // Clean up the set
+  } else if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
     // This tab was created from a link click we tracked
     // Determine a more specific context based on the interaction
     let intentContext = "new_tab"; // Default
@@ -1678,12 +1688,44 @@ function handleUrlChange(tabId, changeInfo, tab) {
     }, 0);
 }
 
+const webRequestData = new Map();
+
+chrome.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    const { requestId, url, timeStamp, method, type, initiator, requestHeaders } = details;
+    const referer = requestHeaders.find(h => h.name.toLowerCase() === 'referer')?.value;
+    webRequestData.set(requestId, {
+      url,
+      timeStamp,
+      method,
+      type,
+      initiator,
+      referer,
+      redirects: [],
+    });
+  },
+  { urls: ['<all_urls>'], types: ['main_frame'] },
+  ['requestHeaders']
+);
+
+chrome.webRequest.onBeforeRedirect.addListener(
+  (details) => {
+    const { requestId, redirectUrl, timeStamp } = details;
+    const request = webRequestData.get(requestId);
+    if (request) {
+      request.redirects.push({ url: redirectUrl, timeStamp });
+    }
+  },
+  { urls: ['<all_urls>'], types: ['main_frame'] }
+);
+
 // Clean, focused implementation for web navigation events
 chrome.webNavigation.onCommitted.addListener((details) => {
     // Only process main frame navigations
     if (details.frameId !== 0) return;
     
     const { tabId, url, transitionType, transitionQualifiers } = details;
+    const webRequestEntry = webRequestData.get(details.requestId);
     
     // Skip chrome:// URLs and extension pages
     if (url.startsWith("chrome://") || url.startsWith(chrome.runtime.getURL(""))) return;
@@ -1714,7 +1756,8 @@ chrome.webNavigation.onCommitted.addListener((details) => {
             timestamp: Date.now(),
             navigationId,
             // Add dwell time if available from previous navigation
-            dwellTimeMs: browserState.lastActive?.tabId === tabId ? Date.now() - browserState.lastActive.timestamp : null
+            dwellTimeMs: browserState.lastActive?.tabId === tabId ? Date.now() - browserState.lastActive.timestamp : null,
+            webRequestData: webRequestEntry,
         });
     });
 });
@@ -1834,8 +1877,17 @@ function checkAndUpdateFavicon(tabId, url) {
 
 // Tab focus events are handled by the main chrome.tabs.onActivated listener above
 
+const tabsWithOpener = new Set();
+
 // Message handler for various actions
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'hasOpener') {
+        if (sender.tab) {
+            tabsWithOpener.add(sender.tab.id);
+        }
+        sendResponse({ received: true });
+        return;
+    }
     console.log('🔍 Background script received message:', message);
     console.log('🔍 Message action:', message.action);
     console.log('🔍 Message type:', message.type);
@@ -1999,7 +2051,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ success: true });
                 return true;
             case "getTabId":
-                sendResponse({ tabId: sender.tab?.id });
+                if (sender.tab && sender.tab.id) {
+                    sendResponse({ tabId: sender.tab.id });
+                } else {
+                    sendResponse({ tabId: null });
+                }
                 return true;
             case "getTabHistory":
                 if (!message.tabId) {
@@ -2622,7 +2678,7 @@ function processDirectNavigation(tabData, details) {
 
 // Focused navigation recorder that only updates state - no edge creation
 function recordNavigation(details) {
-    const { tabId, url, title, transitionType, transitionQualifiers, timestamp, dwellTimeMs } = details;
+    const { tabId, url, title, transitionType, transitionQualifiers, timestamp, dwellTimeMs, webRequestData } = details;
     
     try {
         // Extract search query if this is a search engine URL
@@ -2639,7 +2695,9 @@ function recordNavigation(details) {
             transitionType: transitionType || "unknown",
             transitionQualifiers: transitionQualifiers || [],
             dwellTimeMs: dwellTimeMs || 0, // Include dwell time if available
-            searchQuery: searchQuery // Add search query if present
+            searchQuery: searchQuery, // Add search query if present
+            referer: webRequestData?.referer,
+            redirects: webRequestData?.redirects,
         });
         
         // Limit history size
@@ -3219,7 +3277,8 @@ function saveStateToStorage() {
     
     // Save to chrome.storage.local
     chrome.storage.local.set({ 
-      'browserState': stateToSave 
+      'browserState': stateToSave,
+      'lastStateSave': stateToSave.lastSaved
     }, () => {
       if (chrome.runtime.lastError) {
         console.error('Error saving browserState:', chrome.runtime.lastError);

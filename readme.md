@@ -1,7 +1,7 @@
 # Tabtopia
 
 ## Overview
-Tabtopia is a Chrome extension that visualizes your browser history and open tabs using interactive D3.js visualizations. There are two core views -- treemap and graph. Both support search using the excellent [lunr.js](https://github.com/olivernn/lunr.js) library. The extension leverages Chrome's built-in AI capabilities to provide smart features like URL summarization.
+Tabtopia is a Chrome extension that visualizes your browser history and open tabs using interactive D3.js visualizations. There are four core views: a treemap of open tabs, a graph of open tabs, an enhanced history session view, and a bookmark-centric stars view. All views support search using the excellent [lunr.js](https://github.com/olivernn/lunr.js) library. The extension leverages Chrome's built-in AI capabilities to provide smart features like URL summarization.
 
 ## How To Use
 
@@ -37,18 +37,32 @@ Tabtopia is a Chrome extension that visualizes your browser history and open tab
    - Hover over nodes for details
    - Click to focus on specific domains or time periods
 
-### Session View
+### Enhanced Session View
+The session view provides an enhanced way to visualize and explore browsing history organized into meaningful sessions:
+
 1. **Smart Session Organization**
-   - Automatic session grouping based on user activity
-   - Micro-sessions for more granular activity tracking
-   - Window and tab context-aware separation
-   - Search query and clicked link tracking
+   - Automatic session grouping based on user activity (30-minute inactivity threshold).
+   - Micro-sessions for more granular activity tracking (5-minute threshold, new windows, or new tabs).
+   - Window and tab context-aware separation.
+   - Search query and clicked link tracking.
 
 2. **Visual Representation**
-   - Descriptive session titles based on link text and search queries
-   - Graph visualization with dwell time-based node sizing
-   - Domain grouping and session timelines
-   - Favicon and hero image enrichment
+   - Descriptive session titles based on link text and search queries.
+   - Graph visualization with dwell time-based node sizing.
+   - Domain grouping and session timelines.
+   - Favicon and hero image enrichment.
+   - Interactive modal for deep session exploration.
+
+### Stars View
+The Stars View provides a dedicated interface for your bookmarked pages, putting them in the context of your browsing history.
+
+1. **Contextual Bookmarks**
+   - Displays recent bookmarks.
+   - For each bookmark, it shows the surrounding browsing context by fetching history from a 15-minute window around the time the bookmark was created.
+
+2. **Organized View**
+   - Bookmarks are grouped by date (e.g., "Today", "Yesterday", "This Week").
+   - Each bookmark is presented as a "star card" showing the page and its related browsing context.
 
 ## Technical Architecture
 
@@ -60,12 +74,13 @@ Tabtopia is a Chrome extension that visualizes your browser history and open tab
    - Bookmark integration
 
 2. **History Trail System**
-   - Continuous browsing activity tracking
-   - Domain-based aggregation
-   - Temporal pattern analysis
-   - Search indexing
-   - Dwell time tracking and page importance scoring
-   - Navigation source classification (link clicks, search results, direct entry)
+   - Continuous browsing activity tracking.
+   - Domain-based aggregation.
+   - Temporal pattern analysis.
+   - Search indexing.
+   - Dwell time tracking and page importance scoring.
+   - Navigation source classification (link clicks, search results, direct entry).
+   - Audio playback duration tracking.
 
 3. **AI Integration**
    - Built-in Chrome AI Summarizer API for URL content with fallback support
@@ -95,6 +110,11 @@ The underlying synchronization and history trail system can be leveraged for var
    - Frequent path identification
    - Context restoration
 
+## Future Directions
+
+### MCP Server for LLM Context
+A potential future direction is to expose the rich browsing data captured by the extension as a "Memory Context Provider" (MCP) server. This would allow Large Language Models (LLMs) to securely access a user's browsing context, enabling a new class of personalized and context-aware AI applications. The structured data, including sessions, dwell time, and navigation paths, would provide a powerful foundation for this.
+
 ## Screenshots
 
 ### Treemap View
@@ -103,7 +123,11 @@ The underlying synchronization and history trail system can be leveraged for var
 ### Graph View
 ![Graph visualization](screenshots/graph.png)
 
+### Session View
+![Session visualization](screenshots/session_view.png)
 
+### Stars View
+![Stars visualization](screenshots/stars_view.png)
 
 
 ## Developer Installation
@@ -237,52 +261,6 @@ When reporting bugs, please include:
 - Output from `getSummarizerStatus()` and `getQueueStats()`
 - Chrome version and extension version
 - Steps to reproduce the issue
-
-## Technical Details
-
-### Architecture
-- **D3.js Visualizations**: Interactive treemaps and force-directed graph layouts
-- **Chrome Extension APIs**: Integration with browser history, tabs, windows, and bookmarks
-- **Responsive Design**: Dynamic layout management with window resize handling
-- **Enhanced Content Extraction System**:
-  - Background worker content extraction bypasses security restrictions
-  - Multi-strategy content retrieval (direct injection, metadata, URL analysis)
-  - Fallback content generation for restricted pages
-  - Intelligent content validation and filtering
-- **Data Enrichment Layer**: 
-  - Page dwell time calculation for relevance scoring
-  - Navigation referral tracking (link text, search queries)
-  - Audio playback duration tracking across all tabs (focus-independent)
-  - Session boundary detection and organization
-  - Visual hierarchy based on interaction metrics
-- **Robust Error Handling**:
-  - Automatic crash detection and recovery for AI services
-  - Graceful degradation when APIs are unavailable
-  - Comprehensive state validation and repair
-  - User-friendly error messages and debugging tools
-
-
-## Session View Implementation
-
-The session view provides an enhanced way to visualize and explore browsing history organized into meaningful sessions:
-
-### Smart Session Titles
-- **Link-based Titles**: Uses referral link text to create descriptive titles (e.g., "example.com → 'Interesting Article'") 
-- **Search-based Titles**: Falls back to search queries when no link text is available
-- **Domain-based Titles**: Uses domain and page title as final fallback
-- **Automatic truncation** of overly long titles for better UI presentation
-
-### Graph Visualization
-- **Dwell Time Node Sizing**: Page importance visually indicated through node size
-  - Base size: < 30 seconds
-  - Larger sizes: > 30 seconds, > 3 minutes, > 6 minutes, > 12 minutes
-- **Edge Direction**: Shows navigation flow between pages
-- **Interactive tooltips**: Displays page title, URL, and search queries
-
-### Data Collection
-- **Dwell Time**: Time spent on each page calculated through tab focus events and navigation
-- **Referral Information**: How users arrived at pages (link clicks, search, direct navigation)
-- **Search Queries**: Extraction and association with resulting page visits
 
 ## Development Guidelines
 

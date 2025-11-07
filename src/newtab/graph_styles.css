@@ -98,6 +98,23 @@
     max-width: 300px;
 }
 
+/* Larger font size for large screens */
+@media (min-width: 1920px) {
+    .tooltip {
+        font-size: 14px;
+        padding: 12px;
+        max-width: 400px;
+    }
+}
+
+@media (min-width: 2560px) {
+    .tooltip {
+        font-size: 16px;
+        padding: 14px;
+        max-width: 500px;
+    }
+}
+
 .tooltip-title {
     font-weight: bold;
     margin-bottom: 5px;
@@ -245,5 +262,15 @@ body {
   
   /* Special hover effect for active nodes */
   .node-active:hover circle {
+    filter: drop-shadow(0 0 8px rgba(30, 144, 255, 0.9));
+  }
+  
+  /* Node hover class (applied via JavaScript) */
+  .node-hover circle {
+    stroke-width: 4px;
+    filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.3));
+  }
+  
+  .node-active.node-hover circle {
     filter: drop-shadow(0 0 8px rgba(30, 144, 255, 0.9));
   }
