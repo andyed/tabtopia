@@ -110,10 +110,6 @@ The underlying synchronization and history trail system can be leveraged for var
    - Frequent path identification
    - Context restoration
 
-## Future Directions
-
-### MCP Server for LLM Context
-A potential future direction is to expose the rich browsing data captured by the extension as a "Memory Context Provider" (MCP) server. This would allow Large Language Models (LLMs) to securely access a user's browsing context, enabling a new class of personalized and context-aware AI applications. The structured data, including sessions, dwell time, and navigation paths, would provide a powerful foundation for this.
 
 ## Screenshots
 
@@ -204,6 +200,12 @@ window.addEventListener('summaryGenerated', (e) => {
 // Check extension state
 chrome.runtime.sendMessage({type: 'getInitialState'}, console.log);
 ```
+
+## Future Directions
+
+### MCP Server for LLM Context
+A potential future direction is to expose the rich browsing data captured by the extension as a "Memory Context Provider" (MCP) server. This would allow Large Language Models (LLMs) to securely access a user's browsing context, enabling a new class of personalized and context-aware AI applications. The structured data, including sessions, dwell time, and navigation paths, would provide a powerful foundation for this.
+
 
 ## Troubleshooting
 

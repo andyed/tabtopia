@@ -23,13 +23,13 @@
 import { extractSearchQuery, isLikelyRedirect } from './lib/url-utils.js';
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("Tabtopia installed successfully.");
-  
-  // Load any previously saved state
-  loadStateFromStorage();
-  
-  // Initialize current active tab tracking for dwell time calculations
-  initializeActiveTabTracking();
+    console.log("Tabtopia installed successfully.");
+
+    // Load any previously saved state
+    loadStateFromStorage();
+
+    // Initialize current active tab tracking for dwell time calculations
+    initializeActiveTabTracking();
 });
 
 // Also initialize active tab tracking when the background script starts
@@ -38,74 +38,74 @@ initializeActiveTabTracking();
 
 // Set up periodic state saving to ensure data persistence
 setInterval(() => {
-  saveStateToStorage();
+    saveStateToStorage();
 }, 30000); // Save every 30 seconds
 
 // Handle browser suspend/resume events
 chrome.runtime.onSuspend.addListener(() => {
-  console.log('[DwellTime] Browser suspending, saving last active state');
-  // Save the last active state when the browser is closing
-  if (browserState.lastActive) {
-    // Calculate final dwell time for the currently active tab
-    const dwellTimeMs = Date.now() - browserState.lastActive.timestamp;
-    if (dwellTimeMs > 500) {
-      const tabId = browserState.lastActive.tabId;
-      const tabData = browserState.tabs.get(tabId);
-      
-      if (tabData && tabData.url) {
-        console.log(`[DwellTime] Saving final dwell time for tab ${tabId}: ${dwellTimeMs}ms`);
-        
-        // Update the tab history with the final dwell time
-        const history = browserState.tabHistory.get(tabId) || [];
-        if (history.length > 0) {
-          history[0].dwellTimeMs = (history[0].dwellTimeMs || 0) + dwellTimeMs;
-          history[0].dwellTimeUpdated = Date.now();
-          browserState.tabHistory.set(tabId, history);
+    console.log('[DwellTime] Browser suspending, saving last active state');
+    // Save the last active state when the browser is closing
+    if (browserState.lastActive) {
+        // Calculate final dwell time for the currently active tab
+        const dwellTimeMs = Date.now() - browserState.lastActive.timestamp;
+        if (dwellTimeMs > 500) {
+            const tabId = browserState.lastActive.tabId;
+            const tabData = browserState.tabs.get(tabId);
+
+            if (tabData && tabData.url) {
+                console.log(`[DwellTime] Saving final dwell time for tab ${tabId}: ${dwellTimeMs}ms`);
+
+                // Update the tab history with the final dwell time
+                const history = browserState.tabHistory.get(tabId) || [];
+                if (history.length > 0) {
+                    history[0].dwellTimeMs = (history[0].dwellTimeMs || 0) + dwellTimeMs;
+                    history[0].dwellTimeUpdated = Date.now();
+                    browserState.tabHistory.set(tabId, history);
+                }
+            }
         }
-      }
+
+        // Store last active data for potential restoration
+        chrome.storage.local.set({
+            lastActiveTab: {
+                tabId: browserState.lastActive.tabId,
+                url: browserState.tabs.get(browserState.lastActive.tabId)?.url || '',
+                timestamp: Date.now()
+            }
+        });
     }
-    
-    // Store last active data for potential restoration
-    chrome.storage.local.set({
-      lastActiveTab: {
-        tabId: browserState.lastActive.tabId,
-        url: browserState.tabs.get(browserState.lastActive.tabId)?.url || '',
-        timestamp: Date.now()
-      }
-    });
-  }
 });
 
 // Handle browser resume
 chrome.runtime.onStartup.addListener(() => {
-  console.log('[DwellTime] Browser starting up, checking for previous session');
-  
-  // Try to restore last active tab information
-  chrome.storage.local.get(['lastActiveTab'], (result) => {
-    if (result.lastActiveTab) {
-      console.log('[DwellTime] Found previous session data:', result.lastActiveTab);
-      
-      // Set a reasonable timestamp for the new session
-      const previousData = result.lastActiveTab;
-      const currentTime = Date.now();
-      
-      // We'll only try to match by URL since tab IDs will have changed
-      chrome.tabs.query({}, (tabs) => {
-        for (const tab of tabs) {
-          if (tab.url === previousData.url) {
-            console.log('[DwellTime] Found matching tab for previous session:', tab.id);
-            // Initialize tracking with this tab
-            browserState.lastActive = {
-              tabId: tab.id,
-              windowId: tab.windowId,
-              timestamp: currentTime
-            };
-            break;
-          }
+    console.log('[DwellTime] Browser starting up, checking for previous session');
+
+    // Try to restore last active tab information
+    chrome.storage.local.get(['lastActiveTab'], (result) => {
+        if (result.lastActiveTab) {
+            console.log('[DwellTime] Found previous session data:', result.lastActiveTab);
+
+            // Set a reasonable timestamp for the new session
+            const previousData = result.lastActiveTab;
+            const currentTime = Date.now();
+
+            // We'll only try to match by URL since tab IDs will have changed
+            chrome.tabs.query({}, (tabs) => {
+                for (const tab of tabs) {
+                    if (tab.url === previousData.url) {
+                        console.log('[DwellTime] Found matching tab for previous session:', tab.id);
+                        // Initialize tracking with this tab
+                        browserState.lastActive = {
+                            tabId: tab.id,
+                            windowId: tab.windowId,
+                            timestamp: currentTime
+                        };
+                        break;
+                    }
+                }
+            });
         }
-      });
-    }
-  });
+    });
 });
 
 /**
@@ -125,9 +125,9 @@ function updateAudioTracking(tabId, isAudible) {
         isCurrentlyAudible: false,
         audioStartTime: null
     };
-    
+
     console.log(`[AudioTracking] Tab ${tabId} audio state changed: ${audioData.isCurrentlyAudible} -> ${isAudible}`);
-    
+
     if (isAudible && !audioData.isCurrentlyAudible) {
         // Audio started playing
         audioData.isCurrentlyAudible = true;
@@ -143,12 +143,12 @@ function updateAudioTracking(tabId, isAudible) {
         audioData.isCurrentlyAudible = false;
         audioData.audioStartTime = null;
     }
-    
+
     browserState.tabAudioTracking.set(tabId, audioData);
-    
+
     // Save state to persist audio tracking data
     saveStateToStorage();
-    
+
     // Broadcast audio tracking update
     sendMessageWithErrorHandling({
         action: "audioTrackingUpdated",
@@ -168,14 +168,14 @@ function updateAudioTracking(tabId, isAudible) {
 function getCurrentAudioDuration(tabId) {
     const audioData = browserState.tabAudioTracking.get(tabId);
     if (!audioData) return 0;
-    
+
     let totalDuration = audioData.totalAudioDuration;
-    
+
     // If audio is currently playing, include ongoing duration
     if (audioData.isCurrentlyAudible && audioData.audioStartTime) {
         totalDuration += Date.now() - audioData.audioStartTime;
     }
-    
+
     return totalDuration;
 }
 
@@ -183,19 +183,19 @@ function getCurrentAudioDuration(tabId) {
  * Initializes tracking of the currently active tab for dwell time calculations
  */
 function initializeActiveTabTracking() {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs && tabs.length > 0) {
-      const activeTab = tabs[0];
-      console.log('[DwellTime] Initializing active tab tracking with tab:', activeTab.id);
-      
-      // Set the currently active tab
-      browserState.lastActive = {
-        tabId: activeTab.id,
-        windowId: activeTab.windowId,
-        timestamp: Date.now()
-      };
-    }
-  });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+            const activeTab = tabs[0];
+            console.log('[DwellTime] Initializing active tab tracking with tab:', activeTab.id);
+
+            // Set the currently active tab
+            browserState.lastActive = {
+                tabId: activeTab.id,
+                windowId: activeTab.windowId,
+                timestamp: Date.now()
+            };
+        }
+    });
 }
 
 /**
@@ -210,11 +210,11 @@ const processedNavigations = new Map();
 
 // Global error handlers to ensure service worker stability
 self.addEventListener("error", (event) => {
-  console.error("Uncaught error in service worker:", event.error);
+    console.error("Uncaught error in service worker:", event.error);
 });
 
 self.addEventListener("unhandledrejection", (event) => {
-  console.error("Unhandled promise rejection:", event.reason);
+    console.error("Unhandled promise rejection:", event.reason);
 });
 
 /**
@@ -239,66 +239,66 @@ let tabActivationTimeout = null; // Timeout for debouncing tab activation events
  * This is the source of truth for all tab visualizations.
  */
 const browserState = {
-  tabs: new Map(),              // All tabs by ID with complete metadata
-  windows: new Map(),           // Window grouping data with tab references
-  tabHistory: new Map(),        // Navigation history sequence per tab
-  heroImages: new Map(),        // Hero images by URL
-  tabRelationships: new Map(),  // Parent/child and sibling relationships between tabs
-  tabActivityLog: new Map(),    // User interaction and time-spent data
-  tabAudioTracking: new Map(),  // Audio playback duration tracking per tab
-  lastActive: null,             // Tracks the currently active tab for dwell time calculations
-  listeners: [],                // State change subscribers
+    tabs: new Map(),              // All tabs by ID with complete metadata
+    windows: new Map(),           // Window grouping data with tab references
+    tabHistory: new Map(),        // Navigation history sequence per tab
+    heroImages: new Map(),        // Hero images by URL
+    tabRelationships: new Map(),  // Parent/child and sibling relationships between tabs
+    tabActivityLog: new Map(),    // User interaction and time-spent data
+    tabAudioTracking: new Map(),  // Audio playback duration tracking per tab
+    lastActive: null,             // Tracks the currently active tab for dwell time calculations
+    listeners: [],                // State change subscribers
 
-  /**
-   * Notifies all registered listeners about state changes
-   * This enables reactive UI updates without polling
-   * 
-   * @param {string} changeType - Category of state change (tab, window, etc)
-   * @param {Object} data - Relevant change details
-   */
-  notifyChange(changeType, data) {
-    console.log(`State change: ${changeType}`, data);
-    this.listeners.forEach(listener => {
-      try {
-        listener(changeType, data);
-      } catch (error) {
-        console.error("Error in state listener:", error);
-      }
-    });
-  },
+    /**
+     * Notifies all registered listeners about state changes
+     * This enables reactive UI updates without polling
+     * 
+     * @param {string} changeType - Category of state change (tab, window, etc)
+     * @param {Object} data - Relevant change details
+     */
+    notifyChange(changeType, data) {
+        console.log(`State change: ${changeType}`, data);
+        this.listeners.forEach(listener => {
+            try {
+                listener(changeType, data);
+            } catch (error) {
+                console.error("Error in state listener:", error);
+            }
+        });
+    },
 
-  /**
-   * Registers a callback for state changes with automatic cleanup
-   * Returns an unsubscribe function to prevent memory leaks
-   * 
-   * @param {Function} callback - Function to call on state changes
-   * @return {Function} Unsubscribe function to remove the listener
-   */
-  subscribe(callback) {
-    this.listeners.push(callback);
-    return () => {
-      this.listeners = this.listeners.filter(cb => cb !== callback);
-    };
-  },
+    /**
+     * Registers a callback for state changes with automatic cleanup
+     * Returns an unsubscribe function to prevent memory leaks
+     * 
+     * @param {Function} callback - Function to call on state changes
+     * @return {Function} Unsubscribe function to remove the listener
+     */
+    subscribe(callback) {
+        this.listeners.push(callback);
+        return () => {
+            this.listeners = this.listeners.filter(cb => cb !== callback);
+        };
+    },
 
-  /**
-   * Retrieves complete tab data with related information
-   * Combines core tab data with history and relationship context
-   * 
-   * @param {number} tabId - Chrome tab ID to fetch
-   * @return {Object|null} Comprehensive tab data or null if not found
-   */
-  getTabData(tabId) {
-    const tab = this.tabs.get(tabId);
-    if (!tab) return null;
-    
-    return {
-      ...tab,
-      history: this.tabHistory.get(tabId) || [],
-      relationship: this.tabRelationships.get(tabId),
-      activity: this.tabActivityLog.get(tabId)
-    };
-  }
+    /**
+     * Retrieves complete tab data with related information
+     * Combines core tab data with history and relationship context
+     * 
+     * @param {number} tabId - Chrome tab ID to fetch
+     * @return {Object|null} Comprehensive tab data or null if not found
+     */
+    getTabData(tabId) {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return null;
+
+        return {
+            ...tab,
+            history: this.tabHistory.get(tabId) || [],
+            relationship: this.tabRelationships.get(tabId),
+            activity: this.tabActivityLog.get(tabId)
+        };
+    }
 };
 
 /**
@@ -308,9 +308,9 @@ const browserState = {
  * and when tabs are considered active vs idle
  */
 const TAB_ACTIVITY = {
-  ACTIVE_THRESHOLD: 1000,    // Min milliseconds to count as active time (prevents counting quick tab switches)
-  IDLE_THRESHOLD: 300000,    // Time without interaction to consider tab idle (5 minutes)
-  UPDATE_INTERVAL: 5000      // How often to update active tab time counters
+    ACTIVE_THRESHOLD: 1000,    // Min milliseconds to count as active time (prevents counting quick tab switches)
+    IDLE_THRESHOLD: 300000,    // Time without interaction to consider tab idle (5 minutes)
+    UPDATE_INTERVAL: 5000      // How often to update active tab time counters
 };
 
 /**
@@ -335,165 +335,165 @@ const navigationEvents = new Map();
  * - Special URL handling
  */
 const faviconQueue = {
-  pending: new Map(),  // Map of tabId -> {url, attempts, lastCheck, priority}
-  processing: false,   // Whether queue is currently being processed
-  
-  /**
-   * Add a favicon check to the queue with optional priority
-   * 
-   * @param {number} tabId - Tab ID to check favicon for
-   * @param {string} url - URL to fetch favicon for
-   * @param {string} priority - 'normal' or 'high' priority
-   */
-  enqueue(tabId, url, priority = "normal") {
-    // Skip special URLs that can't use chrome://favicon
-    if (url.startsWith("chrome://") || url.startsWith("file://") || 
-        url.startsWith("about:") || !url) {
-      return;
-    }
-    
-    // Update existing entry or add new one
-    const existing = this.pending.get(tabId);
-    if (existing && existing.url === url) {
-      // Don't reset attempts if already in queue
-      existing.priority = priority === "high" ? "high" : existing.priority;
-      this.pending.set(tabId, existing);
-    } else {
-      // New entry
-      this.pending.set(tabId, {
-        url,
-        attempts: 0,
-        lastCheck: 0,
-        priority
-      });
-    }
-    
-    // Start processing if not already running
-    if (!this.processing) {
-      this.processQueue();
-    }
-  },
-  
-  /**
-   * Process the favicon queue in prioritized batches
-   * 
-   * Processes favicons in order of:
-   * 1. High priority items first
-   * 2. Then by time since last check (oldest first)
-   * 
-   * Uses batching to limit Chrome API load and improve performance
-   */
-  processQueue() {
-    if (this.pending.size === 0) {
-      this.processing = false;
-      return;
-    }
-    
-    this.processing = true;
-    
-    // Sort queue by priority and time since last check
-    const entries = Array.from(this.pending.entries())
-      .sort(([, a], [, b]) => {
-        // High priority first
-        if (a.priority === "high" && b.priority !== "high") return -1;
-        if (a.priority !== "high" && b.priority === "high") return 1;
-        // Then by time since last check
-        return (a.lastCheck - b.lastCheck);
-      });
-    
-    // Process first batch of up to 5 entries
-    const batch = entries.slice(0, 5);
-    
-    // Remove processed entries from pending queue
-    batch.forEach(([tabId]) => this.pending.delete(tabId));
-    
-    // Process batch
-    Promise.all(batch.map(([tabId, item]) => this.checkFavicon(tabId, item)))
-      .finally(() => {
-        // Schedule next batch after a short delay
-        setTimeout(() => this.processQueue(), 50);
-      });
-  },
-  
-  /**
-   * Check favicon for a specific tab with progressive retry logic
-   * 
-   * Implements smart detection and fallback mechanisms:
-   * 1. Try to get favicon directly from tab
-   * 2. If missing, retry with progressive backoff
-   * 3. After 3 attempts, use Chrome's favicon service as fallback
-   * 4. Send notifications when favicon is found
-   * 
-   * @param {number} tabId - Tab ID to check
-   * @param {Object} item - Queue item with URL and attempt data
-   */
-  async checkFavicon(tabId, item) {
-    const { url, attempts } = item;
-    
-    try {
-      // Mark as checked
-      item.lastCheck = Date.now();
-      item.attempts++;
-      
-      // Get tab info
-      const tab = await new Promise(resolve => {
-        chrome.tabs.get(tabId, tab => {
-          if (chrome.runtime.lastError) {
-            resolve(null);
-          } else {
-            resolve(tab);
-          }
-        });
-      });
-      
-      // Tab doesn't exist anymore or URL changed
-      if (!tab || tab.url !== url) {
-        return;
-      }
-      
-      // Tab already has favicon
-      if (tab.favIconUrl) {
-        updateTabMetadata(tabId, { favIconUrl: tab.favIconUrl });
-        
-        // Explicit notification
-        sendMessageWithErrorHandling({
-          action: "explicitFaviconUpdate",
-          tabId,
-          favIconUrl: tab.favIconUrl,
-          timestamp: Date.now()
-        });
-        return;
-      }
-      
-      // If no favicon after 3 attempts, use fallback
-      if (attempts >= 3) {
-        const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(url)}`;
-        updateTabMetadata(tabId, { favIconUrl: fallbackFavicon });
-        
-        // Notify about fallback favicon
-        sendMessageWithErrorHandling({
-          action: "explicitFaviconUpdate",
-          tabId,
-          favIconUrl: fallbackFavicon,
-          timestamp: Date.now()
-        });
-        return;
-      }
-      
-      // Requeue with progressive backoff if favicon still missing
-      // Exponential backoff with 1.5x multiplier (500ms → 750ms → 1125ms...)
-      const delay = Math.min(500 * Math.pow(1.5, attempts), 3000);
-      setTimeout(() => {
-        this.pending.set(tabId, item);
-        if (!this.processing) {
-          this.processQueue();
+    pending: new Map(),  // Map of tabId -> {url, attempts, lastCheck, priority}
+    processing: false,   // Whether queue is currently being processed
+
+    /**
+     * Add a favicon check to the queue with optional priority
+     * 
+     * @param {number} tabId - Tab ID to check favicon for
+     * @param {string} url - URL to fetch favicon for
+     * @param {string} priority - 'normal' or 'high' priority
+     */
+    enqueue(tabId, url, priority = "normal") {
+        // Skip special URLs that can't use chrome://favicon
+        if (url.startsWith("chrome://") || url.startsWith("file://") ||
+            url.startsWith("about:") || !url) {
+            return;
         }
-      }, delay);
-      
-    } catch (error) {
-      console.error("Error checking favicon:", error);
+
+        // Update existing entry or add new one
+        const existing = this.pending.get(tabId);
+        if (existing && existing.url === url) {
+            // Don't reset attempts if already in queue
+            existing.priority = priority === "high" ? "high" : existing.priority;
+            this.pending.set(tabId, existing);
+        } else {
+            // New entry
+            this.pending.set(tabId, {
+                url,
+                attempts: 0,
+                lastCheck: 0,
+                priority
+            });
+        }
+
+        // Start processing if not already running
+        if (!this.processing) {
+            this.processQueue();
+        }
+    },
+
+    /**
+     * Process the favicon queue in prioritized batches
+     * 
+     * Processes favicons in order of:
+     * 1. High priority items first
+     * 2. Then by time since last check (oldest first)
+     * 
+     * Uses batching to limit Chrome API load and improve performance
+     */
+    processQueue() {
+        if (this.pending.size === 0) {
+            this.processing = false;
+            return;
+        }
+
+        this.processing = true;
+
+        // Sort queue by priority and time since last check
+        const entries = Array.from(this.pending.entries())
+            .sort(([, a], [, b]) => {
+                // High priority first
+                if (a.priority === "high" && b.priority !== "high") return -1;
+                if (a.priority !== "high" && b.priority === "high") return 1;
+                // Then by time since last check
+                return (a.lastCheck - b.lastCheck);
+            });
+
+        // Process first batch of up to 5 entries
+        const batch = entries.slice(0, 5);
+
+        // Remove processed entries from pending queue
+        batch.forEach(([tabId]) => this.pending.delete(tabId));
+
+        // Process batch
+        Promise.all(batch.map(([tabId, item]) => this.checkFavicon(tabId, item)))
+            .finally(() => {
+                // Schedule next batch after a short delay
+                setTimeout(() => this.processQueue(), 50);
+            });
+    },
+
+    /**
+     * Check favicon for a specific tab with progressive retry logic
+     * 
+     * Implements smart detection and fallback mechanisms:
+     * 1. Try to get favicon directly from tab
+     * 2. If missing, retry with progressive backoff
+     * 3. After 3 attempts, use Chrome's favicon service as fallback
+     * 4. Send notifications when favicon is found
+     * 
+     * @param {number} tabId - Tab ID to check
+     * @param {Object} item - Queue item with URL and attempt data
+     */
+    async checkFavicon(tabId, item) {
+        const { url, attempts } = item;
+
+        try {
+            // Mark as checked
+            item.lastCheck = Date.now();
+            item.attempts++;
+
+            // Get tab info
+            const tab = await new Promise(resolve => {
+                chrome.tabs.get(tabId, tab => {
+                    if (chrome.runtime.lastError) {
+                        resolve(null);
+                    } else {
+                        resolve(tab);
+                    }
+                });
+            });
+
+            // Tab doesn't exist anymore or URL changed
+            if (!tab || tab.url !== url) {
+                return;
+            }
+
+            // Tab already has favicon
+            if (tab.favIconUrl) {
+                updateTabMetadata(tabId, { favIconUrl: tab.favIconUrl });
+
+                // Explicit notification
+                sendMessageWithErrorHandling({
+                    action: "explicitFaviconUpdate",
+                    tabId,
+                    favIconUrl: tab.favIconUrl,
+                    timestamp: Date.now()
+                });
+                return;
+            }
+
+            // If no favicon after 3 attempts, use fallback
+            if (attempts >= 3) {
+                const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(url)}`;
+                updateTabMetadata(tabId, { favIconUrl: fallbackFavicon });
+
+                // Notify about fallback favicon
+                sendMessageWithErrorHandling({
+                    action: "explicitFaviconUpdate",
+                    tabId,
+                    favIconUrl: fallbackFavicon,
+                    timestamp: Date.now()
+                });
+                return;
+            }
+
+            // Requeue with progressive backoff if favicon still missing
+            // Exponential backoff with 1.5x multiplier (500ms → 750ms → 1125ms...)
+            const delay = Math.min(500 * Math.pow(1.5, attempts), 3000);
+            setTimeout(() => {
+                this.pending.set(tabId, item);
+                if (!this.processing) {
+                    this.processQueue();
+                }
+            }, delay);
+
+        } catch (error) {
+            console.error("Error checking favicon:", error);
+        }
     }
-  }
 };
 
 /**
@@ -527,7 +527,7 @@ function sanitizeTabData(tab) {
         isCurrentlyAudible: false,
         audioStartTime: null
     };
-    
+
     return {
         id: tab.id,
         windowId: tab.windowId,
@@ -549,17 +549,17 @@ function sanitizeTabData(tab) {
  * @return {Promise<Object|null>} Tab object or null if not found
  */
 function findTabById(tabId) {
-  return new Promise((resolve) => {
-    chrome.tabs.get(tabId, (tab) => {
-      if (chrome.runtime.lastError) {
-        console.log(`Tab ${tabId} not found:`, chrome.runtime.lastError);
-        resolve(null);
-      } else {
-        console.log("Found tab:", tab);
-        resolve(tab);
-      }
+    return new Promise((resolve) => {
+        chrome.tabs.get(tabId, (tab) => {
+            if (chrome.runtime.lastError) {
+                console.log(`Tab ${tabId} not found:`, chrome.runtime.lastError);
+                resolve(null);
+            } else {
+                console.log("Found tab:", tab);
+                resolve(tab);
+            }
+        });
     });
-  });
 }
 
 /**
@@ -568,47 +568,47 @@ function findTabById(tabId) {
  * @param {Object} edge - Edge data with source and target tabs
  */
 async function updateGraphWithNewEdge(edge) {
-  console.log("Creating new edge:", edge);
-  
-  try {
-    const sourceTab = await findTabById(edge.source);
-    const targetTab = await findTabById(edge.target);
-    
-    if (sourceTab && targetTab) {
-      // Enhanced relationship model with detailed navigation metadata
-      browserState.tabRelationships.set(targetTab.id, {
-        referringTabId: sourceTab.id,
-        referringURL: sourceTab.url,
-        timestamp: Date.now(),
-        transitionType: edge.transitionType || "unknown",
-        transitionQualifiers: edge.transitionQualifiers || [],
-        linkText: edge.linkText || null,
-        isFormSubmission: edge.isFormSubmission || false,
-        previousTab: browserState.lastActive?.tabId !== sourceTab.id ? browserState.lastActive?.tabId : null,
-        interactionData: edge.interactionData || null
-      });
-      
-      // Store bidirectional reference - also track this on source tab
-      const sourceRelationships = browserState.tabRelationships.get(sourceTab.id) || {};
-      if (!sourceRelationships.childTabs) {
-        sourceRelationships.childTabs = [];
-      }
-      sourceRelationships.childTabs.push({
-        tabId: targetTab.id,
-        url: targetTab.url,
-        timestamp: Date.now(),
-        transitionType: edge.transitionType
-      });
-      browserState.tabRelationships.set(sourceTab.id, sourceRelationships);
-      
-      // Save state to persist relationship data
-      saveStateToStorage();
-      
-      console.log("Added enhanced tab relationship:", browserState.tabRelationships.get(targetTab.id));
+    console.log("Creating new edge:", edge);
+
+    try {
+        const sourceTab = await findTabById(edge.source);
+        const targetTab = await findTabById(edge.target);
+
+        if (sourceTab && targetTab) {
+            // Enhanced relationship model with detailed navigation metadata
+            browserState.tabRelationships.set(targetTab.id, {
+                referringTabId: sourceTab.id,
+                referringURL: sourceTab.url,
+                timestamp: Date.now(),
+                transitionType: edge.transitionType || "unknown",
+                transitionQualifiers: edge.transitionQualifiers || [],
+                linkText: edge.linkText || null,
+                isFormSubmission: edge.isFormSubmission || false,
+                previousTab: browserState.lastActive?.tabId !== sourceTab.id ? browserState.lastActive?.tabId : null,
+                interactionData: edge.interactionData || null
+            });
+
+            // Store bidirectional reference - also track this on source tab
+            const sourceRelationships = browserState.tabRelationships.get(sourceTab.id) || {};
+            if (!sourceRelationships.childTabs) {
+                sourceRelationships.childTabs = [];
+            }
+            sourceRelationships.childTabs.push({
+                tabId: targetTab.id,
+                url: targetTab.url,
+                timestamp: Date.now(),
+                transitionType: edge.transitionType
+            });
+            browserState.tabRelationships.set(sourceTab.id, sourceRelationships);
+
+            // Save state to persist relationship data
+            saveStateToStorage();
+
+            console.log("Added enhanced tab relationship:", browserState.tabRelationships.get(targetTab.id));
+        }
+    } catch (error) {
+        console.error("Error creating edge:", error);
     }
-  } catch (error) {
-    console.error("Error creating edge:", error);
-  }
 }
 
 /**
@@ -618,29 +618,29 @@ async function updateGraphWithNewEdge(edge) {
  * @param {boolean} isActive - Whether tab is currently active
  */
 function updateTabActivity(tabId, isActive) {
-  console.log("Updating tab timespent", tabId);
-  const now = Date.now();
-  const activity = browserState.tabActivityLog.get(tabId) || {
-    totalTimeSpent: 0,
-    firstSeen: now,
-    lastTouch: null
-  };
+    console.log("Updating tab timespent", tabId);
+    const now = Date.now();
+    const activity = browserState.tabActivityLog.get(tabId) || {
+        totalTimeSpent: 0,
+        firstSeen: now,
+        lastTouch: null
+    };
 
-  if (isActive) {
-    if (activity.lastTouch) {
-      const timeSpent = now - activity.lastTouch;
-      // Only count if above threshold to avoid counting quick tab switches
-      if (timeSpent > TAB_ACTIVITY.ACTIVE_THRESHOLD) {
-        activity.totalTimeSpent += timeSpent;
-      }
+    if (isActive) {
+        if (activity.lastTouch) {
+            const timeSpent = now - activity.lastTouch;
+            // Only count if above threshold to avoid counting quick tab switches
+            if (timeSpent > TAB_ACTIVITY.ACTIVE_THRESHOLD) {
+                activity.totalTimeSpent += timeSpent;
+            }
+        }
+        activity.lastTouch = now;
     }
-    activity.lastTouch = now;
-  }
 
-  browserState.tabActivityLog.set(tabId, activity);
-  
-  // Save state to persist activity data
-  saveStateToStorage();
+    browserState.tabActivityLog.set(tabId, activity);
+
+    // Save state to persist activity data
+    saveStateToStorage();
 }
 
 /**
@@ -648,13 +648,13 @@ function updateTabActivity(tabId, isActive) {
  * Retrieves recent browsing history and stores it for visualization
  */
 function updateHistory() {
-  chrome.history.search({ text: "", maxResults: 100 }, (results) => {
-      historyEntries = results;
-      chrome.storage.local.set({ historyEntries })
-          .catch(error => {
-              console.error("Error saving history entries:", error);
-          });
-  });
+    chrome.history.search({ text: "", maxResults: 100 }, (results) => {
+        historyEntries = results;
+        chrome.storage.local.set({ historyEntries })
+            .catch(error => {
+                console.error("Error saving history entries:", error);
+            });
+    });
 }
 
 /**
@@ -662,13 +662,13 @@ function updateHistory() {
  * Maintains a list of currently active tabs across all windows
  */
 function updateActiveTabs() {
-  chrome.tabs.query({ active: true }, (tabs) => {
-      activeTabs = tabs;
-      chrome.storage.local.set({ activeTabs })
-          .catch(error => {
-              console.error("Error saving active tabs:", error);
-          });
-  });
+    chrome.tabs.query({ active: true }, (tabs) => {
+        activeTabs = tabs;
+        chrome.storage.local.set({ activeTabs })
+            .catch(error => {
+                console.error("Error saving active tabs:", error);
+            });
+    });
 }
 
 /**
@@ -678,24 +678,24 @@ function updateActiveTabs() {
  * @return {string} Chrome favicon service URL
  */
 function getFaviconUrl(url) {
-  return `chrome://favicon/size/16@1x/${url}`;
+    return `chrome://favicon/size/16@1x/${url}`;
 }
 
 // Listen for history changes
 chrome.history.onVisited.addListener((result) => {
-  updateHistory();
-  // Add favicon information
-  const faviconUrl = getFaviconUrl(result.url);
-  console.log(`New history entry: ${result.url} with favicon: ${faviconUrl}`);
-  // Broadcast the new history entry to any listening tabs
-  sendMessageWithErrorHandling({
-      type: "newHistoryEntry",
-      data: {
-          url: result.url,
-          faviconUrl: faviconUrl,
-          timestamp: new Date().getTime()
-      }
-  });
+    updateHistory();
+    // Add favicon information
+    const faviconUrl = getFaviconUrl(result.url);
+    console.log(`New history entry: ${result.url} with favicon: ${faviconUrl}`);
+    // Broadcast the new history entry to any listening tabs
+    sendMessageWithErrorHandling({
+        type: "newHistoryEntry",
+        data: {
+            url: result.url,
+            faviconUrl: faviconUrl,
+            timestamp: new Date().getTime()
+        }
+    });
 });
 
 /**
@@ -707,15 +707,15 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         // Store previous active tab for dwell time tracking
         const previousTabId = browserState.lastActive?.tabId;
         const previousTabTimestamp = browserState.lastActive?.timestamp;
-        
+
         // If there was a previously active tab, calculate dwell time and update
         if (previousTabId && previousTabTimestamp) {
             const dwellTimeMs = Date.now() - previousTabTimestamp;
-            
+
             // Only update if dwell time is significant (> 500ms)
             if (dwellTimeMs > 500) {
                 console.log(`[DwellTime] Tab ${previousTabId} was active for ${dwellTimeMs}ms`);
-                
+
                 // Get the URL of the previously active tab
                 const prevTabData = browserState.tabs.get(previousTabId);
                 if (prevTabData && prevTabData.url) {
@@ -729,14 +729,14 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
                             dwellTimeMs: dwellTimeMs,
                             dwellTimeUpdated: Date.now()
                         };
-                        
+
                         // Replace the entry
                         history[0] = updatedEntry;
                         browserState.tabHistory.set(previousTabId, history);
-                        
+
                         // Save state to persist dwell time data
                         saveStateToStorage();
-                        
+
                         // Broadcast the dwell time update
                         sendMessageWithErrorHandling({
                             action: "dwellTimeUpdated",
@@ -749,23 +749,23 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
                 }
             }
         }
-        
+
         // Update the lastActive tracking
         browserState.lastActive = {
             tabId: activeInfo.tabId,
             windowId: activeInfo.windowId,
             timestamp: Date.now()
         };
-        
+
         // Track active time immediately
         updateTabActivity(activeInfo.tabId, true);
-        
+
         // Record tab focus event
         const focusEvent = {
             timestamp: Date.now(),
             type: 'focus'
         };
-        
+
         // Update or initialize tab activity log
         const activityLog = browserState.tabActivityLog.get(activeInfo.tabId) || {
             totalTimeSpent: 0,
@@ -773,26 +773,26 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
             lastTouch: null,
             events: []
         };
-        
+
         // Ensure events array exists
         if (!activityLog.events) {
             activityLog.events = [];
         }
-        
+
         // Add the focus event to the events array
         activityLog.events.push(focusEvent);
         browserState.tabActivityLog.set(activeInfo.tabId, activityLog);
-        
+
         // Log for debugging
         console.log(`Tab ${activeInfo.tabId} focus event recorded in background at ${new Date().toISOString()}`);
-        
+
         // Notify all tabs about this focus event
         sendMessageWithRateLimit({
-            action: "tabFocusEvent", 
+            action: "tabFocusEvent",
             tabId: activeInfo.tabId,
             event: focusEvent
         });
-        
+
         // Quick notification with just tab ID (lightweight)
         sendMessageWithRateLimit({
             type: "tabChanged",
@@ -801,17 +801,17 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
                 timestamp: Date.now()
             }
         });
-        
+
         // Debounce full tab data update to reduce overhead
         // Using global variable instead of window (which doesn't exist in service workers)
         if (typeof tabActivationTimeout !== 'undefined') {
             clearTimeout(tabActivationTimeout);
         }
-        
+
         tabActivationTimeout = setTimeout(() => {
             chrome.tabs.get(activeInfo.tabId, tab => {
                 if (chrome.runtime.lastError) return;
-                
+
                 const faviconUrl = getFaviconUrl(tab.url);
                 sendMessageWithRateLimit({
                     type: "tabFullyChanged",
@@ -835,7 +835,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
  */
 function handleContentUpdate(data, sender) {
     const { tabId, title, url, favIconUrl } = data;
-    
+
     console.log("Processing content update:", {
         tabId,
         title,
@@ -863,7 +863,7 @@ function handleContentUpdate(data, sender) {
             changeInfo: { title, url, favIconUrl },
             tab: tabData
         });
-        
+
         // Update collection
         const history = browserState.tabHistory.get(tabId) || [];
         history.push({
@@ -872,14 +872,14 @@ function handleContentUpdate(data, sender) {
             timestamp: Date.now()
         });
         browserState.tabHistory.set(tabId, history);
-        
+
         // Broadcast updates
         sendMessageWithErrorHandling({
             action: "tabHistoryUpdated",
             tabId,
             history
         });
-        
+
         // Broadcast specific dwell time update if available
         const dwellTimeMs = data.dwellTimeMs;
         if (dwellTimeMs) {
@@ -912,28 +912,28 @@ function detectNavigationType(tabId, url, changeInfo) {
 
     const history = browserState.tabHistory.get(tabId);
     const urlIndex = history.findIndex(entry => entry.url === url);
-    
+
     // Check if this is a back/forward navigation
     if (urlIndex >= 0) {
         const currentPos = history.findIndex(entry => entry.isCurrent);
-        
+
         // Already at this position - likely a refresh
         if (urlIndex === currentPos) return "refresh";
-        
+
         // Back or forward navigation
         return urlIndex < currentPos ? "backNavigation" : "forwardNavigation";
     }
-    
+
     // Check if this was from a link click (detected by content script)
-    const isLinkClick = browserState.recentClicks && 
-                        browserState.recentClicks[tabId] &&
-                        (Date.now() - browserState.recentClicks[tabId].timestamp < 2000);
-    
+    const isLinkClick = browserState.recentClicks &&
+        browserState.recentClicks[tabId] &&
+        (Date.now() - browserState.recentClicks[tabId].timestamp < 2000);
+
     // If no active link click in past 2 seconds, it's likely URL bar navigation
     if (!isLinkClick && changeInfo.transitionType === "typed") {
         return "urlBarNavigation";
     }
-    
+
     // Default to new navigation
     return "newNavigation";
 }
@@ -953,20 +953,20 @@ function detectURLBarNavigation(url, tabId) {
                 resolve(false);
                 return;
             }
-            
+
             // Get the most recent visit
             const latestVisit = visits[visits.length - 1];
-            
+
             // Check transition type - "typed" means URL bar input
             const isURLBar = latestVisit.transition === "typed";
-            
+
             console.log("Navigation transition detected:", {
                 url,
                 tabId,
                 transition: latestVisit.transition,
                 isURLBar
             });
-            
+
             resolve(isURLBar);
         });
     });
@@ -980,9 +980,9 @@ function detectURLBarNavigation(url, tabId) {
 function updateTabInWindows(tabData) {
     if (!tabData || !tabData.windowId) return;
     const tabId = tabData.id;
-    
+
     let windowFound = false;
-    
+
     // Update in windows collection
     browserState.windows.forEach((windowData, windowId) => {
         if (windowId === tabData.windowId) {
@@ -996,7 +996,7 @@ function updateTabInWindows(tabData) {
             }
         }
     });
-    
+
     // If window not found, create it
     if (!windowFound) {
         browserState.windows.set(tabData.windowId, {
@@ -1037,41 +1037,41 @@ function handleLinkContext(message, sender) {
         sourceDomain: sender.tab.url ? new URL(sender.tab.url).hostname : null,
         targetDomain: message.data.targetUrl ? new URL(message.data.targetUrl).hostname : null
     };
-    
+
     // Set as lastClickedLink for correlation with new tab creation events
     lastClickedLink = enrichedData;
-    
+
     // Ensure tabActivityLog is properly initialized
     if (!browserState.tabActivityLog.has(sender.tab.id)) {
         browserState.tabActivityLog.set(sender.tab.id, []);
     }
-    
+
     let activityLog = browserState.tabActivityLog.get(sender.tab.id);
-    
+
     // Verify that activityLog is an array, recreate if not
     if (!Array.isArray(activityLog)) {
         console.warn(`tabActivityLog for tab ${sender.tab.id} was not an array, resetting it`);
         activityLog = [];
         browserState.tabActivityLog.set(sender.tab.id, activityLog);
     }
-    
+
     // Add a detailed link_interaction event
     const linkEvent = {
         type: "link_interaction",
         timestamp: clickTimestamp,
         data: enrichedData
     };
-    
+
     activityLog.push(linkEvent);
     console.log(`Recorded link interaction in tab ${sender.tab.id}: ${enrichedData.linkText || enrichedData.targetUrl}`);
-    
+
     // Send this data to any listening components
     sendMessageWithErrorHandling({
         action: "linkInteractionRecorded",
         tabId: sender.tab.id,
         event: linkEvent
     });
-    
+
     // Clear lastClickedLink reference after 5 seconds if not used
     // This prevents memory leaks while giving enough time for correlation
     setTimeout(() => {
@@ -1087,128 +1087,128 @@ function handleLinkContext(message, sender) {
  * Links new tabs to their source tabs in the relationship graph
  */
 chrome.tabs.onCreated.addListener((tab) => {
-  // Get the last active tab before this creation
-  const previousActiveTab = browserState.lastActive?.tabId;
-  
-  if (tabsWithOpener.has(tab.id) && tab.openerTabId) {
-    const edge = {
-      source: tab.openerTabId,
-      target: tab.id,
-      type: "opener",
-      timestamp: Date.now(),
-    };
-    tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
-    updateGraphWithNewEdge(edge);
-    tabsWithOpener.delete(tab.id); // Clean up the set
-  } else if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
-    // This tab was created from a link click we tracked
-    // Determine a more specific context based on the interaction
-    let intentContext = "new_tab"; // Default
-    
-    if (lastClickedLink.interactionType === "middle_click" || lastClickedLink.interactionType === "ctrl_click") {
-      intentContext = "background_reading";
-    } else if (lastClickedLink.sourceElementType === "button" && lastClickedLink.linkText?.toLowerCase().includes("sign in")) {
-      intentContext = "authentication";
-    } else if (lastClickedLink.sourceElementType === "button" && 
-              (lastClickedLink.linkText?.toLowerCase().includes("search") || 
-               lastClickedLink.linkText?.toLowerCase().includes("find"))) {
-      intentContext = "search_action";
+    // Get the last active tab before this creation
+    const previousActiveTab = browserState.lastActive?.tabId;
+
+    if (tabsWithOpener.has(tab.id) && tab.openerTabId) {
+        const edge = {
+            source: tab.openerTabId,
+            target: tab.id,
+            type: "opener",
+            timestamp: Date.now(),
+        };
+        tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
+        updateGraphWithNewEdge(edge);
+        tabsWithOpener.delete(tab.id); // Clean up the set
+    } else if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
+        // This tab was created from a link click we tracked
+        // Determine a more specific context based on the interaction
+        let intentContext = "new_tab"; // Default
+
+        if (lastClickedLink.interactionType === "middle_click" || lastClickedLink.interactionType === "ctrl_click") {
+            intentContext = "background_reading";
+        } else if (lastClickedLink.sourceElementType === "button" && lastClickedLink.linkText?.toLowerCase().includes("sign in")) {
+            intentContext = "authentication";
+        } else if (lastClickedLink.sourceElementType === "button" &&
+            (lastClickedLink.linkText?.toLowerCase().includes("search") ||
+                lastClickedLink.linkText?.toLowerCase().includes("find"))) {
+            intentContext = "search_action";
+        }
+
+        // Detect if this might be a navigational action (menu, navbar, etc.)
+        if (lastClickedLink.sourceElementType === "nav" ||
+            lastClickedLink.sourceElementType === "menu" ||
+            lastClickedLink.sourceUrl === tab.pendingUrl.split("#")[0]) { // Same page but different anchor
+            intentContext = "site_navigation";
+        }
+
+        // Check if URL seems to be a redirect
+        if (lastClickedLink.sourceUrl && tab.pendingUrl &&
+            isLikelyRedirect(lastClickedLink.sourceUrl, tab.pendingUrl)) {
+            intentContext = "automatic_redirect";
+        }
+
+        // Log the detected intent context for debugging
+        console.log(`[UserIntent] Classified tab creation as '${intentContext}' based on:`, {
+            linkText: lastClickedLink.linkText,
+            elementType: lastClickedLink.sourceElementType,
+            interactionType: lastClickedLink.interactionType,
+            redirect: isLikelyRedirect(lastClickedLink.sourceUrl, tab.pendingUrl)
+        });
+
+        const edge = {
+            source: lastClickedLink.sourceTabId,
+            target: tab.id,
+            type: "link-click",
+            text: lastClickedLink.text,
+            linkText: lastClickedLink.linkText,
+            sourceUrl: lastClickedLink.sourceUrl,
+            targetUrl: tab.pendingUrl,
+            timestamp: lastClickedLink.timestamp,
+            openContext: intentContext,
+            transitionType: "link",
+            isFormSubmission: lastClickedLink.isFormSubmission,
+            formData: lastClickedLink.formData,
+            previousTab: previousActiveTab !== lastClickedLink.sourceTabId ? previousActiveTab : null,
+            sourceElementType: lastClickedLink.sourceElementType,
+            interactionData: {
+                interactionType: lastClickedLink.interactionType,
+                sourceTitle: lastClickedLink.sourceTitle
+            }
+        };
+
+        tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
+        updateGraphWithNewEdge(edge);
+        lastClickedLink = null; // Clear after use
+    } else {
+        // For tabs created without a detected link click
+        // Determine a more specific context based on tab properties
+        let intentContext = "user_command"; // Default
+
+        // Analyze how this tab was created
+        if (tab.openerTabId && previousActiveTab !== tab.openerTabId) {
+            // Tab was opened programmatically by a website
+            intentContext = "site_initiated";
+        } else if (tab.pendingUrl === "chrome://newtab/" || tab.pendingUrl === "") {
+            // Likely opened via keyboard shortcut or new tab button
+            intentContext = "explicit_new_tab";
+        } else if (tab.pendingUrl && tab.pendingUrl.startsWith("chrome://")) {
+            // Browser UI navigation
+            intentContext = "browser_ui_navigation";
+        } else if (tab.pendingUrl && tab.pendingUrl.includes("extension")) {
+            // Extension related
+            intentContext = "extension_action";
+        }
+
+        // Log the detected intent context for non-link clicks
+        console.log(`[UserIntent] Classified non-link tab creation as '${intentContext}' based on:`, {
+            pendingUrl: tab.pendingUrl || "(empty)",
+            openerTabId: tab.openerTabId,
+            isChromePage: tab.pendingUrl?.startsWith("chrome://"),
+            isExtension: tab.pendingUrl?.includes("extension")
+        });
+
+        const edge = {
+            target: tab.id,
+            type: "new_tab_command",
+            timestamp: Date.now(),
+            openContext: intentContext,
+            transitionType: "generated",
+            previousTab: previousActiveTab
+        };
+
+        // If we have a last active tab, consider it the source
+        if (previousActiveTab) {
+            edge.source = previousActiveTab;
+            tabEdges.set(`${previousActiveTab}-${tab.id}`, edge);
+            updateGraphWithNewEdge(edge);
+        }
     }
-    
-    // Detect if this might be a navigational action (menu, navbar, etc.)
-    if (lastClickedLink.sourceElementType === "nav" ||
-        lastClickedLink.sourceElementType === "menu" ||
-        lastClickedLink.sourceUrl === tab.pendingUrl.split("#")[0]) { // Same page but different anchor
-      intentContext = "site_navigation";
-    }
-    
-    // Check if URL seems to be a redirect
-    if (lastClickedLink.sourceUrl && tab.pendingUrl && 
-        isLikelyRedirect(lastClickedLink.sourceUrl, tab.pendingUrl)) {
-      intentContext = "automatic_redirect";
-    }
-    
-    // Log the detected intent context for debugging
-    console.log(`[UserIntent] Classified tab creation as '${intentContext}' based on:`, {
-      linkText: lastClickedLink.linkText,
-      elementType: lastClickedLink.sourceElementType,
-      interactionType: lastClickedLink.interactionType,
-      redirect: isLikelyRedirect(lastClickedLink.sourceUrl, tab.pendingUrl)
+
+    sendMessageWithRateLimit({
+        action: "tabCreated",
+        tab: tab
     });
-    
-    const edge = {
-      source: lastClickedLink.sourceTabId,
-      target: tab.id,
-      type: "link-click",
-      text: lastClickedLink.text,
-      linkText: lastClickedLink.linkText,
-      sourceUrl: lastClickedLink.sourceUrl,
-      targetUrl: tab.pendingUrl,
-      timestamp: lastClickedLink.timestamp,
-      openContext: intentContext,
-      transitionType: "link",
-      isFormSubmission: lastClickedLink.isFormSubmission,
-      formData: lastClickedLink.formData,
-      previousTab: previousActiveTab !== lastClickedLink.sourceTabId ? previousActiveTab : null,
-      sourceElementType: lastClickedLink.sourceElementType,
-      interactionData: {
-        interactionType: lastClickedLink.interactionType,
-        sourceTitle: lastClickedLink.sourceTitle
-      }
-    };
-    
-    tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
-    updateGraphWithNewEdge(edge);
-    lastClickedLink = null; // Clear after use
-  } else {
-    // For tabs created without a detected link click
-    // Determine a more specific context based on tab properties
-    let intentContext = "user_command"; // Default
-    
-    // Analyze how this tab was created
-    if (tab.openerTabId && previousActiveTab !== tab.openerTabId) {
-      // Tab was opened programmatically by a website
-      intentContext = "site_initiated";
-    } else if (tab.pendingUrl === "chrome://newtab/" || tab.pendingUrl === "") {
-      // Likely opened via keyboard shortcut or new tab button
-      intentContext = "explicit_new_tab";
-    } else if (tab.pendingUrl && tab.pendingUrl.startsWith("chrome://")) {
-      // Browser UI navigation
-      intentContext = "browser_ui_navigation";
-    } else if (tab.pendingUrl && tab.pendingUrl.includes("extension")) {
-      // Extension related
-      intentContext = "extension_action";
-    }
-    
-    // Log the detected intent context for non-link clicks
-    console.log(`[UserIntent] Classified non-link tab creation as '${intentContext}' based on:`, {
-      pendingUrl: tab.pendingUrl || "(empty)",
-      openerTabId: tab.openerTabId,
-      isChromePage: tab.pendingUrl?.startsWith("chrome://"),
-      isExtension: tab.pendingUrl?.includes("extension")
-    });
-    
-    const edge = {
-      target: tab.id,
-      type: "new_tab_command",
-      timestamp: Date.now(),
-      openContext: intentContext,
-      transitionType: "generated",
-      previousTab: previousActiveTab
-    };
-    
-    // If we have a last active tab, consider it the source
-    if (previousActiveTab) {
-      edge.source = previousActiveTab;
-      tabEdges.set(`${previousActiveTab}-${tab.id}`, edge);
-      updateGraphWithNewEdge(edge);
-    }
-  }
-  
-  sendMessageWithRateLimit({
-    action: "tabCreated",
-    tab: tab
-  });
 });
 
 /**
@@ -1232,7 +1232,7 @@ chrome.windows.onCreated.addListener(async (window) => {
 
         try {
             const [tab] = await chrome.tabs.query({ windowId: window.id });
-            
+
             if (!tab || (!tab.url && !tab.pendingUrl)) {
                 // Wait 100ms and try again
                 await new Promise(resolve => setTimeout(resolve, 100));
@@ -1251,9 +1251,9 @@ chrome.windows.onCreated.addListener(async (window) => {
                     timestamp: lastClickedLink.timestamp,
                     openContext: "new_window"
                 };
-                
+
                 tabEdges.set(`${lastClickedLink.sourceTabId}-${tab.id}`, edge);
-                
+
                 // Update relationships
                 browserState.tabRelationships.set(tab.id, {
                     referringTabId: lastClickedLink.sourceTabId,
@@ -1307,7 +1307,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     const removedTab = browserState.tabs.get(tabId);
     const tabHistoryData = browserState.tabHistory.get(tabId);
     const relationships = browserState.tabRelationships.get(tabId);
-    
+
     // Handle any ongoing audio tracking before cleanup
     const audioData = browserState.tabAudioTracking.get(tabId);
     if (audioData && audioData.isCurrentlyAudible && audioData.audioStartTime) {
@@ -1400,37 +1400,37 @@ let pendingLinkData = {};
  * @param {Object} data - Navigation event data
  */
 function updateBrowserState(data) {
-  // Dispatch the event to browser state via notifyChange
-  if (browserState && browserState.notifyChange) {
-    browserState.notifyChange('navigation', data);
-    console.debug('Browser state updated with navigation data', data);
-  } else {
-    console.warn('browserState.notifyChange not available, skipping update', data);
-  }
+    // Dispatch the event to browser state via notifyChange
+    if (browserState && browserState.notifyChange) {
+        browserState.notifyChange('navigation', data);
+        console.debug('Browser state updated with navigation data', data);
+    } else {
+        console.warn('browserState.notifyChange not available, skipping update', data);
+    }
 }
 
 // Add or modify the navigation event listener
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-  // Ignore subframe navigations
-  if (details.frameId !== 0) return;
-  
-  const linkData = pendingLinkData[details.tabId];
-  if (linkData && linkData.href === details.url) {
-    console.debug(`Navigation matched with link data for tab ${details.tabId}`);
-    
-    // Update state with combined data
-    updateBrowserState({
-      type: "LINK_NAVIGATION",
-      tabId: details.tabId,
-      url: details.url,
-      linkText: linkData.text,
-      title: linkData.title || "",
-      timestamp: linkData.timestamp
-    });
-    
-    // Clean up after using
-    delete pendingLinkData[details.tabId];
-  }
+    // Ignore subframe navigations
+    if (details.frameId !== 0) return;
+
+    const linkData = pendingLinkData[details.tabId];
+    if (linkData && linkData.href === details.url) {
+        console.debug(`Navigation matched with link data for tab ${details.tabId}`);
+
+        // Update state with combined data
+        updateBrowserState({
+            type: "LINK_NAVIGATION",
+            tabId: details.tabId,
+            url: details.url,
+            linkText: linkData.text,
+            title: linkData.title || "",
+            timestamp: linkData.timestamp
+        });
+
+        // Clean up after using
+        delete pendingLinkData[details.tabId];
+    }
 });
 
 // Listen for tab audio state changes
@@ -1442,13 +1442,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         tabAudible: tab.audible,
         changeInfoAudible: changeInfo.audible
     });
-    
+
     // Track audio state changes
     if (changeInfo.audible !== undefined) {
         console.log(`🔊 [AudioTracking] Tab ${tabId} audible state changed to: ${changeInfo.audible}`);
         updateAudioTracking(tabId, changeInfo.audible);
     }
-    
+
     // Also initialize audio tracking for new tabs
     if (changeInfo.status === 'complete' && tab.audible !== undefined) {
         const existingAudioData = browserState.tabAudioTracking.get(tabId);
@@ -1464,14 +1464,14 @@ function updateTabMetadata(tabId, changes) {
     // Get existing tab data
     const tabData = browserState.tabs.get(tabId);
     if (!tabData) return;
-    
+
     // Update fields that changed
     let hasChanges = false;
-    
+
     if (changes.title && changes.title !== tabData.title) {
         tabData.title = changes.title;
         hasChanges = true;
-        
+
         // NEW CODE: If title updates but no favicon, try to fetch favicon
         // This helps with typed navigation where title comes first
         if (!tabData.favIconUrl && tabData.url) {
@@ -1479,7 +1479,7 @@ function updateTabMetadata(tabId, changes) {
             setTimeout(() => {
                 chrome.tabs.get(tabId, (tab) => {
                     if (chrome.runtime.lastError) return;
-                    
+
                     if (tab.favIconUrl) {
                         updateTabMetadata(tabId, { favIconUrl: tab.favIconUrl });
                     } else {
@@ -1491,11 +1491,11 @@ function updateTabMetadata(tabId, changes) {
             }, 300); // Shorter delay since title already updated
         }
     }
-    
+
     if (changes.favIconUrl && changes.favIconUrl !== tabData.favIconUrl) {
         tabData.favIconUrl = changes.favIconUrl;
         hasChanges = true;
-        
+
         // Specifically notify about favicon changes
         sendMessageWithErrorHandling({
             action: "tabFaviconUpdated",
@@ -1503,17 +1503,17 @@ function updateTabMetadata(tabId, changes) {
             favIconUrl: changes.favIconUrl
         });
     }
-    
+
     if (changes.status === "complete" && tabData.status !== "complete") {
         tabData.status = "complete";
         tabData.loadCompleted = Date.now();
         hasChanges = true;
     }
-    
+
     if (hasChanges) {
         tabData.lastUpdate = Date.now();
         browserState.tabs.set(tabId, tabData);
-        
+
         // Only notify for significant changes to reduce message traffic
         sendMessageWithErrorHandling({
             action: "tabMetadataUpdated",
@@ -1526,11 +1526,11 @@ function updateTabMetadata(tabId, changes) {
 // New function to process link navigations
 function processLinkNavigation(tabData, details, baseEdge) {
     const { tabId, url } = details;
-    
+
     // Check for pending link data from content scripts
     const linkData = pendingLinkData[tabId];
     const recentClick = browserState.recentClicks?.[tabId];
-    
+
     // If we have pending link data that matches this navigation
     if (linkData && (linkData.href === url || linkData.targetUrl === url)) {
         const edge = {
@@ -1541,19 +1541,19 @@ function processLinkNavigation(tabData, details, baseEdge) {
             isFormSubmission: !!linkData.formData,
             formData: linkData.formData
         };
-        
+
         // If we know the source tab, create an edge
         if (linkData.sourceTabId && linkData.sourceTabId !== tabId) {
             edge.source = linkData.sourceTabId;
             edge.sourceUrl = linkData.sourceUrl;
-            
+
             tabEdges.set(`${linkData.sourceTabId}-${tabId}-${Date.now()}`, edge);
             updateGraphWithNewEdge(edge);
         }
-        
+
         // Clear used data
         delete pendingLinkData[tabId];
-    } 
+    }
     // Use recentClicks as fallback
     else if (recentClick && (recentClick.targetUrl === url || url.includes(recentClick.targetUrl))) {
         const edge = {
@@ -1563,18 +1563,18 @@ function processLinkNavigation(tabData, details, baseEdge) {
             source: recentClick.sourceTabId,
             sourceUrl: recentClick.sourceUrl
         };
-        
+
         tabEdges.set(`${recentClick.sourceTabId}-${tabId}-${Date.now()}`, edge);
         updateGraphWithNewEdge(edge);
-        
+
         // Clear used data
         delete browserState.recentClicks[tabId];
     }
-    
+
     // Update tab activity log with this navigation
     const activity = browserState.tabActivityLog.get(tabId) || { navigations: [] };
     if (!activity.navigations) activity.navigations = [];
-    
+
     activity.navigations.push({
         type: "link_navigation",
         url: url,
@@ -1582,7 +1582,7 @@ function processLinkNavigation(tabData, details, baseEdge) {
         transitionType: details.transitionType,
         transitionQualifiers: details.transitionQualifiers || []
     });
-    
+
     browserState.tabActivityLog.set(tabId, activity);
 }
 
@@ -1608,9 +1608,15 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         }
         return;
     }
-    
+
     console.log(`Tab updated: ${tabId}`, changeInfo);
-    
+
+    // Track audio state changes
+    if (changeInfo.audible !== undefined) {
+        console.log(`🔊 [AudioTracking] Tab ${tabId} audible state changed to: ${changeInfo.audible}`);
+        updateAudioTracking(tabId, changeInfo.audible);
+    }
+
     // Always check favicon for ANY tab update in an existing tab
     // This ensures we don't miss favicon updates for any navigation type
     if (browserState.tabs.has(tabId) && tab.url && !tab.favIconUrl) {
@@ -1618,12 +1624,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         faviconQueue.enqueue(tabId, tab.url);
         faviconQueue.enqueue(tabId, tab.url);
     }
-    
+
     // Handle different update types appropriately
     if (changeInfo.url) {
         // URL changes (that weren't caught by webNavigation)
         handleUrlChange(tabId, changeInfo, tab);
-    } 
+    }
     else if (changeInfo.title || changeInfo.favIconUrl) {
         // Metadata changes only
         updateTabMetadata(tabId, changeInfo);
@@ -1638,7 +1644,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // eslint-disable-next-line no-unused-vars
 function debounce(func, wait) {
     let timeout;
-    return function(...args) {
+    return function (...args) {
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(this, args), wait);
     };
@@ -1651,19 +1657,19 @@ let lastMessageReset = Date.now();
 
 function sendMessageWithRateLimit(message) {
     const now = Date.now();
-    
+
     // Reset counter every second
     if (now - lastMessageReset > 1000) {
         messageCounter = 0;
         lastMessageReset = now;
     }
-    
+
     // Check rate limit
     if (messageCounter >= MESSAGE_RATE_LIMIT) {
         console.log("Message rate limit exceeded, dropping:", message.action);
         return Promise.resolve();
     }
-    
+
     messageCounter++;
     return sendMessageWithErrorHandling(message);
 }
@@ -1691,45 +1697,45 @@ function handleUrlChange(tabId, changeInfo, tab) {
 const webRequestData = new Map();
 
 chrome.webRequest.onBeforeSendHeaders.addListener(
-  (details) => {
-    const { requestId, url, timeStamp, method, type, initiator, requestHeaders } = details;
-    const referer = requestHeaders.find(h => h.name.toLowerCase() === 'referer')?.value;
-    webRequestData.set(requestId, {
-      url,
-      timeStamp,
-      method,
-      type,
-      initiator,
-      referer,
-      redirects: [],
-    });
-  },
-  { urls: ['<all_urls>'], types: ['main_frame'] },
-  ['requestHeaders']
+    (details) => {
+        const { requestId, url, timeStamp, method, type, initiator, requestHeaders } = details;
+        const referer = requestHeaders.find(h => h.name.toLowerCase() === 'referer')?.value;
+        webRequestData.set(requestId, {
+            url,
+            timeStamp,
+            method,
+            type,
+            initiator,
+            referer,
+            redirects: [],
+        });
+    },
+    { urls: ['<all_urls>'], types: ['main_frame'] },
+    ['requestHeaders']
 );
 
 chrome.webRequest.onBeforeRedirect.addListener(
-  (details) => {
-    const { requestId, redirectUrl, timeStamp } = details;
-    const request = webRequestData.get(requestId);
-    if (request) {
-      request.redirects.push({ url: redirectUrl, timeStamp });
-    }
-  },
-  { urls: ['<all_urls>'], types: ['main_frame'] }
+    (details) => {
+        const { requestId, redirectUrl, timeStamp } = details;
+        const request = webRequestData.get(requestId);
+        if (request) {
+            request.redirects.push({ url: redirectUrl, timeStamp });
+        }
+    },
+    { urls: ['<all_urls>'], types: ['main_frame'] }
 );
 
 // Clean, focused implementation for web navigation events
 chrome.webNavigation.onCommitted.addListener((details) => {
     // Only process main frame navigations
     if (details.frameId !== 0) return;
-    
+
     const { tabId, url, transitionType, transitionQualifiers } = details;
     const webRequestEntry = webRequestData.get(details.requestId);
-    
+
     // Skip chrome:// URLs and extension pages
     if (url.startsWith("chrome://") || url.startsWith(chrome.runtime.getURL(""))) return;
-    
+
     // Create a unique ID for this navigation and mark as processed
     const navigationId = `${tabId}-${url}-${Date.now()}`;
     processedNavigations.set(navigationId, {
@@ -1738,14 +1744,14 @@ chrome.webNavigation.onCommitted.addListener((details) => {
         type: transitionType,
         qualifiers: transitionQualifiers
     });
-    
+
     // Get tab data then record the navigation
     chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError) {
             console.error("Error getting tab:", chrome.runtime.lastError);
             return;
         }
-        
+
         // Record the navigation - no edge creation here
         recordNavigation({
             tabId,
@@ -1771,17 +1777,17 @@ function handleLoadComplete(tabId, tab) {
         setTimeout(() => {
             chrome.tabs.get(tabId, (updatedTab) => {
                 if (chrome.runtime.lastError) return;
-                
+
                 if (updatedTab.favIconUrl) {
                     // Now we have the favicon, update it
                     updateTabMetadata(tabId, { favIconUrl: updatedTab.favIconUrl });
-                    
+
                     // Also ensure the tab object in browserState has the favicon
                     const tabData = browserState.tabs.get(tabId);
                     if (tabData) {
                         tabData.favIconUrl = updatedTab.favIconUrl;
                         browserState.tabs.set(tabId, tabData);
-                        
+
                         // Explicit notification
                         sendMessageWithErrorHandling({
                             action: "tabFaviconUpdated",
@@ -1793,12 +1799,12 @@ function handleLoadComplete(tabId, tab) {
                     // If still no favicon, use a chrome://favicon URL as fallback
                     const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(tab.url)}`;
                     updateTabMetadata(tabId, { favIconUrl: fallbackFavicon });
-                    
+
                     const tabData = browserState.tabs.get(tabId);
                     if (tabData) {
                         tabData.favIconUrl = fallbackFavicon;
                         browserState.tabs.set(tabId, tabData);
-                        
+
                         sendMessageWithErrorHandling({
                             action: "tabFaviconUpdated",
                             tabId,
@@ -1814,22 +1820,22 @@ function handleLoadComplete(tabId, tab) {
 // Add this after your chrome.tabs.onUpdated listener
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     console.log(`Tab ${removedTabId} was replaced by ${addedTabId}`);
-    
+
     // Get the new tab data
     chrome.tabs.get(addedTabId, (tab) => {
         if (chrome.runtime.lastError) return;
-        
+
         // Check if favicon was lost during replacement
         if (!tab.favIconUrl && tab.url) {
             // First try immediately with a fallback
             const fallbackFavicon = `chrome://favicon/size/16@1x/${encodeURIComponent(tab.url)}`;
             updateTabMetadata(addedTabId, { favIconUrl: fallbackFavicon });
-            
+
             // Then try again after a delay to get the real favicon
             setTimeout(() => {
                 chrome.tabs.get(addedTabId, (updatedTab) => {
                     if (chrome.runtime.lastError) return;
-                    
+
                     if (updatedTab.favIconUrl) {
                         updateTabMetadata(addedTabId, { favIconUrl: updatedTab.favIconUrl });
                     }
@@ -1839,7 +1845,7 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
             // Make sure we update the favicon if available
             updateTabMetadata(addedTabId, { favIconUrl: tab.favIconUrl });
         }
-        
+
         // Update browserState to reflect the replaced tab
         const tabData = browserState.tabs.get(removedTabId);
         if (tabData) {
@@ -1854,11 +1860,11 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
                 active: tab.active,
                 lastUpdate: Date.now()
             });
-            
+
             // Clean up the old tab
             browserState.tabs.delete(removedTabId);
         }
-        
+
         // Notify that tab was replaced
         sendMessageWithErrorHandling({
             action: "tabReplaced",
@@ -1879,6 +1885,45 @@ function checkAndUpdateFavicon(tabId, url) {
 
 const tabsWithOpener = new Set();
 
+// Listen for new tabs to capture opener relationships immediately
+chrome.tabs.onCreated.addListener((tab) => {
+    if (tab.openerTabId) {
+        console.log(`Tab created: ${tab.id} (opener: ${tab.openerTabId})`);
+        tabsWithOpener.add(tab.id);
+
+        // Find the opener tab to get its URL
+        chrome.tabs.get(tab.openerTabId, (openerTab) => {
+            if (!chrome.runtime.lastError && openerTab) {
+                // Update relationship map
+                browserState.tabRelationships.set(tab.id, {
+                    referringTabId: openerTab.id,
+                    referringURL: openerTab.url,
+                    timestamp: Date.now(),
+                    transitionType: 'opener',
+                    // Inherit previous tab from opener's active state or use opener itself
+                    previousTab: openerTab.id
+                });
+
+                // Also update the parent's record of this child
+                const parentRelationships = browserState.tabRelationships.get(openerTab.id) || {};
+                if (!parentRelationships.childTabs) {
+                    parentRelationships.childTabs = [];
+                }
+                parentRelationships.childTabs.push({
+                    tabId: tab.id,
+                    url: tab.url || 'pending',
+                    timestamp: Date.now(),
+                    transitionType: 'opener'
+                });
+                browserState.tabRelationships.set(openerTab.id, parentRelationships);
+
+                // Persist immediately
+                saveStateToStorage();
+            }
+        });
+    }
+});
+
 // Message handler for various actions
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'hasOpener') {
@@ -1892,103 +1937,103 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('🔍 Message action:', message.action);
     console.log('🔍 Message type:', message.type);
     console.log('🔍 Sender tab ID:', sender.tab?.id);
-    
+
     // Handle ping requests for testing
     if (message.action === 'ping') {
-      console.log('Ping received from debug tools');
-      sendResponse({ success: true, message: 'pong', timestamp: Date.now() });
-      return true;
+        console.log('Ping received from debug tools');
+        sendResponse({ success: true, message: 'pong', timestamp: Date.now() });
+        return true;
     }
-    
+
     // Handle debug state requests
     if (message.action === 'getDebugState') {
-      console.log('✅ getDebugState action detected!');
-      console.log('Message received (getDebugState) from tab', sender.tab.id);
-      console.log('browserState available:', !!browserState);
-      console.log('browserState properties:', browserState ? Object.keys(browserState) : 'null');
-      
-      // Prepare the response with detailed logging
-      const stateToSend = {
-        tabs: browserState.tabs ? [...browserState.tabs.values()] : [],
-        windows: browserState.windows ? [...browserState.windows.values()] : [],
-        tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
-        tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
-        tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
-        tabAudioTracking: browserState.tabAudioTracking ? [...browserState.tabAudioTracking.entries()] : [],
-        graphData: browserState.graphData || { summaries: {}, customEdges: [], nodePositions: {} }
-      };
-      
-      // Log what we're sending
-      console.log('Sending debug state response with:', {
-        'tabHistory': stateToSend.tabHistory ? `present (${Array.isArray(stateToSend.tabHistory) ? 'array' : typeof stateToSend.tabHistory})` : 'missing',
-        'tabRelationships': stateToSend.tabRelationships ? `present (${Array.isArray(stateToSend.tabRelationships) ? 'array' : typeof stateToSend.tabRelationships})` : 'missing',
-        'tabActivityLog': stateToSend.tabActivityLog ? `present (${Array.isArray(stateToSend.tabActivityLog) ? 'array' : typeof stateToSend.tabActivityLog})` : 'missing',
-        'graphData': stateToSend.graphData ? 'present' : 'missing',
-        'tabs count': stateToSend.tabs ? (Array.isArray(stateToSend.tabs) ? stateToSend.tabs.length : 'not array') : 'missing',
-        'windows count': stateToSend.windows ? (Array.isArray(stateToSend.windows) ? stateToSend.windows.length : 'not array') : 'missing'
-      });
-      
-      // Convert Maps to Arrays for serialization if needed
-      if (browserState.tabHistory instanceof Map) {
-        console.log('Converting tabHistory Map to Array for serialization');
-        const historyArray = [];
-        browserState.tabHistory.forEach((entries, tabId) => {
-          entries.forEach(entry => {
-            historyArray.push({
-              tabId: tabId,
-              ...entry
-            });
-          });
+        console.log('✅ getDebugState action detected!');
+        console.log('Message received (getDebugState) from tab', sender.tab.id);
+        console.log('browserState available:', !!browserState);
+        console.log('browserState properties:', browserState ? Object.keys(browserState) : 'null');
+
+        // Prepare the response with detailed logging
+        const stateToSend = {
+            tabs: browserState.tabs ? [...browserState.tabs.values()] : [],
+            windows: browserState.windows ? [...browserState.windows.values()] : [],
+            tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
+            tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
+            tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
+            tabAudioTracking: browserState.tabAudioTracking ? [...browserState.tabAudioTracking.entries()] : [],
+            graphData: browserState.graphData || { summaries: {}, customEdges: [], nodePositions: {} }
+        };
+
+        // Log what we're sending
+        console.log('Sending debug state response with:', {
+            'tabHistory': stateToSend.tabHistory ? `present (${Array.isArray(stateToSend.tabHistory) ? 'array' : typeof stateToSend.tabHistory})` : 'missing',
+            'tabRelationships': stateToSend.tabRelationships ? `present (${Array.isArray(stateToSend.tabRelationships) ? 'array' : typeof stateToSend.tabRelationships})` : 'missing',
+            'tabActivityLog': stateToSend.tabActivityLog ? `present (${Array.isArray(stateToSend.tabActivityLog) ? 'array' : typeof stateToSend.tabActivityLog})` : 'missing',
+            'graphData': stateToSend.graphData ? 'present' : 'missing',
+            'tabs count': stateToSend.tabs ? (Array.isArray(stateToSend.tabs) ? stateToSend.tabs.length : 'not array') : 'missing',
+            'windows count': stateToSend.windows ? (Array.isArray(stateToSend.windows) ? stateToSend.windows.length : 'not array') : 'missing'
         });
-        stateToSend.tabHistory = historyArray;
-      }
-      
-      if (browserState.tabRelationships instanceof Map) {
-        console.log('Converting tabRelationships Map to Array for serialization');
-        const relationshipsArray = [];
-        browserState.tabRelationships.forEach((relationship, tabId) => {
-          relationshipsArray.push({
-            tabId: tabId,
-            ...relationship
-          });
-        });
-        stateToSend.tabRelationships = relationshipsArray;
-      }
-      
-      if (browserState.tabActivityLog instanceof Map) {
-        console.log('Converting tabActivityLog Map to Array for serialization');
-        const activityArray = [];
-        browserState.tabActivityLog.forEach((activities, tabId) => {
-          if (Array.isArray(activities)) {
-            activities.forEach(activity => {
-              activityArray.push({
-                tabId: tabId,
-                ...activity
-              });
+
+        // Convert Maps to Arrays for serialization if needed
+        if (browserState.tabHistory instanceof Map) {
+            console.log('Converting tabHistory Map to Array for serialization');
+            const historyArray = [];
+            browserState.tabHistory.forEach((entries, tabId) => {
+                entries.forEach(entry => {
+                    historyArray.push({
+                        tabId: tabId,
+                        ...entry
+                    });
+                });
             });
-          } else if (activities && typeof activities === 'object') {
-            activityArray.push({
-              tabId: tabId,
-              ...activities
+            stateToSend.tabHistory = historyArray;
+        }
+
+        if (browserState.tabRelationships instanceof Map) {
+            console.log('Converting tabRelationships Map to Array for serialization');
+            const relationshipsArray = [];
+            browserState.tabRelationships.forEach((relationship, tabId) => {
+                relationshipsArray.push({
+                    tabId: tabId,
+                    ...relationship
+                });
             });
-          }
-        });
-        stateToSend.tabActivityLog = activityArray;
-      }
-      
-      const response = {
-        success: true,
-        state: stateToSend
-      };
-      
-      console.log('Sending response to debug tools:', response);
-      console.log('Response keys:', Object.keys(response));
-      console.log('State keys:', Object.keys(stateToSend));
-      
-      sendResponse(response);
-      return true; // Keep the message channel open for async response
+            stateToSend.tabRelationships = relationshipsArray;
+        }
+
+        if (browserState.tabActivityLog instanceof Map) {
+            console.log('Converting tabActivityLog Map to Array for serialization');
+            const activityArray = [];
+            browserState.tabActivityLog.forEach((activities, tabId) => {
+                if (Array.isArray(activities)) {
+                    activities.forEach(activity => {
+                        activityArray.push({
+                            tabId: tabId,
+                            ...activity
+                        });
+                    });
+                } else if (activities && typeof activities === 'object') {
+                    activityArray.push({
+                        tabId: tabId,
+                        ...activities
+                    });
+                }
+            });
+            stateToSend.tabActivityLog = activityArray;
+        }
+
+        const response = {
+            success: true,
+            state: stateToSend
+        };
+
+        console.log('Sending response to debug tools:', response);
+        console.log('Response keys:', Object.keys(response));
+        console.log('State keys:', Object.keys(stateToSend));
+
+        sendResponse(response);
+        return true; // Keep the message channel open for async response
     }
-    
+
     // Handle clearing graph data
     if (message.action === 'clearGraphData') {
         browserState.graphData = { nodePositions: {}, customEdges: [], summaries: {} };
@@ -1996,7 +2041,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
         return true;
     }
-    
+
     // Handle clearing history data
     if (message.action === 'clearHistoryData') {
         browserState.tabHistory = [];
@@ -2004,7 +2049,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
         return true;
     }
-    
+
     // Handle clearing activity log
     if (message.action === 'clearActivityLog') {
         browserState.tabActivityLog = [];
@@ -2012,13 +2057,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
         return true;
     }
-    
+
     // Ensure we have a valid message (check both action and type fields)
     if (!message || (!message.action && !message.type)) {
         console.warn("Invalid message received:", message);
         return false;
     }
-    
+
     // Handle tab activity events from newtab pages
     if (message.action === 'updateTabActivity' && message.tabId && message.event) {
         const activityLog = browserState.tabActivityLog.get(message.tabId) || {
@@ -2027,12 +2072,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             lastTouch: null,
             events: []
         };
-        
+
         // Ensure events array exists
         if (!activityLog.events) {
             activityLog.events = [];
         }
-        
+
         // Add the event to the events array
         activityLog.events.push(message.event);
         browserState.tabActivityLog.set(message.tabId, activityLog);
@@ -2043,8 +2088,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     try {
         const messageType = message.type || message.action;
-        console.log(`Message received (${messageType}) from ${sender.tab ? "tab "+sender.tab.id : "extension"}`);
-        
+        console.log(`Message received (${messageType}) from ${sender.tab ? "tab " + sender.tab.id : "extension"}`);
+
         switch (messageType) {
             case "contentUpdate":
                 handleContentUpdate(message.data, sender);
@@ -2084,18 +2129,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true; // Prevent fallback handler
             case "getInitialState":
                 console.log('🔍 🔍 🔍 getInitialState request received - AUDIO DEBUG MODE 🔍 🔍 🔍');
-                
+
                 // Handle getInitialState request with current tabs and bookmark fallback
                 (async () => {
                     try {
                         // Get current tabs from Chrome API
                         const currentTabs = await chrome.tabs.query({});
                         console.log(`📋 Found ${currentTabs.length} current tabs`);
-                        
+
                         // Debug: Show current audio tracking state
-                        console.log(`🔊 [getInitialState] Audio tracking map has ${browserState.tabAudioTracking.size} entries:`, 
+                        console.log(`🔊 [getInitialState] Audio tracking map has ${browserState.tabAudioTracking.size} entries:`,
                             Array.from(browserState.tabAudioTracking.entries()));
-                        
+
                         // Transform tabs to the expected format
                         const formattedTabs = currentTabs.map(tab => {
                             // Get audio tracking data - try both numeric and string tab IDs
@@ -2108,14 +2153,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 // Try "tab" prefixed version
                                 audioData = browserState.tabAudioTracking.get(`tab${tab.id}`);
                             }
-                            
+
                             // Fallback to empty data
                             audioData = audioData || {
                                 totalAudioDuration: 0,
                                 isCurrentlyAudible: false,
                                 audioStartTime: null
                             };
-                            
+
                             // Debug logging for audio data
                             if (tab.audible || audioData.totalAudioDuration > 0 || audioData.isCurrentlyAudible) {
                                 console.log(`🔊 [getInitialState] Tab ${tab.id} audio data:`, {
@@ -2126,7 +2171,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     audioStartTime: audioData.audioStartTime
                                 });
                             }
-                            
+
                             return {
                                 id: tab.id,
                                 windowId: tab.windowId,
@@ -2144,7 +2189,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 index: tab.index
                             };
                         });
-                        
+
                         // Add bookmark fallback data if needed
                         const bookmarkFallback = {
                             id: 'bookmark-fallback',
@@ -2157,7 +2202,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             timeSpent: 0,
                             isBookmark: true
                         };
-                        
+
                         const response = {
                             success: true,
                             tabs: formattedTabs,
@@ -2171,10 +2216,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             },
                             timestamp: Date.now()
                         };
-                        
+
                         console.log('✅ Sending getInitialState response with', formattedTabs.length, 'tabs');
                         sendResponse(response);
-                        
+
                     } catch (error) {
                         console.error('❌ Error in getInitialState handler:', error);
                         sendResponse({
@@ -2191,7 +2236,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         });
                     }
                 })();
-                
+
                 return true; // Keep message channel open for async response
             case "getDebugState":
                 console.log('✅ getDebugState case in switch statement triggered!');
@@ -2204,7 +2249,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
                     graphData: browserState.graphData || { summaries: {}, customEdges: [], nodePositions: {} }
                 };
-                
+
                 // Convert Maps to Arrays for serialization if needed
                 if (browserState.tabHistory instanceof Map) {
                     console.log('Converting tabHistory Map to Array for serialization');
@@ -2219,7 +2264,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                     stateToSend.tabHistory = historyArray;
                 }
-                
+
                 if (browserState.tabRelationships instanceof Map) {
                     console.log('Converting tabRelationships Map to Array for serialization');
                     const relationshipsArray = [];
@@ -2231,7 +2276,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                     stateToSend.tabRelationships = relationshipsArray;
                 }
-                
+
                 if (browserState.tabActivityLog instanceof Map) {
                     console.log('Converting tabActivityLog Map to Array for serialization');
                     const activityArray = [];
@@ -2252,26 +2297,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                     stateToSend.tabActivityLog = activityArray;
                 }
-                
+
                 const response = {
                     success: true,
                     state: stateToSend
                 };
-                
+
                 console.log('Sending response to debug tools:', response);
                 console.log('Response keys:', Object.keys(response));
                 console.log('State keys:', Object.keys(stateToSend));
-                
+
                 sendResponse(response);
                 return true;
             case "LINK_TEXT_CAPTURED":
                 if (sender.tab) {
                     const tabId = sender.tab.id;
                     console.debug(`Link text captured in tab ${tabId}:`, message.data);
-                    
+
                     // Store for correlation with navigation events
                     pendingLinkData[tabId] = message.data;
-                    
+
                     // Clean up after timeout to prevent memory leaks
                     setTimeout(() => {
                         if (pendingLinkData[tabId]) {
@@ -2291,7 +2336,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     toUrl: message.url,
                     tabId: sender.tab.id
                 });
-                
+
                 // Store the click so we can connect it to the subsequent navigation
                 browserState.recentClicks = browserState.recentClicks || {};
                 browserState.recentClicks[sender.tab.id] = {
@@ -2305,13 +2350,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Extract tab information, ensuring we capture the proper tabId
                 const tabId = sender.tab?.id;
                 const windowId = sender.tab?.windowId;
-                
+
                 console.log("Navigation event:", {
                     tabId,
                     windowId,
                     url: message.data.targetUrl
                 });
-        
+
                 // Only proceed if we have a valid tabId
                 if (!tabId) {
                     console.error("Navigation event missing tabId, cannot process:", message);
@@ -2342,7 +2387,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const proxyUrl = chrome.runtime.getURL(`_favicon/?pageUrl=${encodeURIComponent(message.url)}`);
                 sendResponse({ faviconUrl: proxyUrl });
                 return true;
-                
+
             case "getHeroImagesForUrl":
                 // First check browserState for cached hero images
                 if (browserState.heroImages && browserState.heroImages.get && message.url) {
@@ -2356,24 +2401,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     }
                 }
-                
+
                 // If not in browserState, check storage
                 chrome.storage.local.get(["heroImages"], (result) => {
                     const heroImagesStore = result.heroImages || {};
-                    if (heroImagesStore[message.url] && 
-                        heroImagesStore[message.url].images && 
+                    if (heroImagesStore[message.url] &&
+                        heroImagesStore[message.url].images &&
                         heroImagesStore[message.url].images.length > 0) {
-                        
+
                         console.log("📦 Found hero images in storage for URL:", message.url, {
                             count: heroImagesStore[message.url].images.length,
                             title: heroImagesStore[message.url].title
                         });
-                        
+
                         // Update browserState for next time (cache warming)
                         if (browserState.heroImages && browserState.heroImages.set) {
                             browserState.heroImages.set(message.url, heroImagesStore[message.url]);
                         }
-                        
+
                         sendResponse(heroImagesStore[message.url]);
                     } else {
                         // No need to log a warning for every URL without hero images
@@ -2385,26 +2430,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             case "extractContent":
                 // Handle content extraction requests from newtab page
                 console.log('🔍 Content extraction request:', message.url);
-                
+
                 (async () => {
                     try {
                         const content = await extractTabContentInWorker(message.url);
-                        sendResponse({ 
-                            success: true, 
+                        sendResponse({
+                            success: true,
                             content: content,
                             source: 'background-worker',
                             timestamp: Date.now()
                         });
                     } catch (error) {
                         console.error('Error extracting content in worker:', error);
-                        sendResponse({ 
-                            success: false, 
+                        sendResponse({
+                            success: false,
                             error: error.message,
-                            content: null 
+                            content: null
                         });
                     }
                 })();
-                
+
                 return true; // Keep channel open for async response
             case "storeHeroImages":
                 // Only log hero image extraction if we actually found some images
@@ -2413,10 +2458,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         url: message.data.url,
                         title: message.data.title,
                         imageCount: message.data.heroImages.length,
-                        dwellTime: Math.round(message.data.dwellTime/1000) + "s",
+                        dwellTime: Math.round(message.data.dwellTime / 1000) + "s",
                         scrollDepth: message.data.scrollDepth + "px"
                     });
-                    
+
                     // Log the actual images being extracted
                     console.log("📸 Hero images found:", message.data.heroImages.map(img => ({
                         src: img.src.substring(0, 100) + (img.src.length > 100 ? '...' : ''),
@@ -2424,7 +2469,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         dimensions: `${img.width}x${img.height}`,
                         isMetaImage: !!img.isMetaImage
                     })));
-                    
+
                     // Log the tab history for this URL to provide context
                     const tabId = sender.tab?.id;
                     if (tabId) {
@@ -2434,7 +2479,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             console.log("📸 Tab history for hero image URL:", {
                                 tabId,
                                 dwellTimeMs: recentNav.dwellTimeMs,
-                                dwellTimeFormatted: recentNav.dwellTimeMs ? Math.round(recentNav.dwellTimeMs/1000) + "s" : "N/A",
+                                dwellTimeFormatted: recentNav.dwellTimeMs ? Math.round(recentNav.dwellTimeMs / 1000) + "s" : "N/A",
                                 url: recentNav.url,
                                 title: recentNav.title,
                                 totalNavigations: history.length
@@ -2442,7 +2487,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     }
                 }
-                
+
                 // Add to browserState (core shared data structure)
                 const heroImageData = {
                     images: message.data.heroImages,
@@ -2451,27 +2496,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     dwellTime: message.data.dwellTime,
                     scrollDepth: message.data.scrollDepth
                 };
-                
+
                 // Update browserState with hero image data
                 browserState.heroImages.set(message.data.url, heroImageData);
-                
+
                 // Save state to persist hero image data
                 saveStateToStorage();
-                
+
                 // Notify all listeners about new hero image data
                 browserState.notifyChange('heroImage', {
                     type: 'added',
                     url: message.data.url,
                     data: heroImageData
                 });
-                
+
                 // Get existing hero images or initialize empty object
                 chrome.storage.local.get("heroImages", (result) => {
                     const heroImages = result.heroImages || {};
-                    
+
                     // Store new hero images for this URL
                     heroImages[message.data.url] = heroImageData;
-                    
+
                     // Save back to storage
                     chrome.storage.local.set({ heroImages }, () => {
                         if (chrome.runtime.lastError) {
@@ -2484,18 +2529,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                 });
                 return true; // Prevent fallback handler
-                
+
             case "getAudioTrackingStats":
                 console.log('🔍 getAudioTrackingStats request received');
                 console.log('🔊 [DEBUG] Current tabAudioTracking map:', Array.from(browserState.tabAudioTracking.entries()));
-                
+
                 const audioStats = {
                     totalTrackedTabs: browserState.tabAudioTracking.size,
                     currentlyAudibleTabs: 0,
                     totalAudioDuration: 0,
                     trackedTabs: []
                 };
-                
+
                 browserState.tabAudioTracking.forEach((audioData, tabId) => {
                     if (audioData.isCurrentlyAudible) {
                         audioStats.currentlyAudibleTabs++;
@@ -2508,25 +2553,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         currentDuration: getCurrentAudioDuration(tabId)
                     });
                 });
-                
+
                 sendResponse({ success: true, data: audioStats });
                 return true;
-                
+
             case "getCurrentAudioDuration":
                 console.log('🔍 getCurrentAudioDuration request received for tab:', message.tabId);
-                
+
                 if (!message.tabId) {
                     sendResponse({ success: false, error: 'Tab ID required' });
                     return true;
                 }
-                
+
                 const duration = getCurrentAudioDuration(message.tabId);
                 sendResponse({ success: true, duration });
                 return true;
-                
+
             case "resetAudioTracking":
                 console.log('🔍 resetAudioTracking request received');
-                
+
                 if (message.tabId) {
                     // Reset specific tab
                     const audioData = browserState.tabAudioTracking.get(message.tabId);
@@ -2547,10 +2592,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     console.log('[AudioTracking] Reset all audio tracking data');
                     sendResponse({ success: true, message: 'All audio tracking data reset' });
                 }
-                
+
                 saveStateToStorage();
                 return true;
-                
+
             default:
                 console.warn('Unknown message type:', messageType);
                 sendResponse({ received: true, error: 'Unknown message type' });
@@ -2562,7 +2607,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: error.toString() });
         return true;
     }
-    
+
     // Should not reach here due to return statements in switch cases
     return false;
 });
@@ -2578,12 +2623,12 @@ function sendMessageWithErrorHandling(message) {
     try {
         // Don't log common expected errors
         const isSilent = message.silent === true;
-        
+
         // Implement timeout to prevent hanging message channels
         const timeoutPromise = new Promise((resolve) => {
             setTimeout(() => resolve(null), 1000); // 1 second timeout
         });
-        
+
         const messagePromise = chrome.runtime.sendMessage(message).catch(error => {
             // Check for the specific connection error that happens when no receivers exist
             if (error && error.message && error.message.includes("Receiving end does not exist")) {
@@ -2597,7 +2642,7 @@ function sendMessageWithErrorHandling(message) {
             }
             return null;
         });
-        
+
         // Race between the message and the timeout
         return Promise.race([messagePromise, timeoutPromise]);
     } catch (error) {
@@ -2611,11 +2656,11 @@ function cleanupDataStructures() {
     try {
         const now = Date.now();
         const OLD_TAB_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours
-        
+
         // Clean up browserState.tabs for tabs that no longer exist
         chrome.tabs.query({}, (tabs) => {
             const activeTabs = new Set(tabs.map(tab => tab.id));
-            
+
             // Clean up tabs that no longer exist
             for (const [tabId] of browserState.tabs) {
                 if (!activeTabs.has(tabId)) {
@@ -2625,18 +2670,18 @@ function cleanupDataStructures() {
                     browserState.tabActivityLog.delete(tabId);
                 }
             }
-            
+
             // Clean up stale edges
             for (const [key, edge] of tabEdges) {
                 const sourceExists = activeTabs.has(edge.source);
                 const targetExists = activeTabs.has(edge.target);
-                
+
                 if (!sourceExists || !targetExists || (now - edge.timestamp > OLD_TAB_THRESHOLD)) {
                     tabEdges.delete(key);
                 }
             }
         });
-        
+
         // Clean processedNavigations
         for (const [id, data] of processedNavigations) {
             // Remove entries older than 5 seconds
@@ -2644,7 +2689,7 @@ function cleanupDataStructures() {
                 processedNavigations.delete(id);
             }
         }
-        
+
         console.log("Data structures cleaned up:", {
             tabs: browserState.tabs.size,
             edges: tabEdges.size,
@@ -2661,32 +2706,32 @@ setInterval(cleanupDataStructures, 5 * 60 * 1000);
 // Fix for process navigation function - implement missing methods
 // eslint-disable-next-line no-unused-vars
 function processDirectNavigation(tabData, details) {
-  // Implementation for direct navigation
-  const activity = browserState.tabActivityLog.get(details.tabId) || { navigations: [] };
-  if (!activity.navigations) activity.navigations = [];
-  
-  activity.navigations.push({
-    type: "direct_navigation",
-    url: details.url,
-    timestamp: Date.now(),
-    transitionType: details.transitionType || "unknown",
-    transitionQualifiers: details.transitionQualifiers || []
-  });
-  
-  browserState.tabActivityLog.set(details.tabId, activity);
+    // Implementation for direct navigation
+    const activity = browserState.tabActivityLog.get(details.tabId) || { navigations: [] };
+    if (!activity.navigations) activity.navigations = [];
+
+    activity.navigations.push({
+        type: "direct_navigation",
+        url: details.url,
+        timestamp: Date.now(),
+        transitionType: details.transitionType || "unknown",
+        transitionQualifiers: details.transitionQualifiers || []
+    });
+
+    browserState.tabActivityLog.set(details.tabId, activity);
 }
 
 // Focused navigation recorder that only updates state - no edge creation
 function recordNavigation(details) {
     const { tabId, url, title, transitionType, transitionQualifiers, timestamp, dwellTimeMs, webRequestData } = details;
-    
+
     try {
         // Extract search query if this is a search engine URL
         const searchQuery = extractSearchQuery(url);
-        
+
         // Update the tab history collection
         const history = browserState.tabHistory.get(tabId) || [];
-        
+
         // Add this navigation to the start (most recent)
         history.unshift({
             url,
@@ -2699,15 +2744,15 @@ function recordNavigation(details) {
             referer: webRequestData?.referer,
             redirects: webRequestData?.redirects,
         });
-        
+
         // Limit history size
         if (history.length > 50) {
             history.splice(50); // Remove old entries
         }
-        
+
         // Update collection
         browserState.tabHistory.set(tabId, history);
-        
+
         // Update the current tab data
         let tabData = browserState.tabs.get(tabId);
         if (tabData) {
@@ -2719,10 +2764,10 @@ function recordNavigation(details) {
                 timestamp,
                 type: transitionType
             };
-            
+
             browserState.tabs.set(tabId, tabData);
         }
-        
+
         // Notify about the navigation
         sendMessageWithErrorHandling({
             action: "tabNavigated",
@@ -2732,7 +2777,7 @@ function recordNavigation(details) {
             transitionType,
             timestamp
         });
-        
+
         // Broadcast specific dwell time update if available
         if (dwellTimeMs) {
             console.log(`[DwellTime] Broadcasting dwellTime update for tab ${tabId}, url ${url}: ${dwellTimeMs}ms`);
@@ -2744,7 +2789,7 @@ function recordNavigation(details) {
                 timestamp: Date.now()
             });
         }
-        
+
         // Handle different navigation types
         processNavigationType(tabId, url, transitionType, transitionQualifiers);
     } catch (error) {
@@ -2762,29 +2807,29 @@ function processNavigationType(tabId, url, transitionType, transitionQualifiers)
         transitionType,
         transitionQualifiers: transitionQualifiers || []
     };
-    
+
     // Handle different types of navigation
     switch (transitionType) {
         case "link":
             // Process link navigation - this can create edges
             processLinkNavigation(tabId, url, baseData);
             break;
-            
+
         case "typed":
             // Direct URL bar entry - no edge creation
             logNavigation(tabId, "typed_navigation", baseData);
             break;
-            
+
         case "auto_bookmark":
             // Bookmark navigation - might create edge if we track bookmarks
             logNavigation(tabId, "bookmark_navigation", baseData);
             break;
-            
+
         case "generated":
             // Auto-generated navigation - no edge needed usually
             logNavigation(tabId, "generated_navigation", baseData);
             break;
-            
+
         default:
             // Other types - just log
             logNavigation(tabId, "other_navigation", baseData);
@@ -2795,39 +2840,39 @@ function processNavigationType(tabId, url, transitionType, transitionQualifiers)
 function logNavigation(tabId, type, data) {
     const activity = browserState.tabActivityLog.get(tabId) || { navigations: [] };
     if (!activity.navigations) activity.navigations = [];
-    
+
     activity.navigations.push({
         type,
         ...data,
         timestamp: Date.now()
     });
-    
+
     browserState.tabActivityLog.set(tabId, activity);
 }
 
 // Add this listener if it doesn't exist yet
 chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
-  console.log(`Tab ${tabId} moved:`, moveInfo);
-  
-  chrome.tabs.get(tabId, (tab) => {
-    if (chrome.runtime.lastError) return;
-    
-    // Update browserState to reflect tab move
-    const tabData = browserState.tabs.get(tabId);
-    if (tabData) {
-      tabData.windowId = tab.windowId;
-      tabData.index = tab.index;
-      browserState.tabs.set(tabId, tabData);
-    }
-    
-    // Notify UI about the move
-    sendMessageWithErrorHandling({
-      action: "tabMoved",
-      tabId,
-      moveInfo,
-      tab
+    console.log(`Tab ${tabId} moved:`, moveInfo);
+
+    chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) return;
+
+        // Update browserState to reflect tab move
+        const tabData = browserState.tabs.get(tabId);
+        if (tabData) {
+            tabData.windowId = tab.windowId;
+            tabData.index = tab.index;
+            browserState.tabs.set(tabId, tabData);
+        }
+
+        // Notify UI about the move
+        sendMessageWithErrorHandling({
+            action: "tabMoved",
+            tabId,
+            moveInfo,
+            tab
+        });
     });
-  });
 });
 
 /**
@@ -2839,7 +2884,7 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
 async function extractTabContentInWorker(url) {
     try {
         console.log('🔧 Worker extracting content for:', url);
-        
+
         if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('file://')) {
             console.log('⏭️ Skipping restricted URL in worker:', url);
             return null;
@@ -2847,7 +2892,7 @@ async function extractTabContentInWorker(url) {
 
         // Strategy 1: Find active tab with this URL
         let tabs = await chrome.tabs.query({ url });
-        
+
         // Strategy 2: If exact match fails, try domain-based search
         if (!tabs || tabs.length === 0) {
             try {
@@ -2861,7 +2906,7 @@ async function extractTabContentInWorker(url) {
                         return false;
                     }
                 });
-                
+
                 if (tabs.length > 0) {
                     console.log(`🔍 Worker found ${tabs.length} tabs for domain ${domain}`);
                 }
@@ -2869,7 +2914,7 @@ async function extractTabContentInWorker(url) {
                 console.warn('Error in worker domain search:', e);
             }
         }
-        
+
         // Strategy 3: If no tabs found, try to get content from history/bookmarks
         if (!tabs || tabs.length === 0) {
             console.log('📚 No tabs found, trying metadata extraction in worker');
@@ -2886,15 +2931,15 @@ async function extractTabContentInWorker(url) {
                 func: () => {
                     try {
                         console.log('📄 Worker script executing in tab');
-                        
+
                         let content = '';
-                        
+
                         // Strategy 1: Try semantic HTML5 elements first
                         const semanticSelectors = [
-                            'main', 'article', 'section[role="main"]', 
+                            'main', 'article', 'section[role="main"]',
                             '[role="main"]', '[role="article"]'
                         ];
-                        
+
                         for (const selector of semanticSelectors) {
                             const elements = document.querySelectorAll(selector);
                             for (const element of elements) {
@@ -2906,7 +2951,7 @@ async function extractTabContentInWorker(url) {
                             }
                             if (content) break;
                         }
-                        
+
                         // Strategy 2: Try content-specific selectors
                         if (!content) {
                             const contentSelectors = [
@@ -2915,7 +2960,7 @@ async function extractTabContentInWorker(url) {
                                 '#content', '#main-content', '.main-content',
                                 '.content', '.post', '.article'
                             ];
-                            
+
                             for (const selector of contentSelectors) {
                                 const element = document.querySelector(selector);
                                 if (element && element.innerText.trim().length > 200) {
@@ -2925,11 +2970,11 @@ async function extractTabContentInWorker(url) {
                                 }
                             }
                         }
-                        
+
                         // Strategy 3: Smart body traversal with content filtering
                         if (!content && document.body) {
                             console.log('📝 Trying smart body traversal');
-                            
+
                             // Get all text nodes with smart filtering
                             const walker = document.createTreeWalker(
                                 document.body,
@@ -2938,21 +2983,21 @@ async function extractTabContentInWorker(url) {
                                     acceptNode: (node) => {
                                         const parent = node.parentElement;
                                         if (!parent) return NodeFilter.FILTER_REJECT;
-                                        
+
                                         // Skip hidden elements
                                         const style = window.getComputedStyle(parent);
-                                        if (style.display === 'none' || style.visibility === 'hidden' || 
+                                        if (style.display === 'none' || style.visibility === 'hidden' ||
                                             style.opacity === '0') {
                                             return NodeFilter.FILTER_REJECT;
                                         }
-                                        
+
                                         // Skip elements that are likely not content
                                         const tag = parent.tagName.toLowerCase();
-                                        if (['script', 'style', 'noscript', 'nav', 'header', 
-                                             'footer', 'aside', 'menu', 'button'].includes(tag)) {
+                                        if (['script', 'style', 'noscript', 'nav', 'header',
+                                            'footer', 'aside', 'menu', 'button'].includes(tag)) {
                                             return NodeFilter.FILTER_REJECT;
                                         }
-                                        
+
                                         // Skip elements with navigation/UI class names
                                         const className = parent.className.toLowerCase();
                                         if (className.includes('nav') || className.includes('menu') ||
@@ -2960,7 +3005,7 @@ async function extractTabContentInWorker(url) {
                                             className.includes('banner') || className.includes('cookie')) {
                                             return NodeFilter.FILTER_REJECT;
                                         }
-                                        
+
                                         return NodeFilter.FILTER_ACCEPT;
                                     }
                                 }
@@ -2970,7 +3015,7 @@ async function extractTabContentInWorker(url) {
                             let node;
                             let counter = 0;
                             const maxNodes = 8000; // Increased limit for worker
-                            
+
                             while ((node = walker.nextNode()) && counter < maxNodes) {
                                 const text = node.textContent.trim();
                                 if (text && text.length > 5) { // Filter out very short text
@@ -2978,40 +3023,40 @@ async function extractTabContentInWorker(url) {
                                 }
                                 counter++;
                             }
-                            
+
                             content = textContent.trim();
                             console.log(`📝 Smart traversal found ${content.length} chars from ${counter} nodes`);
                         }
-                        
+
                         // Strategy 4: Enhanced metadata extraction
                         if (!content || content.length < 100) {
                             console.log('🏷️ Trying enhanced metadata extraction');
-                            
+
                             const metadataParts = [];
-                            
+
                             // Page title
                             if (document.title && document.title.length > 3) {
                                 metadataParts.push(document.title);
                             }
-                            
+
                             // Meta description
                             const metaDesc = document.querySelector('meta[name="description"]')?.content;
                             if (metaDesc && metaDesc.length > 10) {
                                 metadataParts.push(metaDesc);
                             }
-                            
+
                             // Open Graph data
                             const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
                             const ogDesc = document.querySelector('meta[property="og:description"]')?.content;
                             if (ogTitle && ogTitle !== document.title) metadataParts.push(ogTitle);
                             if (ogDesc && ogDesc !== metaDesc) metadataParts.push(ogDesc);
-                            
+
                             // Twitter Card data
                             const twitterTitle = document.querySelector('meta[name="twitter:title"]')?.content;
                             const twitterDesc = document.querySelector('meta[name="twitter:description"]')?.content;
                             if (twitterTitle && !metadataParts.includes(twitterTitle)) metadataParts.push(twitterTitle);
                             if (twitterDesc && !metadataParts.includes(twitterDesc)) metadataParts.push(twitterDesc);
-                            
+
                             // Main headings
                             const headings = document.querySelectorAll('h1, h2, h3');
                             for (const heading of Array.from(headings).slice(0, 5)) {
@@ -3020,7 +3065,7 @@ async function extractTabContentInWorker(url) {
                                     metadataParts.push(headingText);
                                 }
                             }
-                            
+
                             // Key paragraphs (first few substantial paragraphs)
                             const paragraphs = document.querySelectorAll('p');
                             for (const p of Array.from(paragraphs).slice(0, 3)) {
@@ -3029,13 +3074,13 @@ async function extractTabContentInWorker(url) {
                                     metadataParts.push(pText);
                                 }
                             }
-                            
+
                             if (metadataParts.length > 0) {
                                 content = metadataParts.join('. ');
                                 console.log(`🏷️ Metadata extraction: ${content.length} chars from ${metadataParts.length} parts`);
                             }
                         }
-                        
+
                         // Final validation and cleanup
                         if (content && content.length > 20) {
                             // Clean up the content
@@ -3043,23 +3088,23 @@ async function extractTabContentInWorker(url) {
                                 .replace(/\s+/g, ' ') // Normalize whitespace
                                 .replace(/\n{3,}/g, '\n\n') // Limit consecutive newlines
                                 .trim();
-                            
+
                             console.log(`🎉 Worker extraction successful: ${content.length} characters`);
                             return content;
                         } else {
                             console.log('⚠️ Worker extraction insufficient content');
                             return null;
                         }
-                        
+
                     } catch (err) {
                         console.error('💥 Worker script error:', err);
                         return null;
                     }
                 }
             });
-            
+
             const extractedContent = results?.[0]?.result;
-            
+
             if (extractedContent && extractedContent.length > 50) {
                 console.log(`✅ Worker successfully extracted ${extractedContent.length} characters from tab ${tab.id}`);
                 return extractedContent;
@@ -3067,13 +3112,13 @@ async function extractTabContentInWorker(url) {
                 console.log(`⚠️ Worker tab extraction insufficient, trying metadata fallback`);
                 return await extractContentFromMetadataInWorker(url);
             }
-            
+
         } catch (scriptError) {
             console.warn('🚫 Worker script injection failed:', scriptError.message);
             // Try metadata extraction as fallback
             return await extractContentFromMetadataInWorker(url);
         }
-        
+
     } catch (error) {
         console.error('💥 Worker content extraction error:', error);
         // Final fallback
@@ -3090,54 +3135,54 @@ async function extractTabContentInWorker(url) {
 async function extractContentFromMetadataInWorker(url) {
     try {
         console.log('📊 Worker metadata extraction for:', url);
-        
+
         let content = '';
-        
+
         // Get history data for this URL
         const historyItems = await new Promise((resolve) => {
             chrome.history.search({ text: url, maxResults: 5 }, (results) => {
                 resolve(results || []);
             });
         });
-        
+
         // Get bookmarks for this URL
         const bookmarks = await new Promise((resolve) => {
             chrome.bookmarks.search({ url }, (results) => {
                 resolve(results || []);
             });
         });
-        
+
         // Extract from history titles
         if (historyItems.length > 0) {
             const historyTitles = historyItems
                 .map(item => item.title)
                 .filter(title => title && title !== 'New Tab' && title.length > 3)
                 .slice(0, 3);
-            
+
             if (historyTitles.length > 0) {
                 content += historyTitles.join('. ') + '. ';
             }
         }
-        
+
         // Extract from bookmarks
         if (bookmarks.length > 0) {
             const bookmarkTitles = bookmarks
                 .map(bookmark => bookmark.title)
                 .filter(title => title && title !== 'New Tab' && title.length > 3)
                 .slice(0, 2);
-            
+
             if (bookmarkTitles.length > 0) {
                 content += bookmarkTitles.join('. ') + '. ';
             }
         }
-        
+
         // Enhanced URL analysis
         try {
             const urlObj = new URL(url);
             const domain = urlObj.hostname.replace(/^www\./, '');
             const pathname = urlObj.pathname;
             const searchParams = urlObj.searchParams;
-            
+
             // Extract search queries with better decoding
             const searchQueries = [];
             const searchKeys = ['q', 'query', 'search', 's', 'term', 'keyword'];
@@ -3154,11 +3199,11 @@ async function extractContentFromMetadataInWorker(url) {
                     }
                 }
             }
-            
+
             if (searchQueries.length > 0) {
                 content += `Search queries: ${searchQueries.join(', ')}. `;
             }
-            
+
             // Enhanced path analysis
             const pathSegments = pathname.split('/')
                 .filter(segment => segment.length > 2)
@@ -3166,17 +3211,17 @@ async function extractContentFromMetadataInWorker(url) {
                 .map(segment => segment.replace(/[-_]/g, ' ').replace(/\.[a-z]+$/i, ''))
                 .filter(segment => segment.length > 2)
                 .slice(0, 5);
-            
+
             if (pathSegments.length > 0) {
                 content += `Content topics: ${pathSegments.join(', ')}. `;
             }
-            
+
             // Domain context with better categorization
             const domainParts = domain.split('.');
             const mainDomain = domainParts.length > 1 ? domainParts[domainParts.length - 2] : domain;
-            
+
             content += `This is content from ${domain}`;
-            
+
             // Add context based on domain type
             if (domain.includes('github')) {
                 content += ', a software development platform';
@@ -3191,22 +3236,22 @@ async function extractContentFromMetadataInWorker(url) {
             } else if (domain.includes('news') || domain.includes('cnn') || domain.includes('bbc')) {
                 content += ', a news publication';
             }
-            
+
             content += '. ';
-            
+
         } catch (e) {
             console.warn('Error in worker URL analysis:', e);
         }
-        
+
         // If still minimal content, create descriptive fallback
         if (content.trim().length < 100) {
             const domain = url.split('/')[2]?.replace(/^www\./, '') || 'unknown';
             content = `This webpage from ${domain} contains content that could not be directly extracted. The page likely contains information relevant to the site's topic and purpose, and may include text, articles, or other content that would be useful for understanding the subject matter discussed on this domain.`;
         }
-        
+
         console.log(`📊 Worker metadata extraction generated ${content.length} characters`);
         return content.trim();
-        
+
     } catch (error) {
         console.error('💥 Worker metadata extraction error:', error);
         // Ultimate fallback
@@ -3220,76 +3265,76 @@ async function extractContentFromMetadataInWorker(url) {
  * This ensures all incremental data (dwell time, relationships, activity) is preserved
  */
 function saveStateToStorage() {
-  try {
-    console.log('Saving browserState to persistent storage...');
-    
-    // Convert Maps to serializable objects for storage
-    const stateToSave = {
-      // Convert tabHistory Map to object
-      tabHistory: {},
-      // Convert tabRelationships Map to object  
-      tabRelationships: {},
-      // Convert tabActivityLog Map to object
-      tabActivityLog: {},
-      // Convert tabAudioTracking Map to object
-      tabAudioTracking: {},
-      // Convert heroImages Map to object
-      heroImages: {},
-      // Include other state data
-      lastActive: browserState.lastActive,
-      lastSaved: Date.now()
-    };
-    
-    // Convert tabHistory Map
-    if (browserState.tabHistory instanceof Map) {
-      browserState.tabHistory.forEach((entries, tabId) => {
-        stateToSave.tabHistory[tabId] = entries;
-      });
+    try {
+        console.log('Saving browserState to persistent storage...');
+
+        // Convert Maps to serializable objects for storage
+        const stateToSave = {
+            // Convert tabHistory Map to object
+            tabHistory: {},
+            // Convert tabRelationships Map to object  
+            tabRelationships: {},
+            // Convert tabActivityLog Map to object
+            tabActivityLog: {},
+            // Convert tabAudioTracking Map to object
+            tabAudioTracking: {},
+            // Convert heroImages Map to object
+            heroImages: {},
+            // Include other state data
+            lastActive: browserState.lastActive,
+            lastSaved: Date.now()
+        };
+
+        // Convert tabHistory Map
+        if (browserState.tabHistory instanceof Map) {
+            browserState.tabHistory.forEach((entries, tabId) => {
+                stateToSave.tabHistory[tabId] = entries;
+            });
+        }
+
+        // Convert tabRelationships Map
+        if (browserState.tabRelationships instanceof Map) {
+            browserState.tabRelationships.forEach((relationship, tabId) => {
+                stateToSave.tabRelationships[tabId] = relationship;
+            });
+        }
+
+        // Convert tabActivityLog Map
+        if (browserState.tabActivityLog instanceof Map) {
+            browserState.tabActivityLog.forEach((activities, tabId) => {
+                stateToSave.tabActivityLog[tabId] = activities;
+            });
+        }
+
+        // Convert tabAudioTracking Map
+        if (browserState.tabAudioTracking instanceof Map) {
+            browserState.tabAudioTracking.forEach((audioData, tabId) => {
+                stateToSave.tabAudioTracking[tabId] = audioData;
+            });
+        }
+
+        // Convert heroImages Map
+        if (browserState.heroImages instanceof Map) {
+            browserState.heroImages.forEach((imageData, url) => {
+                stateToSave.heroImages[url] = imageData;
+            });
+        }
+
+        // Save to chrome.storage.local
+        chrome.storage.local.set({
+            'browserState': stateToSave,
+            'lastStateSave': stateToSave.lastSaved
+        }, () => {
+            if (chrome.runtime.lastError) {
+                console.error('Error saving browserState:', chrome.runtime.lastError);
+            } else {
+                console.log('✅ browserState saved successfully');
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in saveStateToStorage:', error);
     }
-    
-    // Convert tabRelationships Map
-    if (browserState.tabRelationships instanceof Map) {
-      browserState.tabRelationships.forEach((relationship, tabId) => {
-        stateToSave.tabRelationships[tabId] = relationship;
-      });
-    }
-    
-    // Convert tabActivityLog Map
-    if (browserState.tabActivityLog instanceof Map) {
-      browserState.tabActivityLog.forEach((activities, tabId) => {
-        stateToSave.tabActivityLog[tabId] = activities;
-      });
-    }
-    
-    // Convert tabAudioTracking Map
-    if (browserState.tabAudioTracking instanceof Map) {
-      browserState.tabAudioTracking.forEach((audioData, tabId) => {
-        stateToSave.tabAudioTracking[tabId] = audioData;
-      });
-    }
-    
-    // Convert heroImages Map
-    if (browserState.heroImages instanceof Map) {
-      browserState.heroImages.forEach((imageData, url) => {
-        stateToSave.heroImages[url] = imageData;
-      });
-    }
-    
-    // Save to chrome.storage.local
-    chrome.storage.local.set({ 
-      'browserState': stateToSave,
-      'lastStateSave': stateToSave.lastSaved
-    }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('Error saving browserState:', chrome.runtime.lastError);
-      } else {
-        console.log('✅ browserState saved successfully');
-      }
-    });
-    
-  } catch (error) {
-    console.error('Error in saveStateToStorage:', error);
-  }
 }
 
 /**
@@ -3297,111 +3342,111 @@ function saveStateToStorage() {
  * This restores all incremental data when the browser starts
  */
 function loadStateFromStorage() {
-  try {
-    console.log('Loading browserState from persistent storage...');
-    
-    chrome.storage.local.get(['browserState'], (result) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error loading browserState:', chrome.runtime.lastError);
-        return;
-      }
-      
-      const savedState = result.browserState;
-      if (!savedState) {
-        console.log('No saved browserState found, starting fresh');
-        return;
-      }
-      
-      console.log('Found saved browserState, restoring data...');
-      
-      // Restore tabHistory
-      if (savedState.tabHistory) {
-        browserState.tabHistory = new Map();
-        Object.entries(savedState.tabHistory).forEach(([tabId, entries]) => {
-          browserState.tabHistory.set(parseInt(tabId), entries);
+    try {
+        console.log('Loading browserState from persistent storage...');
+
+        chrome.storage.local.get(['browserState'], (result) => {
+            if (chrome.runtime.lastError) {
+                console.error('Error loading browserState:', chrome.runtime.lastError);
+                return;
+            }
+
+            const savedState = result.browserState;
+            if (!savedState) {
+                console.log('No saved browserState found, starting fresh');
+                return;
+            }
+
+            console.log('Found saved browserState, restoring data...');
+
+            // Restore tabHistory
+            if (savedState.tabHistory) {
+                browserState.tabHistory = new Map();
+                Object.entries(savedState.tabHistory).forEach(([tabId, entries]) => {
+                    browserState.tabHistory.set(parseInt(tabId), entries);
+                });
+                console.log(`Restored ${browserState.tabHistory.size} tab history entries`);
+            }
+
+            // Restore tabRelationships
+            if (savedState.tabRelationships) {
+                browserState.tabRelationships = new Map();
+                Object.entries(savedState.tabRelationships).forEach(([tabId, relationship]) => {
+                    browserState.tabRelationships.set(parseInt(tabId), relationship);
+                });
+                console.log(`Restored ${browserState.tabRelationships.size} tab relationships`);
+            }
+
+            // Restore tabActivityLog
+            if (savedState.tabActivityLog) {
+                browserState.tabActivityLog = new Map();
+                Object.entries(savedState.tabActivityLog).forEach(([tabId, activities]) => {
+                    browserState.tabActivityLog.set(parseInt(tabId), activities);
+                });
+                console.log(`Restored ${browserState.tabActivityLog.size} tab activity logs`);
+            }
+
+            // Restore tabAudioTracking
+            if (savedState.tabAudioTracking) {
+                browserState.tabAudioTracking = new Map();
+                Object.entries(savedState.tabAudioTracking).forEach(([tabId, audioData]) => {
+                    // Reset any ongoing audio sessions after restart (tab IDs change)
+                    const restoredAudioData = {
+                        ...audioData,
+                        isCurrentlyAudible: false,
+                        audioStartTime: null
+                    };
+                    browserState.tabAudioTracking.set(parseInt(tabId), restoredAudioData);
+                });
+                console.log(`Restored ${browserState.tabAudioTracking.size} audio tracking entries`);
+            }
+
+            // Restore heroImages
+            if (savedState.heroImages) {
+                browserState.heroImages = new Map();
+                Object.entries(savedState.heroImages).forEach(([url, imageData]) => {
+                    browserState.heroImages.set(url, imageData);
+                });
+                console.log(`Restored ${browserState.heroImages.size} hero images`);
+            }
+
+            // Restore lastActive if recent (within last hour)
+            if (savedState.lastActive && savedState.lastSaved) {
+                const timeSinceSave = Date.now() - savedState.lastSaved;
+                if (timeSinceSave < 3600000) { // 1 hour
+                    browserState.lastActive = savedState.lastActive;
+                    console.log('Restored lastActive tab state');
+                }
+            }
+
+            console.log('✅ browserState restoration complete');
         });
-        console.log(`Restored ${browserState.tabHistory.size} tab history entries`);
-      }
-      
-      // Restore tabRelationships
-      if (savedState.tabRelationships) {
-        browserState.tabRelationships = new Map();
-        Object.entries(savedState.tabRelationships).forEach(([tabId, relationship]) => {
-          browserState.tabRelationships.set(parseInt(tabId), relationship);
-        });
-        console.log(`Restored ${browserState.tabRelationships.size} tab relationships`);
-      }
-      
-      // Restore tabActivityLog
-      if (savedState.tabActivityLog) {
-        browserState.tabActivityLog = new Map();
-        Object.entries(savedState.tabActivityLog).forEach(([tabId, activities]) => {
-          browserState.tabActivityLog.set(parseInt(tabId), activities);
-        });
-        console.log(`Restored ${browserState.tabActivityLog.size} tab activity logs`);
-      }
-      
-      // Restore tabAudioTracking
-      if (savedState.tabAudioTracking) {
-        browserState.tabAudioTracking = new Map();
-        Object.entries(savedState.tabAudioTracking).forEach(([tabId, audioData]) => {
-          // Reset any ongoing audio sessions after restart (tab IDs change)
-          const restoredAudioData = {
-            ...audioData,
-            isCurrentlyAudible: false,
-            audioStartTime: null
-          };
-          browserState.tabAudioTracking.set(parseInt(tabId), restoredAudioData);
-        });
-        console.log(`Restored ${browserState.tabAudioTracking.size} audio tracking entries`);
-      }
-      
-      // Restore heroImages
-      if (savedState.heroImages) {
-        browserState.heroImages = new Map();
-        Object.entries(savedState.heroImages).forEach(([url, imageData]) => {
-          browserState.heroImages.set(url, imageData);
-        });
-        console.log(`Restored ${browserState.heroImages.size} hero images`);
-      }
-      
-      // Restore lastActive if recent (within last hour)
-      if (savedState.lastActive && savedState.lastSaved) {
-        const timeSinceSave = Date.now() - savedState.lastSaved;
-        if (timeSinceSave < 3600000) { // 1 hour
-          browserState.lastActive = savedState.lastActive;
-          console.log('Restored lastActive tab state');
-        }
-      }
-      
-      console.log('✅ browserState restoration complete');
-    });
-    
-  } catch (error) {
-    console.error('Error in loadStateFromStorage:', error);
-  }
+
+    } catch (error) {
+        console.error('Error in loadStateFromStorage:', error);
+    }
 }
 
 function createRefreshIndicator() {
     // Check if it already exists
     let indicator = document.getElementById('refresh-indicator');
     if (indicator) return indicator;
-    
+
     // ... creates DOM element ...
-    
+
     return indicator; // ❌ Returns DOM element without show/hide methods
 }
 
 // Enhanced content extraction with pure innerText approach
 function extractContentFromPage() {
     let content = '';
-    
+
     // Phase 1: Try semantic elements (keep current approach)
     const semanticSelectors = [
-        'main', 'article', 'section[role="main"]', 
+        'main', 'article', 'section[role="main"]',
         '[role="main"]', '[role="article"]'
     ];
-    
+
     for (const selector of semanticSelectors) {
         const element = document.querySelector(selector);
         if (element && element.innerText.trim().length > 300) {
@@ -3410,14 +3455,14 @@ function extractContentFromPage() {
             break;
         }
     }
-    
+
     // Phase 2: Content-specific selectors (if needed)
     if (!content) {
         const contentSelectors = [
             '.post-content', '.entry-content', '.article-content',
             '#content', '#main-content', '.content'
         ];
-        
+
         for (const selector of contentSelectors) {
             const element = document.querySelector(selector);
             if (element && element.innerText.trim().length > 200) {
@@ -3426,7 +3471,7 @@ function extractContentFromPage() {
             }
         }
     }
-    
+
     // Phase 3: Simple text cleaning (no HTML regex needed!)
     if (content) {
         content = content
@@ -3434,7 +3479,7 @@ function extractContentFromPage() {
             .replace(/[^\x00-\x7F\u00C0-\u017F]/g, ' ')  // Basic char filtering
             .trim();
     }
-    
+
     return content;
 }
 
@@ -3445,47 +3490,47 @@ function extractContentFromPage() {
 function updateAudioBasedDwellTime() {
     const currentTime = Date.now();
     let updatesCount = 0;
-    
+
     console.log('[AudioDwellTime] Starting periodic audio-based dwell time update');
-    
+
     // Get currently active tab to exclude from background audio processing
     const activeTabId = browserState.lastActive?.tabId;
-    
+
     browserState.tabAudioTracking.forEach((audioData, tabId) => {
         // Skip if no audio is playing
         if (!audioData.isCurrentlyAudible || !audioData.audioStartTime) {
             return;
         }
-        
+
         // Skip the currently active tab (already tracked by normal dwell time)
         if (tabId === activeTabId) {
             console.log(`[AudioDwellTime] Skipping active tab ${tabId}`);
             return;
         }
-        
+
         // Calculate audio session duration since last update
         const sessionDuration = currentTime - audioData.audioStartTime;
-        
+
         // Only process if significant listening time (> 30 seconds)
         if (sessionDuration < 30000) {
             return;
         }
-        
+
         // Get tab data and history
         const tabData = browserState.tabs.get(tabId);
         const tabHistory = browserState.tabHistory.get(tabId);
-        
+
         if (!tabData || !tabHistory || tabHistory.length === 0) {
             console.warn(`[AudioDwellTime] No tab data/history for tab ${tabId}`);
             return;
         }
-        
+
         // Update the most recent navigation entry with audio-based dwell time
         const mostRecentEntry = tabHistory[0];
         const currentDwellTime = mostRecentEntry.dwellTimeMs || 0;
         const audioContribution = Math.min(sessionDuration, 120000); // Cap at 2 minutes per update
         const newDwellTime = currentDwellTime + audioContribution;
-        
+
         // Update the entry
         const updatedEntry = {
             ...mostRecentEntry,
@@ -3493,17 +3538,17 @@ function updateAudioBasedDwellTime() {
             dwellTimeUpdated: currentTime,
             audioContribution: (mostRecentEntry.audioContribution || 0) + audioContribution
         };
-        
+
         // Replace the entry in history
         tabHistory[0] = updatedEntry;
         browserState.tabHistory.set(tabId, tabHistory);
-        
+
         // Reset audio start time to prevent double-counting
         audioData.audioStartTime = currentTime;
         browserState.tabAudioTracking.set(tabId, audioData);
-        
+
         console.log(`[AudioDwellTime] Updated tab ${tabId}: +${audioContribution}ms audio dwell time (total: ${newDwellTime}ms)`);
-        
+
         // Broadcast the dwell time update
         sendMessageWithErrorHandling({
             action: "dwellTimeUpdated",
@@ -3513,10 +3558,10 @@ function updateAudioBasedDwellTime() {
             audioContribution,
             timestamp: currentTime
         });
-        
+
         updatesCount++;
     });
-    
+
     if (updatesCount > 0) {
         console.log(`[AudioDwellTime] Updated ${updatesCount} tabs with audio-based dwell time`);
         saveStateToStorage(); // Persist the updates

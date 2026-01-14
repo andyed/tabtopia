@@ -93,7 +93,7 @@ async function initializeState() {
     try {
         console.log('🔍 Requesting initial state from background...');
         const response = await chrome.runtime.sendMessage({ action: 'getInitialState' });
-        
+
         console.log('📋 Received getInitialState response:', {
             hasResponse: !!response,
             responseType: typeof response,
@@ -102,7 +102,7 @@ async function initializeState() {
             tabsCount: response?.tabs?.length,
             fullResponse: response
         });
-        
+
         // Extract the actual data from the response
         let initialState;
         if (response?.success && response?.tabs) {
@@ -116,14 +116,14 @@ async function initializeState() {
         } else {
             initialState = response; // Fallback to old format
         }
-        
+
         // More robust validation with better error handling
         if (!initialState) {
             console.warn('No initial state received from background script');
             showEmptyState();
             return;
         }
-        
+
         if (!initialState.activeWindows || !Array.isArray(initialState.activeWindows)) {
             console.warn('Invalid initial state - missing or invalid activeWindows:', {
                 hasState: !!initialState,
@@ -132,7 +132,7 @@ async function initializeState() {
                 type: typeof initialState.activeWindows,
                 keys: Object.keys(initialState || {})
             });
-            
+
             // Try to fix the state structure if possible
             if (initialState && typeof initialState === 'object') {
                 // Check if activeWindows is nested elsewhere
@@ -149,7 +149,7 @@ async function initializeState() {
                         sampleTab: initialState.tabs[0]
                     });
                     const windowMap = new Map();
-                    
+
                     initialState.tabs.forEach(tab => {
                         const windowId = tab.windowId || 'default';
                         if (!windowMap.has(windowId)) {
@@ -164,7 +164,7 @@ async function initializeState() {
                             lastAccessed: tab.lastAccessed || Date.now()
                         });
                     });
-                    
+
                     initialState.activeWindows = Array.from(windowMap.values());
                     console.log('✅ Created activeWindows structure:', {
                         windowCount: initialState.activeWindows.length,
@@ -189,11 +189,8 @@ async function initializeState() {
         });
 
         // Draw initial treemap if we have windows
-        if (treemapState.hasWindows()) {
-            await drawTreemap(treemapState.data);
-        } else {
-            showEmptyState();
-        }
+        // Draw initial treemap regardless of window count (bookmarks will fill empty space)
+        await drawTreemap(treemapState.data);
     } catch (error) {
         console.error('Failed to initialize state:', error);
         showEmptyState();
@@ -214,9 +211,9 @@ async function updateCellFavicon(cell, url, size) {
                     .attr('xlink:href', response.faviconUrl)
                     .attr('width', size)
                     .attr('height', size)
-                    .attr('x', -size/2)
-                    .attr('y', -size/2)
-                    .on('error', function() {
+                    .attr('x', -size / 2)
+                    .attr('y', -size / 2)
+                    .on('error', function () {
                         // If high-res fails, try smaller size
                         chrome.runtime.sendMessage({
                             type: 'getFavicon',
@@ -240,16 +237,16 @@ function calculateOptimalIconSize(root, width, height) {
     // Get total area and count of leaf nodes
     const totalArea = width * height;
     const leafCount = root.leaves().length;
-    
+
     // Calculate average cell area
     const avgCellArea = totalArea / leafCount;
-    
+
     // Calculate shortest side of average cell (assuming square)
     const avgCellSide = Math.sqrt(avgCellArea);
-    
+
     // Calculate icon size (max 128, min 16)
     const iconSize = Math.max(16, Math.min(128, Math.floor(avgCellSide / 2)));
-    
+
     console.log(`Calculated icon size: ${iconSize}px for ${leafCount} nodes`);
     return iconSize;
 }
@@ -260,16 +257,16 @@ function calculateOptimalLayout(totalTabs, width, viewportHeight) {
     const minIconSize = 16;
     const padding = 10;
     const textHeight = 40;
-    
+
     // Calculate cells needed
     const minimumCells = Math.max(4, totalTabs);
-    
+
     while (iconSize > minIconSize) {
         const cellSize = iconSize + padding * 2 + textHeight;
         const cellsPerRow = Math.floor(width / cellSize);
         const rows = Math.ceil(minimumCells / cellsPerRow);
         const totalHeight = rows * cellSize;
-        
+
         if (totalHeight <= viewportHeight) {
             return {
                 iconSize,
@@ -280,14 +277,14 @@ function calculateOptimalLayout(totalTabs, width, viewportHeight) {
                 enableScroll: false
             };
         }
-        
+
         iconSize -= 16;
     }
-    
+
     // If we get here, use minimum size
     const cellSize = minIconSize + padding * 2 + textHeight;
     const cellsPerRow = Math.floor(width / cellSize);
-    
+
     return {
         iconSize: minIconSize,
         height: Math.max(viewportHeight, Math.ceil(minimumCells / cellsPerRow) * cellSize),
@@ -351,7 +348,7 @@ export async function drawTreemap(data) {
         showEmptyState();
         return;
     }
-    
+
     if (!data.activeWindows) {
         console.warn('No activeWindows in treemap data:', {
             hasData: !!data,
@@ -361,7 +358,7 @@ export async function drawTreemap(data) {
         showEmptyState();
         return;
     }
-    
+
     if (!Array.isArray(data.activeWindows)) {
         console.warn('activeWindows is not an array:', {
             type: typeof data.activeWindows,
@@ -370,11 +367,10 @@ export async function drawTreemap(data) {
         showEmptyState();
         return;
     }
-    
+
     if (data.activeWindows.length === 0) {
-        console.log('No active windows available');
-        showEmptyState();
-        return;
+        console.log('No active windows available - relying on bookmarks');
+        // Do not return early, allow drawing to proceed so bookmarks are shown
     }
 
     console.log('Drawing treemap with:', {
@@ -439,7 +435,7 @@ export async function drawTreemap(data) {
 
     // Create color schemes
     const lightColors = [
-        '#e3f2fd', '#e8f5e9', '#fff3e0', '#ffebee', 
+        '#e3f2fd', '#e8f5e9', '#fff3e0', '#ffebee',
         '#f3e5f5', '#e0f7fa', '#fffde7', '#efebe9'
     ];
 
@@ -483,11 +479,11 @@ export async function drawTreemap(data) {
 
         console.log(`Window ${windowNode.name} - Min: ${minLastAccessed}, Max: ${maxLastAccessed}`); // Debugging
 
-        const windowId = windowNode.name.includes('bookmark') ? 'bookmark' : 
+        const windowId = windowNode.name.includes('bookmark') ? 'bookmark' :
             parseInt(windowNode.name.replace('Window ', ''), 10);
 
         const baseColor = d3.color(lightColors[windowId % lightColors.length]);
- 
+
 
         const colorScale = d3.scaleLinear()
             .domain([minLastAccessed, maxLastAccessed])
@@ -495,7 +491,7 @@ export async function drawTreemap(data) {
 
         tabs.forEach(tab => {
             // Check both the tab's isBookmark property AND if it belongs to the bookmark window
-            tab.color = (tab.isBookmark || windowNode.name === 'Window bookmark' || windowId === 'bookmark') 
+            tab.color = (tab.isBookmark || windowNode.name === 'Window bookmark' || windowId === 'bookmark')
                 ? '#e8f4f8'  // Light blue for bookmarks (more distinct than light gray)
                 : colorScale(tab.lastAccessed);
         });
@@ -544,9 +540,9 @@ export async function drawTreemap(data) {
         .append('g')
         .attr('class', d => {
             // Use the same comprehensive check for bookmarks as the color assignment
-            const isBookmark = d.data.isBookmark || 
-                              (d.parent && d.parent.data.name === 'Window bookmark') || 
-                              (d.parent && d.parent.data.id === 'bookmark');
+            const isBookmark = d.data.isBookmark ||
+                (d.parent && d.parent.data.name === 'Window bookmark') ||
+                (d.parent && d.parent.data.id === 'bookmark');
             return isBookmark ? 'cell bookmark-cell' : 'cell';
         })
         .attr('transform', d => `translate(${d.x0},${d.y0})`)
@@ -564,21 +560,21 @@ export async function drawTreemap(data) {
         .attr('width', d => d.x1 - d.x0)
         .attr('height', d => d.y1 - d.y0)
         .attr('fill', d => {
-            const isBookmark = d.data.isBookmark || 
-                             (d.parent && d.parent.data.name === 'Window bookmark') || 
-                             (d.parent && d.parent.data.id === 'bookmark');
+            const isBookmark = d.data.isBookmark ||
+                (d.parent && d.parent.data.name === 'Window bookmark') ||
+                (d.parent && d.parent.data.id === 'bookmark');
             return isBookmark ? '#e8f4f8' : getSafeColor(d);
         })
         .attr('opacity', d => {
-            const isBookmark = d.data.isBookmark || 
-                             (d.parent && d.parent.data.name === 'Window bookmark') || 
-                             (d.parent && d.parent.data.id === 'bookmark');
+            const isBookmark = d.data.isBookmark ||
+                (d.parent && d.parent.data.name === 'Window bookmark') ||
+                (d.parent && d.parent.data.id === 'bookmark');
             return isBookmark ? 0.9 : 1;
         })
         .attr('stroke', d => {
-            const isBookmark = d.data.isBookmark || 
-                             (d.parent && d.parent.data.name === 'Window bookmark') || 
-                             (d.parent && d.parent.data.id === 'bookmark');
+            const isBookmark = d.data.isBookmark ||
+                (d.parent && d.parent.data.name === 'Window bookmark') ||
+                (d.parent && d.parent.data.id === 'bookmark');
             return isBookmark ? '#99c2d7' : getDarkerColor(d, 0.2);
         })
         .attr('stroke-width', 1);
@@ -591,7 +587,7 @@ export async function drawTreemap(data) {
             const cellHeight = d.y1 - d.y0;
             return `translate(${cellWidth / 2},${cellHeight / 2})`;
         })
-        .each(function(d) {
+        .each(function (d) {
             // Calculate icon size for this specific cell
             const cellWidth = d.x1 - d.x0;
             const cellHeight = d.y1 - d.y0;
@@ -608,30 +604,30 @@ export async function drawTreemap(data) {
             }
 
             // Handle special URLs that can't use chrome://favicon
-            if (d.data.url.startsWith('chrome://') || 
-                d.data.url.startsWith('chrome-extension://') || 
-                d.data.url.startsWith('file://') || 
+            if (d.data.url.startsWith('chrome://') ||
+                d.data.url.startsWith('chrome-extension://') ||
+                d.data.url.startsWith('file://') ||
                 d.data.url.startsWith('about:')) {
-                
+
                 // Use letter favicon immediately for special URLs
                 return createLetterFaviconForURL(d.data.url);
             }
-            
+
             // Return existing favicon if available
             if (d.data.favIconUrl && !d.data.favIconUrl.includes('chrome://favicon')) {
                 return d.data.favIconUrl;
             }
-            
+
             // Otherwise generate a letter favicon
             return createLetterFaviconForURL(d.data.url);
         })
         .attr('width', d => d.iconSize)
         .attr('height', d => d.iconSize)
-        .attr('x', d => -d.iconSize/2)
-        .attr('y', d => -d.iconSize/2)
-        .on('error', function(event, d) {
+        .attr('x', d => -d.iconSize / 2)
+        .attr('y', d => -d.iconSize / 2)
+        .on('error', function (event, d) {
             // On error, set to letter favicon based on URL
-            d3.select(this).attr('xlink:href', 
+            d3.select(this).attr('xlink:href',
                 d.data?.url ? createLetterFaviconForURL(d.data.url) : createPlaceholderFavicon('?'));
         });
 
@@ -643,87 +639,87 @@ export async function drawTreemap(data) {
             isCurrentlyAudible: d.data.isCurrentlyAudible,
             totalAudioDuration: d.data.totalAudioDuration
         });
-        
+
         // Show indicator if currently audible OR has played audio before
-        const hasAudio = d.data.audible || d.data.isCurrentlyAudible || 
-               (d.data.totalAudioDuration && d.data.totalAudioDuration > 0);
-        
+        const hasAudio = d.data.audible || d.data.isCurrentlyAudible ||
+            (d.data.totalAudioDuration && d.data.totalAudioDuration > 0);
+
         return hasAudio;
     })
-    .append('g')
-    .attr('class', 'audio-indicator')
-    .attr('transform', d => {
-        // Position in top-left corner for better visibility
-        return `translate(5, 5)`;
-    })
-    .each(function(d) {
-        const indicator = d3.select(this);
-        const isCurrentlyPlaying = d.data.audible || d.data.isCurrentlyAudible;
-        const hasPlayedAudio = d.data.totalAudioDuration && d.data.totalAudioDuration > 0;
-        
-        if (isCurrentlyPlaying) {
-            // Red circle for currently playing audio
-            indicator.append('circle')
-                .attr('cx', 15)
-                .attr('cy', 15)
-                .attr('r', 12)
-                .attr('fill', 'rgba(255, 0, 0, 0.9)')
-                .attr('stroke', '#FF0000')
-                .attr('stroke-width', 2);
-                
-            indicator.append('text')
-                .attr('x', 15)
-                .attr('y', 20)
-                .attr('text-anchor', 'middle')
-                .attr('fill', 'white')
-                .attr('font-size', '12px')
-                .attr('font-weight', 'bold')
-                .text('🔊');
-        } else if (hasPlayedAudio) {
-            // Orange circle for tabs that have played audio
-            indicator.append('circle')
-                .attr('cx', 15)
-                .attr('cy', 15)
-                .attr('r', 12)
-                .attr('fill', 'rgba(255, 165, 0, 0.9)')
-                .attr('stroke', '#FFA500')
-                .attr('stroke-width', 2);
-                
-            indicator.append('text')
-                .attr('x', 15)
-                .attr('y', 20)
-                .attr('text-anchor', 'middle')
-                .attr('fill', 'white')
-                .attr('font-size', '12px')
-                .attr('font-weight', 'bold')
-                .text('🎵');
-        }
-    })
-    .attr('title', d => {
-        const isCurrentlyPlaying = d.data.audible || d.data.isCurrentlyAudible;
-        const totalMs = d.data.totalAudioDuration || 0;
-        
-        if (isCurrentlyPlaying && totalMs > 0) {
-            return `Currently playing audio • Total: ${formatAudioDuration(totalMs)}`;
-        } else if (isCurrentlyPlaying) {
-            return 'Currently playing audio';
-        } else if (totalMs > 0) {
-            return `Audio played: ${formatAudioDuration(totalMs)}`;
-        }
-        return 'Audio activity detected';
-    });
+        .append('g')
+        .attr('class', 'audio-indicator')
+        .attr('transform', d => {
+            // Position in top-left corner for better visibility
+            return `translate(5, 5)`;
+        })
+        .each(function (d) {
+            const indicator = d3.select(this);
+            const isCurrentlyPlaying = d.data.audible || d.data.isCurrentlyAudible;
+            const hasPlayedAudio = d.data.totalAudioDuration && d.data.totalAudioDuration > 0;
+
+            if (isCurrentlyPlaying) {
+                // Red circle for currently playing audio
+                indicator.append('circle')
+                    .attr('cx', 15)
+                    .attr('cy', 15)
+                    .attr('r', 12)
+                    .attr('fill', 'rgba(255, 0, 0, 0.9)')
+                    .attr('stroke', '#FF0000')
+                    .attr('stroke-width', 2);
+
+                indicator.append('text')
+                    .attr('x', 15)
+                    .attr('y', 20)
+                    .attr('text-anchor', 'middle')
+                    .attr('fill', 'white')
+                    .attr('font-size', '12px')
+                    .attr('font-weight', 'bold')
+                    .text('🔊');
+            } else if (hasPlayedAudio) {
+                // Orange circle for tabs that have played audio
+                indicator.append('circle')
+                    .attr('cx', 15)
+                    .attr('cy', 15)
+                    .attr('r', 12)
+                    .attr('fill', 'rgba(255, 165, 0, 0.9)')
+                    .attr('stroke', '#FFA500')
+                    .attr('stroke-width', 2);
+
+                indicator.append('text')
+                    .attr('x', 15)
+                    .attr('y', 20)
+                    .attr('text-anchor', 'middle')
+                    .attr('fill', 'white')
+                    .attr('font-size', '12px')
+                    .attr('font-weight', 'bold')
+                    .text('🎵');
+            }
+        })
+        .attr('title', d => {
+            const isCurrentlyPlaying = d.data.audible || d.data.isCurrentlyAudible;
+            const totalMs = d.data.totalAudioDuration || 0;
+
+            if (isCurrentlyPlaying && totalMs > 0) {
+                return `Currently playing audio • Total: ${formatAudioDuration(totalMs)}`;
+            } else if (isCurrentlyPlaying) {
+                return 'Currently playing audio';
+            } else if (totalMs > 0) {
+                return `Audio played: ${formatAudioDuration(totalMs)}`;
+            }
+            return 'Audio activity detected';
+        });
 
     // Centered text below favicon
     const textElement = cellContent.append('text')
         .attr('text-anchor', 'middle')
-        .attr('y', d => d.iconSize/2 + 20) // Position text below icon
+        .attr('y', d => d.iconSize / 2 + 20) // Position text below icon
         .attr('fill', 'black') // Black font color
         .attr('opacity', 0.8) // 80% opacity
         .attr('pointer-events', 'none')
         .text(d => formatTitle(d.data.title));
 
     // Adjust font size to fit the available cell space
-    nodes.each(function(d) {
+    nodes.each(function (d) {
         const text = d3.select(this).select('text');
         fitTextToCell(text, d.x1 - d.x0 - 16, d.y1 - d.y0 - (d.iconSize + 44)); // Account for icon size
     });
@@ -745,7 +741,7 @@ export async function drawTreemap(data) {
                 <path d="M12 2c5.523 0 10 4.477 10 10s-4.477 10 -10 10s-10 -4.477 -10 -10s4.477 -10 10 -10m3.6 5.2a1 1 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
             </svg>
         `)
-        .on('click', async function(event, d) {
+        .on('click', async function (event, d) {
             event.stopPropagation();
             const tabId = parseInt(d.data.id.replace('tab', ''), 10);
             try {
@@ -776,14 +772,14 @@ export async function drawTreemap(data) {
                 <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
             </svg>
         `)
-        .on('click', function(event, d) {
+        .on('click', function (event, d) {
             event.stopPropagation();
             // Check if URL is valid before attempting to bookmark
             if (!d.data.url) {
                 console.warn('No URL to bookmark:', d.data);
                 return;
             }
-            
+
             try {
                 chrome.bookmarks.create({
                     title: d.data.title || 'Untitled',
@@ -805,7 +801,7 @@ export async function drawTreemap(data) {
 
     // In the node creation section, add event listeners
     nodes
-        .on('dblclick', function(event, d) {
+        .on('dblclick', function (event, d) {
             event.stopPropagation();
             if (d.data.isBookmark) {
                 // Handle bookmark double-click
@@ -827,13 +823,13 @@ export async function drawTreemap(data) {
     // Add debug logging
     console.log('Event listeners attached:', {
         nodes: nodes.size(),
-        withDblClick: nodes.filter(function() {
+        withDblClick: nodes.filter(function () {
             return d3.select(this).on('dblclick');
         }).size()
     });
 
     // Add background click handler to clear selection
-    d3.select('#treemap').on('click', function(event) {
+    d3.select('#treemap').on('click', function (event) {
         if (event.target.tagName === 'svg' || event.target.id === 'treemap') {
             nodes.classed('cell-selected', false)
                 .select('rect')
@@ -847,7 +843,7 @@ export async function drawTreemap(data) {
 
     // Add event handlers right after node creation
     nodes
-        .on('mouseenter', function(event, d) {
+        .on('mouseenter', function (event, d) {
             // Enhanced hover debug logging for audio troubleshooting
             console.log('📋 HOVER DEBUG - Complete Tab Data:', {
                 // Basic tab info
@@ -855,51 +851,51 @@ export async function drawTreemap(data) {
                 url: d.data.url,
                 id: d.data.id,
                 windowId: d.data.windowId,
-                
+
                 // Audio status flags
                 '🔊 audible': d.data.audible,
                 '🔊 isCurrentlyAudible': d.data.isCurrentlyAudible,
                 '🔊 totalAudioDuration': d.data.totalAudioDuration,
-                
+
                 // Other tab properties
                 active: d.data.active,
                 timeSpent: d.data.timeSpent,
                 lastAccessed: d.data.lastAccessed,
-                
+
                 // Raw data for debugging
                 '📊 fullTabData': d.data
             });
-            
+
             if (!interactionState.activeNode) {
                 focusNode(this, d);
             }
         })
-        .on('mouseleave', function(event, d) {
+        .on('mouseleave', function (event, d) {
             if (!interactionState.activeNode && !interactionState.isKeyboardMode) {
                 unfocusNode(this);
             }
         })
-        .on('click', function(event, d) {
+        .on('click', function (event, d) {
             event.stopPropagation();
             activateNode(this, d);
         })
         .on('dblclick', handleNodeDblClick)
-        .on('focus', function(event, d) {
+        .on('focus', function (event, d) {
             interactionState.isKeyboardMode = true;
             focusNode(this, d);
         })
-        .on('blur', function(event, d) {
+        .on('blur', function (event, d) {
             if (!interactionState.activeNode) {
                 unfocusNode(this);
             }
         })
-        .on('keydown', function(event, d) {
+        .on('keydown', function (event, d) {
             handleKeyNavigation(event, this, d, interactionState);
         });
 
     // Store nodes for keyboard navigation
     interactionState.focusableNodes = nodes.nodes();
-    
+
     // Debug logging
     console.log('Event handlers attached:', {
         nodes: nodes.size(),
@@ -965,7 +961,7 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
 
     // Reduce font size by 1 to fit within the cell
     textElement.attr('font-size', (fontSize - 1) + 'px');
-    setTimeout(initDragDrop, 500); 
+    setTimeout(initDragDrop, 500);
 }
 
 
@@ -974,20 +970,20 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
 function initializeMessageHandling() {
     chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
         // Check for URL bar navigation specifically
-        if (message.action === 'tabUpdated' && 
+        if (message.action === 'tabUpdated' &&
             message.changeInfo?.navigationType === 'urlBarNavigation') {
-            
+
             console.log('URL bar navigation detected - updating treemap');
-            
+
             // For URL bar navigation, we want to ensure we have the latest data
             chrome.runtime.sendMessage({ action: 'getInitialState' }, async (freshState) => {
                 treemapState.data = freshState;
                 await drawTreemap(treemapState.data);
             });
-            
+
             return true;
         }
-        
+
         // Handle other message types as before...
         console.log('Treemap received message:', {
             type: message?.type,
@@ -999,22 +995,22 @@ function initializeMessageHandling() {
         // Handle navigation_event specifically to capture link text
         if (message.type === 'navigation_event' && message.data) {
             console.log('Link navigation detected with text:', message.data.text);
-            
+
             // Store the clicked link text data in our state to preserve it
             if (!treemapState.linkTextCache) {
                 treemapState.linkTextCache = {};
             }
-            
+
             // Cache the link text by URL so we can use it later
             treemapState.linkTextCache[message.data.targetUrl] = {
                 text: message.data.text,
                 timestamp: message.data.timestamp
             };
-            
+
             // Use the data for immediate update
             const updateData = {
                 tabId: sender.tab.id,
-                changeInfo: { 
+                changeInfo: {
                     url: message.data.targetUrl,
                     linkText: message.data.text, // Add this for the handler to use
                     navigationType: 'linkClick'
@@ -1028,12 +1024,12 @@ function initializeMessageHandling() {
                     lastAccessed: Date.now()
                 }
             };
-            
+
             // Update treemap immediately
             await handleTabUpdated(updateData);
             return true;
         }
-        
+
         // Handle other message types...
         return true;
     });
@@ -1044,14 +1040,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Diagnostic: Log what page we're on
     console.log('🔍 treemap.js DOMContentLoaded fired on page:', window.location.href);
     console.log('🔍 Available elements:', document.querySelectorAll('[id]'));
-    
+
     // Guard: Only initialize if we're on a page with the treemap container
     const treemapContainer = document.getElementById('treemap');
     if (!treemapContainer) {
         console.log('Treemap container not found - skipping treemap initialization on', window.location.href);
         return;
     }
-    
+
     try {
         await initializeState();
         initializeMessageHandling();  // Add this line
@@ -1062,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Global debug function to refresh treemap
-window.refreshTreemapDebug = async function() {
+window.refreshTreemapDebug = async function () {
     console.log('🔄 Refreshing treemap with latest data...');
     const response = await chrome.runtime.sendMessage({ action: 'getInitialState' });
     if (response && response.data) {
@@ -1076,7 +1072,7 @@ window.refreshTreemapDebug = async function() {
 // Update the handleTabUpdated function with proper change detection
 async function handleTabUpdated(message) {
     const { tabId, changeInfo, tab } = message;
-    
+
     console.log('Processing tab update:', {
         tabId,
         changeInfo,
@@ -1104,7 +1100,7 @@ async function handleTabUpdated(message) {
             if (t.id === tabId) {
                 // Determine the best title to use
                 let bestTitle = null;
-                
+
                 // If this is a link click with text, prefer that
                 if (changeInfo.linkText) {
                     bestTitle = changeInfo.linkText;
@@ -1114,23 +1110,23 @@ async function handleTabUpdated(message) {
                     bestTitle = tab.title;
                 }
                 // If we have cached link text for this URL, use that
-                else if (treemapState.linkTextCache && 
-                         treemapState.linkTextCache[tab.url || changeInfo.url]) {
+                else if (treemapState.linkTextCache &&
+                    treemapState.linkTextCache[tab.url || changeInfo.url]) {
                     bestTitle = treemapState.linkTextCache[tab.url || changeInfo.url].text;
                 }
                 // Fall back to the existing title
                 else {
                     bestTitle = tab.title || t.title;
                 }
-                
+
                 // Check if anything actually changed
                 const urlChanged = (changeInfo.url && changeInfo.url !== t.url);
                 const titleChanged = (bestTitle && bestTitle !== t.title);
                 const faviconChanged = (tab.favIconUrl && tab.favIconUrl !== t.favIconUrl);
-                
+
                 // Only mark as having content change if something meaningful changed
                 hasContentChange = urlChanged || titleChanged || faviconChanged;
-                
+
                 if (hasContentChange) {
                     console.log('Content changed:', {
                         urlChanged,
@@ -1139,7 +1135,7 @@ async function handleTabUpdated(message) {
                         oldTitle: t.title,
                         newTitle: bestTitle
                     });
-                    
+
                     updated = true;
                     const updatedTab = {
                         ...t,
@@ -1148,7 +1144,7 @@ async function handleTabUpdated(message) {
                         favIconUrl: tab.favIconUrl || t.favIconUrl,
                         lastAccessed: hasContentChange ? Date.now() : t.lastAccessed // Only update timestamp if something changed
                     };
-                    
+
                     console.log('Updating tab in window:', {
                         windowId: window.id,
                         tabId,
@@ -1157,7 +1153,7 @@ async function handleTabUpdated(message) {
                     });
                     return updatedTab;
                 }
-                
+
                 // If nothing changed, return the tab as-is
                 return t;
             }
@@ -1168,7 +1164,7 @@ async function handleTabUpdated(message) {
 
     if (updated && hasContentChange) {
         console.log('Redrawing treemap after content change');
-        
+
         // Use debouncing to prevent multiple redraws in quick succession
         clearTimeout(updateState.debounceTimer);
         updateState.debounceTimer = setTimeout(async () => {
@@ -1207,7 +1203,7 @@ async function handleTabRemoved(tabId, removeInfo) {
     }));
 
     // Remove empty windows (except bookmark window)
-    treemapState.data.activeWindows = treemapState.data.activeWindows.filter(window => 
+    treemapState.data.activeWindows = treemapState.data.activeWindows.filter(window =>
         window.tabs.length > 0 || window.id === 'bookmark'
     );
 
@@ -1283,20 +1279,20 @@ async function handleTabCreated(tab) {
 }
 
 // Initialize state when page loads
-document.addEventListener('DOMContentLoaded', initializeState);
+
 
 function calculateCellIconSize(cellWidth, cellHeight, maxIconSize = 128, minIconSize = 16) {
     // Account for padding and text height
     const padding = 10;
     const textHeight = 40;
-    
+
     // Calculate available space
     const availableWidth = cellWidth - (padding * 2);
     const availableHeight = cellHeight - (padding * 2) - textHeight;
-    
+
     // Get the limiting dimension
     const maxPossibleSize = Math.min(availableWidth, availableHeight);
-    
+
     // Constrain to our min/max bounds
     return Math.max(minIconSize, Math.min(maxPossibleSize, maxIconSize));
 }
@@ -1390,7 +1386,7 @@ function focusNode(node, data) {
         title: data.data?.title,
         url: data.data?.url
     });
-    
+
     // Clear previous focus
     if (interactionState.focusedNode) {
         unfocusNode(interactionState.focusedNode);
@@ -1408,7 +1404,7 @@ function focusNode(node, data) {
 
 function unfocusNode(node) {
     if (!node) return;
-    
+
     interactionState.focusedNode = null;
     d3.select(node)
         .classed('node-focused', false)
@@ -1473,9 +1469,9 @@ function shuffleArray(array) {
 async function fillEmptyCellsWithBookmarks(emptyCells) {
     const bookmarks = await fetchRecentBookmarks();
     const randomizedBookmarks = shuffleArray([...bookmarks]);
-    
+
     console.log(`Filling ${emptyCells} empty cells with random bookmarks from ${bookmarks.length} total`);
-    
+
     return {
         name: 'Window bookmark',
         id: 'bookmark',
@@ -1519,8 +1515,8 @@ async function handleWindowRemoved(windowId) {
         await drawTreemap(treemapState.data);
     } else {
         // Clear treemap if no windows remain (but keep state)
-        console.log('No remaining windows, clearing treemap');
-        showEmptyState();
+        console.log('No remaining windows, attempting to draw bookmarks');
+        await drawTreemap(treemapState.data);
     }
 }
 
@@ -1547,31 +1543,58 @@ function showEmptyState() {
         .attr('x', container.offsetWidth / 2)
         .attr('dy', '1.5em')
         .text('Open a new window to get started');
+
+    // Add Refresh Button
+    const buttonGroup = svg.append('g')
+        .attr('class', 'refresh-button')
+        .style('cursor', 'pointer')
+        .on('click', () => {
+            console.log('Manually refreshing treemap...');
+            d3.select('.refresh-button').style('opacity', 0.5); // Feedback
+            initializeState();
+        });
+
+    buttonGroup.append('rect')
+        .attr('x', container.offsetWidth / 2 - 50)
+        .attr('y', (window.innerHeight - 48) / 2 + 60)
+        .attr('width', 100)
+        .attr('height', 36)
+        .attr('rx', 18)
+        .attr('fill', '#007aff');
+
+    buttonGroup.append('text')
+        .attr('x', container.offsetWidth / 2)
+        .attr('y', (window.innerHeight - 48) / 2 + 83)
+        .attr('text-anchor', 'middle')
+        .attr('fill', 'white')
+        .attr('font-size', '14px')
+        .attr('font-weight', '500')
+        .text('Refresh');
 }
 
 // Update your initialization
 async function initializeTreemap() {
     // Get initial data
     const treeData = await browserState.getTreemapData();
-    
+
     // Draw initial treemap
     await drawTreemap(treeData);
-    
+
     // Subscribe to changes
     browserState.subscribe(async (update) => {
-      console.log('State update received:', update);
-      
-      // Request fresh data and update the visualization
-      const freshData = await browserState.getTreemapData();
-      await drawTreemap(freshData);
+        console.log('State update received:', update);
+
+        // Request fresh data and update the visualization
+        const freshData = await browserState.getTreemapData();
+        await drawTreemap(freshData);
     });
-  }
+}
 
 // Fix click handler for readout display
 function handleNodeClick(event, d) {
     // Make sure we extract data correctly and pass both parameters
     const nodeData = d?.data || d || d3.select(event.currentTarget).datum()?.data;
-    
+
     if (nodeData) {
         // Fetch bookmarks and history items
         Promise.all([
@@ -1581,7 +1604,7 @@ function handleNodeClick(event, d) {
             // Pass both the data and the fetched bookmarks and history
             console.log("Passing to displayReadout", nodeData, bookmarks, history);
             displayReadout(nodeData, bookmarks, history);
-            
+
             // Open the URL if it's a real tab
             if (nodeData.url && !nodeData.isBookmark) {
                 chrome.tabs.update(nodeData.id, { active: true });
@@ -1620,12 +1643,12 @@ function initDragDrop() {
     let dragNode = null;
 
     const drag = d3.drag()
-        .on('start', function(event, d) {
+        .on('start', function (event, d) {
             // Clear any existing timer
             if (longPressTimer) {
                 clearTimeout(longPressTimer);
             }
-            
+
             // Set up long press timer
             longPressTimer = setTimeout(() => {
                 if (!isDragging) {
@@ -1635,7 +1658,7 @@ function initDragDrop() {
                 }
             }, 750); // 750ms delay for long press
         })
-        .on('drag', function(event, d) {
+        .on('drag', function (event, d) {
             // If drag movement happens before long press timer, cancel the timer
             if (!isDragging) {
                 if (longPressTimer) {
@@ -1644,18 +1667,18 @@ function initDragDrop() {
                 }
                 return;
             }
-            
+
             if (isDragging && dragNode === this) {
                 dragging(event, d, this);
             }
         })
-        .on('end', function(event, d) {
+        .on('end', function (event, d) {
             // Clear the timer if it exists
             if (longPressTimer) {
                 clearTimeout(longPressTimer);
                 longPressTimer = null;
             }
-            
+
             if (isDragging && dragNode === this) {
                 dragEnded(event, d, this);
                 isDragging = false;
@@ -1679,55 +1702,55 @@ function initDragDrop() {
  * @param {HTMLElement} node - DOM element being dragged
  */
 function dragStarted(event, d, node) {
-  console.log("Drag started for:", d);
-  
-  // Extract tab ID and window ID
-  let tabId = null;
-  if (d && d.data && d.data.id) {
-    tabId = parseInt(d.data.id.toString().replace('tab', ''));
-  }
-  
-  const windowId = d && d.data ? d.data.windowId : null;
-  
-  if (!tabId || !windowId) {
-    console.log("Missing tab or window ID, can't start drag");
-    return;
-  }
-  
-  // Store the dragged tab info
-  draggedTab = {
-    id: tabId,
-    windowId: windowId,
-    element: node,
-    data: d
-  };
-  
-  // Highlight the dragged element
-  d3.select(node).classed('being-dragged', true);
-  
-  // Create drag ghost
-  const ghost = document.createElement('div');
-  ghost.className = 'dragging-tab';
-  ghost.textContent = 'Moving: ' + (d.data.title || ('Tab ' + tabId));
-  ghost.style.position = 'fixed';
-  ghost.style.left = event.sourceEvent.clientX + 'px';
-  ghost.style.top = event.sourceEvent.clientY + 'px';
-  ghost.style.zIndex = 10000;
-  ghost.style.pointerEvents = 'none';
-  document.body.appendChild(ghost);
-  
-  draggedTab.ghost = ghost;
-  
-  // Highlight potential drop targets (other windows)
-  d3.selectAll('.window-group')
-    .each(function() {
-      const targetWindowId = parseInt(this.getAttribute('data-window-id'));
-      if (targetWindowId && targetWindowId !== windowId) {
-        d3.select(this).classed('valid-drop-target', true);
-      }
-    });
-    
-  console.log("Drag started successfully");
+    console.log("Drag started for:", d);
+
+    // Extract tab ID and window ID
+    let tabId = null;
+    if (d && d.data && d.data.id) {
+        tabId = parseInt(d.data.id.toString().replace('tab', ''));
+    }
+
+    const windowId = d && d.data ? d.data.windowId : null;
+
+    if (!tabId || !windowId) {
+        console.log("Missing tab or window ID, can't start drag");
+        return;
+    }
+
+    // Store the dragged tab info
+    draggedTab = {
+        id: tabId,
+        windowId: windowId,
+        element: node,
+        data: d
+    };
+
+    // Highlight the dragged element
+    d3.select(node).classed('being-dragged', true);
+
+    // Create drag ghost
+    const ghost = document.createElement('div');
+    ghost.className = 'dragging-tab';
+    ghost.textContent = 'Moving: ' + (d.data.title || ('Tab ' + tabId));
+    ghost.style.position = 'fixed';
+    ghost.style.left = event.sourceEvent.clientX + 'px';
+    ghost.style.top = event.sourceEvent.clientY + 'px';
+    ghost.style.zIndex = 10000;
+    ghost.style.pointerEvents = 'none';
+    document.body.appendChild(ghost);
+
+    draggedTab.ghost = ghost;
+
+    // Highlight potential drop targets (other windows)
+    d3.selectAll('.window-group')
+        .each(function () {
+            const targetWindowId = parseInt(this.getAttribute('data-window-id'));
+            if (targetWindowId && targetWindowId !== windowId) {
+                d3.select(this).classed('valid-drop-target', true);
+            }
+        });
+
+    console.log("Drag started successfully");
 }
 
 // Improved dragging function with better tab cell detection
@@ -1746,103 +1769,103 @@ let lastValidTarget = null;
  * @param {HTMLElement} node - DOM element being dragged
  */
 function dragging(event, d, node) {
-  if (!draggedTab || !draggedTab.ghost) return;
-  
-  // Update ghost position
-  draggedTab.ghost.style.left = (event.sourceEvent.clientX + 10) + 'px';
-  draggedTab.ghost.style.top = (event.sourceEvent.clientY + 10) + 'px';
-  
-  // Find what's under the cursor
-  const elemBelow = document.elementFromPoint(
-    event.sourceEvent.clientX,
-    event.sourceEvent.clientY
-  );
-  
-  if (!elemBelow) return;
-  
-  // First check if we're directly over a cell with data-window-id
-  let targetWindowId = null;
-  let current = elemBelow;
-  
-  // Look up the DOM, increasing the search depth to find cell containers
-  let searchDepth = 0;
-  while (current && current !== document.body && !targetWindowId && searchDepth < 6) {
-    searchDepth++;
-    
-    // Check for direct data-window-id attribute first
-    if (current.hasAttribute && current.hasAttribute('data-window-id')) {
-      targetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
-      console.log(`Found target directly with data-window-id: ${targetWindowId}`);
-      break;
+    if (!draggedTab || !draggedTab.ghost) return;
+
+    // Update ghost position
+    draggedTab.ghost.style.left = (event.sourceEvent.clientX + 10) + 'px';
+    draggedTab.ghost.style.top = (event.sourceEvent.clientY + 10) + 'px';
+
+    // Find what's under the cursor
+    const elemBelow = document.elementFromPoint(
+        event.sourceEvent.clientX,
+        event.sourceEvent.clientY
+    );
+
+    if (!elemBelow) return;
+
+    // First check if we're directly over a cell with data-window-id
+    let targetWindowId = null;
+    let current = elemBelow;
+
+    // Look up the DOM, increasing the search depth to find cell containers
+    let searchDepth = 0;
+    while (current && current !== document.body && !targetWindowId && searchDepth < 6) {
+        searchDepth++;
+
+        // Check for direct data-window-id attribute first
+        if (current.hasAttribute && current.hasAttribute('data-window-id')) {
+            targetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
+            console.log(`Found target directly with data-window-id: ${targetWindowId}`);
+            break;
+        }
+
+        // Also check for data-windowid attribute for compatibility
+        if (current.hasAttribute && current.hasAttribute('data-windowid')) {
+            targetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
+            console.log(`Found target with data-windowid: ${targetWindowId}`);
+            break;
+        }
+
+        // Check if this is a cell with D3 data - use D3's data to get windowId
+        if (current.classList && current.classList.contains('cell')) {
+            const cellData = d3.select(current).datum();
+            if (cellData && cellData.data && cellData.data.windowId) {
+                targetWindowId = parseInt(cellData.data.windowId, 10);
+                console.log(`Found target from cell D3 data: ${targetWindowId}`);
+                break;
+            }
+        }
+
+        current = current.parentElement;
     }
-    
-    // Also check for data-windowid attribute for compatibility
-    if (current.hasAttribute && current.hasAttribute('data-windowid')) {
-      targetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
-      console.log(`Found target with data-windowid: ${targetWindowId}`);
-      break;
-    }
-    
-    // Check if this is a cell with D3 data - use D3's data to get windowId
-    if (current.classList && current.classList.contains('cell')) {
-      const cellData = d3.select(current).datum();
-      if (cellData && cellData.data && cellData.data.windowId) {
-        targetWindowId = parseInt(cellData.data.windowId, 10);
-        console.log(`Found target from cell D3 data: ${targetWindowId}`);
-        break;
-      }
-    }
-    
-    current = current.parentElement;
-  }
-  
-  // Reset highlights
-  d3.selectAll('.window-group').classed('drop-target-active', false);
-  
-  // If we found a window ID and it's different from source
-  if (targetWindowId && targetWindowId !== draggedTab.windowId) {
-    // Find the window group element
-    const windowGroup = d3.select(`.window-group[data-window-id="${targetWindowId}"]`).node();
-    
-    if (windowGroup) {
-      // Highlight as drop target
-      d3.select(windowGroup).classed('drop-target-active', true);
-      
-      // Store as drop target
-      draggedTab.dropTarget = {
-        element: windowGroup,
-        windowId: targetWindowId
-      };
-      
-      // IMPORTANT: Also store in our independent tracker
-      lastValidTarget = {
-        element: windowGroup,
-        windowId: targetWindowId,
-        timestamp: Date.now()
-      };
-      
-      console.log(`Valid drop target: Window ${targetWindowId}`);
-    }
-  } else {
-    // Make the sticky target behavior MORE sticky - increase duration to 800ms
-    const timeSinceValidTarget = Date.now() - (lastValidTarget?.timestamp || 0);
-    const stickyDuration = 800; // Increased stickiness
-    
-    if (timeSinceValidTarget > stickyDuration || !lastValidTarget) {
-      draggedTab.dropTarget = null;
+
+    // Reset highlights
+    d3.selectAll('.window-group').classed('drop-target-active', false);
+
+    // If we found a window ID and it's different from source
+    if (targetWindowId && targetWindowId !== draggedTab.windowId) {
+        // Find the window group element
+        const windowGroup = d3.select(`.window-group[data-window-id="${targetWindowId}"]`).node();
+
+        if (windowGroup) {
+            // Highlight as drop target
+            d3.select(windowGroup).classed('drop-target-active', true);
+
+            // Store as drop target
+            draggedTab.dropTarget = {
+                element: windowGroup,
+                windowId: targetWindowId
+            };
+
+            // IMPORTANT: Also store in our independent tracker
+            lastValidTarget = {
+                element: windowGroup,
+                windowId: targetWindowId,
+                timestamp: Date.now()
+            };
+
+            console.log(`Valid drop target: Window ${targetWindowId}`);
+        }
     } else {
-      // Use the last valid target
-      draggedTab.dropTarget = {
-        element: lastValidTarget.element,
-        windowId: lastValidTarget.windowId
-      };
-      
-      if (lastValidTarget.element) {
-        d3.select(lastValidTarget.element).classed('drop-target-active', true);
-        console.log(`Using sticky target: Window ${lastValidTarget.windowId}`);
-      }
+        // Make the sticky target behavior MORE sticky - increase duration to 800ms
+        const timeSinceValidTarget = Date.now() - (lastValidTarget?.timestamp || 0);
+        const stickyDuration = 800; // Increased stickiness
+
+        if (timeSinceValidTarget > stickyDuration || !lastValidTarget) {
+            draggedTab.dropTarget = null;
+        } else {
+            // Use the last valid target
+            draggedTab.dropTarget = {
+                element: lastValidTarget.element,
+                windowId: lastValidTarget.windowId
+            };
+
+            if (lastValidTarget.element) {
+                d3.select(lastValidTarget.element).classed('drop-target-active', true);
+                console.log(`Using sticky target: Window ${lastValidTarget.windowId}`);
+            }
+        }
     }
-  }
 }
 
 // Fix the dragEnded function to properly convert windowId to integer
@@ -1859,48 +1882,48 @@ function dragging(event, d, node) {
  */
 function dragEnded(event, d, node) {
     if (!draggedTab) return;
-    
+
     // First try to detect the window directly under the cursor at release
     let finalTargetWindowId = null;
-    
+
     // Get the element under the cursor when the drag ended
     const elemBelow = document.elementFromPoint(
         event.sourceEvent.clientX,
         event.sourceEvent.clientY
     );
-    
+
     if (elemBelow) {
         // Look up from the release point to find a window ID
         let current = elemBelow;
         let searchDepth = 0;
-        
+
         while (current && current !== document.body && !finalTargetWindowId && searchDepth < 6) {
             searchDepth++;
-            
+
             // Check data-window-id attribute first
             if (current.hasAttribute && current.hasAttribute('data-window-id')) {
                 finalTargetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
                 console.log(`Final drop directly found window ID: ${finalTargetWindowId}`);
                 break;
             }
-            
+
             // Also check data-windowid
             if (current.hasAttribute && current.hasAttribute('data-windowid')) {
                 finalTargetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
                 console.log(`Final drop found windowid: ${finalTargetWindowId}`);
                 break;
             }
-            
+
             current = current.parentElement;
         }
     }
-    
+
     // If we didn't find anything directly, use the last stored dropTarget
     if (!finalTargetWindowId && draggedTab.dropTarget && draggedTab.dropTarget.windowId) {
         finalTargetWindowId = parseInt(draggedTab.dropTarget.windowId, 10);
         console.log(`Using stored dropTarget window ID: ${finalTargetWindowId}`);
     }
-    
+
     // If still nothing, try lastValidTarget as final fallback
     if (!finalTargetWindowId && lastValidTarget && lastValidTarget.windowId) {
         const timeSinceLastValid = Date.now() - (lastValidTarget.timestamp || 0);
@@ -1909,29 +1932,29 @@ function dragEnded(event, d, node) {
             console.log(`Using lastValidTarget as fallback: ${finalTargetWindowId}`);
         }
     }
-    
+
     // Log the final decision
     console.log(`Final drop decision - Source: ${draggedTab.windowId}, Target: ${finalTargetWindowId}`);
-    
+
     // Only proceed if we have a valid target different from source
     if (finalTargetWindowId && finalTargetWindowId !== draggedTab.windowId) {
         const tabId = draggedTab.id;
-        
+
         console.log(`Moving tab ${tabId} to window ${finalTargetWindowId}`);
-        
-        chrome.tabs.move(tabId, { windowId: finalTargetWindowId, index: -1 }, function(movedTab) {
+
+        chrome.tabs.move(tabId, { windowId: finalTargetWindowId, index: -1 }, function (movedTab) {
             if (chrome.runtime.lastError) {
                 console.error('Move failed:', chrome.runtime.lastError);
                 showNotification('Failed to move tab: ' + chrome.runtime.lastError.message, 'error');
                 return;
             }
-            
+
             console.log('Tab moved successfully:', movedTab);
             showNotification('Tab moved successfully', 'success');
-            
+
             // Store the moved tab ID in sessionStorage to focus after reload
             sessionStorage.setItem('focusTabAfterMove', tabId.toString());
-            
+
             // Reload the page after a short delay to update the visualization
             setTimeout(() => {
                 window.location.reload();
@@ -1940,17 +1963,17 @@ function dragEnded(event, d, node) {
     } else {
         console.log('No valid drop target found or source and target window are the same');
     }
-    
+
     // Clean up
     d3.select(draggedTab.element).classed('being-dragged', false);
     d3.selectAll('.window-group')
         .classed('valid-drop-target', false)
         .classed('drop-target-active', false);
-    
+
     if (draggedTab.ghost) {
         draggedTab.ghost.remove();
     }
-    
+
     // Reset state variables
     draggedTab = null;
     lastValidTarget = null;
@@ -1960,17 +1983,17 @@ function dragEnded(event, d, node) {
 
 // Add this function at the top of your file
 function setupTabMoveListener() {
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Listen for tab movement notifications
-    if (message.action === 'tabMoved') {
-      console.log('Tab move detected in UI:', message);
-      
-      // Refresh the data and redraw the treemap
-      refreshTreemapAfterTabMove(message.tabId, message.tab.windowId);
-    }
-  });
-  
-  console.log("Tab move listener initialized");
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        // Listen for tab movement notifications
+        if (message.action === 'tabMoved') {
+            console.log('Tab move detected in UI:', message);
+
+            // Refresh the data and redraw the treemap
+            refreshTreemapAfterTabMove(message.tabId, message.tab.windowId);
+        }
+    });
+
+    console.log("Tab move listener initialized");
 }
 
 // Call this during initialization
@@ -1980,152 +2003,152 @@ setupTabMoveListener();
 
 // Replace or update your existing fetchDataAndBuildTreemap function
 function fetchDataAndBuildTreemap() {
-  console.log("Fetching fresh data for treemap");
-  
-  // Get fresh data from background page
-  chrome.runtime.sendMessage({ action: 'getTreemapData' }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('Error fetching treemap data:', chrome.runtime.lastError);
-      return;
-    }
-    
-    console.log("Received fresh treemap data:", response);
-    
-    // Draw treemap with new data
-    if (response && response.data) {
-      drawTreemap(response.data);
-    }
-  });
+    console.log("Fetching fresh data for treemap");
+
+    // Get fresh data from background page
+    chrome.runtime.sendMessage({ action: 'getTreemapData' }, (response) => {
+        if (chrome.runtime.lastError) {
+            console.error('Error fetching treemap data:', chrome.runtime.lastError);
+            return;
+        }
+
+        console.log("Received fresh treemap data:", response);
+
+        // Draw treemap with new data
+        if (response && response.data) {
+            drawTreemap(response.data);
+        }
+    });
 }
 
 // Update your moveTabToWindow function to handle the update better
 function moveTabToWindow(tabId, windowId) {
-  console.log(`Moving tab ${tabId} to window ${windowId}`);
-  
-  chrome.tabs.move(tabId, { windowId, index: -1 })
-    .then(tab => {
-      console.log('Tab moved successfully:', tab);
-      showNotification('Tab moved successfully', 'success');
-      
-      // No need to manually refresh - the event listener will handle it
-    })
-    .catch(error => {
-      console.error('Error moving tab:', error);
-      showNotification('Failed to move tab: ' + error.message, 'error');
-    });
+    console.log(`Moving tab ${tabId} to window ${windowId}`);
+
+    chrome.tabs.move(tabId, { windowId, index: -1 })
+        .then(tab => {
+            console.log('Tab moved successfully:', tab);
+            showNotification('Tab moved successfully', 'success');
+
+            // No need to manually refresh - the event listener will handle it
+        })
+        .catch(error => {
+            console.error('Error moving tab:', error);
+            showNotification('Failed to move tab: ' + error.message, 'error');
+        });
 }
 
 function refreshTreemapAfterTabMove(tabId, newWindowId) {
-  console.log(`Refreshing treemap after moving tab ${tabId} to window ${newWindowId}`);
-  
-  // Show loading indicator
-  const loadingIndicator = document.createElement('div');
-  loadingIndicator.className = 'loading-indicator';
-  loadingIndicator.innerHTML = 'Updating visualization...';
-  loadingIndicator.style.position = 'fixed';
-  loadingIndicator.style.top = '10px';
-  loadingIndicator.style.left = '50%';
-  loadingIndicator.style.transform = 'translateX(-50%)';
-  loadingIndicator.style.background = 'rgba(0, 0, 0, 0.7)';
-  loadingIndicator.style.color = 'white';
-  loadingIndicator.style.padding = '10px 20px';
-  loadingIndicator.style.borderRadius = '4px';
-  loadingIndicator.style.zIndex = '9999';
-  document.body.appendChild(loadingIndicator);
-  
-  // Wait a bit and then reload the page to get fresh data
-  setTimeout(() => {
-    window.location.reload();
-  }, 300);
-  
-  // This will never execute due to reload, but keeping for future reference
-  setTimeout(() => {
-    if (loadingIndicator.parentNode) {
-      loadingIndicator.parentNode.removeChild(loadingIndicator);
-    }
-  }, 2000);
+    console.log(`Refreshing treemap after moving tab ${tabId} to window ${newWindowId}`);
+
+    // Show loading indicator
+    const loadingIndicator = document.createElement('div');
+    loadingIndicator.className = 'loading-indicator';
+    loadingIndicator.innerHTML = 'Updating visualization...';
+    loadingIndicator.style.position = 'fixed';
+    loadingIndicator.style.top = '10px';
+    loadingIndicator.style.left = '50%';
+    loadingIndicator.style.transform = 'translateX(-50%)';
+    loadingIndicator.style.background = 'rgba(0, 0, 0, 0.7)';
+    loadingIndicator.style.color = 'white';
+    loadingIndicator.style.padding = '10px 20px';
+    loadingIndicator.style.borderRadius = '4px';
+    loadingIndicator.style.zIndex = '9999';
+    document.body.appendChild(loadingIndicator);
+
+    // Wait a bit and then reload the page to get fresh data
+    setTimeout(() => {
+        window.location.reload();
+    }, 300);
+
+    // This will never execute due to reload, but keeping for future reference
+    setTimeout(() => {
+        if (loadingIndicator.parentNode) {
+            loadingIndicator.parentNode.removeChild(loadingIndicator);
+        }
+    }, 2000);
 }
 
 // Add a function to focus on a specific tab after reload
 function focusMovedTabAfterReload() {
-  const tabIdToFocus = sessionStorage.getItem('focusTabAfterMove');
-  
-  if (!tabIdToFocus) return; // Nothing to focus
-  
-  console.log(`Looking for tab ${tabIdToFocus} to focus after move`);
-  
-  // Clear the storage so we don't focus again on next reload
-  sessionStorage.removeItem('focusTabAfterMove');
-  
-  // Use a longer delay to ensure DOM is fully ready
-  setTimeout(() => {
-    // Find the tab node in the treemap
-    let foundNode = null;
-    
-    d3.selectAll('.cell').each(function(d) {
-      if (!d || !d.data || !d.data.id) return;
-      
-      const nodeTabId = d.data.id.toString().replace('tab', '');
-      
-      if (nodeTabId === tabIdToFocus) {
-        foundNode = { node: this, data: d };
-        console.log('Found moved tab element:', this);
-        return;
-      }
-    });
-    
-    if (foundNode) {
-      console.log('Found moved tab, focusing:', foundNode);
-      
-      // Focus the node using your existing focus function
-      focusNode(foundNode.node, foundNode.data);
-      
-      // Scroll the node into view
-      foundNode.node.scrollIntoView({ 
-        behavior: 'smooth', 
-        block: 'center' 
-      });
-      
-      // Add a STRONG highlight effect with both D3 and direct DOM methods
-      const $node = d3.select(foundNode.node);
-      $node.classed('moved-tab-highlight', true);
-      
-      // Also add an outline directly for immediate feedback
-      foundNode.node.style.outline = '3px solid #ff5722';
-      foundNode.node.style.outlineOffset = '-3px';
-      foundNode.node.style.boxShadow = '0 0 20px rgba(255, 87, 34, 0.8)';
-      foundNode.node.style.zIndex = '1000';
-      foundNode.node.style.position = 'relative';
-      
-      // Flash effect
-      let flashCount = 0;
-      const flashInterval = setInterval(() => {
-        if (flashCount >= 5) {
-          clearInterval(flashInterval);
-          return;
+    const tabIdToFocus = sessionStorage.getItem('focusTabAfterMove');
+
+    if (!tabIdToFocus) return; // Nothing to focus
+
+    console.log(`Looking for tab ${tabIdToFocus} to focus after move`);
+
+    // Clear the storage so we don't focus again on next reload
+    sessionStorage.removeItem('focusTabAfterMove');
+
+    // Use a longer delay to ensure DOM is fully ready
+    setTimeout(() => {
+        // Find the tab node in the treemap
+        let foundNode = null;
+
+        d3.selectAll('.cell').each(function (d) {
+            if (!d || !d.data || !d.data.id) return;
+
+            const nodeTabId = d.data.id.toString().replace('tab', '');
+
+            if (nodeTabId === tabIdToFocus) {
+                foundNode = { node: this, data: d };
+                console.log('Found moved tab element:', this);
+                return;
+            }
+        });
+
+        if (foundNode) {
+            console.log('Found moved tab, focusing:', foundNode);
+
+            // Focus the node using your existing focus function
+            focusNode(foundNode.node, foundNode.data);
+
+            // Scroll the node into view
+            foundNode.node.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+
+            // Add a STRONG highlight effect with both D3 and direct DOM methods
+            const $node = d3.select(foundNode.node);
+            $node.classed('moved-tab-highlight', true);
+
+            // Also add an outline directly for immediate feedback
+            foundNode.node.style.outline = '3px solid #ff5722';
+            foundNode.node.style.outlineOffset = '-3px';
+            foundNode.node.style.boxShadow = '0 0 20px rgba(255, 87, 34, 0.8)';
+            foundNode.node.style.zIndex = '1000';
+            foundNode.node.style.position = 'relative';
+
+            // Flash effect
+            let flashCount = 0;
+            const flashInterval = setInterval(() => {
+                if (flashCount >= 5) {
+                    clearInterval(flashInterval);
+                    return;
+                }
+
+                foundNode.node.style.opacity = flashCount % 2 === 0 ? '0.5' : '1';
+                flashCount++;
+            }, 250);
+
+            // Remove the highlight effects after a delay
+            setTimeout(() => {
+                $node.classed('moved-tab-highlight', false);
+                foundNode.node.style.outline = '';
+                foundNode.node.style.outlineOffset = '';
+                foundNode.node.style.boxShadow = '';
+                foundNode.node.style.opacity = '1';
+            }, 3000);
+        } else {
+            console.log(`Could not find moved tab ${tabIdToFocus} in the treemap`);
         }
-        
-        foundNode.node.style.opacity = flashCount % 2 === 0 ? '0.5' : '1';
-        flashCount++;
-      }, 250);
-      
-      // Remove the highlight effects after a delay
-      setTimeout(() => {
-        $node.classed('moved-tab-highlight', false);
-        foundNode.node.style.outline = '';
-        foundNode.node.style.outlineOffset = '';
-        foundNode.node.style.boxShadow = '';
-        foundNode.node.style.opacity = '1';
-      }, 3000);
-    } else {
-      console.log(`Could not find moved tab ${tabIdToFocus} in the treemap`);
-    }
-  }, 800); // Longer delay to ensure DOM is ready
+    }, 800); // Longer delay to ensure DOM is ready
 }
 
 // Make sure this call is present at the end of your drawTreemap function
 setTimeout(() => {
-  focusMovedTabAfterReload();
+    focusMovedTabAfterReload();
 }, 1000); // Increased delay
 
 
@@ -2140,57 +2163,57 @@ setTimeout(() => {
  * @param {string} type - Notification type ('success', 'error', or 'info')
  */
 function showNotification(message, type) {
-  // Prevent duplicates by removing existing notifications of the same type
-  const existingNotifications = document.querySelectorAll(`.notification.${type}`);
-  existingNotifications.forEach(notification => notification.remove());
-  
-  // Create notification element
-  const notification = document.createElement('div');
-  notification.className = `notification ${type}`;
-  notification.textContent = message;
-  
-  // Style the notification
-  notification.style.position = 'fixed';
-  notification.style.bottom = '20px';
-  notification.style.right = '20px';
-  notification.style.padding = '12px 20px';
-  notification.style.borderRadius = '4px';
-  notification.style.color = 'white';
-  notification.style.fontWeight = '500';
-  notification.style.boxShadow = '0 3px 10px rgba(0,0,0,0.2)';
-  notification.style.zIndex = '10000';
-  
-  // Apply type-specific styling
-  if (type === 'success') {
-    notification.style.backgroundColor = '#43a047';
-  } else if (type === 'error') {
-    notification.style.backgroundColor = '#e53935';
-  } else {
-    notification.style.backgroundColor = '#1976d2';
-  }
-  
-  // Initial state for animation
-  notification.style.transform = 'translateY(100px)';
-  notification.style.opacity = '0';
-  notification.style.transition = 'all 0.3s ease';
-  
-  // Add to document
-  document.body.appendChild(notification);
-  
-  // Trigger animation to show
-  setTimeout(() => {
-    notification.style.transform = 'translateY(0)';
-    notification.style.opacity = '1';
-  }, 10);
-  
-  // Remove after delay
-  setTimeout(() => {
+    // Prevent duplicates by removing existing notifications of the same type
+    const existingNotifications = document.querySelectorAll(`.notification.${type}`);
+    existingNotifications.forEach(notification => notification.remove());
+
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+
+    // Style the notification
+    notification.style.position = 'fixed';
+    notification.style.bottom = '20px';
+    notification.style.right = '20px';
+    notification.style.padding = '12px 20px';
+    notification.style.borderRadius = '4px';
+    notification.style.color = 'white';
+    notification.style.fontWeight = '500';
+    notification.style.boxShadow = '0 3px 10px rgba(0,0,0,0.2)';
+    notification.style.zIndex = '10000';
+
+    // Apply type-specific styling
+    if (type === 'success') {
+        notification.style.backgroundColor = '#43a047';
+    } else if (type === 'error') {
+        notification.style.backgroundColor = '#e53935';
+    } else {
+        notification.style.backgroundColor = '#1976d2';
+    }
+
+    // Initial state for animation
     notification.style.transform = 'translateY(100px)';
     notification.style.opacity = '0';
-    
-    // Remove from DOM after transition
-    setTimeout(() => notification.remove(), 300);
-  }, 3000);
+    notification.style.transition = 'all 0.3s ease';
+
+    // Add to document
+    document.body.appendChild(notification);
+
+    // Trigger animation to show
+    setTimeout(() => {
+        notification.style.transform = 'translateY(0)';
+        notification.style.opacity = '1';
+    }, 10);
+
+    // Remove after delay
+    setTimeout(() => {
+        notification.style.transform = 'translateY(100px)';
+        notification.style.opacity = '0';
+
+        // Remove from DOM after transition
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
 }
 
 /**
@@ -2203,11 +2226,11 @@ function createLetterFaviconForURL(url) {
         // Extract domain or URL part for the letter
         let letter = '?';
         let domain = '';
-        
+
         if (url.startsWith('chrome://')) {
             letter = 'C';
             domain = 'chrome';
-        } 
+        }
         else if (url.startsWith('chrome-extension://')) {
             letter = 'E';
             domain = 'extension';
@@ -2225,7 +2248,7 @@ function createLetterFaviconForURL(url) {
                 const urlObj = new URL(url);
                 domain = urlObj.hostname.replace(/^www\./, '');
                 letter = domain.charAt(0).toUpperCase();
-                
+
                 // Handle domains starting with numbers or symbols
                 if (!letter.match(/[A-Z]/i)) {
                     letter = domain.charAt(1)?.toUpperCase() || 'X';
@@ -2237,12 +2260,12 @@ function createLetterFaviconForURL(url) {
                 letter = url.charAt(0).toUpperCase() || '?';
             }
         }
-        
+
         // Generate color based on domain for consistency
         const hue = Math.abs(hashCode(domain || url) % 360);
         const color = `hsl(${hue}, 60%, 70%)`;
         const textColor = `hsl(${hue}, 70%, 30%)`;
-        
+
         return createLetterFaviconSVG(letter, color, textColor);
     } catch (error) {
         console.warn('Error creating letter favicon:', error);
@@ -2277,7 +2300,7 @@ function createLetterFaviconSVG(letter, bgColor = '#e0e0e0', textColor = '#50505
         <text x="16" y="22" font-family="Arial, sans-serif" font-size="16" 
               fill="${textColor}" text-anchor="middle" font-weight="bold">${letter}</text>
     </svg>`;
-    
+
     return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
@@ -2299,11 +2322,11 @@ function formatAudioDuration(milliseconds) {
     if (!milliseconds || milliseconds < 1000) {
         return '< 1s';
     }
-    
+
     const seconds = Math.floor(milliseconds / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
-    
+
     if (hours > 0) {
         const remainingMinutes = minutes % 60;
         return `${hours}h${remainingMinutes > 0 ? ` ${remainingMinutes}m` : ''}`;
