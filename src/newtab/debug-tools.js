@@ -1,5 +1,5 @@
 /**
- * Debug Tools for Histospire
+ * Debug Tools for Tabtopia
  * Contains utilities to inspect application data
  */
 
@@ -7,13 +7,13 @@
 (function() {
   // Wait for DOM to be ready before initializing
   document.addEventListener('DOMContentLoaded', () => {
-    console.log('📊 Histospire Debug Tools loading...');
+    console.log('📊 Tabtopia Debug Tools loading...');
     initDebugTools();
   });
 
   // Handle the case where DOM is already loaded
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    console.log('📊 Histospire Debug Tools loading (DOM already ready)...');
+    console.log('📊 Tabtopia Debug Tools loading (DOM already ready)...');
     setTimeout(() => initDebugTools(), 100); // Small delay to ensure browser is ready
   }
 
@@ -21,8 +21,8 @@
    * Initialize debug tools and attach them to window
    */
   function initDebugTools() {
-    // Create global histospireDebug object - attach to window for global access
-    window.histospireDebug = {
+    // Create global tabtopiaDebug object - attach to window for global access
+    window.tabtopiaDebug = {
       viewStoredHeroImages,
       forceExtractHeroImages,
       clearAllHeroImages,
@@ -30,10 +30,10 @@
     };
     
     // Create a custom event for modules to listen to
-    const event = new CustomEvent('histospireDebugReady', { detail: window.histospireDebug });
+    const event = new CustomEvent('tabtopiaDebugReady', { detail: window.tabtopiaDebug });
     document.dispatchEvent(event);
     
-    console.log('✅ Histospire Debug Tools loaded - access via window.histospireDebug');
+    console.log('✅ Tabtopia Debug Tools loaded - access via window.tabtopiaDebug');
   }
 
   /**
@@ -170,7 +170,7 @@
       });
       
       console.log('✅ Content scripts injected successfully!');
-      console.log('You can now run histospireConsoleDebug.forceExtractHeroImages() to test');
+      console.log('You can now run tabtopiaConsoleDebug.forceExtractHeroImages() to test');
       
       return { success: true };
     } catch (error) {

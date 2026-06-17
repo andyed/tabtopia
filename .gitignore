@@ -1,13 +1,21 @@
+# macOS (matches .DS_Store in every directory)
 .DS_Store
-src/.DS_Store
-.DS_Store
-.DS_Store
-src/.DS_Store
-.DS_Store
-.DS_Store
-.DS_Store
-src/.DS_Store
-.DS_Store
-.DS_Store
-.DS_Store
-src/newtab/state.js.bak
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Backups & logs
+*.bak
+*.log
+
+# Node (if tooling is ever added)
+node_modules/
+
+# Playwright E2E artifacts
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/

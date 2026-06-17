@@ -3,14 +3,17 @@ console.log('sessions.js loaded');
 
 // Import the summary cache and helper functions from readout.js
 import { summaryCache, getCachedSummary, summaryQueue, processSummaryQueue } from './readout.js';
+import { getLocalFaviconUrl } from './utility.js';
 // Import the debug tools bridge for ES module compatibility
-import { viewStoredHeroImages, debugToolsReady } from './debug-tools-bridge.js';
+
 // Import session renderers
-import { renderSessionCards, renderSessionWithMosaic } from './sessions_renderer.js';
+import { renderSessionCards } from './sessions_renderer.js';
 // Import hero image utilities
 import { createSessionCard, clearSeenHeroImages } from './hero_images_display.js';
 // Import time formatting utilities
 import { formatTimeAgo } from './timeago.js';
+// Import the tooltip utility
+import { globalTooltip } from './tooltip.js';
 // Import URL utilities
 import { extractSearchQuery } from '../lib/url-utils.js';
 
@@ -20,18 +23,21 @@ import { extractSearchQuery } from '../lib/url-utils.js';
  * @returns {string} Formatted duration string (e.g. "2h 30m 15s")
  */
 function formatDuration(milliseconds) {
-  if (milliseconds < 0 || isNaN(milliseconds)) return 'N/A';
-  let totalSeconds = Math.floor(milliseconds / 1000);
-  let hours = Math.floor(totalSeconds / 3600);
-  let minutes = Math.floor((totalSeconds % 3600) / 60);
-  let seconds = totalSeconds % 60;
+    if (milliseconds === undefined || milliseconds === null || isNaN(milliseconds)) return 'N/A';
 
-  let parts = [];
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0) parts.push(`${minutes}m`);
-  if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
-      
-  return parts.join(' ');
+    // Handle negative durations
+    if (milliseconds < 0) return 'Duration unknown';
+
+    // Handle zero or very small durations
+    if (milliseconds === 0) return 'Brief view';
+    if (milliseconds < 1000) return '< 1s';
+
+    if (milliseconds < 60000) return `${Math.round(milliseconds / 1000)}s`;
+    if (milliseconds < 3600000) return `${Math.round(milliseconds / 60000)}m`;
+
+    const hours = Math.floor(milliseconds / 3600000);
+    const minutes = Math.round((milliseconds % 3600000) / 60000);
+    return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`;
 }
 
 
@@ -42,9 +48,9 @@ function formatDuration(milliseconds) {
  */
 function getFaviconDisplayUrl(url) {
     try {
-        const urlObj = new URL(url);
-        // Use Google's favicon service
-        return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=32`;
+        new URL(url); // validate; an invalid URL falls through to the catch below
+        // Local favicon (Chrome's cache) instead of the external Google service.
+        return getLocalFaviconUrl(url, 32);
     } catch (e) {
         // Fallback for invalid URLs
         return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik04IDIuNWEuNS41IDAgMCAxIC41LjVWOGEuNS41IDAgMCAxLTEgMFYzYS41LjUgMCAwIDEgLjUtLjVaTTggMTBhLjc1Ljc1IDAgMSAwIDAgMS41Ljc1Ljc1IDAgMCAwIDAtMS41WiIgZmlsbD0iIzVGNjM2OCIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNOCAxNUE3IDcgMCAxIDAgOCAxYTcgNyAwIDAgMCAwIDE0Wm0wLTFBNiA2IDAgMSAwIDggMmE2IDYgMCAwIDAgMCAxMloiIGZpbGw9IiM1RjYzNjgiLz48L3N2Zz4=';
@@ -54,27 +60,27 @@ function getFaviconDisplayUrl(url) {
 // Helper function to create a truncated summary display (simplified version from readout.js)
 function createTruncatedSummary(summary, searchTerm = '') {
     if (!summary) return '';
-    
+
     const MAX_SUMMARY_LINES = 3;
     const lines = summary.split('\n');
     const isTruncated = lines.length > MAX_SUMMARY_LINES;
-    
-    let truncatedSummary = isTruncated 
+
+    let truncatedSummary = isTruncated
         ? lines.slice(0, MAX_SUMMARY_LINES).join('\n')
         : summary;
-    
+
     // Highlight search term if provided
     if (searchTerm && searchTerm.trim() !== '') {
         truncatedSummary = highlightText(truncatedSummary, searchTerm);
     }
-    
+
     return `<div class="summary-content"><div class="summary-text">${truncatedSummary.trim()}</div>${isTruncated ? `<div class="summary-expand"><button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`').trim()}\`">Show more...</button></div>` : ''}</div>`;
 }
 
 // Helper function to highlight search matches in text
 function highlightText(text, searchTerm) {
     if (!searchTerm || !text) return text;
-    
+
     const searchRegex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
     return text.replace(searchRegex, match => `<span class="search-highlight">${match}</span>`);
 }
@@ -121,17 +127,17 @@ async function getHeroImagesForUrl(url) {
         }
         return null;
     }
-    
+
     // Check for in-flight request for this URL
     if (heroImageRequestCache.inFlight.has(url)) {
         return heroImageRequestCache.inFlight.get(url);
     }
-    
+
     // Create a new request promise
     const requestPromise = new Promise((resolve) => {
         // Update cache
         heroImageRequestCache.lastRequested.set(url, now);
-        
+
         // First check browserState if available (core shared data structure)
         if (typeof browserState !== 'undefined' && browserState.heroImages && browserState.heroImages.get) {
             const heroImageData = browserState.heroImages.get(url);
@@ -140,7 +146,7 @@ async function getHeroImagesForUrl(url) {
                 return;
             }
         }
-        
+
         // Then check local storage
         chrome.storage.local.get(['heroImages'], (result) => {
             const heroImagesStore = result.heroImages || {};
@@ -161,10 +167,10 @@ async function getHeroImagesForUrl(url) {
             }
         });
     });
-    
+
     // Store the promise in the cache
     heroImageRequestCache.inFlight.set(url, requestPromise);
-    
+
     // Remove from in-flight cache once resolved
     requestPromise.then(result => {
         heroImageRequestCache.inFlight.delete(url);
@@ -173,7 +179,7 @@ async function getHeroImagesForUrl(url) {
         heroImageRequestCache.inFlight.delete(url);
         return null;
     });
-    
+
     return requestPromise;
 }
 
@@ -187,28 +193,28 @@ async function renderHeroImagesForPage(page) {
     if (!page.dwellTimeMs || page.dwellTimeMs < 60000 || page.heroImagesRendered) {
         return null;
     }
-    
+
     const heroImages = await getHeroImagesForUrl(page.url);
     if (!heroImages || !heroImages.length) {
         return null;
     }
-    
+
     // Create a horizontal strip of thumbnails
     const strip = document.createElement('div');
     strip.className = 'hero-image-strip';
-    
+
     // Add each thumbnail
     heroImages.forEach((image, index) => {
         // Skip invalid images
         if (!image.src) return;
-        
+
         const thumb = document.createElement('img');
         thumb.className = 'hero-image-thumbnail';
         thumb.src = image.src;
         thumb.alt = image.alt || '';
         thumb.dataset.index = index;
         thumb.dataset.fullsize = image.src;
-        
+
         // Add click handler to expand image
         thumb.addEventListener('click', (e) => {
             // Find or create container for expanded image
@@ -221,13 +227,13 @@ async function renderHeroImagesForPage(page) {
                 // Clear existing content
                 container.innerHTML = '';
             }
-            
+
             // Create expanded image
             const expandedImg = document.createElement('img');
             expandedImg.className = 'hero-image-expanded';
             expandedImg.src = image.src;
             expandedImg.alt = image.alt || '';
-            
+
             // Add close button
             const closeBtn = document.createElement('button');
             closeBtn.className = 'hero-image-close';
@@ -235,14 +241,14 @@ async function renderHeroImagesForPage(page) {
             closeBtn.addEventListener('click', () => {
                 container.remove();
             });
-            
+
             container.appendChild(expandedImg);
             container.appendChild(closeBtn);
         });
-        
+
         strip.appendChild(thumb);
     });
-    
+
     return strip;
 }
 
@@ -324,7 +330,7 @@ const REFRESH_THROTTLE_PERIOD = 10000; // 10 seconds
 
 async function refreshSessionsIfNecessary() {
     const now = Date.now();
-    
+
     // Throttle to avoid refreshing too frequently
     if (now - lastStateUpdateTime < REFRESH_THROTTLE_PERIOD) {
         console.log('Refresh throttled');
@@ -375,12 +381,16 @@ document.addEventListener('DOMContentLoaded', () => {
 function filterAndRenderSessions(searchTerm) {
     if (!allSessionsData) return;
 
+    // Local Filter (Instant) — standalone build searches only the in-memory
+    // session corpus; there is no backend semantic search.
+    let filteredSessions;
     if (!searchTerm || searchTerm.trim() === '') {
-        renderSessions(allSessionsData); // Render all if search is empty
+        filteredSessions = allSessionsData;
+        renderSessions(filteredSessions);
         return;
     }
 
-    const filteredSessions = allSessionsData.filter(session => {
+    filteredSessions = allSessionsData.filter(session => {
         // Check session name
         if (session.name && session.name.toLowerCase().includes(searchTerm)) {
             return true;
@@ -394,7 +404,7 @@ function filterAndRenderSessions(searchTerm) {
                 if (page.url && page.url.toLowerCase().includes(searchTerm)) {
                     return true;
                 }
-                
+
                 // Check AI summary if available in cache
                 const cachedSummary = getCachedSummary(page.url);
                 if (cachedSummary && cachedSummary.toLowerCase().includes(searchTerm)) {
@@ -404,6 +414,8 @@ function filterAndRenderSessions(searchTerm) {
         }
         return false;
     });
+
+    // Render local results immediately
     renderSessions(filteredSessions);
 }
 
@@ -415,60 +427,56 @@ function filterAndRenderSessions(searchTerm) {
  */
 async function processSessionsData(activeTabUrls = [], isRefresh = false) {
     console.log(`Processing and rendering sessions with ${activeTabUrls.length} active tabs...`);
-    
+
     try {
-        // Fetch most recent 7 days of history data
-        const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-        
-        // Use a larger maxResults to ensure we get all recent activity
-        const [historyItems, allWindows] = await Promise.all([
-            chrome.history.search({ 
-                text: '', 
-                maxResults: 2000,
-                startTime: sevenDaysAgo 
-            }),
-            chrome.windows.getAll({ populate: true })
-        ]);
+        // Standalone build: Chrome's own history is the sole sessions source.
+        const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+        const historyItems = await chrome.history.search({
+            text: '',
+            // Most-recent N items in the window. The removed backend returned a
+            // curated set; pulling 10000 raw history items made the sessions view
+            // slow to fetch, sessionize, and render. 3000 keeps plenty of recent
+            // sessions while cutting load time ~3x. Raise it for deeper history.
+            maxResults: 3000,
+            startTime: thirtyDaysAgo // 30-day window
+        });
+        console.log(`[Tabtopia] Retrieved ${historyItems.length} items from local Chrome History (30-day window)`);
+
+        const allWindows = await chrome.windows.getAll({ populate: true });
 
         console.log(`Fetched ${historyItems.length} history items and ${allWindows.length} windows`);
 
         // Process the data into sessions
         console.log(`[Duration] Starting session data processing with ${historyItems.length} history items and ${allWindows.length} windows`);
         const processedSessions = await processDataIntoSessions(historyItems, allWindows);
-        
-        // Log session durations for diagnosis
-        processedSessions.forEach(session => {
-            console.log(`[Duration] Session ${session.id}: ${formatDuration(session.duration)} (${session.pages?.length || 0} pages)`, {
-                startTime: new Date(session.startTime).toLocaleString(),
-                endTime: new Date(session.endTime).toLocaleString(),
-                durationMs: session.duration,
-                valid: session.duration > 0 && !isNaN(session.duration)
-            });
-        });
-        
+
+        // (Removed a per-session diagnostic console.log loop that ran two
+        //  Date.toLocaleString() calls + an object log for every session on
+        //  every load — pure overhead on the render path.)
+
         // Apply any current search filter but don't render here
         let sessionsToReturn = processedSessions;
-        
+
         if (currentSearchTerm && currentSearchTerm.trim() !== '') {
             sessionsToReturn = processedSessions.filter(session => {
                 // Check session name
                 if (session.name && session.name.toLowerCase().includes(currentSearchTerm)) {
                     return true;
                 }
-                
+
                 // Check session-level summary if available
                 if (session.summary && session.summary.toLowerCase().includes(currentSearchTerm)) {
                     // Mark this session as having a summary match for highlighting
                     session.hasSummaryMatch = true;
                     return true;
                 }
-                
+
                 // Check search queries within the session
-                if (session.searchQueries && session.searchQueries.some(query => 
+                if (session.searchQueries && session.searchQueries.some(query =>
                     query.toLowerCase().includes(currentSearchTerm))) {
                     return true;
                 }
-                
+
                 // Check pages within the session
                 if (session.pages) {
                     for (const page of session.pages) {
@@ -478,7 +486,7 @@ async function processSessionsData(activeTabUrls = [], isRefresh = false) {
                         if (page.url && page.url.toLowerCase().includes(currentSearchTerm)) {
                             return true;
                         }
-                        
+
                         // Check AI summary if available in cache
                         const cachedSummary = getCachedSummary(page.url);
                         if (cachedSummary && cachedSummary.toLowerCase().includes(currentSearchTerm)) {
@@ -492,7 +500,7 @@ async function processSessionsData(activeTabUrls = [], isRefresh = false) {
                 return false;
             });
         }
-        
+
         return { sessions: sessionsToReturn };
     } catch (error) {
         console.error('Error processing sessions data:', error);
@@ -503,21 +511,21 @@ async function processSessionsData(activeTabUrls = [], isRefresh = false) {
 async function initSessions(isRefresh = false) {
     const container = document.getElementById('sessions-container');
     const startTime = performance.now();
-    
+
     try {
         // Get active tab URLs
         const activeTabUrls = await getActiveTabUrls();
-        
+
         // Process sessions data (but don't render yet)
         const { sessions } = await processSessionsData(activeTabUrls, isRefresh);
-        
+
         // Store the full dataset
         allSessionsData = sessions;
         sessionsData = sessions;
-        
+
         // Explicitly render the sessions
         renderSessions(sessions, isRefresh);
-        
+
         // If this is a refresh, save and restore scroll position
         if (isRefresh) {
             const scrollPos = window.scrollY;
@@ -526,7 +534,7 @@ async function initSessions(isRefresh = false) {
                 window.scrollTo(0, scrollPos);
             }, 100);
         }
-        
+
         // Log performance metrics
         const endTime = performance.now();
         console.log(`Sessions data ${isRefresh ? 'refreshed' : 'loaded'} in ${(endTime - startTime).toFixed(2)}ms`);
@@ -546,7 +554,7 @@ function createRefreshIndicator() {
     // Check if it already exists
     let indicator = document.getElementById('refresh-indicator');
     if (indicator) return indicator;
-    
+
     // Create new indicator
     indicator = document.createElement('div');
     indicator.id = 'refresh-indicator';
@@ -565,7 +573,7 @@ function createRefreshIndicator() {
         transition: opacity 0.3s ease;
         pointer-events: none;
     `;
-    
+
     // Add a style for the active state
     const style = document.createElement('style');
     style.textContent = `
@@ -574,7 +582,7 @@ function createRefreshIndicator() {
         }
     `;
     document.head.appendChild(style);
-    
+
     // Attach helper methods to control visibility for callers
     // These are used by setupSessionsAutoRefresh()
     indicator.show = () => {
@@ -599,16 +607,20 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
 
     // 1. Combine history items and active tabs into a single list of activities
     let activities = historyItems.map(item => ({
+        ...item, // Preserve all properties from backend items (metrics, dwellTime, etc)
         url: item.url,
         title: item.title || item.url,
         timestamp: item.lastVisitTime,
-        type: 'history'
+        type: item.type || 'history',
+        _layer: item._layer || 'raw',
+        tags: item.tags || [],
+        visitCount: item.visitCount
     }));
 
     // Track active tab URLs to identify active sessions later
     const activeTabUrls = new Set();
     const activeTabIds = new Set();
-    
+
     allWindows.forEach(window => {
         if (window.tabs) {
             window.tabs.forEach(tab => {
@@ -616,10 +628,10 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                     // Store the URL for later active session identification
                     activeTabUrls.add(tab.url);
                     activeTabIds.add(tab.id);
-                    
+
                     // Get the access time or use current time as fallback
                     const accessTime = tab.lastAccessTime || Date.now();
-                    
+
                     activities.push({
                         url: tab.url,
                         title: tab.title || tab.url,
@@ -634,7 +646,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
             });
         }
     });
-    
+
     console.log(`Found ${activeTabUrls.size} active tabs for session tracking`);
 
     // Only deduplicate exact timestamp duplicates, not across sessions
@@ -651,7 +663,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         }
         return acc;
     }, []);
-    
+
     console.log(`Activities after deduplication: ${activities.length}`);
 
 
@@ -670,57 +682,57 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
 
     activities.forEach((activity, index) => {
         if (!activity.url) return; // Skip activities without a URL
-        
+
         // Get day key for the activity for context matching
         const activityDate = new Date(activity.timestamp);
         const year = activityDate.getFullYear();
         const month = String(activityDate.getMonth() + 1).padStart(2, '0');
         const day = String(activityDate.getDate()).padStart(2, '0');
         const dayKey = `${year}-${month}-${day}`;
-        
+
         if (!sessionsByDay[dayKey]) {
             sessionsByDay[dayKey] = [];
         }
-        
+
         if (currentSession === null) {
             // Start the first session
             currentSession = createNewSession(activity);
         } else {
             const timeDiff = activity.timestamp - currentSession.endTime;
-            
+
             // Check if we're revisiting a page that was already seen in the current session
             const previousVisitInSession = currentSession.pages.find(page => page.url === activity.url);
             const isRevisit = previousVisitInSession !== undefined;
-            
+
             // Check for context matching with earlier sessions from the same day
             const contextSessions = sessionsByDay[dayKey].filter(session => {
                 // Only consider sessions within context threshold of this activity
                 return Math.abs(activity.timestamp - session.endTime) < SESSION_CONTEXT_THRESHOLD;
             });
-            
+
             // Find if any contextual session has this URL
             const matchingContextSession = contextSessions.find(session => {
                 return session.pages.some(page => page.url === activity.url);
             });
-            
+
             // Check for micro-session breaks based on window ID and origin
-            const isNewWindow = activity.windowId && currentSession.lastWindowId && 
-                              activity.windowId !== currentSession.lastWindowId;
-                              
+            const isNewWindow = activity.windowId && currentSession.lastWindowId &&
+                activity.windowId !== currentSession.lastWindowId;
+
             // Check if this is likely an explicit new tab or window navigation
-            const isExplicitNewTab = activity.openContext === 'user_command' || 
-                                   activity.url.includes('chrome://newtab');
-                                   
+            const isExplicitNewTab = activity.openContext === 'user_command' ||
+                activity.url.includes('chrome://newtab');
+
             // Calculate if this should be a micro-session break
-            const isMicroSessionBreak = (timeDiff > MICRO_SESSION_GAP_THRESHOLD) || 
-                                      (NEW_WINDOW_BREAK && isNewWindow) || 
-                                      isExplicitNewTab;
-            
+            const isMicroSessionBreak = (timeDiff > MICRO_SESSION_GAP_THRESHOLD) ||
+                (NEW_WINDOW_BREAK && isNewWindow) ||
+                isExplicitNewTab;
+
             // Full session break (longer time gap)
             if (timeDiff > SESSION_GAP_THRESHOLD) {
                 // Time gap is too large, check for possible context bridge
                 if (matchingContextSession && timeDiff < SESSION_CONTEXT_THRESHOLD && !isNewWindow) {
-                    console.log(`Found context match for ${activity.url} in recent session`); 
+                    console.log(`Found context match for ${activity.url} in recent session`);
                     // Add to existing session instead of creating new one
                     currentSession.pages.push({
                         url: activity.url,
@@ -745,22 +757,22 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                     finalizeSession(currentSession, activeTabUrls);
                     sessionsByDay[dayKey].push(currentSession);
                     processedSessions.push(currentSession);
-                    
+
                     // Start a new session
                     currentSession = createNewSession(activity);
                 }
-            // Micro-session break (new window, explicit navigation, or smaller time gap)
+                // Micro-session break (new window, explicit navigation, or smaller time gap)
             } else if (isMicroSessionBreak) {
                 console.log(`Creating micro-session break for ${activity.url} - ${isNewWindow ? 'new window' : 'time gap or explicit navigation'}`);
-                
+
                 // Create a micro-session marker in current session
                 currentSession.microSessionBreaks = currentSession.microSessionBreaks || [];
                 currentSession.microSessionBreaks.push({
                     timestamp: activity.timestamp,
-                    reason: isNewWindow ? 'new_window' : 
-                            isExplicitNewTab ? 'new_tab' : 'time_gap'
+                    reason: isNewWindow ? 'new_window' :
+                        isExplicitNewTab ? 'new_tab' : 'time_gap'
                 });
-                
+
                 // Add the page with a micro-session marker
                 currentSession.pages.push({
                     url: activity.url,
@@ -770,10 +782,10 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                     windowId: activity.windowId,
                     tabId: activity.tabId,
                     isMicroSessionStart: true,
-                    microSessionReason: isNewWindow ? 'new_window' : 
-                                        isExplicitNewTab ? 'new_tab' : 'time_gap'
+                    microSessionReason: isNewWindow ? 'new_window' :
+                        isExplicitNewTab ? 'new_tab' : 'time_gap'
                 });
-                
+
                 currentSession.endTime = activity.timestamp;
                 currentSession.lastWindowId = activity.windowId;
             } else {
@@ -791,7 +803,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                 currentSession.lastWindowId = activity.windowId;
             }
         }
-        
+
         lastActivity = activity;
     });
 
@@ -804,16 +816,25 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
     // Enrich sessions with dwell time and referral data
     if (typeof window.browserState !== 'undefined' && window.browserState.getPageActivityAndReferrals) {
         console.log('Enriching sessions with activity and referral data...');
+
+        // Optimize: Fetch state once before the loop to avoid redundant background IPC calls
+        if (typeof window.browserState.getState === 'function') {
+            await window.browserState.getState();
+        }
+
         for (let i = 0; i < processedSessions.length; i++) {
             const session = processedSessions[i];
             if (session.pages && session.pages.length > 0) {
                 const pageInfoForEnrichment = session.pages.map(p => ({
                     url: p.url,
-                    visitTimestamp: p.visitTime // Map visitTime to visitTimestamp
+                    visitTimestamp: p.visitTime, // Map visitTime to visitTimestamp
+                    // Pass existing dwell metrics if available from backend
+                    dwellTimeMs: p.dwellTimeMs || (p.metrics ? p.metrics.dwellTime : null)
                 }));
 
                 try {
-                    const enrichedPages = await window.browserState.getPageActivityAndReferrals(pageInfoForEnrichment);
+                    // Use skipRefresh: true since we already updated state above
+                    const enrichedPages = await window.browserState.getPageActivityAndReferrals(pageInfoForEnrichment, { skipRefresh: true });
                     session.pages = session.pages.map((originalPage, index) => ({
                         ...originalPage,
                         ...enrichedPages[index] // Adds originalTabId, dwellTimeMs, referral
@@ -824,7 +845,8 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                 }
             }
         }
-    } else {
+    }
+    else {
         console.warn('browserState.getPageActivityAndReferrals not available. Skipping session enrichment.');
         // More detailed diagnostics
         console.warn(`window.browserState exists: ${typeof window.browserState !== 'undefined'}`);
@@ -833,48 +855,48 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
             console.warn(`getPageActivityAndReferrals is function: ${typeof window.browserState.getPageActivityAndReferrals === 'function'}`);
         }
     }
-    
+
     console.log('Processed sessions (enriched):', processedSessions);
-    
+
     // Queue important pages for summary generation
     const pagesToSummarize = new Set();
-    
+
     // Process each session to find important pages to summarize
     processedSessions.forEach(session => {
         if (!session.pages || session.pages.length === 0) return;
-        
+
         // Always queue the first page of each session
         if (session.pages[0]) {
             pagesToSummarize.add(session.pages[0].url);
         }
-        
+
         // Queue search pages (most valuable for search recall)
         const searchPages = session.pages.filter(page => extractSearchQuery(page.url));
         searchPages.forEach(page => pagesToSummarize.add(page.url));
-        
+
         // Queue pages with significant dwell time (> 1 minute)
         const significantPages = session.pages.filter(page => page.dwellTimeMs > 60000);
         significantPages.slice(0, 3).forEach(page => pagesToSummarize.add(page.url));
     });
-    
+
     // Add to summary queue if not already cached
     pagesToSummarize.forEach(url => {
         // Skip restricted URLs
         if (url.startsWith('chrome://') || url.startsWith('file://')) return;
-        
+
         // Skip if we already have a summary
         if (!getCachedSummary(url)) {
             console.log(`Queueing summary generation for: ${url}`);
             summaryQueue.add(url);
         }
     });
-    
+
     // Process the queue if we added any URLs
     if (summaryQueue.size > 0) {
         console.log(`Processing ${summaryQueue.size} URLs for summary generation`);
         processSummaryQueue().catch(console.error);
     }
-    
+
     return processedSessions;
 }
 
@@ -911,25 +933,25 @@ function finalizeSession(session, activeTabUrls) {
     session.durationMs = session.endTime - session.startTime;
     // Make duration available under both property names for compatibility
     session.duration = session.durationMs;
-    
+
     // Extract domains and count occurrences
     const domainCounts = {};
     const faviconByDomain = {};
     const searchQueries = new Set();
-    
+
     session.pages.forEach(page => {
         try {
             // Extract domain
             const url = new URL(page.url);
             const domain = url.hostname;
-            
+
             // Count domain occurrences
             if (!domainCounts[domain]) {
                 domainCounts[domain] = 0;
                 faviconByDomain[domain] = getFaviconDisplayUrl(page.url);
             }
             domainCounts[domain]++;
-            
+
             // Check if this page contains a search query in referral
             if (page.referral && page.referral.searchQuery) {
                 searchQueries.add(page.referral.searchQuery);
@@ -938,7 +960,7 @@ function finalizeSession(session, activeTabUrls) {
             // Skip invalid URLs
         }
     });
-    
+
     // Sort domains by frequency
     const topDomains = Object.entries(domainCounts)
         .map(([domain, count]) => ({
@@ -947,16 +969,16 @@ function finalizeSession(session, activeTabUrls) {
             faviconUrl: faviconByDomain[domain]
         }))
         .sort((a, b) => b.count - a.count);
-    
+
     session.topDomains = topDomains;
     session.totalPages = session.pages.length;
     session.isActive = session.pages.some(page => activeTabUrls.has(page.url));
-    
+
     // Add search queries if any
     if (searchQueries.size > 0) {
         session.searchQueries = Array.from(searchQueries);
     }
-    
+
     return session;
 }
 
@@ -969,22 +991,22 @@ function finalizeSession(session, activeTabUrls) {
 function renderPageList(session, searchTerm = '') {
     const pageListContainer = document.createElement('div');
     pageListContainer.className = 'session-page-list';
-    
+
     // Sort pages chronologically
     const sortedPages = session.pages.sort((a, b) => a.visitTime - b.visitTime);
-    
+
     // Create list for pages
     const ul = document.createElement('ul');
     ul.className = 'session-pages-ul';
-    
+
     // Add summary at the top
     const summary = document.createElement('div');
     summary.className = 'session-summary';
-    
+
     // Add summary details like page count and duration
     const summaryDetails = document.createElement('div');
     summaryDetails.className = 'session-summary-details';
-    
+
     // Add top domains if available
     if (session.topDomains && session.topDomains.length > 0) {
         const domainsList = document.createElement('div');
@@ -992,7 +1014,7 @@ function renderPageList(session, searchTerm = '') {
         domainsList.innerHTML = `<span class="detail-label">Top domains:</span> ${session.topDomains.slice(0, 3).map(d => d.domain).join(', ')}`;
         summaryDetails.appendChild(domainsList);
     }
-    
+
     // Add search queries if available
     if (session.searchQueries && session.searchQueries.length > 0) {
         const queriesList = document.createElement('div');
@@ -1000,65 +1022,65 @@ function renderPageList(session, searchTerm = '') {
         queriesList.innerHTML = `<span class="detail-label">Search queries:</span> ${session.searchQueries.slice(0, 3).map(q => `<span class="search-query">${q}</span>`).join(', ')}`;
         summaryDetails.appendChild(queriesList);
     }
-    
+
     summary.appendChild(summaryDetails);
     pageListContainer.appendChild(summary);
-    
+
     // Add session header with date if available
     if (session && session.startTime) {
         const sessionHeader = document.createElement('div');
         sessionHeader.className = 'session-detail-header';
         sessionHeader.textContent = `Session started: ${new Date(session.startTime).toLocaleString()}`;
         pageListContainer.appendChild(sessionHeader);
-        
+
         // Add domain histogram if we have top domains
         if (session.topDomains && session.topDomains.length > 0) {
             const domainHistogram = document.createElement('div');
             domainHistogram.className = 'domain-histogram';
-            
+
             // Show top 5 domains max
             const topDomains = session.topDomains.slice(0, 5);
-            
+
             topDomains.forEach(domainInfo => {
                 const domainPill = document.createElement('div');
                 domainPill.className = 'domain-histogram-pill';
-                
+
                 const domainFavicon = document.createElement('img');
                 domainFavicon.src = domainInfo.faviconUrl;
                 domainFavicon.alt = '';
                 domainFavicon.className = 'domain-histogram-favicon';
-                
+
                 const domainName = document.createElement('span');
                 domainName.textContent = domainInfo.domain;
                 domainName.className = 'domain-histogram-name';
-                
+
                 domainPill.appendChild(domainFavicon);
                 domainPill.appendChild(domainName);
                 domainHistogram.appendChild(domainPill);
             });
-            
+
             pageListContainer.appendChild(domainHistogram);
         }
     }
-    
+
     // Track the last shown time to avoid duplicates
     let lastShownTime = null;
-    
+
     // Track current micro-session for visual separation
     let currentMicroSessionIndex = 0;
-    
+
     sortedPages.forEach((page, index) => {
         // Check if this page starts a new micro-session
         if (page.isMicroSessionStart && index > 0) {
             // Create a micro-session separator
             const separator = document.createElement('div');
             separator.className = 'micro-session-separator';
-            
+
             // Add data attribute for reason-specific styling
             if (page.microSessionReason) {
                 separator.dataset.reason = page.microSessionReason;
                 let reasonText = '';
-                switch(page.microSessionReason) {
+                switch (page.microSessionReason) {
                     case 'new_window':
                         reasonText = 'New Window';
                         break;
@@ -1071,23 +1093,23 @@ function renderPageList(session, searchTerm = '') {
                     default:
                         reasonText = 'Session Break';
                 }
-                
+
                 separator.innerHTML = `<span class="micro-session-reason">${reasonText}</span>`;
             }
-            
+
             // Add the separator to the list
             const separatorItem = document.createElement('li');
             separatorItem.className = 'micro-session-separator-item';
             separatorItem.appendChild(separator);
             ul.appendChild(separatorItem);
-            
+
             // Increment micro-session counter
             currentMicroSessionIndex++;
         }
-        
+
         const li = document.createElement('li');
         li.className = 'session-page-item';
-        
+
         // Add micro-session indicator if this starts a micro-session
         if (page.isMicroSessionStart) {
             li.classList.add('micro-session-start');
@@ -1096,14 +1118,14 @@ function renderPageList(session, searchTerm = '') {
         // Create container for favicon and domain
         const faviconDomainContainer = document.createElement('div');
         faviconDomainContainer.className = 'favicon-domain-container';
-        
+
         // Add favicon
         const faviconImg = document.createElement('img');
         faviconImg.className = 'page-favicon-img';
         faviconImg.src = getFaviconDisplayUrl(page.url);
         faviconImg.alt = ''; // Decorative
         faviconDomainContainer.appendChild(faviconImg);
-        
+
         // Add domain pill next to favicon
         try {
             const url = new URL(page.url);
@@ -1111,8 +1133,8 @@ function renderPageList(session, searchTerm = '') {
             domainPill.className = 'domain-pill';
             domainPill.textContent = url.hostname;
             faviconDomainContainer.appendChild(domainPill);
-        } catch(e) { /* Invalid URL, skip domain pill */ }
-        
+        } catch (e) { /* Invalid URL, skip domain pill */ }
+
         li.appendChild(faviconDomainContainer);
 
         const pageDetails = document.createElement('div');
@@ -1140,19 +1162,19 @@ function renderPageList(session, searchTerm = '') {
             urlText.textContent = page.url;
         }
         pageDetails.appendChild(urlText);
-        
+
         // Format the current page time and check if it's different from the last shown time
         const currentTime = new Date(page.visitTime);
         const timeFormatted = currentTime.toLocaleString();
         const timeKey = currentTime.getHours() + ':' + currentTime.getMinutes();
-        
+
         // Only show time if it's different from the last one we showed
         if (!lastShownTime || timeKey !== lastShownTime) {
             const visitTimeText = document.createElement('span');
             visitTimeText.className = 'page-visit-time';
             visitTimeText.textContent = `Visited: ${timeFormatted}`;
             pageDetails.appendChild(visitTimeText);
-            
+
             // Update the last shown time
             lastShownTime = timeKey;
         }
@@ -1166,7 +1188,7 @@ function renderPageList(session, searchTerm = '') {
             dwellTimeText.textContent = `Dwell time: ${formatDuration(dwellTimeMs)}`;
             pageDetails.appendChild(dwellTimeText);
         }
-        
+
         // Check for hero images if page has significant dwell time (≥60s)
         // Only if not already rendered elsewhere (like in the session mosaic)
         const heroImageDwellMs = parseFloat(page.dwellTimeMs || 0);
@@ -1176,29 +1198,29 @@ function renderPageList(session, searchTerm = '') {
             heroImagePlaceholder.className = 'hero-image-placeholder';
             heroImagePlaceholder.setAttribute('data-url', page.url);
             pageDetails.appendChild(heroImagePlaceholder);
-            
+
             // Asynchronously load hero images
             getHeroImagesForUrl(page.url).then(heroImages => {
                 if (heroImages && heroImages.length > 0) {
                     // Create a horizontal strip of thumbnails
                     const strip = document.createElement('div');
                     strip.className = 'hero-image-strip';
-                    
+
                     // Add each thumbnail
                     heroImages.forEach((image, index) => {
                         // Skip invalid images
                         if (!image.src) return;
-                        
+
                         const thumb = document.createElement('img');
                         thumb.className = 'hero-image-thumbnail';
                         thumb.src = image.src;
                         thumb.alt = image.alt || '';
                         thumb.dataset.index = index;
-                        
+
                         // Add click handler to expand image
                         thumb.addEventListener('click', (e) => {
                             e.stopPropagation(); // Prevent bubbling
-                            
+
                             // Find or create container for expanded image
                             let container = strip.nextElementSibling;
                             if (!container || !container.classList.contains('hero-image-container')) {
@@ -1209,13 +1231,13 @@ function renderPageList(session, searchTerm = '') {
                                 // Clear existing content
                                 container.innerHTML = '';
                             }
-                            
+
                             // Create expanded image
                             const expandedImg = document.createElement('img');
                             expandedImg.className = 'hero-image-expanded';
                             expandedImg.src = image.src;
                             expandedImg.alt = image.alt || '';
-                            
+
                             // Add close button
                             const closeBtn = document.createElement('button');
                             closeBtn.className = 'hero-image-close';
@@ -1224,14 +1246,14 @@ function renderPageList(session, searchTerm = '') {
                                 e.stopPropagation(); // Prevent bubbling
                                 container.remove();
                             });
-                            
+
                             container.appendChild(expandedImg);
                             container.appendChild(closeBtn);
                         });
-                        
+
                         strip.appendChild(thumb);
                     });
-                    
+
                     // Replace placeholder with actual content
                     if (strip.children.length > 0) {
                         heroImagePlaceholder.replaceWith(strip);
@@ -1243,7 +1265,7 @@ function renderPageList(session, searchTerm = '') {
                     heroImagePlaceholder.remove();
                 }
             });
-            
+
             // Mark this page as having its hero images rendered
             page.heroImagesRendered = true;
         }
@@ -1268,31 +1290,31 @@ function renderPageList(session, searchTerm = '') {
                     referralDiv.appendChild(document.createTextNode(` (link: "${page.referral.linkText}")`));
                 }
             } else {
-                 // Fallback for other referral types if ever introduced
+                // Fallback for other referral types if ever introduced
                 referralDiv.textContent = referralHtml + 'unknown mechanism.';
             }
             pageDetails.appendChild(referralDiv);
         }
-        
+
         // Handle summary display with loading indicator for non-cached summaries
         const cachedSummary = getCachedSummary(page.url);
         const isInternalUrl = page.url.startsWith('chrome://') || page.url.startsWith('file:///');
-        
+
         // Only show summary section if we have a cached summary or if URL is valid for summarization
         if (cachedSummary || !isInternalUrl) {
             const summaryDiv = document.createElement('div');
             summaryDiv.className = 'page-summary';
-            
+
             // Add a small label indicating this is an AI summary
             const summaryLabel = document.createElement('div');
             summaryLabel.className = 'summary-label';
-            
+
             if (cachedSummary) {
                 summaryLabel.textContent = 'AI Summary';
             } else {
                 // Use a loading indicator instead of static text
                 summaryLabel.innerHTML = 'AI Summary <span class="loading-indicator">...</span>';
-                
+
                 // Set up polling to check for summary availability
                 const checkSummaryInterval = setInterval(() => {
                     const updatedSummary = getCachedSummary(page.url);
@@ -1306,24 +1328,45 @@ function renderPageList(session, searchTerm = '') {
                         summaryDiv.appendChild(summaryContent);
                     }
                 }, 2000); // Check every 2 seconds
-                
+
                 // Stop checking after 30 seconds to avoid resource waste
                 setTimeout(() => clearInterval(checkSummaryInterval), 30000);
             }
-            
+
             summaryDiv.appendChild(summaryLabel);
-            
+
             // Only add content if we have a cached summary
             if (cachedSummary) {
                 const summaryContent = document.createElement('div');
                 summaryContent.innerHTML = createTruncatedSummary(cachedSummary, searchTerm);
                 summaryDiv.appendChild(summaryContent);
             }
-            
+
             pageDetails.appendChild(summaryDiv);
         }
 
         li.appendChild(pageDetails);
+        // Attach awesome tooltip to the page item
+        globalTooltip.attach(li, (target) => {
+            const dwellTimeStr = dwellTimeMs > 0 ? formatDuration(dwellTimeMs) : 'Brief view';
+
+            return `
+                <div class="tooltip-header">${page.title || 'Untitled Page'}</div>
+                <div class="tooltip-url">${page.url}</div>
+                <div class="tooltip-section">
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Visited</span>
+                        <span class="tooltip-value">${new Date(page.visitTime).toLocaleTimeString()}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Dwell Time</span>
+                        <span class="tooltip-value">${dwellTimeStr}</span>
+                    </div>
+                </div>
+                ${dwellTimeMs >= 60000 ? '<div class="tooltip-badge badge-duration">Deep View</div>' : ''}
+            `;
+        });
+
         ul.appendChild(li);
     });
 
@@ -1353,7 +1396,7 @@ function renderSessions(sessions, isRefresh = false) {
             indicator.classList.remove('active');
         }, 1000);
     }
-    
+
     // Always use card grid layout for sessions
     renderSessionCards(sessions, container, isRefresh);
 }
@@ -1364,18 +1407,18 @@ function renderSessions(sessions, isRefresh = false) {
 function setupSessionsAutoRefresh() {
     const REFRESH_INTERVAL = 60000; // 60 seconds
     const refreshIndicator = createRefreshIndicator();
-    
+
     setInterval(async () => {
         console.log('Auto-refreshing sessions data...');
         refreshIndicator.show();
-        
+
         try {
             // Fetch fresh active tab information
             const activeTabUrls = await getActiveTabUrls();
-            
+
             // Refresh data and render with isRefresh flag
             await refreshSessionsData(activeTabUrls);
-            
+
             console.log('Sessions auto-refresh complete');
         } catch (error) {
             console.error('Error during sessions auto-refresh:', error);
@@ -1383,15 +1426,20 @@ function setupSessionsAutoRefresh() {
             refreshIndicator.hide();
         }
     }, REFRESH_INTERVAL);
-    
+
     // Also add a manual refresh button
     const addRefreshButton = () => {
         const existingButton = document.getElementById('manual-refresh-button');
         if (existingButton) return;
-        
-        const container = document.querySelector('.page-header');
+
+        // sessions.html uses .header-controls (the page never had a .page-header
+        // element, so the previous selector silently no-op'd and the button never
+        // appeared). Fall back across both selectors for safety.
+        const container = document.querySelector('.header-controls')
+            || document.querySelector('.app-header')
+            || document.querySelector('.page-header');
         if (!container) return;
-        
+
         const refreshButton = document.createElement('button');
         refreshButton.id = 'manual-refresh-button';
         refreshButton.className = 'refresh-button';
@@ -1400,14 +1448,14 @@ function setupSessionsAutoRefresh() {
         refreshButton.addEventListener('click', async () => {
             refreshButton.disabled = true;
             refreshIndicator.show();
-            
+
             try {
                 // Fetch fresh active tab information
                 const activeTabUrls = await getActiveTabUrls();
-                
+
                 // Refresh data and render with isRefresh flag
                 await refreshSessionsData(activeTabUrls);
-                
+
                 console.log('Manual sessions refresh complete');
             } catch (error) {
                 console.error('Error during manual sessions refresh:', error);
@@ -1416,10 +1464,10 @@ function setupSessionsAutoRefresh() {
                 refreshIndicator.hide();
             }
         });
-        
+
         container.appendChild(refreshButton);
     };
-    
+
     // Add refresh button when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', addRefreshButton);
@@ -1438,15 +1486,15 @@ async function refreshSessionsData(activeTabUrls) {
         // Clear the global seen hero images registry before refreshing
         // This ensures we don't carry over duplicate detection from previous renderings
         clearSeenHeroImages();
-        
+
         // Get fresh data
         const { sessions } = await processSessionsData(activeTabUrls, true);
         sessionsData = sessions; // Update global sessions data
         allSessionsData = sessions; // Update all sessions data as well
-        
+
         // Render the refreshed sessions
         renderSessions(sessions, true);
-        
+
         console.log('Sessions data refreshed successfully');
     } catch (error) {
         console.error('Error refreshing sessions data:', error);

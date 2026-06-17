@@ -1,5 +1,6 @@
 // Session renderers for different display modes
 import { createSessionCard, createSessionMosaic } from './hero_images_display.js';
+import { globalTooltip } from './tooltip.js';
 
 /**
  * Renders sessions in mixed layout with both standard and double-width cards
@@ -30,7 +31,7 @@ export async function renderSessionCards(sessions, container, isRefresh = false)
 
   // Group sessions by date
   const sessionsByDate = groupSessionsByDate(sessions);
-  
+
   // Sort dates (newest first)
   const sortedDates = Object.keys(sessionsByDate).sort((a, b) => {
     return new Date(b) - new Date(a);
@@ -40,12 +41,12 @@ export async function renderSessionCards(sessions, container, isRefresh = false)
   // Find oldest and newest session timestamps
   let oldestTime = Date.now();
   let newestTime = 0;
-  
+
   sessions.forEach(session => {
     if (session.startTime < oldestTime) oldestTime = session.startTime;
     if (session.startTime > newestTime) newestTime = session.startTime;
   });
-  
+
   const timeRange = newestTime - oldestTime;
 
   // Render each date group
@@ -53,11 +54,11 @@ export async function renderSessionCards(sessions, container, isRefresh = false)
     const dateDisplay = formatDateDisplay(dateKey);
     const sessionsForDate = sessionsByDate[dateKey];
     console.log('[Sessions Renderer] Rendering date group', { dateKey, dateDisplay, count: sessionsForDate?.length || 0 });
-    
+
     // Create date milestone if it doesn't exist yet
     let dateGroup = container.querySelector(`[data-date="${dateKey}"]`);
     let cardsRow;
-    
+
     if (!dateGroup) {
       // Create new date milestone and cards row
       dateGroup = document.createElement('div');
@@ -65,7 +66,7 @@ export async function renderSessionCards(sessions, container, isRefresh = false)
       dateGroup.setAttribute('data-date', dateKey);
       dateGroup.textContent = dateDisplay;
       container.appendChild(dateGroup);
-      
+
       // Create cards row container
       cardsRow = document.createElement('div');
       cardsRow.className = 'sessions-cards-row';
@@ -78,24 +79,51 @@ export async function renderSessionCards(sessions, container, isRefresh = false)
         cardsRow.className = 'sessions-cards-row';
         dateGroup.insertAdjacentElement('afterend', cardsRow);
       }
-      
+
       if (isRefresh) {
         cardsRow.innerHTML = ''; // Clear existing cards on refresh
       }
     }
-    
+
     // Render cards for sessions in this date
     for (const session of sessionsForDate) {
       try {
         // Calculate relative age for color coding (0 = newest, 1 = oldest)
         console.log('[Sessions Renderer] Creating card for session', { id: session?.id, pages: Array.isArray(session?.pages) ? session.pages.length : session?.pages });
         const relativeAge = timeRange === 0 ? 0 : (newestTime - session.startTime) / timeRange;
-        
+
         // Create session card element with age info
         const card = await createSessionCard(session, { relativeAge });
         if (card) {
+          // Attach awesome tooltip to the card
+          globalTooltip.attach(card, (target) => {
+            const domainHtml = session.topDomains ?
+              session.topDomains.slice(0, 3).map(d => `
+                <div class="tooltip-row">
+                  <span class="tooltip-label">${d.domain}</span>
+                  <span class="tooltip-value">${d.count} visits</span>
+                </div>
+              `).join('') : '';
+
+            return `
+              <div class="tooltip-header">${session.name || 'Browsing Session'}</div>
+              <div class="tooltip-section">
+                <div class="tooltip-row">
+                  <span class="tooltip-label">Pages</span>
+                  <span class="tooltip-value">${session.pages.length}</span>
+                </div>
+                <div class="tooltip-row">
+                  <span class="tooltip-label">Started</span>
+                  <span class="tooltip-value">${new Date(session.startTime).toLocaleTimeString()}</span>
+                </div>
+              </div>
+              ${domainHtml ? `<div class="tooltip-section">${domainHtml}</div>` : ''}
+              ${session.isActive ? '<div class="tooltip-badge badge-active">Currently Active</div>' : ''}
+            `;
+          });
+
           cardsRow.appendChild(card);
-          
+
           // Optional: mark append success for debugging
           console.log('[Sessions Renderer] Appended card', { id: session?.id });
         } else {
@@ -133,26 +161,26 @@ export async function renderSessionWithMosaic(session, detailsContainer) {
  */
 function groupSessionsByDate(sessions) {
   const sessionsByDate = {};
-  
+
   sessions.forEach(session => {
     const date = new Date(session.startTime);
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     const dateKey = `${year}-${month}-${day}`;
-    
+
     if (!sessionsByDate[dateKey]) {
       sessionsByDate[dateKey] = [];
     }
-    
+
     sessionsByDate[dateKey].push(session);
   });
-  
+
   // Sort sessions within each date group by start time, newest first
   Object.keys(sessionsByDate).forEach(dateKey => {
     sessionsByDate[dateKey].sort((a, b) => b.startTime - a.startTime);
   });
-  
+
   return sessionsByDate;
 }
 
@@ -165,10 +193,10 @@ function formatDateDisplay(dateKey) {
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  
+
   const todayKey = formatDateKey(today);
   const yesterdayKey = formatDateKey(yesterday);
-  
+
   if (dateKey === todayKey) {
     return 'Today';
   } else if (dateKey === yesterdayKey) {
@@ -176,11 +204,11 @@ function formatDateDisplay(dateKey) {
   } else {
     const dateParts = dateKey.split('-');
     const date = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
-    return date.toLocaleDateString(undefined, { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    return date.toLocaleDateString(undefined, {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
   }
 }

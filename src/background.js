@@ -23,7 +23,7 @@
 import { extractSearchQuery, isLikelyRedirect } from './lib/url-utils.js';
 
 chrome.runtime.onInstalled.addListener(() => {
-    console.log("Tabtopia installed successfully.");
+    console.log("[Tabtopia] installed successfully.");
 
     // Load any previously saved state
     loadStateFromStorage();
@@ -1041,19 +1041,21 @@ function handleLinkContext(message, sender) {
     // Set as lastClickedLink for correlation with new tab creation events
     lastClickedLink = enrichedData;
 
-    // Ensure tabActivityLog is properly initialized
-    if (!browserState.tabActivityLog.has(sender.tab.id)) {
-        browserState.tabActivityLog.set(sender.tab.id, []);
-    }
-
+    // Ensure tabActivityLog entry exists in the canonical object shape
+    // (was previously an Array — see loadStateFromStorage for migration handling)
     let activityLog = browserState.tabActivityLog.get(sender.tab.id);
-
-    // Verify that activityLog is an array, recreate if not
-    if (!Array.isArray(activityLog)) {
-        console.warn(`tabActivityLog for tab ${sender.tab.id} was not an array, resetting it`);
-        activityLog = [];
+    if (!activityLog || typeof activityLog !== "object" || Array.isArray(activityLog)) {
+        const legacyEvents = Array.isArray(activityLog) ? activityLog : [];
+        activityLog = {
+            totalTimeSpent: 0,
+            firstSeen: Date.now(),
+            lastTouch: null,
+            events: legacyEvents,
+            navigations: []
+        };
         browserState.tabActivityLog.set(sender.tab.id, activityLog);
     }
+    if (!Array.isArray(activityLog.events)) activityLog.events = [];
 
     // Add a detailed link_interaction event
     const linkEvent = {
@@ -1062,7 +1064,7 @@ function handleLinkContext(message, sender) {
         data: enrichedData
     };
 
-    activityLog.push(linkEvent);
+    activityLog.events.push(linkEvent);
     console.log(`Recorded link interaction in tab ${sender.tab.id}: ${enrichedData.linkText || enrichedData.targetUrl}`);
 
     // Send this data to any listening components
@@ -1090,7 +1092,35 @@ chrome.tabs.onCreated.addListener((tab) => {
     // Get the last active tab before this creation
     const previousActiveTab = browserState.lastActive?.tabId;
 
-    if (tabsWithOpener.has(tab.id) && tab.openerTabId) {
+    if (tab.openerTabId) {
+        console.log(`Tab created: ${tab.id} (opener: ${tab.openerTabId})`);
+
+        // Record opener relationship in tabRelationships (was a separate onCreated listener)
+        chrome.tabs.get(tab.openerTabId, (openerTab) => {
+            if (!chrome.runtime.lastError && openerTab) {
+                browserState.tabRelationships.set(tab.id, {
+                    referringTabId: openerTab.id,
+                    referringURL: openerTab.url,
+                    timestamp: Date.now(),
+                    transitionType: "opener",
+                    previousTab: openerTab.id
+                });
+                const parentRelationships = browserState.tabRelationships.get(openerTab.id) || {};
+                if (!parentRelationships.childTabs) {
+                    parentRelationships.childTabs = [];
+                }
+                parentRelationships.childTabs.push({
+                    tabId: tab.id,
+                    url: tab.url || "pending",
+                    timestamp: Date.now(),
+                    transitionType: "opener"
+                });
+                browserState.tabRelationships.set(openerTab.id, parentRelationships);
+                saveStateToStorage();
+            }
+        });
+
+        // Create the opener graph edge
         const edge = {
             source: tab.openerTabId,
             target: tab.id,
@@ -1099,7 +1129,7 @@ chrome.tabs.onCreated.addListener((tab) => {
         };
         tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
         updateGraphWithNewEdge(edge);
-        tabsWithOpener.delete(tab.id); // Clean up the set
+        tabsWithOpener.delete(tab.id); // In case content-script opener-tracker also flagged this tab
     } else if (lastClickedLink && tab.pendingUrl === lastClickedLink.targetUrl) {
         // This tab was created from a link click we tracked
         // Determine a more specific context based on the interaction
@@ -1433,31 +1463,8 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
     }
 });
 
-// Listen for tab audio state changes
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    // Debug: Log ALL tab updates to see what's happening
-    console.log(`[TabUpdate] Tab ${tabId} updated:`, {
-        changeInfo: changeInfo,
-        tabTitle: tab.title,
-        tabAudible: tab.audible,
-        changeInfoAudible: changeInfo.audible
-    });
-
-    // Track audio state changes
-    if (changeInfo.audible !== undefined) {
-        console.log(`🔊 [AudioTracking] Tab ${tabId} audible state changed to: ${changeInfo.audible}`);
-        updateAudioTracking(tabId, changeInfo.audible);
-    }
-
-    // Also initialize audio tracking for new tabs
-    if (changeInfo.status === 'complete' && tab.audible !== undefined) {
-        const existingAudioData = browserState.tabAudioTracking.get(tabId);
-        if (!existingAudioData && tab.audible) {
-            console.log(`[AudioTracking] Initializing audio tracking for tab ${tabId} (already audible)`);
-            updateAudioTracking(tabId, true);
-        }
-    }
-});
+// Audio state tracking + favicon/metadata/navigation handling are unified in the
+// chrome.tabs.onUpdated listener below (previously two separate registrations).
 
 // Update tab metadata without recording a new navigation
 function updateTabMetadata(tabId, changes) {
@@ -1524,8 +1531,11 @@ function updateTabMetadata(tabId, changes) {
 }
 
 // New function to process link navigations
-function processLinkNavigation(tabData, details, baseEdge) {
-    const { tabId, url } = details;
+function processLinkNavigation(tabId, url, baseEdge) {
+    // tabId/url come straight from the caller. The previous signature
+    // (tabData, details, baseEdge) destructured tabId/url from `details`, but the
+    // sole caller passes (tabId, url, baseData) — so `details` was the url STRING
+    // and both destructured fields were undefined. Link-click edges never built.
 
     // Check for pending link data from content scripts
     const linkData = pendingLinkData[tabId];
@@ -1615,6 +1625,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.audible !== undefined) {
         console.log(`🔊 [AudioTracking] Tab ${tabId} audible state changed to: ${changeInfo.audible}`);
         updateAudioTracking(tabId, changeInfo.audible);
+    }
+
+    // Initialize audio tracking for tabs that load already audible
+    // (no prior changeInfo.audible event because the tab was created in an audible state)
+    if (changeInfo.status === "complete" && tab.audible !== undefined) {
+        const existingAudioData = browserState.tabAudioTracking.get(tabId);
+        if (!existingAudioData && tab.audible) {
+            console.log(`[AudioTracking] Initializing audio tracking for tab ${tabId} (already audible)`);
+            updateAudioTracking(tabId, true);
+        }
     }
 
     // Always check favicon for ANY tab update in an existing tab
@@ -1732,6 +1752,10 @@ chrome.webNavigation.onCommitted.addListener((details) => {
 
     const { tabId, url, transitionType, transitionQualifiers } = details;
     const webRequestEntry = webRequestData.get(details.requestId);
+    // Consumed here — release it so the Map doesn't grow unbounded over the
+    // service worker's lifetime (one entry was set per main-frame request and
+    // was never deleted).
+    webRequestData.delete(details.requestId);
 
     // Skip chrome:// URLs and extension pages
     if (url.startsWith("chrome://") || url.startsWith(chrome.runtime.getURL(""))) return;
@@ -1881,48 +1905,10 @@ function checkAndUpdateFavicon(tabId, url) {
     faviconQueue.enqueue(tabId, url);
 }
 
-// Tab focus events are handled by the main chrome.tabs.onActivated listener above
-
+// Set populated by opener-tracker.js content script via 'hasOpener' messages —
+// kept as a secondary signal alongside chrome.tabs.onCreated's tab.openerTabId.
+// Read/cleared by the merged chrome.tabs.onCreated listener above.
 const tabsWithOpener = new Set();
-
-// Listen for new tabs to capture opener relationships immediately
-chrome.tabs.onCreated.addListener((tab) => {
-    if (tab.openerTabId) {
-        console.log(`Tab created: ${tab.id} (opener: ${tab.openerTabId})`);
-        tabsWithOpener.add(tab.id);
-
-        // Find the opener tab to get its URL
-        chrome.tabs.get(tab.openerTabId, (openerTab) => {
-            if (!chrome.runtime.lastError && openerTab) {
-                // Update relationship map
-                browserState.tabRelationships.set(tab.id, {
-                    referringTabId: openerTab.id,
-                    referringURL: openerTab.url,
-                    timestamp: Date.now(),
-                    transitionType: 'opener',
-                    // Inherit previous tab from opener's active state or use opener itself
-                    previousTab: openerTab.id
-                });
-
-                // Also update the parent's record of this child
-                const parentRelationships = browserState.tabRelationships.get(openerTab.id) || {};
-                if (!parentRelationships.childTabs) {
-                    parentRelationships.childTabs = [];
-                }
-                parentRelationships.childTabs.push({
-                    tabId: tab.id,
-                    url: tab.url || 'pending',
-                    timestamp: Date.now(),
-                    transitionType: 'opener'
-                });
-                browserState.tabRelationships.set(openerTab.id, parentRelationships);
-
-                // Persist immediately
-                saveStateToStorage();
-            }
-        });
-    }
-});
 
 // Message handler for various actions
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -2044,7 +2030,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Handle clearing history data
     if (message.action === 'clearHistoryData') {
-        browserState.tabHistory = [];
+        // tabHistory is a Map — clear in place rather than reassigning to []
+        if (browserState.tabHistory instanceof Map) {
+            browserState.tabHistory.clear();
+        } else {
+            browserState.tabHistory = new Map();
+        }
         saveStateToStorage();
         sendResponse({ success: true });
         return true;
@@ -2052,7 +2043,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Handle clearing activity log
     if (message.action === 'clearActivityLog') {
-        browserState.tabActivityLog = [];
+        // tabActivityLog is a Map — clear in place rather than reassigning to []
+        if (browserState.tabActivityLog instanceof Map) {
+            browserState.tabActivityLog.clear();
+        } else {
+            browserState.tabActivityLog = new Map();
+        }
         saveStateToStorage();
         sendResponse({ success: true });
         return true;
@@ -2690,10 +2686,22 @@ function cleanupDataStructures() {
             }
         }
 
+        // Evict orphaned webRequest entries — requests that set an entry but
+        // never committed (aborted loads, closed tabs). Committed navigations
+        // delete their own entry in onCommitted; this is the backstop that keeps
+        // the Map from growing for the service worker's whole lifetime.
+        const WEBREQUEST_TTL = 2 * 60 * 1000; // 2 minutes
+        for (const [requestId, data] of webRequestData) {
+            if (now - data.timeStamp > WEBREQUEST_TTL) {
+                webRequestData.delete(requestId);
+            }
+        }
+
         console.log("Data structures cleaned up:", {
             tabs: browserState.tabs.size,
             edges: tabEdges.size,
-            processedNavigations: processedNavigations.size
+            processedNavigations: processedNavigations.size,
+            webRequestData: webRequestData.size
         });
     } catch (error) {
         console.error("Error in cleanup:", error);
@@ -3260,11 +3268,26 @@ async function extractContentFromMetadataInWorker(url) {
     }
 }
 
-/**
- * Save browserState to persistent storage
- * This ensures all incremental data (dwell time, relationships, activity) is preserved
- */
+// Coalesce the many per-event persistence calls (audio toggles, tab switches,
+// activations, edge creation, etc.) into at most one disk write per throttle
+// window. Previously every hot-path event did a full Map->object serialize +
+// chrome.storage.local.set of the ENTIRE browserState — dozens of whole-state
+// writes per minute on an active browser. All callers route through here; the
+// 30s interval and explicit transitions still guarantee durability.
+let pendingSaveTimer = null;
 function saveStateToStorage() {
+    if (pendingSaveTimer) return;
+    pendingSaveTimer = setTimeout(() => {
+        pendingSaveTimer = null;
+        persistStateNow();
+    }, 2000);
+}
+
+/**
+ * Save browserState to persistent storage (immediate write).
+ * This ensures all incremental data (dwell time, relationships, activity) is preserved.
+ */
+function persistStateNow() {
     try {
         console.log('Saving browserState to persistent storage...');
 
@@ -3377,11 +3400,35 @@ function loadStateFromStorage() {
                 console.log(`Restored ${browserState.tabRelationships.size} tab relationships`);
             }
 
-            // Restore tabActivityLog
+            // Restore tabActivityLog — canonical shape is an object per tab:
+            //   { totalTimeSpent, firstSeen, lastTouch, events[], navigations[] }
+            // Legacy Array values are wrapped into .events for backwards compat.
             if (savedState.tabActivityLog) {
                 browserState.tabActivityLog = new Map();
                 Object.entries(savedState.tabActivityLog).forEach(([tabId, activities]) => {
-                    browserState.tabActivityLog.set(parseInt(tabId), activities);
+                    const id = parseInt(tabId);
+                    if (activities && typeof activities === "object" && !Array.isArray(activities)) {
+                        if (!Array.isArray(activities.events)) activities.events = [];
+                        if (!Array.isArray(activities.navigations)) activities.navigations = [];
+                        browserState.tabActivityLog.set(id, activities);
+                    } else if (Array.isArray(activities)) {
+                        browserState.tabActivityLog.set(id, {
+                            totalTimeSpent: 0,
+                            firstSeen: null,
+                            lastTouch: null,
+                            events: activities,
+                            navigations: []
+                        });
+                    } else {
+                        console.warn(`[LoadState] Invalid activity log for tab ${tabId}, resetting to canonical shape`);
+                        browserState.tabActivityLog.set(id, {
+                            totalTimeSpent: 0,
+                            firstSeen: Date.now(),
+                            lastTouch: null,
+                            events: [],
+                            navigations: []
+                        });
+                    }
                 });
                 console.log(`Restored ${browserState.tabActivityLog.size} tab activity logs`);
             }

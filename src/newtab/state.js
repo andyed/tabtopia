@@ -21,25 +21,25 @@ export const ActionTypes = {
   TAB_UPDATED: 'TAB_UPDATED',
   TAB_REMOVED: 'TAB_REMOVED',
   TAB_ACTIVATED: 'TAB_ACTIVATED',
-  
+
   // Window actions
   WINDOW_CREATED: 'WINDOW_CREATED',
   WINDOW_UPDATED: 'WINDOW_UPDATED',
   WINDOW_REMOVED: 'WINDOW_REMOVED',
-  
+
   // UI actions
   UI_SELECT_TAB: 'UI_SELECT_TAB',
   UI_CHANGE_VIEW: 'UI_CHANGE_VIEW',
-  
+
   // Relationship actions
   RELATIONSHIP_ADDED: 'RELATIONSHIP_ADDED',
   RELATIONSHIP_REMOVED: 'RELATIONSHIP_REMOVED',
-  
+
   // Data actions
   SUMMARY_STORED: 'SUMMARY_STORED',
   NODE_POSITION_UPDATED: 'NODE_POSITION_UPDATED',
   DWELL_TIME_UPDATED: 'DWELL_TIME_UPDATED', // New action type
-  
+
   // Batch actions
   BATCH_STATE_UPDATE: 'BATCH_STATE_UPDATE',
 };
@@ -54,7 +54,7 @@ const initialState = {
   tabHistory: new Map(),
   tabRelationships: new Map(),
   tabActivityLog: new Map(), // Added for dwell time and activity
-  
+
   // UI state
   ui: {
     selectedTab: null,
@@ -62,7 +62,7 @@ const initialState = {
     currentView: 'treemap',
     searchQuery: '',
   },
-  
+
   // Persistent data
   graphData: {
     summaries: {},
@@ -70,7 +70,7 @@ const initialState = {
     nodePositions: {},
     lastUpdated: null
   },
-  
+
   // Cache
   cache: {
     favicons: new Map(),
@@ -88,19 +88,19 @@ export const browserState = {
    * @private
    */
   _store: { ...initialState },
-  
+
   /**
    * State change listeners
    * @private
    */
   _listeners: [],
-  
+
   /**
    * Middleware functions to process actions
    * @private
    */
   _middleware: [],
-  
+
   /**
    * Retrieves a complete snapshot of the current browser state
    * 
@@ -116,10 +116,10 @@ export const browserState = {
           console.warn('getState timed out after 3 seconds');
           resolve(this._store); // Use local store if timeout
         }, 3000);
-        
+
         chrome.runtime.sendMessage({ type: 'getState', action: 'getState' }, (response) => {
           clearTimeout(timeoutId); // Clear timeout on response
-          
+
           if (response) {
             // Update local store with fresh data
             this._dispatch({
@@ -141,7 +141,7 @@ export const browserState = {
       return this._getLocalState();
     }
   },
-  
+
   /**
    * Get current state from local store
    * @private
@@ -156,7 +156,7 @@ export const browserState = {
       tabActivityLog: this._store.tabActivityLog // Added for dwell time and activity
     };
   },
-  
+
   /**
    * Subscribe to state changes
    * 
@@ -192,21 +192,21 @@ export const browserState = {
           payload: message.data
         });
       }
-      
+
       // Forward original message to maintain backward compatibility
       callback(message);
     };
-    
+
     chrome.runtime.onMessage.addListener(listener);
     this._listeners.push(callback);
-    
+
     // Return unsubscribe function
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
       this._listeners = this._listeners.filter(cb => cb !== callback);
     };
   },
-  
+
   /**
    * Add middleware to process actions
    * 
@@ -219,7 +219,7 @@ export const browserState = {
       this._middleware = this._middleware.filter(m => m !== middleware);
     };
   },
-  
+
   /**
    * Dispatch an action to update state
    * Public method for components to trigger state changes
@@ -231,7 +231,7 @@ export const browserState = {
   dispatch(action) {
     this._dispatch(action);
   },
-  
+
   /**
    * Internal dispatch implementation with middleware support
    * 
@@ -240,7 +240,7 @@ export const browserState = {
    */
   _dispatch(action) {
     console.log('Action dispatched:', action);
-    
+
     // Run action through middleware
     let processedAction = action;
     for (const middleware of this._middleware) {
@@ -248,18 +248,18 @@ export const browserState = {
       // Middleware can cancel action by returning null/undefined
       if (!processedAction) return;
     }
-    
+
     // Apply action using reducer
     const newState = this._reducer(this._store, processedAction);
-    
+
     // Update store with new state
     this._store = newState;
-    
+
     // Notify listeners about state change
     const changeType = action.type;
     this._notifyListeners(changeType, action.payload);
   },
-  
+
   /**
    * Notify all listeners of state change
    * 
@@ -279,7 +279,7 @@ export const browserState = {
       }
     });
   },
-  
+
   /**
    * Map Redux action types to legacy action names
    * 
@@ -298,7 +298,7 @@ export const browserState = {
     };
     return mapping[actionType] || 'stateChanged';
   },
-  
+
   /**
    * Root reducer function to handle all actions
    * 
@@ -311,39 +311,39 @@ export const browserState = {
     switch (action.type) {
       case ActionTypes.TAB_CREATED:
         return this._reducers.tabCreated(state, action.payload);
-        
+
       case ActionTypes.TAB_UPDATED:
         return this._reducers.tabUpdated(state, action.payload);
-        
+
       case ActionTypes.TAB_REMOVED:
         return this._reducers.tabRemoved(state, action.payload);
-        
+
       case ActionTypes.WINDOW_UPDATED:
         return this._reducers.windowUpdated(state, action.payload);
-        
+
       case ActionTypes.UI_SELECT_TAB:
         return this._reducers.uiSelectTab(state, action.payload);
-        
+
       case ActionTypes.UI_CHANGE_VIEW:
         return this._reducers.uiChangeView(state, action.payload);
-        
+
       case ActionTypes.SUMMARY_STORED:
         return this._reducers.summaryStored(state, action.payload);
-        
+
       case ActionTypes.NODE_POSITION_UPDATED:
         return this._reducers.nodePositionUpdated(state, action.payload);
-        
+
       case ActionTypes.DWELL_TIME_UPDATED:
         return this._reducers.dwellTimeUpdated(state, action.payload); // New reducer
-        
+
       case ActionTypes.BATCH_STATE_UPDATE:
         return this._reducers.batchStateUpdate(state, action.payload);
-        
+
       default:
         return state;
     }
   },
-  
+
   /**
    * Individual reducer functions for each action type
    * @private
@@ -359,13 +359,13 @@ export const browserState = {
       const { tabId, tab } = payload;
       const newTabs = new Map(state.tabs);
       newTabs.set(tabId, { ...tab });
-      
+
       return {
         ...state,
         tabs: newTabs
       };
     },
-    
+
     /**
      * Handle tab updated action
      * @param {Object} state - Current state
@@ -375,20 +375,20 @@ export const browserState = {
     tabUpdated(state, payload) {
       const { tabId, changes } = payload;
       const newTabs = new Map(state.tabs);
-      
+
       const existingTab = newTabs.get(tabId) || {};
-      newTabs.set(tabId, { 
-        ...existingTab, 
+      newTabs.set(tabId, {
+        ...existingTab,
         ...changes,
         lastUpdate: Date.now()
       });
-      
+
       return {
         ...state,
         tabs: newTabs
       };
     },
-    
+
     /**
      * Handle tab removed action
      * @param {Object} state - Current state
@@ -399,13 +399,13 @@ export const browserState = {
       const { tabId } = payload;
       const newTabs = new Map(state.tabs);
       newTabs.delete(tabId);
-      
+
       return {
         ...state,
         tabs: newTabs
       };
     },
-    
+
     /**
      * Handle window updated action
      * @param {Object} state - Current state
@@ -415,20 +415,20 @@ export const browserState = {
     windowUpdated(state, payload) {
       const { windowId, window } = payload;
       const newWindows = new Map(state.windows);
-      
+
       if (window) {
         newWindows.set(windowId, window);
       } else {
         // If no window data, it might be a removal
         newWindows.delete(windowId);
       }
-      
+
       return {
         ...state,
         windows: newWindows
       };
     },
-    
+
     /**
      * Handle UI tab selection
      * @param {Object} state - Current state
@@ -438,11 +438,11 @@ export const browserState = {
     uiSelectTab(state, payload) {
       // Ensure dwellTimeMs is always a number
       const finalDwellTimeMs = state.ui.dwellTimeMs !== null ? Number(state.ui.dwellTimeMs) : null;
-      
+
       if (finalDwellTimeMs !== null) {
         console.log(`[DwellTime] Final value for ${state.ui.url}: ${finalDwellTimeMs}ms (${typeof finalDwellTimeMs}) - source: ${state.ui.dwellTimeSource}`);
       }
-      
+
       // Return the enriched page data
       return {
         ...state,
@@ -453,7 +453,7 @@ export const browserState = {
         }
       };
     },
-    
+
     /**
      * Handle UI view change
      * @param {Object} state - Current state
@@ -469,7 +469,7 @@ export const browserState = {
         }
       };
     },
-    
+
     /**
      * Handle summary storage or clearing
      * @param {Object} state - Current state
@@ -489,7 +489,7 @@ export const browserState = {
           }
         };
       }
-      
+
       // Handle normal summary storage
       const { url, summary } = payload;
       return {
@@ -504,7 +504,7 @@ export const browserState = {
         }
       };
     },
-    
+
     /**
      * Handle node position update
      * @param {Object} state - Current state
@@ -513,7 +513,7 @@ export const browserState = {
      */
     nodePositionUpdated(state, { nodes }) {
       const nodePositions = { ...state.graphData.nodePositions };
-      
+
       nodes.forEach(node => {
         if (node.id && (node.x !== undefined && node.y !== undefined)) {
           nodePositions[node.id] = {
@@ -523,7 +523,7 @@ export const browserState = {
           };
         }
       });
-      
+
       return {
         ...state,
         graphData: {
@@ -533,7 +533,7 @@ export const browserState = {
         }
       };
     },
-    
+
     /**
      * Handle dwell time updates
      * @param {Object} state - Current state
@@ -542,34 +542,34 @@ export const browserState = {
      */
     dwellTimeUpdated(state, payload) {
       console.log('[DwellTime] Received real-time update:', payload);
-      
+
       const { tabId, url, dwellTimeMs, timestamp } = payload;
-      
+
       // Skip invalid payloads
       if (!tabId || !url || !dwellTimeMs) {
         console.warn('[DwellTime] Invalid dwell time update payload:', payload);
         return state;
       }
-      
+
       // Make sure we have tabHistory data to update
       if (!state.tabHistory || !state.tabHistory.has(tabId)) {
         console.warn(`[DwellTime] No tab history for tab ${tabId} to update dwellTime`);
         return state;
       }
-      
+
       // Create a new copy of the tab history map
       const newTabHistory = new Map(state.tabHistory);
-      
+
       // Get the history array for this tab
       const tabHistory = [...newTabHistory.get(tabId)];
-      
+
       // Find the matching navigation entry
       let updated = false;
       const updatedTabHistory = tabHistory.map(entry => {
         // Match the navigation entry by URL
         if (entry.url === url) {
           console.log(`[DwellTime] Updating dwell time for ${url} in tab ${tabId} from ${entry.dwellTimeMs || 0}ms to ${dwellTimeMs}ms`);
-          
+
           // Return a new entry with updated dwellTimeMs
           updated = true;
           return {
@@ -580,23 +580,23 @@ export const browserState = {
         }
         return entry;
       });
-      
+
       // If we didn't find and update any entries, log a warning
       if (!updated) {
         console.warn(`[DwellTime] Couldn't find matching navigation entry for ${url} in tab ${tabId}`);
         return state;
       }
-      
+
       // Update the tab history
       newTabHistory.set(tabId, updatedTabHistory);
-      
+
       // Return updated state
       return {
         ...state,
         tabHistory: newTabHistory
       };
     },
-    
+
     /**
      * Handle batch state update (e.g. from background script)
      * @param {Object} state - Current state
@@ -605,26 +605,26 @@ export const browserState = {
      */
     batchStateUpdate(state, payload) {
       // Convert Maps if they come as arrays of entries
-      const tabs = payload.tabs instanceof Map 
-        ? payload.tabs 
+      const tabs = payload.tabs instanceof Map
+        ? payload.tabs
         : new Map(payload.tabs || []);
-        
-      const windows = payload.windows instanceof Map 
-        ? payload.windows 
+
+      const windows = payload.windows instanceof Map
+        ? payload.windows
         : new Map(payload.windows || []);
-        
-      const tabHistory = payload.tabHistory instanceof Map 
-        ? payload.tabHistory 
+
+      const tabHistory = payload.tabHistory instanceof Map
+        ? payload.tabHistory
         : new Map(payload.tabHistory || []);
-        
-      const tabRelationships = payload.tabRelationships instanceof Map 
-        ? payload.tabRelationships 
+
+      const tabRelationships = payload.tabRelationships instanceof Map
+        ? payload.tabRelationships
         : new Map(payload.tabRelationships || []);
-        
-      const tabActivityLog = payload.tabActivityLog instanceof Map 
-        ? payload.tabActivityLog 
+
+      const tabActivityLog = payload.tabActivityLog instanceof Map
+        ? payload.tabActivityLog
         : new Map(payload.tabActivityLog || []);
-      
+
       return {
         ...state,
         tabs,
@@ -640,9 +640,9 @@ export const browserState = {
       };
     }
   },
-  
+
   // --- Maintain existing API methods ---
-  
+
   /**
    * Get data formatted for treemap visualization
    * @async
@@ -652,7 +652,7 @@ export const browserState = {
     const stateSnapshot = await this.getState();
     return this.formatDataForTreemap(stateSnapshot);
   },
-  
+
   /**
    * Format data for treemap
    * @param {Object} stateSnapshot - State data
@@ -660,14 +660,14 @@ export const browserState = {
    */
   formatDataForTreemap(stateSnapshot) {
     // Keep existing implementation...
-    const windows = Array.isArray(stateSnapshot.windows) 
+    const windows = Array.isArray(stateSnapshot.windows)
       ? stateSnapshot.windows.map(w => w[1])
       : Array.from(stateSnapshot.windows?.values() || []);
-    
-    const tabs = stateSnapshot.tabs instanceof Map 
-      ? stateSnapshot.tabs 
+
+    const tabs = stateSnapshot.tabs instanceof Map
+      ? stateSnapshot.tabs
       : new Map(stateSnapshot.tabs || []);
-    
+
     return {
       name: 'root',
       children: windows.map(window => ({
@@ -689,7 +689,7 @@ export const browserState = {
       }))
     };
   },
-  
+
   /**
    * Store graph data
    * @async
@@ -708,9 +708,9 @@ export const browserState = {
         }
       }
     });
-    
+
     // Also persist to storage
-    return chrome.storage.local.set({ 
+    return chrome.storage.local.set({
       'graphPersistentData': {
         summaries: graphData.summaries || {},
         customEdges: graphData.customEdges || [],
@@ -719,7 +719,7 @@ export const browserState = {
       }
     });
   },
-  
+
   /**
    * Get graph data
    * @async
@@ -730,7 +730,7 @@ export const browserState = {
     if (this._store.graphData.lastUpdated) {
       return this._store.graphData;
     }
-    
+
     // Otherwise fetch from storage
     return new Promise((resolve) => {
       chrome.storage.local.get('graphPersistentData', (result) => {
@@ -740,18 +740,18 @@ export const browserState = {
           nodePositions: {},
           lastUpdated: null
         };
-        
+
         // Update store with fetched data
         this.dispatch({
           type: ActionTypes.BATCH_STATE_UPDATE,
           payload: { graphData: data }
         });
-        
+
         resolve(data);
       });
     });
   },
-  
+
   /**
    * Store URL summary
    * @async
@@ -765,7 +765,7 @@ export const browserState = {
       payload: { url, summary }
     });
   },
-  
+
   /**
    * Clear all stored summaries from state
    * This allows for cache refreshing when summaries need to be regenerated
@@ -777,13 +777,13 @@ export const browserState = {
       type: ActionTypes.SUMMARY_STORED,
       payload: { clear: true }
     });
-    
+
     // Then update persistent storage
     const graphData = await this.getGraphData();
     graphData.summaries = {}; // Clear all summaries
     return this.storeGraphData(graphData);
   },
-  
+
   /**
    * Get URL summary
    * @async
@@ -795,11 +795,11 @@ export const browserState = {
     if (this._store.graphData.summaries[url]) {
       return this._store.graphData.summaries[url];
     }
-    
+
     const graphData = await this.getGraphData();
     return graphData.summaries[url] || null;
   },
-  
+
   /**
    * Store custom edge
    * @async
@@ -808,22 +808,22 @@ export const browserState = {
   async storeCustomEdge(edge) {
     // Original implementation
     const graphData = await this.getGraphData();
-    
+
     // Check if edge already exists (in either direction)
     const existingEdgeIndex = graphData.customEdges.findIndex(
-      e => (e.source === edge.source && e.target === edge.target) || 
-           (e.source === edge.target && e.target === edge.source)
+      e => (e.source === edge.source && e.target === edge.target) ||
+        (e.source === edge.target && e.target === edge.source)
     );
-    
+
     if (existingEdgeIndex >= 0) {
       graphData.customEdges[existingEdgeIndex] = edge;
     } else {
       graphData.customEdges.push(edge);
     }
-    
+
     return this.storeGraphData(graphData);
   },
-  
+
   /**
    * Store node positions
    * @async
@@ -835,11 +835,11 @@ export const browserState = {
       type: ActionTypes.NODE_POSITION_UPDATED,
       payload: { nodes }
     });
-    
+
     // Also update persistent storage
     const graphData = await this.getGraphData();
     const nodePositions = {};
-    
+
     nodes.forEach(node => {
       if (node.id && (node.x !== undefined && node.y !== undefined)) {
         nodePositions[node.id] = {
@@ -849,16 +849,16 @@ export const browserState = {
         };
       }
     });
-    
+
     graphData.nodePositions = nodePositions;
     return this.storeGraphData(graphData);
   },
-  
+
   /**
    * Favicon cache
    */
   faviconCache: new Map(),
-  
+
   /**
    * Get favicon with cache
    * @async
@@ -871,7 +871,7 @@ export const browserState = {
     if (this.faviconCache.has(domain)) {
       return this.faviconCache.get(domain);
     }
-    
+
     try {
       const fetchPromise = new Promise(async (resolve) => {
         chrome.runtime.sendMessage(
@@ -888,7 +888,7 @@ export const browserState = {
           }
         );
       });
-      
+
       this.faviconCache.set(domain, fetchPromise);
       return fetchPromise;
     } catch (error) {
@@ -896,7 +896,7 @@ export const browserState = {
       return null;
     }
   },
-  
+
   /**
    * Extract domain from URL
    * @param {string} url - URL string
@@ -912,8 +912,8 @@ export const browserState = {
     }
   },
 
-  async getPageActivityAndReferrals(pageInfoArray) {
-    console.log(`[PageActivity] Starting getPageActivityAndReferrals for ${pageInfoArray.length} pages`);
+  async getPageActivityAndReferrals(pageInfoArray, options = { skipRefresh: false }) {
+    console.log(`[PageActivity] Starting getPageActivityAndReferrals for ${pageInfoArray.length} pages (skipRefresh: ${options.skipRefresh})`);
     console.log(`[PageActivity] Current state of _store:`, {
       hasTabHistory: !!this._store.tabHistory,
       tabHistorySize: this._store.tabHistory ? this._store.tabHistory.size : 0,
@@ -922,10 +922,12 @@ export const browserState = {
       hasTabRelationships: !!this._store.tabRelationships,
       tabRelationshipsSize: this._store.tabRelationships ? this._store.tabRelationships.size : 0
     });
-    
+
     // Ensure the local store (_store) is up-to-date with the latest from background.js
-    await this.getState();
-    
+    if (!options.skipRefresh) {
+      await this.getState();
+    }
+
     console.log(`[PageActivity] After getState() refresh:`, {
       hasTabHistory: !!this._store.tabHistory,
       tabHistorySize: this._store.tabHistory ? this._store.tabHistory.size : 0,
@@ -934,7 +936,7 @@ export const browserState = {
       hasTabRelationships: !!this._store.tabRelationships,
       tabRelationshipsSize: this._store.tabRelationships ? this._store.tabRelationships.size : 0
     });
-    
+
     // Helper function for formatting duration in logs
     function formatDurationLog(milliseconds) {
       if (milliseconds < 0 || isNaN(milliseconds)) return 'N/A';
@@ -947,10 +949,10 @@ export const browserState = {
       if (hours > 0) parts.push(`${hours}h`);
       if (minutes > 0) parts.push(`${minutes}m`);
       if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
-          
+
       return parts.join(' ');
     }
-    
+
     console.log(`[PageActivity] Processing activity data for ${pageInfoArray.length} pages`);
 
     const enrichedPages = pageInfoArray.map(page => {
@@ -964,15 +966,15 @@ export const browserState = {
         for (const [tabId, historyArray] of this._store.tabHistory.entries()) {
           // tabHistory entries are typically newest first (unshifted)
           const entryIndex = historyArray.findIndex(
-            (nav) => nav.url === page.url && 
-                     Math.abs(nav.timestamp - page.visitTimestamp) < 2000 // Allow 2s delta for timestamp match
+            (nav) => nav.url === page.url &&
+              Math.abs(nav.timestamp - page.visitTimestamp) < 2000 // Allow 2s delta for timestamp match
           );
 
           if (entryIndex !== -1) {
             visitTabId = tabId;
             navigationEntry = historyArray[entryIndex];
             // The chronologically next navigation is at the previous index (if it exists)
-            if (entryIndex > 0) { 
+            if (entryIndex > 0) {
               nextNavigationEntry = historyArray[entryIndex - 1];
             }
             break; // Found the relevant navigation history for this page
@@ -981,11 +983,12 @@ export const browserState = {
       }
 
       // Calculate dwell time with improved fallback mechanisms
-      let dwellTimeMs = null;
-      let dwellTimeSource = 'unknown';
-      
+      // PRIORITIZE existing dwell time if passed in (e.g. from backend/Memory Kernel)
+      let dwellTimeMs = page.dwellTimeMs || null;
+      let dwellTimeSource = dwellTimeMs ? 'existing-metadata' : 'unknown';
+
       // Debug the navigation entries
-      console.log(`[DwellTime DEBUG] Navigation entries for ${page.url}:`, { 
+      console.log(`[DwellTime DEBUG] Navigation entries for ${page.url}:`, {
         hasNavigationEntry: !!navigationEntry,
         hasNextNavigationEntry: !!nextNavigationEntry,
         navigationTimestamp: navigationEntry ? navigationEntry.timestamp : null,
@@ -997,7 +1000,7 @@ export const browserState = {
         // Standard dwell time calculation: time between this navigation and the next one
         const duration = nextNavigationEntry.timestamp - navigationEntry.timestamp;
         console.log(`[DwellTime] Calculating standard duration: ${nextNavigationEntry.timestamp} - ${navigationEntry.timestamp} = ${duration}ms`);
-        
+
         if (duration > 0) {
           dwellTimeMs = duration;
           dwellTimeSource = 'next-navigation';
@@ -1016,30 +1019,30 @@ export const browserState = {
           navigationTimestamp: navigationEntry.timestamp,
           difference: endTime - navigationEntry.timestamp
         });
-        
+
         dwellTimeMs = endTime - navigationEntry.timestamp;
         dwellTimeSource = 'session-end';
         console.log(`[DwellTime] Fallback calculation for ${page.url}: ${dwellTimeMs}ms (${formatDurationLog(dwellTimeMs)}) - from session end/current time`);
-        
+
         // Additional check: If we have tab activity logs for this tab, we might be able to get a more accurate dwell time
         if (visitTabId && this._store.tabActivityLog && this._store.tabActivityLog.has(visitTabId)) {
           const activityLog = this._store.tabActivityLog.get(visitTabId);
-          
+
           // Find the last relevant event for this navigation
           if (activityLog && activityLog.length > 0) {
             // Filter events relevant to this navigation (after it happened)
-            const relevantEvents = activityLog.filter(event => 
-              event.timestamp >= navigationEntry.timestamp && 
+            const relevantEvents = activityLog.filter(event =>
+              event.timestamp >= navigationEntry.timestamp &&
               (event.type === 'tab_focus' || event.type === 'tab_blur' || event.type === 'link_interaction')
             );
-            
+
             // Get the last relevant event (if any)
             if (relevantEvents.length > 0) {
               const lastEvent = relevantEvents[relevantEvents.length - 1];
-              
+
               // Calculate dwell time based on the time difference
               const activityDwellTimeMs = lastEvent.timestamp - navigationEntry.timestamp;
-              
+
               // Only use this value if it's reasonable (positive and not excessive)
               if (activityDwellTimeMs > 0 && activityDwellTimeMs < 24 * 60 * 60 * 1000) {
                 // Success: We found a better dwell time estimate
@@ -1056,7 +1059,7 @@ export const browserState = {
 
       // Find the most relevant referral data with enhanced context
       let referral = null;
-      
+
       // 1. First check tab relationships (tab-to-tab navigations)
       if (visitTabId && this._store.tabRelationships && this._store.tabRelationships.has(visitTabId)) {
         const relationship = this._store.tabRelationships.get(visitTabId);
@@ -1070,7 +1073,7 @@ export const browserState = {
             timestamp: relationship.timestamp,
             interactionData: relationship.interactionData || null
           };
-          
+
           // ENHANCED: If lastClickedLink data is available, merge in rich context
           if (relationship.lastClickedLink) {
             const clickData = relationship.lastClickedLink;
@@ -1087,7 +1090,7 @@ export const browserState = {
           }
         }
       }
-      
+
       // 2. ENHANCED: Find the most relevant link_interaction event for this navigation
       // This helps with intra-tab navigations that don't create new tabs
       if (!referral && navigationEntry && visitTabId && this._store.tabActivityLog?.has(visitTabId)) {
@@ -1095,24 +1098,24 @@ export const browserState = {
         if (Array.isArray(activityLog)) {
           // Look for link interactions just before this navigation (within 5 seconds)
           // Increased window to catch more interactions that might be related
-          const relevantEvents = activityLog.filter(event => 
-            event.type === 'link_interaction' && 
+          const relevantEvents = activityLog.filter(event =>
+            event.type === 'link_interaction' &&
             event.data?.targetUrl && // Ensure we have target URL data
-            event.timestamp <= navigationEntry.timestamp && 
+            event.timestamp <= navigationEntry.timestamp &&
             navigationEntry.timestamp - event.timestamp < 5000 && // Expanded window to 5s
             // If we have target URL, try to match it to the navigation
             // This helps confirm this interaction actually led to this page
-            (!event.data.targetUrl || 
+            (!event.data.targetUrl ||
               event.data.targetUrl === navigationEntry.url ||
               new URL(event.data.targetUrl).pathname === new URL(navigationEntry.url).pathname)
           );
-          
+
           // Sort by recency to get the most immediate predecessor
           if (relevantEvents.length > 0) {
             relevantEvents.sort((a, b) => b.timestamp - a.timestamp);
             const mostRelevantEvent = relevantEvents[0];
             const eventData = mostRelevantEvent.data;
-            
+
             referral = {
               type: 'intraTab',
               sourceUrl: eventData.sourceUrl,
@@ -1128,7 +1131,7 @@ export const browserState = {
               formData: eventData.formData || null,
               pageContext: eventData.pageContext || null
             };
-            
+
             // If this was a search form, extract query
             if (referral.isFormSubmission && referral.formData && referral.formData.searchQuery) {
               referral.searchQuery = referral.formData.searchQuery;
@@ -1136,7 +1139,7 @@ export const browserState = {
           }
         }
       }
-      
+
       // 3. Fallback to navigation entry transition info if available
       if (!referral && navigationEntry && navigationEntry.transitionType) {
         referral = {
@@ -1146,8 +1149,8 @@ export const browserState = {
           timestamp: navigationEntry.timestamp,
           // Check for special transition types
           isTypedEntry: navigationEntry.transitionType === 'typed',
-          isReload: navigationEntry.transitionQualifiers?.includes('forward_back') || 
-                   navigationEntry.transitionType === 'reload',
+          isReload: navigationEntry.transitionQualifiers?.includes('forward_back') ||
+            navigationEntry.transitionType === 'reload',
           isBookmark: navigationEntry.transitionType === 'auto_bookmark'
         };
       }
@@ -1161,7 +1164,7 @@ export const browserState = {
       } catch (e) {
         console.warn('Error extracting domain from URL:', e);
       }
-      
+
       // Apply minimum dwell time if calculated as zero or invalid
       if (!dwellTimeMs || dwellTimeMs <= 0) {
         const oldValue = dwellTimeMs;
@@ -1173,7 +1176,7 @@ export const browserState = {
 
       // Final value for this page
       console.log(`[DwellTime] Final value for ${page.url}: ${dwellTimeMs}ms (${formatDurationLog(dwellTimeMs)}) - source: ${dwellTimeSource}`);
-      
+
       return {
         ...page,
         originalTabId: visitTabId,
@@ -1186,7 +1189,7 @@ export const browserState = {
 
     return enrichedPages;
   },
-  
+
   /**
    * Track when a tab receives focus
    * @param {number} tabId - The ID of the tab that received focus
@@ -1194,36 +1197,36 @@ export const browserState = {
    */
   trackTabFocus(tabId) {
     if (!tabId) return;
-    
+
     // Make sure tabActivityLog exists
     if (!this._store.tabActivityLog) {
       this._store.tabActivityLog = new Map();
     }
-    
+
     // Initialize tab entry if needed
     if (!this._store.tabActivityLog.has(tabId)) {
       this._store.tabActivityLog.set(tabId, []);
     }
-    
+
     // Add a focus event
     const focusEvent = {
       timestamp: Date.now(),
       type: 'focus'
     };
-    
+
     this._store.tabActivityLog.get(tabId).push(focusEvent);
-    
+
     // For debugging
     console.log(`Tab ${tabId} focus event recorded at ${new Date().toISOString()}`);
-    
+
     // Persist to background script
-    chrome.runtime.sendMessage({ 
-      action: 'updateTabActivity', 
-      tabId, 
-      event: focusEvent 
+    chrome.runtime.sendMessage({
+      action: 'updateTabActivity',
+      tabId,
+      event: focusEvent
     });
   },
-  
+
   /**
    * Check if a tab was active during a session
    * @param {number} tabId - The ID of the tab to check
@@ -1233,22 +1236,22 @@ export const browserState = {
    */
   wasTabActiveInSession(tabId, sessionStartTime, sessionEndTime) {
     if (!tabId) return false;
-    
+
     // Check if tab was created during the session
     const tab = this._store.tabs.get(tabId);
     if (tab && tab.creationTime && tab.creationTime >= sessionStartTime && tab.creationTime <= sessionEndTime) {
       return true;
     }
-    
+
     // Check for focus events during the session
     const activityLog = this._store.tabActivityLog.get(tabId) || [];
-    return activityLog.some(event => 
-      event.type === 'focus' && 
-      event.timestamp >= sessionStartTime && 
+    return activityLog.some(event =>
+      event.type === 'focus' &&
+      event.timestamp >= sessionStartTime &&
       event.timestamp <= sessionEndTime
     );
   },
-  
+
   /**
    * Action creators for common operations
    * Convenience methods for components to dispatch standard actions
@@ -1263,11 +1266,11 @@ export const browserState = {
         type: ActionTypes.UI_SELECT_TAB,
         payload: tabId
       });
-      
+
       // Also track this as a focus event
       browserState.trackTabFocus(tabId);
     },
-    
+
     /**
      * Change current visualization view
      * @param {string} viewName - View name ('treemap', 'graph', etc.)
@@ -1295,7 +1298,7 @@ export const browserState = {
         });
       });
     });
-    
+
     // Initialize with stored graph data
     browserState._store.graphData = graphData;
   } catch (error) {
@@ -1319,3 +1322,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+// Final export for global access in modules that don't support ES imports yet
+if (typeof window !== 'undefined') {
+  window.browserState = browserState;
+}
+
+export default browserState;

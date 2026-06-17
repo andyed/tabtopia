@@ -22,13 +22,13 @@ let currentViewMode = 'time'; // 'time' or 'domain'
 // Initialize the visualization
 async function init() {
     // Show loading indicator
-    document.getElementById('graph').innerHTML = 
+    document.getElementById('graph').innerHTML =
         '<div class="loading"><div class="spinner"></div>Loading your browsing data...</div>';
-    
+
     try {
         // Get stored graph data for faster initialization
         const cachedGraphData = await getGraphData();
-        
+
         // Fetch data
         const [historyItems, windows] = await Promise.all([
             chrome.history.search({ text: '', maxResults: 200, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
@@ -37,7 +37,7 @@ async function init() {
 
         // Get bookmarks
         const bookmarks = await fetchBookmarks();
-        
+
         // Track currently open tabs
         windows.forEach(window => {
             if (window.tabs) {
@@ -48,8 +48,8 @@ async function init() {
         });
 
         // Process data with cached positions
-        await processHistoryData(historyItems, bookmarks, windows, cachedGraphData.nodePositions);
-        
+        await processHistoryData(historyItems, bookmarks, windows);
+
         // Restore summaries from cache
         if (Object.keys(cachedGraphData.summaries).length > 0) {
             for (const [url, summary] of Object.entries(cachedGraphData.summaries)) {
@@ -59,17 +59,38 @@ async function init() {
                 }
             }
         }
-        
+
         // Add custom edges
         if (cachedGraphData.customEdges.length > 0) {
             addCustomEdges(cachedGraphData.customEdges);
         }
-        
+
+        // Restore saved node positions so the layout doesn't re-converge from scratch.
+        // storeNodePositions() writes { x, y, fixed } per nodeId every 30s while
+        // alpha < 0.1; without this restore step the data was being written and
+        // never read.
+        if (cachedGraphData.nodePositions && Object.keys(cachedGraphData.nodePositions).length > 0) {
+            let restored = 0;
+            nodes.forEach(node => {
+                const saved = cachedGraphData.nodePositions[node.id];
+                if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+                    node.x = saved.x;
+                    node.y = saved.y;
+                    if (saved.fixed) {
+                        node.fx = saved.x;
+                        node.fy = saved.y;
+                    }
+                    restored++;
+                }
+            });
+            console.log(`Restored positions for ${restored} of ${nodes.length} nodes`);
+        }
+
         // Create the visualization
         // Create a synthetic session object for the main graph view
         const graphSession = { id: 'main-graph' };
         const graphResult = createForceGraph(document.getElementById('graph'), nodes, links, graphSession, currentViewMode);
-        
+
         // Store the simulation reference for later use
         if (graphResult) {
             simulation = graphResult.simulation;
@@ -95,16 +116,16 @@ async function init() {
 
     } catch (error) {
         console.error('Failed to initialize graph:', error);
-        document.getElementById('graph').innerHTML = 
+        document.getElementById('graph').innerHTML =
             `<div class="error">Error loading graph visualization: ${error.message}</div>`;
     }
 }
 
 async function fetchBookmarks() {
     return new Promise((resolve) => {
-        chrome.bookmarks.getTree(function(bookmarkTreeNodes) {
+        chrome.bookmarks.getTree(function (bookmarkTreeNodes) {
             const bookmarks = [];
-            
+
             function processNode(node) {
                 if (node.url) {
                     bookmarks.push({
@@ -115,12 +136,12 @@ async function fetchBookmarks() {
                     });
                     bookmarkedUrls.add(node.url);
                 }
-                
+
                 if (node.children) {
                     node.children.forEach(processNode);
                 }
             }
-            
+
             bookmarkTreeNodes.forEach(processNode);
             resolve(bookmarks);
         });
@@ -135,7 +156,7 @@ async function processHistoryData(historyItems, bookmarks, windows) {
     const tabRelationships = state.tabRelationships;
     // Create nodes map to avoid duplicates
     const nodesMap = new Map();
-    
+
     // Limit history items to 300 most recent
     if (historyItems.length > 300) {
         console.log(`Limiting visualization to 300 most recent items out of ${historyItems.length}`);
@@ -148,7 +169,7 @@ async function processHistoryData(historyItems, bookmarks, windows) {
     historyItems.forEach(item => {
         const domain = getDomainFromUrl(item.url);
         if (!domain) return;
-        
+
         // Add node if not exists
         if (!nodesMap.has(item.url)) {
             nodesMap.set(item.url, {
@@ -163,13 +184,13 @@ async function processHistoryData(historyItems, bookmarks, windows) {
             });
         }
     });
-    
+
     // Add currently open tabs if not in history
     currentlyOpenTabs.forEach(tab => {
         if (tab.url && !nodesMap.has(tab.url)) {
             const domain = getDomainFromUrl(tab.url);
             if (!domain) return;
-            
+
             nodesMap.set(tab.url, {
                 id: tab.url,
                 title: tab.title,
@@ -188,16 +209,20 @@ async function processHistoryData(historyItems, bookmarks, windows) {
             }
         }
     });
-    
+
     // Convert nodes map to array
     nodes = Array.from(nodesMap.values());
-    
+
     // Track edge sources to avoid duplicates
     const edgeMap = new Map();
-    
+
     // 1. Create edges based on browser navigation data (highest confidence)
     if (tabHistory) {
-        for (const [tabId, history] of Object.entries(tabHistory)) {
+        // tabHistory arrives as a Map from browserState.getState(); Object.entries
+        // on a Map is always [] — so the highest-confidence referer/redirect edges
+        // never built. Iterate whichever shape we actually get.
+        const historyEntries = tabHistory instanceof Map ? tabHistory : Object.entries(tabHistory);
+        for (const [tabId, history] of historyEntries) {
             for (const nav of history) {
                 if (nav.referer) {
                     const sourceNode = nodes.find(n => n.url === nav.referer);
@@ -242,7 +267,7 @@ async function processHistoryData(historyItems, bookmarks, windows) {
             }
         }
     }
-    
+
     // 2. Create edges based on window/tab parent relationships (high confidence)
     windows.forEach(window => {
         if (window.tabs && window.tabs.length > 0) {
@@ -253,7 +278,7 @@ async function processHistoryData(historyItems, bookmarks, windows) {
                     if (opener) {
                         const sourceNode = nodes.find(n => n.url === opener.url);
                         const targetNode = nodes.find(n => n.url === tab.url);
-                        
+
                         if (sourceNode && targetNode) {
                             const edgeId = `${sourceNode.id}-${targetNode.id}`;
                             if (!edgeMap.has(edgeId)) {
@@ -271,15 +296,15 @@ async function processHistoryData(historyItems, bookmarks, windows) {
             });
         }
     });
-    
+
     // 3. Add bookmark relationships (medium confidence)
     // Connect bookmarks with their non-bookmark variants
     nodes.forEach(node => {
         if (node.type === 'bookmark') {
             // Find non-bookmark version of the same URL
-            const nonBookmarkVersion = nodes.find(n => 
+            const nonBookmarkVersion = nodes.find(n =>
                 n.url === node.url && n.type !== 'bookmark');
-            
+
             if (nonBookmarkVersion) {
                 const edgeId = `${node.id}-${nonBookmarkVersion.id}`;
                 if (!edgeMap.has(edgeId)) {
@@ -294,16 +319,16 @@ async function processHistoryData(historyItems, bookmarks, windows) {
             }
         }
     });
-    
+
     // 4. Add temporal sequence edges only as fallback (lower confidence)
     // But be more restrictive with them
     const sortedNodes = [...nodes].sort((a, b) => a.lastVisitTime - b.lastVisitTime);
     const timeThreshold = 2 * 60 * 1000; // 2 minutes
-    
+
     for (let i = 0; i < sortedNodes.length - 1; i++) {
         const current = sortedNodes[i];
         const next = sortedNodes[i + 1];
-        
+
         if (next.lastVisitTime - current.lastVisitTime < timeThreshold) {
             const edgeId = `${current.id}-${next.id}`;
             if (!edgeMap.has(edgeId)) {
@@ -317,7 +342,7 @@ async function processHistoryData(historyItems, bookmarks, windows) {
             }
         }
     }
-    
+
     // Convert edges map to array
     links = Array.from(edgeMap.values());
     console.log('Processed data:', { nodes, links });
@@ -326,48 +351,48 @@ async function processHistoryData(historyItems, bookmarks, windows) {
 console.log('Adding DOMContentLoaded listener');
 document.addEventListener('DOMContentLoaded', () => {
     init();
-    
+
     // Add view mode toggle listeners
     const timeViewBtn = document.getElementById('timeViewBtn');
     const domainViewBtn = document.getElementById('domainViewBtn');
-    
+
     if (timeViewBtn && domainViewBtn) {
         timeViewBtn.addEventListener('click', () => {
             currentViewMode = 'time';
             timeViewBtn.classList.add('active');
             domainViewBtn.classList.remove('active');
-            
+
             // Recreate the graph with new view mode
             const graphSession = { id: 'main-graph' };
             const graphResult = createForceGraph(
-                document.getElementById('graph'), 
-                nodes, 
-                links, 
-                graphSession, 
+                document.getElementById('graph'),
+                nodes,
+                links,
+                graphSession,
                 currentViewMode
             );
-            
+
             if (graphResult) {
                 simulation = graphResult.simulation;
                 svg = graphResult.svg;
             }
         });
-        
+
         domainViewBtn.addEventListener('click', () => {
             currentViewMode = 'domain';
             domainViewBtn.classList.add('active');
             timeViewBtn.classList.remove('active');
-            
+
             // Recreate the graph with new view mode
             const graphSession = { id: 'main-graph' };
             const graphResult = createForceGraph(
-                document.getElementById('graph'), 
-                nodes, 
-                links, 
-                graphSession, 
+                document.getElementById('graph'),
+                nodes,
+                links,
+                graphSession,
                 currentViewMode
             );
-            
+
             if (graphResult) {
                 simulation = graphResult.simulation;
                 svg = graphResult.svg;
@@ -396,21 +421,21 @@ async function storeNodePositions(nodes) {
         // Get existing data
         const data = await getGraphData();
         const nodePositions = {};
-        
+
         // Save current node positions
         nodes.forEach(node => {
             if (node.id && (node.x !== undefined && node.y !== undefined)) {
                 nodePositions[node.id] = {
                     x: node.x,
-                    y: node.y, 
+                    y: node.y,
                     fixed: node.fx !== null || node.fy !== null
                 };
             }
         });
-        
+
         data.nodePositions = nodePositions;
         data.lastUpdated = Date.now();
-        
+
         // Save to storage
         chrome.storage.local.set({ 'graphPersistentData': data });
         console.log(`Saved positions for ${Object.keys(nodePositions).length} nodes`);

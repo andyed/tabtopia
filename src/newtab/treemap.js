@@ -34,6 +34,7 @@ import { handleKeyNavigation } from './keyboardNav.js';
 import { fetchRecentBookmarks, fetchRecentHistory } from './init.js';
 import { browserState } from './state.js';
 import { applyColorCoding } from './utility.js';
+import { globalTooltip } from './tooltip.js';
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
@@ -46,6 +47,7 @@ let currentTabOrder = []; // Store current tab order IDs
 const interactionState = {
     focusedNode: null,
     activeNode: null,
+    activeNodeId: null,  // stable id of the pinned cell — survives redraws (the DOM ref does not)
     isKeyboardMode: false,
     focusableNodes: [],
     currentTabOrder: []
@@ -119,8 +121,8 @@ async function initializeState() {
 
         // More robust validation with better error handling
         if (!initialState) {
-            console.warn('No initial state received from background script');
-            showEmptyState();
+            // No data from this secondary self-init → leave newtab.js's render alone.
+            console.warn('No initial state from background; deferring to primary render');
             return;
         }
 
@@ -176,7 +178,7 @@ async function initializeState() {
                     initialState.activeWindows = [];
                 }
             } else {
-                showEmptyState();
+                // Not a usable object → defer to newtab.js's render.
                 return;
             }
         }
@@ -188,12 +190,16 @@ async function initializeState() {
             windowsList: treemapState.data.activeWindows.map(w => w.id)
         });
 
-        // Draw initial treemap if we have windows
-        // Draw initial treemap regardless of window count (bookmarks will fill empty space)
-        await drawTreemap(treemapState.data);
+        // This is treemap.js's SECONDARY self-init. newtab.js's DOMContentLoaded
+        // is the authoritative first render. Only (re)draw from here when we
+        // actually have windows — drawing an empty/stale state would clear and
+        // blank the treemap newtab.js already painted (the "had to refresh" bug).
+        if (treemapState.data.activeWindows.length > 0) {
+            await drawTreemap(treemapState.data);
+        }
     } catch (error) {
         console.error('Failed to initialize state:', error);
-        showEmptyState();
+        // Do NOT showEmptyState() — leave any existing render intact.
     }
 }
 
@@ -202,7 +208,7 @@ async function updateCellFavicon(cell, url, size) {
     try {
         // Request favicon through background script
         chrome.runtime.sendMessage({
-            type: 'getFavicon',
+            action: 'getFavicon',
             url: url,
             size: size
         }, response => {
@@ -216,7 +222,7 @@ async function updateCellFavicon(cell, url, size) {
                     .on('error', function () {
                         // If high-res fails, try smaller size
                         chrome.runtime.sendMessage({
-                            type: 'getFavicon',
+                            action: 'getFavicon',
                             url: url,
                             size: 16
                         }, fallbackResponse => {
@@ -343,28 +349,17 @@ function getDarkerColor(d, amount = 0.5) {
  */
 export async function drawTreemap(data) {
     // Enhanced data validation
-    if (!data) {
-        console.warn('No data provided to drawTreemap');
-        showEmptyState();
-        return;
-    }
-
-    if (!data.activeWindows) {
-        console.warn('No activeWindows in treemap data:', {
+    // Malformed input → no-op. Do NOT showEmptyState() here. Several live-update
+    // paths (refreshTreemapState, updateTreemap, the treemap self-init) can call
+    // drawTreemap with the wrong shape right after a good render; wiping to the
+    // empty state on bad data is what made the treemap vanish until a manual
+    // refresh. A bad call must leave the existing render untouched.
+    if (!data || !data.activeWindows || !Array.isArray(data.activeWindows)) {
+        console.warn('drawTreemap: ignoring malformed data (no activeWindows array):', {
             hasData: !!data,
             dataKeys: Object.keys(data || {}),
-            activeWindowsType: typeof data.activeWindows
+            activeWindowsType: typeof data?.activeWindows
         });
-        showEmptyState();
-        return;
-    }
-
-    if (!Array.isArray(data.activeWindows)) {
-        console.warn('activeWindows is not an array:', {
-            type: typeof data.activeWindows,
-            value: data.activeWindows
-        });
-        showEmptyState();
         return;
     }
 
@@ -372,27 +367,6 @@ export async function drawTreemap(data) {
         console.log('No active windows available - relying on bookmarks');
         // Do not return early, allow drawing to proceed so bookmarks are shown
     }
-
-    console.log('Drawing treemap with:', {
-        data: data,
-        windows: data.activeWindows.length,
-        totalTabs: data.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0),
-        // Debug: Show sample tab audio data
-        sampleTabAudio: data.activeWindows[0]?.tabs[0] ? {
-            audible: data.activeWindows[0].tabs[0].audible,
-            isCurrentlyAudible: data.activeWindows[0].tabs[0].isCurrentlyAudible,
-            totalAudioDuration: data.activeWindows[0].tabs[0].totalAudioDuration
-        } : 'No tabs',
-        // Debug: Show all tabs with audio data
-        allTabsWithAudio: data.activeWindows.flatMap(w => w.tabs)
-            .filter(tab => tab.totalAudioDuration > 0 || tab.audible || tab.isCurrentlyAudible)
-            .map(tab => ({
-                title: tab.title,
-                audible: tab.audible,
-                isCurrentlyAudible: tab.isCurrentlyAudible,
-                totalAudioDuration: tab.totalAudioDuration
-            }))
-    });
 
     const container = document.getElementById('treemap');
     if (!container) {
@@ -405,13 +379,6 @@ export async function drawTreemap(data) {
 
     // Calculate optimal layout
     const layout = calculateOptimalLayout(totalTabs, width, viewportHeight);
-
-    console.log('Layout calculation:', {
-        totalTabs,
-        minimumCells: layout.minimumCells,
-        cellsPerRow: layout.cellsPerRow,
-        rows: layout.rows
-    });
 
     // Apply scroll only if necessary
     container.style.height = `${viewportHeight}px`;
@@ -441,7 +408,7 @@ export async function drawTreemap(data) {
 
     const windowColors = new Map();
 
-    // First, set colors for active windows
+    // First, s for active windows
     data.activeWindows.forEach((window, index) => {
         windowColors.set(window.id, lightColors[index % lightColors.length]);
     });
@@ -476,8 +443,6 @@ export async function drawTreemap(data) {
         const tabs = windowNode.children;
         const maxLastAccessed = d3.max(tabs, d => d.lastAccessed);
         const minLastAccessed = d3.min(tabs, d => d.lastAccessed);
-
-        console.log(`Window ${windowNode.name} - Min: ${minLastAccessed}, Max: ${maxLastAccessed}`); // Debugging
 
         const windowId = windowNode.name.includes('bookmark') ? 'bookmark' :
             parseInt(windowNode.name.replace('Window ', ''), 10);
@@ -579,6 +544,36 @@ export async function drawTreemap(data) {
         })
         .attr('stroke-width', 1);
 
+    // Attach awesome tooltip to treemap nodes
+    nodes.on('mouseenter', (event, d) => {
+        const isBookmark = d.data.isBookmark ||
+            (d.parent && d.parent.data.name === 'Window bookmark') ||
+            (d.parent && d.parent.data.id === 'bookmark');
+
+        const content = `
+            <div class="tooltip-header">${d.data.title || 'Untitled'}</div>
+            <div class="tooltip-url">${d.data.url}</div>
+            <div class="tooltip-section">
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Type</span>
+                    <span class="tooltip-value">${isBookmark ? 'Bookmark' : 'Active Tab'}</span>
+                </div>
+                ${d.data.lastAccessed ? `
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Last Accessed</span>
+                    <span class="tooltip-value">${new Date(d.data.lastAccessed).toLocaleTimeString()}</span>
+                </div>` : ''}
+            </div>
+        `;
+        globalTooltip.show(content, event);
+    })
+        .on('mousemove', (event) => {
+            globalTooltip.move(event);
+        })
+        .on('mouseleave', () => {
+            globalTooltip.hide();
+        });
+
     // 3. Add cell content container
     const cellContent = nodes.append('g')
         .attr('class', 'cell-content')
@@ -613,8 +608,10 @@ export async function drawTreemap(data) {
                 return createLetterFaviconForURL(d.data.url);
             }
 
-            // Return existing favicon if available
-            if (d.data.favIconUrl && !d.data.favIconUrl.includes('chrome://favicon')) {
+            // Return existing favicon if available. Guard on string type: some
+            // callers have passed a Promise/object here, and `.includes` on a
+            // non-string throws mid-render and drops the cell labels.
+            if (typeof d.data.favIconUrl === 'string' && !d.data.favIconUrl.includes('chrome://favicon')) {
                 return d.data.favIconUrl;
             }
 
@@ -831,6 +828,16 @@ export async function drawTreemap(data) {
     // Add background click handler to clear selection
     d3.select('#treemap').on('click', function (event) {
         if (event.target.tagName === 'svg' || event.target.id === 'treemap') {
+            // Clicking the background deselects: UNPIN so the hover preview
+            // resumes. Previously this hid the readout but left activeNode set,
+            // which permanently blocked the mouseenter hover guard — the bug
+            // where "hover stops working until you click a cell".
+            if (interactionState.activeNode) {
+                unfocusNode(interactionState.activeNode);
+                interactionState.activeNode = null;
+            }
+            interactionState.activeNodeId = null;
+            document.getElementById('readout')?.classList.remove('sticky');
             nodes.classed('cell-selected', false)
                 .select('rect')
                 .attr('fill', d => d.data.color)
@@ -844,28 +851,10 @@ export async function drawTreemap(data) {
     // Add event handlers right after node creation
     nodes
         .on('mouseenter', function (event, d) {
-            // Enhanced hover debug logging for audio troubleshooting
-            console.log('📋 HOVER DEBUG - Complete Tab Data:', {
-                // Basic tab info
-                title: d.data.title,
-                url: d.data.url,
-                id: d.data.id,
-                windowId: d.data.windowId,
-
-                // Audio status flags
-                '🔊 audible': d.data.audible,
-                '🔊 isCurrentlyAudible': d.data.isCurrentlyAudible,
-                '🔊 totalAudioDuration': d.data.totalAudioDuration,
-
-                // Other tab properties
-                active: d.data.active,
-                timeSpent: d.data.timeSpent,
-                lastAccessed: d.data.lastAccessed,
-
-                // Raw data for debugging
-                '📊 fullTabData': d.data
-            });
-
+            // (Removed a per-hover console.log of the full tab-data object — with
+            //  DevTools open it serialized everything on every mouseenter, which
+            //  stalled the main thread and made the hover response lag behind the
+            //  cursor.)
             if (!interactionState.activeNode) {
                 focusNode(this, d);
             }
@@ -895,6 +884,27 @@ export async function drawTreemap(data) {
 
     // Store nodes for keyboard navigation
     interactionState.focusableNodes = nodes.nodes();
+
+    // Re-apply the pinned selection after a redraw. The treemap recreates every
+    // cell <g> on each refresh (tab/favicon updates fire these constantly), which
+    // drops the highlight and orphans interactionState.activeNode. Re-find the
+    // pinned cell by its stable id and restore the activated styling + DOM ref so
+    // the selection survives redraws (the "selecting another cell doesn't stick" bug).
+    if (interactionState.activeNodeId != null) {
+        const pinned = nodes.filter(d => (d.data?.id ?? d.id) === interactionState.activeNodeId);
+        if (!pinned.empty()) {
+            interactionState.activeNode = pinned.node();
+            pinned.classed('node-activated', true)
+                .select('rect')
+                .attr('stroke', '#4CAF50')
+                .attr('stroke-width', '3px');
+        } else {
+            // The pinned tab no longer exists (closed) — clear the selection.
+            interactionState.activeNode = null;
+            interactionState.activeNodeId = null;
+            document.getElementById('readout')?.classList.remove('sticky');
+        }
+    }
 
     // Debug logging
     console.log('Event handlers attached:', {
@@ -1049,11 +1059,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
-        await initializeState();
-        initializeMessageHandling();  // Add this line
-        console.log('Treemap initialization complete');
+        // newtab.js's DOMContentLoaded is the authoritative first render. This
+        // secondary path used to also run initializeState() — a getState
+        // round-trip to the service worker whose result was then discarded (it
+        // defers to the primary render). That was pure boot waste plus the
+        // benign "Invalid initial state" warning. Only wire up live message
+        // handling here; it fetches fresh state on demand and doesn't depend on
+        // initializeState.
+        initializeMessageHandling();
+        console.log('Treemap message handling initialized');
     } catch (error) {
-        console.error('Failed to initialize treemap:', error);
+        console.error('Failed to initialize treemap message handling:', error);
     }
 });
 
@@ -1380,13 +1396,6 @@ async function updateBookmarkState(totalTabs) {
 
 // Helper functions
 function focusNode(node, data) {
-    console.log('Focus node:', {
-        nodeElement: node,
-        data: data.data,
-        title: data.data?.title,
-        url: data.data?.url
-    });
-
     // Clear previous focus
     if (interactionState.focusedNode) {
         unfocusNode(interactionState.focusedNode);
@@ -1398,7 +1407,6 @@ function focusNode(node, data) {
         .select('rect')
         .attr('stroke', data.data.isBookmark ? '#4CAF50' : '#2196F3')
         .attr('stroke-width', '2px');
-    console.log('passing to readout', data.data)
     displayReadout(data.data); // Make sure we're passing the correct data structure
 }
 
@@ -1412,9 +1420,9 @@ function unfocusNode(node) {
         .attr('stroke', d => d.data.isBookmark ? '#ddd' : 'none')
         .attr('stroke-width', '1px');
 
-    if (!interactionState.activeNode) {
-        hideReadout();
-    }
+    // Intentionally NOT hiding the readout on mouseleave — keep the last preview
+    // in the sidebar (hovering another cell updates it; clicking the background
+    // deselects). Blanking on every mouseleave is what made hover flicker.
 }
 
 function handleNodeDblClick(event, d) {
@@ -1431,10 +1439,17 @@ function handleNodeDblClick(event, d) {
 }
 
 // Add to the interaction helper functions section
-function activateNode(node, data) {
-    if (interactionState.activeNode === node) {
-        // Deactivate if already active
+// Exported so keyboardNav.js can invoke it on Space/Enter from focused cells.
+export function activateNode(node, data) {
+    // Track the selection by STABLE id, not the DOM node — the treemap recreates
+    // every cell on each (frequent) redraw, which would orphan a stored DOM ref.
+    const nodeId = data?.data?.id ?? data?.id ?? null;
+
+    if (nodeId != null && interactionState.activeNodeId === nodeId) {
+        // Re-click the pinned cell → unpin; hover preview resumes.
         interactionState.activeNode = null;
+        interactionState.activeNodeId = null;
+        document.getElementById('readout')?.classList.remove('sticky');
         unfocusNode(node);
         return;
     }
@@ -1445,14 +1460,16 @@ function activateNode(node, data) {
     }
 
     interactionState.activeNode = node;
+    interactionState.activeNodeId = nodeId;
     d3.select(node)
         .classed('node-activated', true)
         .select('rect')
         .attr('stroke', '#4CAF50')
         .attr('stroke-width', '3px');
 
-    // Update readout
-    console.log("passing to readout", data)
+    // Pin the sidebar to this cell: hover no longer changes it, and the .sticky
+    // border signals it's pinned. Click the cell again or the background to unpin.
+    document.getElementById('readout')?.classList.add('sticky');
     displayReadout(data);
 }
 

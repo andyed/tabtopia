@@ -19,7 +19,8 @@ body {
     padding: 0;
     overflow: hidden;
     font-family: Arial, sans-serif;
-    background-color: #2a2520; /* Dark grey-brown color */
+    background-color: #2a2520;
+    /* Dark grey-brown color */
 }
 
 .visualization-container {
@@ -29,7 +30,8 @@ body {
     position: relative;
     margin-top: 0;
     padding-top: 0;
-    background-color: #2a2520; /* Dark grey-brown color */
+    background-color: #2a2520;
+    /* Dark grey-brown color */
 }
 
 #sidebar {
@@ -45,12 +47,14 @@ body {
 }
 
 #treemap-container {
-    flex: 4; /* 80% of the width */
+    flex: 4;
+    /* 80% of the width */
     background-color: #2c2c2c;
 }
 
 #readout-container {
-    flex: 1; /* 20% of the width */
+    flex: 1;
+    /* 20% of the width */
     background-color: #fff;
     padding: 0;
     overflow-y: auto;
@@ -68,7 +72,8 @@ body {
     scroll-behavior: smooth;
     margin-top: 0;
     padding-top: 0;
-    background-color: #2a2520; /* Dark grey-brown color */
+    background-color: #2a2520;
+    /* Dark grey-brown color */
 }
 
 #treemap::-webkit-scrollbar {
@@ -106,53 +111,66 @@ body {
 /* Readout container */
 #readout {
     font-size: 14px;
-    color: #e0e0e0; /* Light text for dark background */
+    color: #e0e0e0;
+    /* Light text for dark background */
     width: 300px;
     height: calc(100vh - var(--header-height));
     overflow-y: auto;
     padding: 10px;
-    background-color: #33302b; /* Slightly lighter than main background */
-    border-left: 1px solid #403c36; /* Subtle border */
+    background-color: #33302b;
+    /* Slightly lighter than main background */
+    border-left: 1px solid #403c36;
+    /* Subtle border */
     box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
-    min-width: 300px;  /* Set a minimum width */
-    width: 30%;        /* Or use percentage width */
-    transition: opacity 0.2s ease;  /* Smooth transition */
+    min-width: 300px;
+    /* Set a minimum width */
+    width: 30%;
+    /* Or use percentage width */
+    transition: opacity 0.2s ease;
+    /* Smooth transition */
     visibility: visible;
     opacity: 1;
 }
 
 #readout.hidden {
-    visibility: hidden;  /* Keeps element in document flow */
+    visibility: hidden;
+    /* Keeps element in document flow */
     opacity: 0;
     /* Don't use display: none */
-    pointer-events: none; /* Prevent interaction when hidden */
+    pointer-events: none;
+    /* Prevent interaction when hidden */
 }
 
 /* Readout headings */
-#readout h2, #readout h3 {
+#readout h2,
+#readout h3 {
     color: #ffffff;
     margin-top: 0;
 }
 
 /* Links in readout */
 #readout a {
-    color: #64b5f6; /* Brighter blue for contrast */
+    color: #64b5f6;
+    /* Brighter blue for contrast */
     text-decoration: none;
 }
 
 #readout a:hover {
     text-decoration: underline;
-    color: #90caf9; /* Lighter blue on hover */
+    color: #90caf9;
+    /* Lighter blue on hover */
 }
 
 /* Sticky state */
 #readout.sticky {
-    border: 2px solid #4a4540; /* Darker border for contrast */
+    border: 2px solid #4a4540;
+    /* Darker border for contrast */
 }
 
 /* Readout popup */
 .readout {
-    background-color: #33302b; /* Match readout background */
+    background-color: #33302b;
+    /* Match readout background */
     border: 1px solid #4a4540;
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -161,31 +179,36 @@ body {
     max-width: 400px;
     min-width: 250px;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #e0e0e0; /* Light text */
+    color: #e0e0e0;
+    /* Light text */
 }
 
 /* Readout header */
 .readout-header {
     margin-bottom: 10px;
-    border-left: 3px solid #64b5f6; /* Bright blue for visibility */
+    border-left: 3px solid #64b5f6;
+    /* Bright blue for visibility */
     padding-left: 8px;
 }
 
 .readout-header.bookmark {
-    border-left-color: #66bb6a; /* Brighter green for bookmarks */
+    border-left-color: #66bb6a;
+    /* Brighter green for bookmarks */
 }
 
 .readout-title {
     font-weight: 600;
     font-size: 14px;
-    color: #ffffff; /* White text for high contrast */
+    color: #ffffff;
+    /* White text for high contrast */
     line-height: 1.3;
     margin-bottom: 4px;
 }
 
 .readout-url {
     font-size: 12px;
-    color: #b0bec5; /* Soft blue-gray for secondary text */
+    color: #b0bec5;
+    /* Soft blue-gray for secondary text */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -206,15 +229,18 @@ body {
 .readout-item .label {
     font-weight: 500;
     margin-right: 8px;
-    color: #b0bec5; /* Light blue-gray */
+    color: #b0bec5;
+    /* Light blue-gray */
 }
 
 .readout-item .value {
-    color: #e0e0e0; /* Light color for values */
+    color: #e0e0e0;
+    /* Light color for values */
 }
 
 .bookmark-info .value {
-    color: #81c784; /* Bright green for bookmarks */
+    color: #81c784;
+    /* Bright green for bookmarks */
     font-weight: 500;
 }
 
@@ -223,15 +249,17 @@ body {
 .history-section {
     margin-top: 1rem;
     padding: 0;
-    border-top: 1px solid #403c36; /* Darker border for sections */
-    background-color: #2f2b26; /* Slightly darker than readout */
+    border-top: 1px solid #403c36;
+    /* Darker border for sections */
+    background-color: #2f2b26;
+    /* Slightly darker than readout */
     border-radius: 4px;
 }
 
 .bookmarks-section h3,
 .history-section h3 {
     margin: 0 0 10px 0;
-    font-size: 1.1em;   
+    font-size: 1.1em;
     color: #ffffff;
 }
 
@@ -239,19 +267,22 @@ body {
 .bookmark-item,
 .history-item {
     padding: 8px 0;
-    border-bottom: 1px solid #403c36; /* Subtle separator */
+    border-bottom: 1px solid #403c36;
+    /* Subtle separator */
 }
 
 .bookmark-date,
 .history-date {
     display: block;
     font-size: 0.8em;
-    color: #9e9e9e; /* Medium gray for dates */
+    color: #9e9e9e;
+    /* Medium gray for dates */
 }
 
 /* Highlighting */
 mark {
-    background-color: #f57f17; /* Dark amber for highlighting */
+    background-color: #f57f17;
+    /* Dark amber for highlighting */
     color: #000000;
     padding: 0 2px;
     border-radius: 2px;
@@ -272,7 +303,8 @@ mark {
 .status-message {
     font-size: 2rem;
     font-weight: 500;
-    color: #e0e0e0 !important; /* Light color for dark bg */
+    color: #e0e0e0 !important;
+    /* Light color for dark bg */
     margin-bottom: 1rem;
     line-height: 1.3;
     max-width: 80%;
@@ -280,7 +312,8 @@ mark {
 
 .stats {
     font-size: 1.2rem;
-    color: #9e9e9e; /* Medium gray */
+    color: #9e9e9e;
+    /* Medium gray */
     display: flex;
     gap: 0.5rem;
     align-items: center;
@@ -292,7 +325,8 @@ mark {
 }
 
 .cell-search-match:focus {
-    outline: 2px solid #64b5f6; /* Brighter blue outline */
+    outline: 2px solid #64b5f6;
+    /* Brighter blue outline */
     outline-offset: -2px;
 }
 
@@ -320,7 +354,8 @@ mark {
 }
 
 [tabindex]:focus {
-    outline: none; /* Remove default outline */
+    outline: none;
+    /* Remove default outline */
 }
 
 [tabindex]:focus rect {
@@ -341,7 +376,7 @@ mark {
 }
 
 .close-button svg {
-    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
 }
 
 /* Add bookmark button styles */
@@ -358,7 +393,7 @@ mark {
 }
 
 .bookmark-button svg {
-    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
 }
 
 /* Add hover effect */
@@ -378,7 +413,7 @@ mark {
     font-weight: 500;
     text-transform: lowercase;
     filter: drop-shadow(0 2px 2px rgba(247, 246, 246, 0.2));
-    overflow:hidden;
+    overflow: hidden;
 }
 
 
@@ -478,8 +513,15 @@ mark {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .search-container {
@@ -546,7 +588,7 @@ mark {
     font-size: 22px;
     font-weight: 500;
     margin-right: 15px;
-    padding-right:24px;
+    padding-right: 24px;
 }
 
 .header-controls {
@@ -591,7 +633,8 @@ mark {
 
 /* Selected icon with blue glow */
 .view-toggle a.active {
-    color: #1976d2; /* Blue for active state */
+    color: #1976d2;
+    /* Blue for active state */
     background-color: rgba(25, 118, 210, 0.08);
     box-shadow: 0 0 12px rgba(25, 118, 210, 0.4);
 }
@@ -645,36 +688,41 @@ mark {
 
 /* Add these styles to enhance the cell visuals */
 .tab {
-  cursor: pointer;
-  transition: all 0.2s ease;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
 .tab:hover rect {
-  stroke: #64b5f6; /* Brighter blue for dark mode */
-  stroke-width: 2px;
+    stroke: #64b5f6;
+    /* Brighter blue for dark mode */
+    stroke-width: 2px;
 }
 
 .cell-selected rect {
-  stroke: #66bb6a !important; /* Brighter green for dark mode */
-  stroke-width: 2px !important;
+    stroke: #66bb6a !important;
+    /* Brighter green for dark mode */
+    stroke-width: 2px !important;
 }
 
 .node-focused rect {
-  stroke: #64b5f6;
-  stroke-width: 2px;
+    stroke: #64b5f6;
+    stroke-width: 2px;
 }
 
 .bookmark-cell {
-    fill: #f5f5f5; /* Brighter green for bookmarks */
+    fill: #f5f5f5;
+    /* Brighter green for bookmarks */
 }
 
 .favicon {
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
 .tab-title {
-  fill: #e0e0e0; /* Light text for dark background */
-  text-shadow: 0 1px 3px rgba(0,0,0,0.8); /* Stronger shadow for readability */
+    fill: #e0e0e0;
+    /* Light text for dark background */
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    /* Stronger shadow for readability */
 }
 
 /* DARK MODE READOUT STYLES - OVERRIDE ALL PREVIOUS STYLES */
@@ -683,39 +731,46 @@ mark {
 .readout {
     position: absolute;
     display: none;
-    background-color: #33302b !important; /* Dark background */
-    border: 1px solid #403c36 !important; /* Dark border */
+    background-color: #33302b !important;
+    /* Dark background */
+    border: 1px solid #403c36 !important;
+    /* Dark border */
     border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
     padding: 0px;
     z-index: 100;
     max-width: 400px;
     min-width: 250px;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #e0e0e0 !important; /* Light text */
+    color: #e0e0e0 !important;
+    /* Light text */
 }
 
 .readout-header {
     margin-bottom: 10px;
-    border-left: 3px solid #64b5f6 !important; /* Bright blue for visibility */
+    border-left: 3px solid #64b5f6 !important;
+    /* Bright blue for visibility */
     padding-left: 8px;
 }
 
 .readout-header.bookmark {
-    border-left-color: #66bb6a !important; /* Brighter green for bookmarks */
+    border-left-color: #66bb6a !important;
+    /* Brighter green for bookmarks */
 }
 
 .readout-title {
     font-weight: 600;
     font-size: 14px;
-    color: #ffffff !important; /* White text for maximum contrast */
+    color: #ffffff !important;
+    /* White text for maximum contrast */
     line-height: 1.3;
     margin-bottom: 4px;
 }
 
 .readout-url {
     font-size: 12px;
-    color: #b0bec5 !important; /* Light blue-gray for URLs */
+    color: #b0bec5 !important;
+    /* Light blue-gray for URLs */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -723,7 +778,8 @@ mark {
 
 .readout-details {
     font-size: 12px;
-    color: #b0bec5 !important; /* Light blue-gray */
+    color: #b0bec5 !important;
+    /* Light blue-gray */
 }
 
 .readout-item {
@@ -735,42 +791,52 @@ mark {
 .readout-item .label {
     font-weight: 500;
     margin-right: 8px;
-    color: #b0bec5 !important; /* Light blue-gray */
+    color: #b0bec5 !important;
+    /* Light blue-gray */
 }
 
 .readout-item .value {
-    color: #e0e0e0 !important; /* Light gray */
+    color: #e0e0e0 !important;
+    /* Light gray */
 }
 
 .bookmark-info .value {
-    color: #81c784 !important; /* Bright green */
+    color: #81c784 !important;
+    /* Bright green */
     font-weight: 500;
 }
 
 /* Override any remaining light mode styles */
 
-#readout h2, #readout h3,
-.bookmarks-section h3, 
+#readout h2,
+#readout h3,
+.bookmarks-section h3,
 .history-section h3 {
     color: #ffffff !important;
 }
 
-#readout a, .readout a {
-    color: #64b5f6 !important; /* Bright blue links */
+#readout a,
+.readout a {
+    color: #64b5f6 !important;
+    /* Bright blue links */
 }
 
-#readout a:hover, .readout a:hover {
+#readout a:hover,
+.readout a:hover {
     color: #90caf9 !important;
 }
 
 .bookmark-date,
 .history-date {
-    color: #9e9e9e !important; /* Medium gray for dates */
+    color: #9e9e9e !important;
+    /* Medium gray for dates */
 }
 
 mark {
-    background-color: #f57f17 !important; /* Dark amber highlight */
-    color: #000000 !important; /* Black text on highlight */
+    background-color: #f57f17 !important;
+    /* Dark amber highlight */
+    color: #000000 !important;
+    /* Black text on highlight */
 }
 
 /* Section styling */
@@ -778,21 +844,24 @@ mark {
 .history-section {
     margin-top: 1rem;
     padding: 15px;
-    border-top: 1px solid #403c36 !important; /* Dark border */
-    background-color: #2f2b26 !important; /* Slightly darker background */
+    border-top: 1px solid #403c36 !important;
+    /* Dark border */
+    background-color: #2f2b26 !important;
+    /* Slightly darker background */
 }
 
 /* List items */
 .bookmark-item,
 .history-item {
-    padding:  0;
-    border-bottom: 1px solid #403c36 !important; /* Dark border */
+    padding: 0;
+    border-bottom: 1px solid #403c36 !important;
+    /* Dark border */
 }
 
 /* If you're using a specific parent element for the treemap */
 .treemap-container,
 .app-content {
-  background-color: #2a2520;
+    background-color: #2a2520;
 }
 
 /* View modes alignment */
@@ -857,7 +926,8 @@ mark {
 
 /* Selected icon with blue glow */
 .view-toggle a.active {
-    color: #1976d2; /* Blue for active state */
+    color: #1976d2;
+    /* Blue for active state */
     background-color: rgba(25, 118, 210, 0.08);
     box-shadow: 0 0 12px rgba(25, 118, 210, 0.4);
 }
@@ -906,24 +976,26 @@ mark {
 }
 
 .icon {
-    padding-left:8px;
-    padding-right:8px;
+    padding-left: 8px;
+    padding-right: 8px;
 }
 
 /* Media query to hide readout on narrow screens */
 @media screen and (max-width: 450px) {
     #readout {
-        display: none; /* Hide the readout panel */
+        display: none;
+        /* Hide the readout panel */
     }
-    
+
     /* Prevent popup readout on hover for small screens */
     .readout {
-        display: none !important; /* Force hide even if JavaScript tries to show it */
+        display: none !important;
+        /* Force hide even if JavaScript tries to show it */
     }
-    
+
     /* Only show readout when explicitly triggered via the toggle button */
     .readout.force-show {
-        display: block !important; 
+        display: block !important;
         position: fixed !important;
         top: 50% !important;
         left: 50% !important;
@@ -934,31 +1006,31 @@ mark {
         overflow-y: auto !important;
         z-index: 2000 !important;
     }
-    
+
     /* Make the treemap take full width */
     #treemap {
         width: 100%;
         max-width: 100%;
     }
-    
+
     /* Make header more compact */
     .logo {
         font-size: 18px;
         margin-right: 10px;
         padding-right: 10px;
     }
-    
+
     /* Adjust search container size */
     .search-container {
         max-width: 200px;
     }
-    
+
     /* Make the view toggle buttons smaller */
     .view-toggle a {
         width: 32px;
         height: 32px;
     }
-    
+
     /* Show a toggle button to display readout as overlay when needed */
     .readout-toggle {
         display: flex !important;
@@ -978,7 +1050,7 @@ mark {
     color: white;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     z-index: 1000;
     cursor: pointer;
 }
@@ -986,113 +1058,129 @@ mark {
 /* Drag and drop styles */
 
 .draggable {
-  cursor: grab !important;
+    cursor: grab !important;
 }
 
 .draggable:active {
-  cursor: grabbing !important;
+    cursor: grabbing !important;
 }
 
 .being-dragged {
-  opacity: 0.4 !important;
-  cursor: grabbing !important;
+    opacity: 0.4 !important;
+    cursor: grabbing !important;
 }
 
 .dragging-tab {
-  cursor: grabbing;
-  pointer-events: none;
-  border: 2px solid #1976d2;
-  background: white;
-  padding: 10px;
-  border-radius: 4px;
+    cursor: grabbing;
+    pointer-events: none;
+    border: 2px solid #1976d2;
+    background: white;
+    padding: 10px;
+    border-radius: 4px;
 }
 
 .window-group {
-  transition: all 0.2s ease;
+    transition: all 0.2s ease;
 }
 
 .valid-drop-target {
-  outline: 2px dashed rgba(25, 118, 210, 0.5);
-  outline-offset: -2px;
+    outline: 2px dashed rgba(25, 118, 210, 0.5);
+    outline-offset: -2px;
 }
 
 .drop-target-active {
-  outline: 3px solid #1976d2 !important;
-  outline-offset: -3px !important;
-  background-color: rgba(25, 118, 210, 0.1) !important;
+    outline: 3px solid #1976d2 !important;
+    outline-offset: -3px !important;
+    background-color: rgba(25, 118, 210, 0.1) !important;
 }
 
 /* Notification styles */
 .notification {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  padding: 12px 20px;
-  border-radius: 4px;
-  color: white;
-  font-weight: 500;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
-  transform: translateY(100px);
-  opacity: 0;
-  transition: all 0.3s ease;
-  z-index: 10000;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 4px;
+    color: white;
+    font-weight: 500;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 10000;
 }
 
 .notification.show {
-  transform: translateY(0);
-  opacity: 1;
+    transform: translateY(0);
+    opacity: 1;
 }
 
 .notification.success {
-  background-color: #43a047;
+    background-color: #43a047;
 }
 
 .notification.error {
-  background-color: #e53935;
+    background-color: #e53935;
 }
 
 /* Highlight style for moved tabs */
 .moved-tab-highlight {
-  animation: pulse 2s ease-in-out;
-  box-shadow: 0 0 0 2px #1976d2, 0 0 20px rgba(25, 118, 210, 0.5);
-  z-index: 10;
+    animation: pulse 2s ease-in-out;
+    box-shadow: 0 0 0 2px #1976d2, 0 0 20px rgba(25, 118, 210, 0.5);
+    z-index: 10;
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0px #1976d2; }
-  50% { box-shadow: 0 0 0 8px rgba(25, 118, 210, 0.3); }
-  100% { box-shadow: 0 0 0 0px #1976d2; }
+    0% {
+        box-shadow: 0 0 0 0px #1976d2;
+    }
+
+    50% {
+        box-shadow: 0 0 0 8px rgba(25, 118, 210, 0.3);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0px #1976d2;
+    }
 }
 
 /* Window drag and drop styling */
 .drag-in-progress .window-group {
-  outline: 2px dashed rgba(0,0,0,0.2);
-  outline-offset: -2px;
+    outline: 2px dashed rgba(0, 0, 0, 0.2);
+    outline-offset: -2px;
 }
 
 .drag-in-progress .valid-drop-target {
-  outline: 3px dashed #2196F3;
-  outline-offset: -3px;
-  background-color: rgba(33, 150, 243, 0.1) !important;
+    outline: 3px dashed #2196F3;
+    outline-offset: -3px;
+    background-color: rgba(33, 150, 243, 0.1) !important;
 }
 
 .drag-in-progress .drop-target-active {
-  outline: 3px solid #2196F3;
-  outline-offset: -3px;
-  background-color: rgba(33, 150, 243, 0.2) !important;
+    outline: 3px solid #2196F3;
+    outline-offset: -3px;
+    background-color: rgba(33, 150, 243, 0.2) !important;
 }
 
 /* Style for the moved tab highlight */
 .moved-tab-highlight {
-  animation: pulse 2s ease-in-out;
-  box-shadow: 0 0 0 2px #1976d2, 0 0 20px rgba(25, 118, 210, 0.5);
-  z-index: 10;
+    animation: pulse 2s ease-in-out;
+    box-shadow: 0 0 0 2px #1976d2, 0 0 20px rgba(25, 118, 210, 0.5);
+    z-index: 10;
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0px #ff5722; }
-  50% { box-shadow: 0 0 0 8px rgba(255, 87, 34, 0.3); }
-  100% { box-shadow: 0 0 0 0px #ff5722; }
+    0% {
+        box-shadow: 0 0 0 0px #ff5722;
+    }
+
+    50% {
+        box-shadow: 0 0 0 8px rgba(255, 87, 34, 0.3);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0px #ff5722;
+    }
 }
 
 .summary-section h3 .cached {
@@ -1144,9 +1232,17 @@ mark {
 }
 
 @keyframes loadingBlink {
-    0% { opacity: 0.3; }
-    50% { opacity: 1; }
-    100% { opacity: 0.3; }
+    0% {
+        opacity: 0.3;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.3;
+    }
 }
 
 /* Audio indicator styling for treemap */
@@ -1167,17 +1263,107 @@ mark {
 }
 
 @keyframes audioWave {
-    0%, 100% { 
-        transform: scale(1); 
-        opacity: 1; 
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 1;
     }
-    50% { 
-        transform: scale(1.1); 
-        opacity: 0.8; 
+
+    50% {
+        transform: scale(1.1);
+        opacity: 0.8;
     }
 }
 
 /* Show audio indicator on cell hover */
 .cell:hover .audio-indicator {
     opacity: 1;
+}
+
+/* Awesome Tooltip Styles (Shared across views) */
+.awesome-tooltip {
+    position: absolute;
+    background-color: rgba(51, 48, 43, 0.95);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px;
+    color: #e0e0e0;
+    font-size: 13px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, transform 0.2s;
+    max-width: 320px;
+    z-index: 10000;
+    font-family: 'Barlow Condensed', sans-serif;
+    transform: translateY(5px);
+}
+
+.awesome-tooltip[style*="opacity: 1"] {
+    transform: translateY(0);
+}
+
+.tooltip-header {
+    font-weight: 600;
+    font-size: 1.1em;
+    margin-bottom: 6px;
+    color: #ffffff;
+    line-height: 1.3;
+}
+
+.tooltip-url {
+    font-size: 0.85em;
+    color: #a0a0a0;
+    word-break: break-all;
+    margin-bottom: 8px;
+    font-family: monospace;
+}
+
+.tooltip-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.tooltip-label {
+    color: #888;
+    font-size: 0.9em;
+}
+
+.tooltip-value {
+    color: #ddd;
+    text-align: right;
+}
+
+.tooltip-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 500;
+    margin-top: 4px;
+}
+
+.badge-active {
+    background-color: rgba(100, 181, 246, 0.2);
+    color: #64b5f6;
+    border: 1px solid rgba(100, 181, 246, 0.3);
+}
+
+.badge-duration {
+    background-color: rgba(142, 68, 173, 0.2);
+    color: #a569bd;
+    border: 1px solid rgba(142, 68, 173, 0.3);
 }

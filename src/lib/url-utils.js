@@ -1,5 +1,5 @@
 /**
- * URL and navigation utility functions for Histospire
+ * URL and navigation utility functions for Tabtopia
  */
 
 /**
@@ -8,10 +8,11 @@
  * @returns {string|null} - Extracted search query or null
  */
 export function extractSearchQuery(url) {
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) return null;
     try {
         const urlObj = new URL(url);
         let query = null;
-        
+
         // Google search
         if (urlObj.hostname.includes('google.') && urlObj.pathname.includes('/search')) {
             query = urlObj.searchParams.get('q');
@@ -52,7 +53,7 @@ export function extractSearchQuery(url) {
         else if (urlObj.hostname.includes('qwant.com')) {
             query = urlObj.searchParams.get('q');
         }
-        
+
         return query;
     } catch (e) {
         console.warn('Error extracting search query:', e);
@@ -68,35 +69,35 @@ export function extractSearchQuery(url) {
  */
 export function isLikelyRedirect(previousUrl, currentUrl) {
     if (!previousUrl || !currentUrl) return false;
-    
+
     try {
         const prevUrl = new URL(previousUrl);
         const currUrl = new URL(currentUrl);
-        
+
         // Same domain redirects are common
         if (prevUrl.hostname === currUrl.hostname) {
             // Login redirects often include auth, token, etc.
-            if (currUrl.pathname.includes('/auth') || 
+            if (currUrl.pathname.includes('/auth') ||
                 currUrl.pathname.includes('/login') ||
                 currUrl.search.includes('token=') ||
                 currUrl.search.includes('redirect=')) {
                 return true;
             }
-            
+
             // Redirect chaining typically happens quickly
             if (currUrl.search.includes('redirect_uri=') ||
                 currUrl.search.includes('return_to=') ||
                 currUrl.search.includes('next=')) {
-                return true;  
+                return true;
             }
         }
-        
+
         // Common redirect patterns between domains
-        if (prevUrl.searchParams.has('url') && 
+        if (prevUrl.searchParams.has('url') &&
             decodeURIComponent(prevUrl.searchParams.get('url')).includes(currUrl.hostname)) {
             return true;
         }
-        
+
         return false;
     } catch (e) {
         console.warn('Error detecting redirect:', e);

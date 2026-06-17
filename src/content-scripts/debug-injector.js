@@ -1,9 +1,9 @@
 /**
- * Debug Tools Injector for Histospire
+ * Debug Tools Injector for Tabtopia
  * This injects hero image debug functionality into any web page
  */
 
-console.log('🔍 Histospire debug injector loaded');
+console.log('🔍 Tabtopia debug injector loaded');
 
 // Force hero image extraction
 async function forceExtractHeroImages() {

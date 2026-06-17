@@ -1,6 +1,6 @@
 /**
  * Debug Tools Bridge for ES Modules
- * This module provides access to histospireDebug functions for ES modules
+ * This module provides access to tabtopiaDebug functions for ES modules
  * and exposes them to the global scope for console debugging
  */
 
@@ -8,13 +8,13 @@
 let debugTools = null;
 let debugToolsPromise = new Promise(resolve => {
   // If debug tools are already available, resolve immediately
-  if (window.histospireDebug) {
-    debugTools = window.histospireDebug;
-    resolve(window.histospireDebug);
+  if (window.tabtopiaDebug) {
+    debugTools = window.tabtopiaDebug;
+    resolve(window.tabtopiaDebug);
   }
   
-  // Otherwise listen for the histospireDebugReady event
-  document.addEventListener('histospireDebugReady', (event) => {
+  // Otherwise listen for the tabtopiaDebugReady event
+  document.addEventListener('tabtopiaDebugReady', (event) => {
     debugTools = event.detail;
     resolve(event.detail);
   }, { once: true });
@@ -32,7 +32,7 @@ let debugToolsPromise = new Promise(resolve => {
 debugToolsPromise.then(tools => {
   if (tools) {
     // Create global namespace for debug functions
-    window.histospireConsoleDebug = {
+    window.tabtopiaConsoleDebug = {
       viewStoredHeroImages: () => tools.viewStoredHeroImages(),
       forceExtractHeroImages: () => tools.forceExtractHeroImages(),
       clearAllHeroImages: () => tools.clearAllHeroImages()
@@ -40,9 +40,9 @@ debugToolsPromise.then(tools => {
     
     console.log('%c🛠️ Hero Image Debug Tools Ready', 'color: green; font-weight: bold');
     console.log('%cAvailable commands:', 'font-weight: bold');
-    console.log('%c- histospireConsoleDebug.forceExtractHeroImages()', 'color: blue');
-    console.log('%c- histospireConsoleDebug.viewStoredHeroImages()', 'color: blue');
-    console.log('%c- histospireConsoleDebug.clearAllHeroImages()', 'color: blue');
+    console.log('%c- tabtopiaConsoleDebug.forceExtractHeroImages()', 'color: blue');
+    console.log('%c- tabtopiaConsoleDebug.viewStoredHeroImages()', 'color: blue');
+    console.log('%c- tabtopiaConsoleDebug.clearAllHeroImages()', 'color: blue');
   }
 });
 

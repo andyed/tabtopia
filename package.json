@@ -1,0 +1,15 @@
+{
+  "name": "tabtopia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tabtopia — Chrome extension that visualizes browsing telemetry. (This package.json exists only for the dev-time E2E test harness; the extension itself ships unbundled.)",
+  "scripts": {
+    "test": "playwright test",
+    "test:e2e": "playwright test",
+    "test:headed": "HEADED=1 playwright test",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

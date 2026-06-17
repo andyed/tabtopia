@@ -42,9 +42,12 @@ const QUEUE_CONFIG = {
 
 // Update the summarizer options with more specificity for on-device models
 const SUMMARIZER_OPTIONS = {
-    type: 'headline',     // Use headline for concise summaries
-    format: 'plain-text', // Keep it simple
-    length: 'short'      // Don't make it too verbose
+    type: 'headline',      // Use headline for concise summaries
+    format: 'plain-text',  // Keep it simple
+    length: 'short',       // Don't make it too verbose
+    outputLanguage: 'en'   // Current Summarizer API key (per developer.chrome.com/docs/ai/summarizer-api).
+                           // Was 'expectedLanguage', which is not a valid option — that's what triggered
+                           // Chrome's "No output language was specified" warning. Supported: de, en, es, fr, ja.
 };
 
 // Track summarizer crashes to implement backoff
@@ -59,13 +62,13 @@ let crashMessageCount = 0;
 const GLOBAL_DISABLE_DURATION = 600000; // 10 minutes
 
 // Allow manual re-enable via console for testing
-window.enableSummarizer = function() {
+window.enableSummarizer = function () {
     globalSummarizerDisabled = false;
     console.log('🔄 Summarizer manually re-enabled for testing');
     updateSummarizerStatus();
 };
 
-window.disableSummarizer = function() {
+window.disableSummarizer = function () {
     globalSummarizerDisabled = true;
     console.log('🚫 Summarizer manually disabled');
     updateSummarizerStatus();
@@ -81,7 +84,7 @@ function updateSummarizerStatus() {
 updateSummarizerStatus();
 
 // EMERGENCY: Global error handler to prevent app crashes
-window.addEventListener('error', function(event) {
+window.addEventListener('error', function (event) {
     if (event.error && event.error.message && event.error.message.includes('summarizer')) {
         console.error('🚨 Summarizer-related error caught, disabling API:', event.error);
         globalSummarizerDisabled = true;
@@ -91,7 +94,7 @@ window.addEventListener('error', function(event) {
     }
 });
 
-window.addEventListener('unhandledrejection', function(event) {
+window.addEventListener('unhandledrejection', function (event) {
     if (event.reason && String(event.reason).toLowerCase().includes('summarizer')) {
         console.error('🚨 Summarizer-related promise rejection caught, disabling API:', event.reason);
         globalSummarizerDisabled = true;
@@ -109,7 +112,7 @@ if (typeof window !== 'undefined' && window.summarizerCrashState) {
     Object.defineProperty(window, 'crashMessageCount', {
         get() { return window.summarizerCrashState.crashCount; }
     });
-    
+
     console.log('✅ Connected to global crash suppression system');
 } else {
     console.warn('⚠️ Global crash suppression not available, using local fallback');
@@ -121,19 +124,19 @@ function extractWordsFromUrl(url) {
         const urlObj = new URL(url);
         const hostname = urlObj.hostname;
         const path = urlObj.pathname;
-        
+
         // Extract domain parts (e.g., 'example' and 'com' from example.com)
         const domainParts = hostname.split('.');
-        
+
         // Extract path parts and filter out empty parts
         const pathParts = path.split(/[\/\-_.]/).filter(part => part.length > 0);
-        
+
         // Combine and filter out common words and very short parts
         const allParts = [...domainParts, ...pathParts].filter(part => {
-            return part.length > 2 && 
-                  !['www', 'com', 'org', 'net', 'io', 'html', 'php', 'asp', 'jsp'].includes(part);
+            return part.length > 2 &&
+                !['www', 'com', 'org', 'net', 'io', 'html', 'php', 'asp', 'jsp'].includes(part);
         });
-        
+
         // Split CamelCase and kebab-case words
         const expandedParts = [];
         allParts.forEach(part => {
@@ -143,7 +146,7 @@ function extractWordsFromUrl(url) {
             expandedParts.push(part);
             if (camelSplit !== part) expandedParts.push(camelSplit);
         });
-        
+
         return expandedParts;
     } catch (e) {
         console.log('Error extracting words from URL:', e);
@@ -169,7 +172,7 @@ function getDomain(url) {
 // Add this helper function for formatting URLs
 function formatUrlForDisplay(url) {
     if (!url) return '';
-    
+
     // Remove http://, https://, and www.
     return url
         .replace(/^https?:\/\//, '')
@@ -244,7 +247,7 @@ async function searchBookmarksForTab(url) {
             }
         });
 
-        console.log('Bookmarks for domain:', domain, filteredBookmarks); 
+        console.log('Bookmarks for domain:', domain, filteredBookmarks);
         return filteredBookmarks;
     } catch (error) {
         console.error('Error searching bookmarks for domain:', url, error);
@@ -295,7 +298,7 @@ async function searchHistoryForTab(url) {
 async function getTabContent(url) {
     try {
         console.log('🔍 Starting content extraction for:', url);
-        
+
         if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('file://')) {
             console.log('⏭️ Skipping content extraction for restricted URL:', url);
             return null;
@@ -314,10 +317,10 @@ async function getTabContent(url) {
 
         // **FALLBACK: Try direct content script approach**
         console.log('📄 Trying direct content script approach for:', url);
-        
+
         // Try multiple strategies to find the tab
         let tabs = await chrome.tabs.query({ url });
-        
+
         // If exact URL match fails, try domain-based search
         if (!tabs || tabs.length === 0) {
             try {
@@ -331,7 +334,7 @@ async function getTabContent(url) {
                         return false;
                     }
                 });
-                
+
                 if (tabs.length > 0) {
                     console.log(`🔍 Found ${tabs.length} tabs for domain ${domain}, using first match`);
                 }
@@ -339,7 +342,7 @@ async function getTabContent(url) {
                 console.warn('Error in domain-based tab search:', e);
             }
         }
-        
+
         if (!tabs || tabs.length === 0) {
             console.log('📚 No matching tab found for URL, trying metadata extraction:', url);
             return await getContentFromMetadata(url);
@@ -348,24 +351,24 @@ async function getTabContent(url) {
         try {
             const tab = tabs[0];
             console.log('🎯 Targeting tab for content extraction:', tab.id, tab.url);
-            
+
             // Enhanced content extraction script
             const results = await chrome.scripting.executeScript({
                 target: { tabId: tab.id },
                 func: () => {
                     try {
                         console.log('📄 Content script executing in tab');
-                        
+
                         // Multiple extraction strategies
                         let content = '';
-                        
+
                         // Strategy 1: Try to get main content areas
                         const mainSelectors = [
-                            'main', 'article', '[role="main"]', 
+                            'main', 'article', '[role="main"]',
                             '.content', '.post-content', '.entry-content',
                             '#content', '#main-content'
                         ];
-                        
+
                         for (const selector of mainSelectors) {
                             const element = document.querySelector(selector);
                             if (element && element.innerText.trim().length > 200) {
@@ -374,11 +377,11 @@ async function getTabContent(url) {
                                 break;
                             }
                         }
-                        
+
                         // Strategy 2: Fallback to body with filtering
                         if (!content && document.body) {
                             console.log('📝 Trying body traversal');
-                            
+
                             const walker = document.createTreeWalker(
                                 document.body,
                                 NodeFilter.SHOW_TEXT,
@@ -386,19 +389,19 @@ async function getTabContent(url) {
                                     acceptNode: (node) => {
                                         const parent = node.parentElement;
                                         if (!parent) return NodeFilter.FILTER_REJECT;
-                                        
+
                                         // Skip hidden elements
                                         const style = window.getComputedStyle(parent);
                                         if (style.display === 'none' || style.visibility === 'hidden') {
                                             return NodeFilter.FILTER_REJECT;
                                         }
-                                        
+
                                         // Skip script and style tags
                                         const tag = parent.tagName.toLowerCase();
                                         if (['script', 'style', 'noscript'].includes(tag)) {
                                             return NodeFilter.FILTER_REJECT;
                                         }
-                                        
+
                                         return NodeFilter.FILTER_ACCEPT;
                                     }
                                 }
@@ -408,7 +411,7 @@ async function getTabContent(url) {
                             let node;
                             let counter = 0;
                             const maxNodes = 5000;
-                            
+
                             while ((node = walker.nextNode()) && counter < maxNodes) {
                                 const text = node.textContent.trim();
                                 if (text && text.length > 3) { // Filter out very short text
@@ -416,34 +419,34 @@ async function getTabContent(url) {
                                 }
                                 counter++;
                             }
-                            
+
                             content = textContent.trim();
                             console.log(`📝 Body traversal found ${content.length} chars from ${counter} nodes`);
                         }
-                        
+
                         // Strategy 3: Get page title and meta description as fallback
                         if (!content || content.length < 100) {
                             console.log('🏷️ Trying metadata extraction');
-                            
+
                             const title = document.title || '';
                             const metaDesc = document.querySelector('meta[name="description"]')?.content || '';
                             const h1 = document.querySelector('h1')?.innerText || '';
-                            
+
                             content = [title, h1, metaDesc].filter(Boolean).join('. ');
                             console.log(`🏷️ Metadata extraction: ${content.length} chars`);
                         }
-                        
+
                         return content || null;
-                        
+
                     } catch (err) {
                         console.error('💥 Content extraction error:', err);
                         return null;
                     }
                 }
             });
-            
+
             const extractedContent = results?.[0]?.result;
-            
+
             if (extractedContent && extractedContent.trim().length > 50) {
                 console.log(`✅ Direct extraction successful: ${extractedContent.length} characters from ${url}`);
                 return extractedContent;
@@ -451,7 +454,7 @@ async function getTabContent(url) {
                 console.log(`⚠️ Direct extraction insufficient (${extractedContent?.length || 0} chars), trying metadata fallback`);
                 return await getContentFromMetadata(url);
             }
-            
+
         } catch (scriptError) {
             console.warn('🚫 Content script injection failed:', scriptError.message);
             return await getContentFromMetadata(url);
@@ -466,12 +469,12 @@ async function getTabContent(url) {
 async function getContentFromWorker(url) {
     try {
         console.log('🔧 Requesting content extraction from background worker for:', url);
-        
+
         const response = await chrome.runtime.sendMessage({
             action: 'extractContent',
             url: url
         });
-        
+
         if (response && response.success && response.content) {
             console.log(`✅ Worker extracted ${response.content.length} characters for ${url}`);
             return response.content;
@@ -479,7 +482,7 @@ async function getContentFromWorker(url) {
             console.log(`⚠️ Worker extraction failed: ${response?.error || 'Unknown error'}`);
             return null;
         }
-        
+
     } catch (error) {
         console.error('💥 Error communicating with background worker:', error);
         return null;
@@ -490,18 +493,18 @@ async function getContentFromWorker(url) {
 async function getContentFromMetadata(url) {
     try {
         console.log('Attempting metadata-based content extraction for:', url);
-        
+
         // Get history data for this URL
         const historyItems = await chrome.history.search({
             text: url,
             maxResults: 1
         });
-        
+
         // Get bookmarks for this URL
         const bookmarks = await chrome.bookmarks.search({ url });
-        
+
         let content = '';
-        
+
         // Extract from history
         if (historyItems.length > 0) {
             const item = historyItems[0];
@@ -509,7 +512,7 @@ async function getContentFromMetadata(url) {
                 content += item.title + '. ';
             }
         }
-        
+
         // Extract from bookmarks
         if (bookmarks.length > 0) {
             const bookmark = bookmarks[0];
@@ -517,45 +520,45 @@ async function getContentFromMetadata(url) {
                 content += bookmark.title + '. ';
             }
         }
-        
+
         // Extract meaningful information from URL structure
         try {
             const urlObj = new URL(url);
             const pathname = urlObj.pathname;
             const searchParams = urlObj.searchParams;
-            
+
             // Extract search queries
             const searchQuery = searchParams.get('q') || searchParams.get('query') || searchParams.get('search');
             if (searchQuery) {
                 content += `Search query: ${decodeURIComponent(searchQuery)}. `;
             }
-            
+
             // Extract meaningful path segments
-            const pathSegments = pathname.split('/').filter(segment => 
-                segment.length > 2 && 
+            const pathSegments = pathname.split('/').filter(segment =>
+                segment.length > 2 &&
                 !['www', 'com', 'org', 'net', 'html', 'php', 'asp', 'jsp'].includes(segment.toLowerCase())
             );
-            
+
             if (pathSegments.length > 0) {
-                const cleanSegments = pathSegments.map(segment => 
+                const cleanSegments = pathSegments.map(segment =>
                     segment.replace(/[-_]/g, ' ').replace(/\.[a-z]+$/i, '')
                 ).join(' ');
                 content += `Page content related to: ${cleanSegments}. `;
             }
-            
+
             // Add domain context
             const domain = urlObj.hostname.replace(/^www\./, '');
             content += `This is a page from ${domain}. `;
-            
+
         } catch (e) {
             console.warn('Error parsing URL for metadata:', e);
         }
-        
+
         // If we still have minimal content, create a more descriptive fallback
         if (content.trim().length < 50) {
             const domain = getDomain(url);
             const urlWords = extractWordsFromUrl(url);
-            
+
             if (urlWords.length > 0) {
                 const keyTerms = urlWords.slice(0, 5).join(', ');
                 content = `This is a webpage from ${domain} that appears to be related to ${keyTerms}. The page contains content about these topics that may be useful for understanding the subject matter.`;
@@ -563,10 +566,10 @@ async function getContentFromMetadata(url) {
                 content = `This is a webpage from ${domain}. While the specific content cannot be extracted, it likely contains information relevant to the site's topic and purpose.`;
             }
         }
-        
+
         console.log(`📄 Generated metadata-based content (${content.length} chars):`, content.substring(0, 100) + '...');
         return content.trim();
-        
+
     } catch (error) {
         console.error('Error in metadata extraction:', error);
         // Final fallback - return something that won't get filtered out
@@ -579,13 +582,13 @@ async function getContentFromMetadata(url) {
 export function getCachedSummary(url) {
     const cached = summaryCache.get(url);
     if (!cached) return null;
-    
+
     // Check if cache is still valid
     if (Date.now() - cached.timestamp > SUMMARY_CACHE_DURATION) {
         summaryCache.delete(url);
         return null;
     }
-    
+
     return cached.summary;
 }
 
@@ -599,25 +602,25 @@ export function addToSummaryQueue(url) {
         console.warn('Invalid URL provided to summary queue:', url);
         return false;
     }
-    
+
     // Check if summarizer is globally disabled (but allow queue addition for fallbacks)
     if (globalSummarizerDisabled) {
         console.log('ℹ️ Summarizer disabled - will use fallback for:', url);
         // Still add to queue, but processSummaryQueue will use fallbacks
     }
-    
+
     // Check if already in queue
     if (summaryQueue.has(url)) {
         console.log(`⏭️ URL already in queue: ${url}`);
         return false;
     }
-    
+
     // Check if already cached
     if (getCachedSummary(url)) {
         console.log(`⏭️ URL already cached: ${url}`);
         return false;
     }
-    
+
     // Check queue size limit
     if (summaryQueue.size >= QUEUE_CONFIG.MAX_QUEUE_SIZE) {
         console.warn(`⚠️ Queue full (${summaryQueue.size}/${QUEUE_CONFIG.MAX_QUEUE_SIZE}), dropping oldest item`);
@@ -625,18 +628,18 @@ export function addToSummaryQueue(url) {
         const firstItem = summaryQueue.values().next().value;
         summaryQueue.delete(firstItem);
     }
-    
+
     // Add to queue
     summaryQueue.add(url);
     console.log(`📋 Added to queue: ${url} (${summaryQueue.size}/${QUEUE_CONFIG.MAX_QUEUE_SIZE})`);
-    
+
     // Trigger processing if not already running
     if (!isProcessingQueue) {
         setTimeout(() => {
             processSummaryQueue().catch(console.error);
         }, 100); // Small delay to batch multiple additions
     }
-    
+
     return true;
 }
 
@@ -678,11 +681,11 @@ export function resetSummarizerCrashCounter() {
  */
 export function getSummarizerStatus() {
     const now = Date.now();
-    const inBackoff = summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF && 
-                     (now - lastCrashTime) < CRASH_BACKOFF_DURATION;
-    const backoffRemaining = inBackoff ? 
+    const inBackoff = summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF &&
+        (now - lastCrashTime) < CRASH_BACKOFF_DURATION;
+    const backoffRemaining = inBackoff ?
         Math.max(0, Math.ceil((CRASH_BACKOFF_DURATION - (now - lastCrashTime)) / 1000)) : 0;
-    
+
     return {
         crashCount: summarizerCrashCount,
         maxCrashes: MAX_CRASHES_BEFORE_BACKOFF,
@@ -702,13 +705,13 @@ export function getSummarizerStatus() {
  */
 export function flushSummaryCache(notifyState = true) {
     console.log('Flushing summary cache');
-    
+
     // Clear the in-memory cache
     summaryCache.clear();
-    
+
     // Clear the queue
     clearSummaryQueue();
-    
+
     // Clear persisted nano summaries from storage
     chrome.storage.local.remove(['nanoSummaries'], () => {
         if (chrome.runtime.lastError) {
@@ -717,7 +720,7 @@ export function flushSummaryCache(notifyState = true) {
             console.log('✅ Cleared nano summaries from storage');
         }
     });
-    
+
     // Optionally clear the summaries in Redux state
     if (notifyState && window.browserState) {
         // Dispatch an action to clear state summaries
@@ -730,12 +733,12 @@ function cacheSummary(url, summary) {
         summary,
         timestamp: Date.now()
     });
-    
+
     // Add summary to search index if the function exists
     if (typeof tabSearch.addSummaryToIndex === 'function') {
         tabSearch.addSummaryToIndex(url, summary);
     }
-    
+
     // Persist summary to storage for persistence across browser restarts
     persistSummaryToStorage(url, summary);
 }
@@ -750,18 +753,18 @@ async function persistSummaryToStorage(url, summary) {
         // Get existing summaries from storage
         const result = await chrome.storage.local.get(['nanoSummaries']);
         const summaries = result.nanoSummaries || {};
-        
+
         // Add new summary
         summaries[url] = {
             summary,
             timestamp: Date.now(),
             source: 'chrome-summarizer'
         };
-        
+
         // Save back to storage
         await chrome.storage.local.set({ nanoSummaries: summaries });
         console.log(`✅ Persisted nano summary for ${url}`);
-        
+
     } catch (error) {
         console.error('Error persisting nano summary:', error);
     }
@@ -775,24 +778,24 @@ export async function loadNanoSummariesFromStorage() {
     try {
         const result = await chrome.storage.local.get(['nanoSummaries']);
         const summaries = result.nanoSummaries || {};
-        
+
         console.log(`Loading ${Object.keys(summaries).length} nano summaries from storage...`);
-        
+
         // Add to in-memory cache
         Object.entries(summaries).forEach(([url, data]) => {
             summaryCache.set(url, {
                 summary: data.summary,
                 timestamp: data.timestamp
             });
-            
+
             // Add to search index if available
             if (typeof tabSearch.addSummaryToIndex === 'function') {
                 tabSearch.addSummaryToIndex(url, data.summary);
             }
         });
-        
+
         console.log(`✅ Loaded ${Object.keys(summaries).length} nano summaries from storage`);
-        
+
     } catch (error) {
         console.error('Error loading nano summaries from storage:', error);
     }
@@ -802,24 +805,24 @@ export async function loadNanoSummariesFromStorage() {
 async function generateVisitMetricFallback(url) {
     try {
         console.log('Generating fallback summary for:', url);
-        
+
         // Extract meaningful words from the URL
         const urlWords = extractWordsFromUrl(url);
         console.log('Extracted URL words:', urlWords);
-        
+
         // Get history metrics for this URL/domain
         const historyItems = await searchHistoryForTab(url);
-        
+
         // Extract basic URL info
         let domain = 'unknown';
         let pathname = '';
         let pageType = '';
-        
+
         try {
             const urlObj = new URL(url);
             domain = urlObj.hostname;
             pathname = urlObj.pathname;
-            
+
             // Try to identify page type from path
             if (pathname.includes('/article/') || pathname.includes('/post/')) {
                 pageType = 'article';
@@ -833,14 +836,14 @@ async function generateVisitMetricFallback(url) {
                 pageType = 'homepage';
             }
         } catch (e) { /* ignore parsing errors */ }
-        
+
         // Construct a meaningful fallback message
         const visitCount = historyItems.length;
         const pluralVisits = visitCount === 1 ? 'visit' : 'visits';
-        
+
         // Create informative summary based on available data
         let summary;
-        
+
         if (visitCount > 0) {
             // With history data
             if (urlWords.length > 0) {
@@ -858,7 +861,7 @@ async function generateVisitMetricFallback(url) {
                 summary = `${domain} ${pageType || 'page'} (content not available for summarization)`;
             }
         }
-        
+
         return summary;
     } catch (error) {
         console.error('Error generating fallback summary:', error);
@@ -872,33 +875,33 @@ export async function processSummaryQueue() {
         console.log('Queue processing already in progress, skipping...');
         return;
     }
-    
+
     // If summarizer is globally disabled, process queue with fallbacks only
     if (globalSummarizerDisabled) {
         console.log('ℹ️ Summarizer disabled - processing queue with fallbacks only');
     }
-    
+
     isProcessingQueue = true;
     queueProcessingStats.isActive = true;
-    
+
     console.log(`🔄 Starting queue processing with ${summaryQueue.size} items`);
 
     try {
         // Don't clear the queue immediately - process items one by one
         const urls = Array.from(summaryQueue);
-        
+
         // Process URLs in batches to avoid overwhelming the system
         for (let i = 0; i < urls.length; i += QUEUE_CONFIG.MAX_CONCURRENT) {
             const batch = urls.slice(i, i + QUEUE_CONFIG.MAX_CONCURRENT);
-            
+
             console.log(`Processing batch ${Math.floor(i / QUEUE_CONFIG.MAX_CONCURRENT) + 1}: ${batch.length} URLs`);
-            
+
             // Process batch concurrently but with individual error handling
             const batchPromises = batch.map(async (url) => {
                 try {
                     // Remove from queue immediately to prevent reprocessing
                     summaryQueue.delete(url);
-                    
+
                     // Skip if already cached
                     if (getCachedSummary(url)) {
                         console.log(`⏭️ Skipping ${url} - already cached`);
@@ -913,14 +916,14 @@ export async function processSummaryQueue() {
 
                     console.log(`📝 Generating summary for: ${url}`);
                     const summary = await summarizeUrl(url);
-                    
+
                     if (summary) {
                         cacheSummary(url, summary);
                         queueProcessingStats.totalProcessed++;
                         queueProcessingStats.lastProcessed = Date.now();
-                        
+
                         console.log(`✅ Summary generated for: ${url}`);
-                        
+
                         // Update current readout if it's showing this URL
                         updateReadoutIfNeeded(url, summary);
                     } else {
@@ -930,29 +933,29 @@ export async function processSummaryQueue() {
                 } catch (error) {
                     console.error(`❌ Error generating summary for ${url}:`, error);
                     queueProcessingStats.totalFailed++;
-                    
+
                     // Don't re-add to queue immediately - could cause infinite loops
                     // Instead, we'll let the user retry manually or through other mechanisms
                 }
             });
-            
+
             // Wait for batch to complete before processing next batch
             await Promise.allSettled(batchPromises);
-            
+
             // Small delay between batches to be nice to the system
             if (i + QUEUE_CONFIG.MAX_CONCURRENT < urls.length) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
-        
+
         console.log(`✅ Queue processing complete. Processed: ${queueProcessingStats.totalProcessed}, Failed: ${queueProcessingStats.totalFailed}`);
-        
+
     } catch (error) {
         console.error('❌ Critical error in queue processing:', error);
     } finally {
         isProcessingQueue = false;
         queueProcessingStats.isActive = false;
-        
+
         // If more items were added during processing, schedule another run
         if (summaryQueue.size > 0) {
             console.log(`🔄 ${summaryQueue.size} items remaining, scheduling next run...`);
@@ -973,7 +976,7 @@ function updateReadoutIfNeeded(url, summary) {
         const readout = document.getElementById('readout');
         const summaryContent = document.getElementById('summary-content');
         const currentUrl = readout?.querySelector('.readout-url')?.textContent;
-        
+
         if (summaryContent && currentUrl && formatUrlForDisplay(url) === currentUrl) {
             summaryContent.innerHTML = createTruncatedSummary(summary);
             console.log(`🔄 Updated readout for: ${url}`);
@@ -995,18 +998,18 @@ async function summarizeUrl(url) {
 
         // Check for crash backoff (now triggers after 1 crash)
         const now = Date.now();
-        
+
         // Check global crash state first
-        const isGloballyDisabled = (typeof window !== 'undefined' && window.summarizerCrashState) 
-            ? window.summarizerCrashState.disabled 
+        const isGloballyDisabled = (typeof window !== 'undefined' && window.summarizerCrashState)
+            ? window.summarizerCrashState.disabled
             : globalSummarizerDisabled;
-            
+
         if (isGloballyDisabled) {
             console.log(`🚫 Summarizer globally disabled due to repeated crashes. Using fallback: ${url}`);
             return await generateVisitMetricFallback(url);
         }
-        
-        if (summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF && 
+
+        if (summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF &&
             (now - lastCrashTime) < CRASH_BACKOFF_DURATION) {
             console.log(`⚠️ Summarizer in backoff mode due to crashes. Skipping: ${url}`);
             return await generateVisitMetricFallback(url);
@@ -1028,7 +1031,7 @@ async function summarizeUrl(url) {
         let availability;
         try {
             availability = await Promise.race([
-                window.Summarizer.availability(),
+                window.Summarizer.availability(SUMMARIZER_OPTIONS),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Availability check timeout')), 5000))
             ]);
             console.log('Summarizer availability:', availability);
@@ -1043,18 +1046,18 @@ async function summarizeUrl(url) {
             }
             return await generateVisitMetricFallback(url);
         }
-        
+
         // Handle all availability states properly
         if (availability === 'unavailable') {
             console.log('Summarizer API not usable on this system');
             return await generateVisitMetricFallback(url);
         }
-        
+
         if (availability === 'downloadable') {
             console.log('Summarizer model needs to be downloaded first');
             return await generateVisitMetricFallback(url);
         }
-        
+
         if (availability !== 'available') {
             console.log('Summarizer not in available state:', availability);
             return await generateVisitMetricFallback(url);
@@ -1062,14 +1065,14 @@ async function summarizeUrl(url) {
 
         // Get tab content with enhanced validation
         const content = await getTabContent(url);
-        
+
         // Enhanced content validation - more lenient now that we have better content extraction
         if (!content || content.trim().length < 50) { // Lowered back to 50 since we have better extraction
-            console.log('Insufficient content available to summarize for URL:', url, 
-                       `(length: ${content?.length || 0})`);
+            console.log('Insufficient content available to summarize for URL:', url,
+                `(length: ${content?.length || 0})`);
             return await generateVisitMetricFallback(url);
         }
-        
+
         // Filter and prepare content
         const filteredContent = content
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -1087,16 +1090,16 @@ async function summarizeUrl(url) {
             console.log('Content too short after filtering, using fallback summary');
             return await generateVisitMetricFallback(url);
         }
-        
+
         // Trim to API limits
         const MAX_CONTENT_LENGTH = 12000;
         let trimmedContent = filteredContent;
         if (filteredContent.length > MAX_CONTENT_LENGTH) {
             const firstPart = Math.floor(MAX_CONTENT_LENGTH * 0.7);
             const lastPart = MAX_CONTENT_LENGTH - firstPart;
-            trimmedContent = filteredContent.substring(0, firstPart) + 
-                           "\n[...content trimmed...]\n" + 
-                           filteredContent.substring(filteredContent.length - lastPart);
+            trimmedContent = filteredContent.substring(0, firstPart) +
+                "\n[...content trimmed...]\n" +
+                filteredContent.substring(filteredContent.length - lastPart);
         }
 
         // Initialize summarizer with proper error handling and timeout
@@ -1120,7 +1123,7 @@ async function summarizeUrl(url) {
                 }),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Summarizer creation timeout')), 10000))
             ]);
-            
+
             // Wait for model to be ready with timeout
             if (summarizer.ready) {
                 await Promise.race([
@@ -1128,29 +1131,29 @@ async function summarizeUrl(url) {
                     new Promise((_, reject) => setTimeout(() => reject(new Error('Summarizer ready timeout')), 5000))
                 ]);
             }
-            
+
             // Extract context information
             let domain = 'unknown';
             let pageTitle = '';
-            
+
             try {
                 const urlObj = new URL(url);
                 domain = urlObj.hostname;
-                
-                const titleMatch = trimmedContent.match(/<title>([^<]+)<\/title>/) || 
-                                  trimmedContent.match(/^([^\n]{10,100})\n/) ||
-                                  /<h1[^>]*>([^<]+)<\/h1>/i.exec(trimmedContent);
+
+                const titleMatch = trimmedContent.match(/<title>([^<]+)<\/title>/) ||
+                    trimmedContent.match(/^([^\n]{10,100})\n/) ||
+                    /<h1[^>]*>([^<]+)<\/h1>/i.exec(trimmedContent);
                 if (titleMatch) {
                     pageTitle = titleMatch[1].trim();
                 }
             } catch (e) { /* ignore URL parsing errors */ }
-            
+
             // Create context prompt
             const contextPrompt = `Summarize this webpage${pageTitle ? ' about "' + pageTitle + '"' : ''} from ${domain} in one concise sentence. ` +
-                               `Focus on the main topic and key information. ` +
-                               `Include what makes this page unique or valuable to the reader. ` +
-                               `Ensure your summary is factual, informative, and directly based on the content.`;
-            
+                `Focus on the main topic and key information. ` +
+                `Include what makes this page unique or valuable to the reader. ` +
+                `Ensure your summary is factual, informative, and directly based on the content.`;
+
             // FIXED: Proper API call syntax with timeout protection
             console.log('Generating summary for:', url, `(content length: ${trimmedContent.length})`);
             const summary = await Promise.race([
@@ -1159,7 +1162,7 @@ async function summarizeUrl(url) {
                 }),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Summarizer execution timeout')), 15000))
             ]);
-            
+
             // Success - reset crash count
             if (summary && summary.trim()) {
                 summarizerCrashCount = 0;
@@ -1170,31 +1173,31 @@ async function summarizeUrl(url) {
                 console.warn('Summarizer returned empty result');
                 return await generateVisitMetricFallback(url);
             }
-            
+
         } catch (error) {
             console.error('Error during summarization:', error);
-            
+
             // Enhanced crash detection with global disable
             if (error.message && (
-                error.message.includes('crashed') || 
+                error.message.includes('crashed') ||
                 error.message.includes('quota') ||
                 error.message.includes('failed') ||
                 error.message.includes('too many times'))) {
-                
+
                 summarizerCrashCount++;
                 lastCrashTime = Date.now();
                 console.warn(`🚨 Summarizer crash detected (${summarizerCrashCount}/${MAX_CRASHES_BEFORE_BACKOFF}): ${error.message}`);
-                
+
                 // Immediately disable after first crash to prevent spam
                 if (summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF) {
-                    console.warn(`⚠️ Entering backoff mode for ${CRASH_BACKOFF_DURATION/1000} seconds`);
+                    console.warn(`⚠️ Entering backoff mode for ${CRASH_BACKOFF_DURATION / 1000} seconds`);
                 }
-                
+
                 // Global disable if we detect the "too many times" error
                 if (error.message.includes('too many times')) {
                     globalSummarizerDisabled = true;
-                    console.error(`🚫 GLOBALLY DISABLING Summarizer due to repeated crashes. Will re-enable in ${GLOBAL_DISABLE_DURATION/60000} minutes`);
-                    
+                    console.error(`🚫 GLOBALLY DISABLING Summarizer due to repeated crashes. Will re-enable in ${GLOBAL_DISABLE_DURATION / 60000} minutes`);
+
                     // Re-enable after the global disable duration
                     setTimeout(() => {
                         globalSummarizerDisabled = false;
@@ -1204,7 +1207,7 @@ async function summarizeUrl(url) {
                     }, GLOBAL_DISABLE_DURATION);
                 }
             }
-            
+
             return await generateVisitMetricFallback(url);
         } finally {
             // Clean up summarizer instance
@@ -1222,18 +1225,42 @@ async function summarizeUrl(url) {
     }
 }
 
+// HTML-escape so summary text containing <, >, &, " or backticks can't break
+// markup, attribute boundaries, or the template literal in the onclick handler.
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // Add this helper function for summary display
 export function createTruncatedSummary(summary) {
     if (!summary) return '';
-    
+
     const lines = summary.split('\n');
     const isTruncated = lines.length > MAX_SUMMARY_LINES;
-    
-    const truncatedSummary = isTruncated 
+
+    const truncatedText = isTruncated
         ? lines.slice(0, MAX_SUMMARY_LINES).join('\n')
         : summary;
-    
-    return `<div class="summary-content"><div class="summary-text" style="line-height: ${LINE_HEIGHT}px">${truncatedSummary.trim()}</div>${isTruncated ? `<div class="summary-expand"><button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`').trim()}\`">Show more...</button></div>` : ''}</div>`;
+
+    // Render truncated text safely (\n → <br>, all other HTML chars escaped)
+    const truncatedHtml = escapeHtml(truncatedText.trim()).replace(/\n/g, '<br>');
+
+    if (!isTruncated) {
+        return `<div class="summary-content"><div class="summary-text" style="line-height: ${LINE_HEIGHT}px">${truncatedHtml}</div></div>`;
+    }
+
+    // Full summary stashed in data-* so the show-more handler can read it back
+    // unambiguously (the previous inline template-literal approach broke when
+    // the summary contained backticks, quotes, or backslashes).
+    const fullAttr = escapeHtml(summary);
+    const expandHandler = "(function(b){var p=document.createElement('pre');p.style.whiteSpace='pre-wrap';p.style.margin='0';p.textContent=b.dataset.fullSummary;b.parentElement.parentElement.replaceChildren(p);})(this)";
+
+    return `<div class="summary-content"><div class="summary-text" style="line-height: ${LINE_HEIGHT}px">${truncatedHtml}</div><div class="summary-expand"><button class="show-more-btn" data-full-summary="${fullAttr}" onclick="${expandHandler}">Show more...</button></div></div>`;
 }
 
 // Update displayReadout to queue summaries instead of generating them immediately
@@ -1242,9 +1269,6 @@ export async function displayReadout(d, event) {
     if (readoutTimeout) {
         clearTimeout(readoutTimeout);
     }
-
-    // Debug what we received
-    console.log('Readout data:', d);
 
     // Normalize data structure
     const nodeData = d?.data || d;
@@ -1256,13 +1280,10 @@ export async function displayReadout(d, event) {
     // Check if this is the same node we're already displaying
     const currentNodeId = nodeData.id || `${nodeData.windowId}-${nodeData.index}`;
     if (currentNodeId === lastDisplayedNodeId) {
-        console.log('Skipping readout update - same node');
-        return;
+        return; // same node already displayed — nothing to do
     }
     lastDisplayedNodeId = currentNodeId;
 
-    console.log('Normalized data:', nodeData);
-    
     // Make sure we have a URL to work with
     const url = nodeData.url || '';
     if (!url) {
@@ -1273,25 +1294,23 @@ export async function displayReadout(d, event) {
     // Fetch bookmarks and history for the domain
     const bookmarks = await searchBookmarksForTab(url);
     const history = await searchHistoryForTab(url);
-    
+
     // Sort history by recency (most recent first)
     const sortedHistory = history.sort((a, b) => b.lastVisitTime - a.lastVisitTime);
 
     // Basic properties
     const title = nodeData.title || 'Untitled';
-    
+
     // Format URL for display (remove http:// and www.)
     const displayUrl = formatUrlForDisplay(url);
 
     // More robust type detection
     const isBookmark = Boolean(
-        nodeData.isBookmark || 
-        nodeData.type === 'bookmark' || 
+        nodeData.isBookmark ||
+        nodeData.type === 'bookmark' ||
         nodeData.dateAdded ||
         (nodeData.id && String(nodeData.id).startsWith('bookmark'))
     );
-
-    console.log('Is bookmark?', isBookmark);
 
     // Format date for display if present
     let bookmarkDate = '';
@@ -1418,7 +1437,7 @@ export async function displayReadout(d, event) {
     // Queue summary generation if needed (even if not showing summary section)
     if (!isChromePage && !url.startsWith('file://') && !cachedSummary) {
         addToSummaryQueue(url);
-        
+
         // If we're not showing the summary section yet, set up a timer to show it when summary is ready
         if (!showSummarySection) {
             // Check every 2 seconds if summary becomes available
@@ -1435,7 +1454,7 @@ export async function displayReadout(d, event) {
                             ${createTruncatedSummary(newCachedSummary)}
                         </div>
                     `;
-                    
+
                     // Insert after readout-details
                     const readoutDetails = document.querySelector('.readout-details');
                     if (readoutDetails && readoutDetails.nextSibling) {
@@ -1445,7 +1464,7 @@ export async function displayReadout(d, event) {
                     }
                 }
             }, 2000);
-            
+
             // Clean up the interval after 30 seconds if summary never arrives
             setTimeout(() => clearInterval(checkInterval), 30000);
         }
@@ -1455,7 +1474,7 @@ export async function displayReadout(d, event) {
 // Update the positioning logic to handle undefined event
 function positionReadout(event) {
     const readout = document.getElementById('readout');
-    
+
     if (!event) {
         // Center in viewport if no event is provided
         readout.style.left = '50%';
@@ -1463,29 +1482,29 @@ function positionReadout(event) {
         readout.style.transform = 'translate(-50%, -50%)';
         return;
     }
-    
+
     // Rest of your positioning logic...
     const container = document.querySelector('.treemap-container') || document.body;
-    
+
     // Default positioning near cursor
     const padding = 15;
     let x = event.pageX + padding;
     let y = event.pageY + padding;
-    
+
     // Get dimensions
     const readoutWidth = readout.offsetWidth;
     const readoutHeight = readout.offsetHeight;
     const containerRect = container.getBoundingClientRect();
-    
+
     // Ensure readout stays within container bounds
     if (x + readoutWidth > window.innerWidth) {
         x = Math.max(0, event.pageX - readoutWidth - padding);
     }
-    
+
     if (y + readoutHeight > window.innerHeight) {
         y = Math.max(0, event.pageY - readoutHeight - padding);
     }
-    
+
     // Apply positioning
     readout.style.left = `${x}px`;
     readout.style.top = `${y}px`;
@@ -1494,16 +1513,16 @@ function positionReadout(event) {
 // Add cache cleanup on hide
 export function hideReadout() {
     const readoutContainer = document.getElementById('readout');
-    
+
     // Reset the last displayed node ID
     lastDisplayedNodeId = null;
-    
+
     // Use classList instead of style.display = 'none'
     readoutContainer.classList.add('hidden');
-    
+
     // Keep a minimal placeholder to maintain structure
     readoutContainer.innerHTML = '<div class="readout-placeholder"></div>';
-    
+
     // Cleanup old cache entries
     for (const [url, cached] of summaryCache.entries()) {
         if (Date.now() - cached.timestamp > SUMMARY_CACHE_DURATION) {
@@ -1525,7 +1544,7 @@ function showDefaultReadout(categorizedDataCache) {
 
     const windows = categorizedDataCache.activeWindows.length;
     const tabs = categorizedDataCache.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
-    
+
     if (!currentMotivationalMessage) {
         currentMotivationalMessage = getMotivationalMessage(windows, tabs);
     }
@@ -1555,7 +1574,7 @@ function showDefaultReadout(categorizedDataCache) {
 
 function handleTabSearch(event) {
     const searchTerm = event.target.value.trim().toLowerCase();
-    
+
     // Reset all cells if search is empty
     if (!searchTerm) {
         d3.selectAll('#treemap g')
@@ -1568,18 +1587,18 @@ function handleTabSearch(event) {
     const matchedIds = new Set(results.map(r => r.tab.id));
 
     // Update visualization based on search results
-    d3.selectAll('#treemap g').each(function(d) {
+    d3.selectAll('#treemap g').each(function (d) {
         const tabId = parseInt(d.data.id.replace('tab', ''));
         const isMatch = matchedIds.has(tabId);
         const matchType = results.find(r => r.tab.id === tabId)?.matchType;
-        
+
         // Higher opacity for summary matches
         const opacity = isMatch ? (matchType === 'summary' ? 0.8 : 1) : 0.3;
-        
+
         d3.select(this)
             .style('opacity', opacity)
             .style('transition', 'opacity 0.2s ease-in-out');
-            
+
         // Add a subtle indicator for summary matches
         if (isMatch && matchType === 'summary') {
             d3.select(this).select('rect')
@@ -1602,10 +1621,10 @@ window.resetSummarizerCrashCounter = resetSummarizerCrashCounter;
 window.getSummarizerStatus = getSummarizerStatus;
 
 // Make browserState.clearSummaries available globally for console access
-window.flushSummaryCache = function() {
+window.flushSummaryCache = function () {
     console.log(`Flushing summary cache with ${summaryCache.size} entries...`);
     summaryCache.clear();
-    
+
     // Also clear summaries in browserState if available
     if (typeof browserState !== 'undefined' && browserState.clearSummaries) {
         browserState.clearSummaries();
@@ -1613,13 +1632,13 @@ window.flushSummaryCache = function() {
     } else {
         console.warn('browserState.clearSummaries not available');
     }
-    
+
     console.log('Summary cache flushed successfully');
     return true;
 };
 
 // Audio tracking debug functions
-window.getAudioTrackingStats = function() {
+window.getAudioTrackingStats = function () {
     return new Promise((resolve) => {
         chrome.runtime.sendMessage({ action: 'getAudioTrackingStats' }, (response) => {
             if (chrome.runtime.lastError) {
@@ -1632,11 +1651,11 @@ window.getAudioTrackingStats = function() {
     });
 };
 
-window.getCurrentAudioDuration = function(tabId) {
+window.getCurrentAudioDuration = function (tabId) {
     return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ 
-            action: 'getCurrentAudioDuration', 
-            tabId: parseInt(tabId) 
+        chrome.runtime.sendMessage({
+            action: 'getCurrentAudioDuration',
+            tabId: parseInt(tabId)
         }, (response) => {
             if (chrome.runtime.lastError) {
                 console.error('Error getting current audio duration:', chrome.runtime.lastError);
@@ -1648,13 +1667,13 @@ window.getCurrentAudioDuration = function(tabId) {
     });
 };
 
-window.resetAudioTracking = function(tabId = null) {
+window.resetAudioTracking = function (tabId = null) {
     return new Promise((resolve) => {
         const message = { action: 'resetAudioTracking' };
         if (tabId !== null) {
             message.tabId = parseInt(tabId);
         }
-        
+
         chrome.runtime.sendMessage(message, (response) => {
             if (chrome.runtime.lastError) {
                 console.error('Error resetting audio tracking:', chrome.runtime.lastError);
@@ -1668,4 +1687,4 @@ window.resetAudioTracking = function(tabId = null) {
 };
 
 // Export both the function and timer reset
-export {  showDefaultReadout, resetInactivityTimer };
+export { showDefaultReadout, resetInactivityTimer };

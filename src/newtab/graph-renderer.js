@@ -1,17 +1,13 @@
-import { getFaviconUrl } from './utility.js';
+
+
+import { getLocalFaviconUrl } from './utility.js';
 
 /**
- * Get a synchronous favicon URL for graph rendering
- * Uses Google's favicon service for immediate display
+ * Get a synchronous favicon URL for graph rendering.
+ * Uses Chrome's local favicon cache (_favicon/), not the external Google service.
  */
 function getFaviconUrlSync(url) {
-    try {
-        const urlObj = new URL(url);
-        const domain = urlObj.hostname;
-        return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-    } catch (e) {
-        return '';
-    }
+    return getLocalFaviconUrl(url, 32);
 }
 
 export function highlightGraphNodeForUrl(svgElement, url) {
@@ -195,20 +191,20 @@ export function createForceGraph(container, nodes, links, session, viewMode = 't
     // Track click state for double-click detection in session modals
     let clickTimeout = null;
     let clickCount = 0;
-    
+
     // Add interactions to nodes
     node.call(drag)
         .on('click', (event, d) => {
             // Prevent default to avoid conflicts with drag
             event.stopPropagation();
-            
+
             // Check if we're in a session modal (has session ID other than 'main-graph')
             const isSessionModal = session && session.id !== 'main-graph';
-            
+
             if (isSessionModal) {
                 // In session modal: first click scrolls to page, second click opens
                 clickCount++;
-                
+
                 if (clickCount === 1) {
                     // First click: scroll to the page in the list
                     clickTimeout = setTimeout(() => {
@@ -221,7 +217,7 @@ export function createForceGraph(container, nodes, links, session, viewMode = 't
                                 break;
                             }
                         }
-                        
+
                         if (pageItem) {
                             pageItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             // Briefly highlight the item
@@ -253,14 +249,14 @@ export function createForceGraph(container, nodes, links, session, viewMode = 't
             d.fy = null;
             simulation.alpha(0.3).restart();
         })
-        .on('mouseover', function(event, d) {
+        .on('mouseover', function (event, d) {
             // Highlight connected nodes
             d3.select(this).classed('node-hover', true);
-            
+
             // Show tooltip
             const tooltip = d3.select('#tooltip');
             if (tooltip.empty()) return;
-            
+
             // Format last visit time
             let lastVisitStr = '';
             if (d.lastVisitTime) {
@@ -275,7 +271,7 @@ export function createForceGraph(container, nodes, links, session, viewMode = 't
                     hour12: true
                 });
             }
-            
+
             tooltip
                 .style('opacity', '1')
                 .style('left', (event.pageX + 10) + 'px')
@@ -291,9 +287,9 @@ export function createForceGraph(container, nodes, links, session, viewMode = 't
                     </div>
                 `);
         })
-        .on('mouseout', function(event, d) {
+        .on('mouseout', function (event, d) {
             d3.select(this).classed('node-hover', false);
-            
+
             // Hide tooltip
             const tooltip = d3.select('#tooltip');
             if (!tooltip.empty()) {
@@ -316,7 +312,10 @@ export function createForceGraph(container, nodes, links, session, viewMode = 't
             .force('x', d3.forceX(d => timeScale(d.lastVisitTime)).strength(0.4))
             .force('y', d3.forceY(d => {
                 if (d.isActive) {
-                    return height * (0.2 + Math.random() * 0.2);
+                    // Deterministic jitter: hash(node.id || url) → [0.2, 0.4).
+                    // Math.random() was called on every tick → jittery, non-reproducible layout.
+                    const activeHash = hashString(d.id || d.url || '');
+                    return height * (0.2 + activeHash * 0.2);
                 }
                 const domainHash = hashString(d.domain);
                 return height * 0.35 + domainHash * height * 0.5;
@@ -358,7 +357,7 @@ export function createForceGraph(container, nodes, links, session, viewMode = 't
             domainGroups[node.domain].push(node);
         });
 
-        return function(alpha) {
+        return function (alpha) {
             Object.values(domainGroups).forEach(domainNodes => {
                 if (domainNodes.length <= 1) return;
 
@@ -377,7 +376,7 @@ export function createForceGraph(container, nodes, links, session, viewMode = 't
             });
         };
     }
-    
+
     // Return both the SVG DOM node and the simulation for external access
     return {
         svg: svg.node(),

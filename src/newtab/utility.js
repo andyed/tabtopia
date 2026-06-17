@@ -87,6 +87,13 @@ function hashString(str) {
 
 // Update favicon handling function
 export async function getFaviconUrl(url, preferredSize = 128) {
+  // Internal/privileged URLs (chrome://, chrome-extension://, file://, about:,
+  // data:) have no fetchable favicon. Asking Google's favicon service for them
+  // redirects to gstatic and 404s — an external request on a page that should
+  // stay offline-capable. Go straight to the generated letter favicon.
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return createLetterFavicon(url || '');
+  }
   // Try to get favicon using chrome.tabs.favIconUrl for active tabs
   try {
     const tab = await new Promise(resolve => {
@@ -137,35 +144,27 @@ export async function getFaviconUrl(url, preferredSize = 128) {
     }
   }
 
+  // Fallback 2: Chrome's local favicon cache (_favicon/ API) instead of the
+  // external Google service — no network request and no slow image-load probe.
   try {
-    // Fallback 2: Try Google's favicon service with size parameter
-    const hostname = encodeURIComponent(new URL(url).hostname);
-    const googleFavicon = `https://www.google.com/s2/favicons?sz=${preferredSize}&domain=${hostname}`;
-    
-    // Test if Google favicon exists and is not the default
-    const img = new Image();
-    img.src = googleFavicon;
-    
-    const googleFaviconWorks = await new Promise(resolve => {
-      img.onload = () => {
-        // Check image dimensions to see if it's the default icon
-        // (Google returns a 16x16 default icon when not found)
-        resolve(img.width > 16 || img.height > 16);
-      };
-      img.onerror = () => resolve(false);
-      // Set timeout in case image never loads
-      setTimeout(() => resolve(false), 1000);
-    });
-    
-    if (googleFaviconWorks) {
-      return googleFavicon;
-    }
+    return getLocalFaviconUrl(url, preferredSize);
   } catch (error) {
-    console.warn('Error with Google favicon service:', error);
+    console.warn('Error building local favicon URL:', error);
   }
-  
+
   // Final fallback: Generate letter favicon
   return createLetterFavicon(url);
+}
+
+// Synchronous local favicon URL via Chrome's _favicon/ API (needs the "favicon"
+// permission + _favicon/* in web_accessible_resources — both present in the
+// manifest). Returns a chrome-extension:// URL served from Chrome's own favicon
+// cache: no network request, works offline. Use this for <img src> in place of
+// the external google.com/s2/favicons service. Accepts a full URL or a domain.
+export function getLocalFaviconUrl(pageUrlOrDomain, size = 32) {
+  const raw = pageUrlOrDomain || '';
+  const pageUrl = /^[a-z]+:\/\//i.test(raw) ? raw : (raw ? `https://${raw}` : '');
+  return chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(pageUrl)}&size=${size}`);
 }
 
 function exportSession() {

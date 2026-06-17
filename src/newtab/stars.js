@@ -4,6 +4,7 @@ console.log('stars.js loaded');
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Stars view DOM fully loaded and parsed');
     initStars();
+    initStarsSearch();
 });
 
 async function initStars() {
@@ -14,20 +15,87 @@ async function initStars() {
         const bookmarks = await fetchRecentBookmarks(100);
         const starSessions = await createStarSessions(bookmarks);
         renderStarSessions(starSessions, container);
-        requestSummaries(starSessions);
+        await applyCachedSummaries(container);
     } catch (error) {
         console.error('Error initializing stars view:', error);
         container.innerHTML = '<p class="error-message">Error loading starred pages.</p>';
     }
 }
 
-async function createStarSessions(bookmarks) {
-    const sessions = [];
-    for (const bookmark of bookmarks) {
-        const context = await getBookmarkContext(bookmark.dateAdded);
-        sessions.push({ bookmark, context });
+// Filter rendered .session-card elements based on the live #starsSearch value.
+// Matches against bookmark title/URL and any context page titles/URLs.
+function initStarsSearch() {
+    const input = document.getElementById('starsSearch');
+    if (!input) return;
+
+    let debounceTimer = null;
+    input.addEventListener('input', (event) => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => filterStars(event.target.value), 150);
+    });
+}
+
+function filterStars(rawQuery) {
+    const query = (rawQuery || '').trim().toLowerCase();
+    const cards = document.querySelectorAll('.session-card');
+
+    cards.forEach(card => {
+        if (!query) {
+            card.style.display = '';
+            return;
+        }
+        const haystack = card.textContent.toLowerCase();
+        card.style.display = haystack.includes(query) ? '' : 'none';
+    });
+
+    // Hide empty session groups so headers don't float above no results.
+    document.querySelectorAll('.session-group').forEach(group => {
+        const visibleCard = group.querySelector('.session-card:not([style*="display: none"])');
+        group.style.display = (query && !visibleCard) ? 'none' : '';
+    });
+}
+
+// Pull cached AI summaries from chrome.storage.local['nanoSummaries'] (populated
+// by readout.js's summarizer queue) and inject them into the rendered cards.
+// Replaces the previous fire-and-forget chrome.runtime.sendMessage({action:'getSummaries'})
+// whose response was never consumed.
+async function applyCachedSummaries(container) {
+    try {
+        const result = await chrome.storage.local.get(['nanoSummaries']);
+        const summaries = result.nanoSummaries || {};
+        if (!Object.keys(summaries).length) return;
+
+        container.querySelectorAll('.session-card').forEach(card => {
+            const url = card.dataset.bookmarkUrl;
+            if (!url) return;
+            const entry = summaries[url];
+            if (!entry || !entry.summary) return;
+
+            const content = card.querySelector('.session-card-content');
+            if (!content) return;
+
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'star-summary';
+            summaryDiv.textContent = entry.summary;
+            content.insertBefore(summaryDiv, content.firstChild);
+        });
+    } catch (error) {
+        console.error('Error loading cached summaries:', error);
     }
-    return sessions;
+}
+
+async function createStarSessions(bookmarks) {
+    // Fetch each bookmark's ±15min history context concurrently. This was a
+    // serial await loop — one chrome.history.search per bookmark, each waiting
+    // for the previous — so boot scaled linearly with bookmark count (up to
+    // ~100 sequential round-trips). Promise.all collapses it to ~one, preserving
+    // bookmark order.
+    return Promise.all(
+        bookmarks.map(async bookmark => ({
+            bookmark,
+            context: await getBookmarkContext(bookmark.dateAdded)
+        }))
+    );
 }
 
 async function getBookmarkContext(timestamp) {
@@ -119,6 +187,7 @@ function groupSessionsByDate(sessions) {
 }
 
 import { formatTimeAgo } from './timeago.js';
+import { getLocalFaviconUrl } from './utility.js';
 
 function createStarCard(session) {
     const card = document.createElement('div');
@@ -127,13 +196,16 @@ function createStarCard(session) {
     const bookmark = session.bookmark;
     const context = session.context;
 
+    // Stamp URL on the element so applyCachedSummaries() can match it later.
+    card.dataset.bookmarkUrl = bookmark.url || '';
+
     let contextHTML = '';
     let contextSummary = '';
     if (context && context.length > 0) {
         contextSummary = `<p>${context.length} pages of context</p>`;
         contextHTML = '<ul class="session-pages-ul" style="display:none;">';
         for (const item of context) {
-            const faviconUrl = `https://www.google.com/s2/favicons?domain=${new URL(item.url).hostname}&sz=32`;
+            const faviconUrl = getLocalFaviconUrl(item.url, 32);
             contextHTML += `
                 <li class="session-page-item">
                     <div class="favicon-domain-container">
@@ -173,20 +245,6 @@ function createStarCard(session) {
     });
 
     return card;
-}
-
-function requestSummaries(sessions) {
-    const urls = [];
-    for (const session of sessions) {
-        urls.push(session.bookmark.url);
-        if (session.context) {
-            for (const item of session.context) {
-                urls.push(item.url);
-            }
-        }
-    }
-
-    chrome.runtime.sendMessage({ action: 'getSummaries', urls });
 }
 
 async function fetchRecentBookmarks(count) {

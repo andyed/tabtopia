@@ -1,5 +1,5 @@
 /**
- * Debug State Bridge for Histospire
+ * Debug State Bridge for Tabtopia
  * Provides access to browserState from the newtab page to the debug UI
  */
 

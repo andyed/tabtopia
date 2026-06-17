@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('clear-all').addEventListener('click', clearAllStorage);
     document.getElementById('storage-filter').addEventListener('input', filterStorageItems);
     
-    // Histospire-specific listeners
+    // Tabtopia-specific listeners
     document.getElementById('refresh-history')?.addEventListener('click', loadHistoryData);
     document.getElementById('clear-history')?.addEventListener('click', clearHistoryData);
     document.getElementById('history-filter')?.addEventListener('input', filterHistoryItems);
@@ -1387,7 +1387,7 @@ function exportGraphData() {
         // Create download link
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'histospire-graph-data.json';
+        a.download = 'tabtopia-graph-data.json';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

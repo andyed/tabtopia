@@ -31,22 +31,26 @@ window.addEventListener('focus', function() {
  * Send a message to the background script to track this tab focus event
  */
 function notifyTabFocus() {
-  // Get the current tab ID
-  chrome.runtime.sendMessage({ action: 'getTabId' }, function(response) {
-    if (response && response.tabId) {
-      const tabId = response.tabId;
-      
-      // Send a message to track the focus event
-      chrome.runtime.sendMessage({ 
-        action: 'updateTabActivity', 
-        tabId: tabId, 
-        event: {
-          timestamp: Date.now(),
-          type: 'focus'
-        }
-      });
-      
-      console.log(`Tab ${tabId} focus event sent from content script at ${new Date().toISOString()}`);
-    }
-  });
+  // Bail if the extension context is gone — e.g. the extension was reloaded while
+  // this content script kept running in an already-open tab. That orphaned script
+  // throws "Extension context invalidated" the moment it touches chrome.runtime;
+  // chrome.runtime.id is undefined in that state, so this guard short-circuits it.
+  if (!chrome.runtime?.id) return;
+
+  try {
+    // Get the current tab ID
+    chrome.runtime.sendMessage({ action: 'getTabId' }, function (response) {
+      if (chrome.runtime.lastError) return; // context went away mid-call
+      if (response && response.tabId) {
+        // Send a message to track the focus event
+        chrome.runtime.sendMessage({
+          action: 'updateTabActivity',
+          tabId: response.tabId,
+          event: { timestamp: Date.now(), type: 'focus' }
+        }, () => { void chrome.runtime.lastError; });
+      }
+    });
+  } catch (e) {
+    // Orphaned content script after an extension reload — nothing to do.
+  }
 }

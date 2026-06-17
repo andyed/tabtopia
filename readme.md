@@ -86,7 +86,7 @@ The Stars View provides a dedicated interface for your bookmarked pages, putting
    - Built-in Chrome AI Summarizer API for URL content with fallback support
    - Aggressive crash detection and recovery system
    - Smart context detection and adaptive readout generation
-   - Background worker content extraction to bypass security restrictions
+   - Background worker content extraction for restricted pages
    - Automatic fallback to heuristic summaries when AI is unavailable
 
 ### Use Cases and Extensions
@@ -111,26 +111,16 @@ The underlying synchronization and history trail system can be leveraged for var
    - Context restoration
 
 
-## Screenshots
+## Installation
 
-### Treemap View
-![Treemap visualization](screenshots/treemap.png)
+**From a release (recommended):** download `tabtopia-v1.0.zip` from the
+[Releases](https://github.com/andyed/tabtopia/releases) page and unzip it. Then:
 
-### Graph View
-![Graph visualization](screenshots/graph.png)
+1. Open Chrome and navigate to `chrome://extensions/`
+2. Enable "Developer Mode" in the top-right corner
+3. Click "Load Unpacked" and select the unzipped folder (the one containing `manifest.json`)
 
-### Session View
-![Session visualization](screenshots/session_view.png)
-
-### Stars View
-![Stars visualization](screenshots/stars_view.png)
-
-
-## Developer Installation
-1. Clone this repository or download the zip
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable "Developer Mode" in the top-right corner
-4. Click "Load Unpacked" and select the repository folder
+**From source:** clone this repository and "Load Unpacked" the repository folder.
 
 ## Debug Tools and Console Functions
 
@@ -200,12 +190,6 @@ window.addEventListener('summaryGenerated', (e) => {
 // Check extension state
 chrome.runtime.sendMessage({type: 'getInitialState'}, console.log);
 ```
-
-## Future Directions
-
-### MCP Server for LLM Context
-A potential future direction is to expose the rich browsing data captured by the extension as a "Memory Context Provider" (MCP) server. This would allow Large Language Models (LLMs) to securely access a user's browsing context, enabling a new class of personalized and context-aware AI applications. The structured data, including sessions, dwell time, and navigation paths, would provide a powerful foundation for this.
-
 
 ## Troubleshooting
 

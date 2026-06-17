@@ -69,14 +69,16 @@ document.addEventListener('submit', (event) => {
   const submitButton = form.querySelector('input[type="submit"], button[type="submit"]');
   
   try {
-    // Extract form fields (non-sensitive) to provide context
+    // Record which form fields were submitted — NAMES only, never values.
+    // Text/search inputs routinely hold sensitive data (OTPs, SSNs, emails, card
+    // numbers), so we never persist el.value. Password fields are excluded by the
+    // selector. The search term, when present, is captured separately below and is
+    // also recoverable from the resulting URL.
     const formFields = {};
     const fieldElements = form.querySelectorAll('input:not([type="password"]), select, textarea');
     fieldElements.forEach(el => {
       if (el.name && el.value && el.type !== 'password') {
-        // Only include non-sensitive fields with names and values
-        // Skip password fields for privacy
-        formFields[el.name] = el.type === 'text' || el.type === 'search' ? el.value : '[FIELD_VALUE]';
+        formFields[el.name] = '[FIELD_VALUE]';
       }
     });
     
@@ -382,21 +384,10 @@ function initializeObservers() {
         }, { once: true });
     }
 
-    // More robust favicon detection
-    function checkForFaviconChanges() {
-        const currentFavicon = getFavIconUrl();
-        if (currentFavicon && currentFavicon !== lastFavicon) {
-            lastFavicon = currentFavicon;
-            safelySendMessage({
-                type: 'favicon_updated',
-                tabId: currentTabId,
-                favIconUrl: currentFavicon
-            });
-        }
-    }
-    
-    // Check periodically for favicon changes
-    setInterval(checkForFaviconChanges, 1000);
+    // Removed: a per-tab setInterval(checkForFaviconChanges, 1000) that polled the
+    // favicon every second on every page and sent a 'favicon_updated' message the
+    // background service worker doesn't even handle — pure CPU waste across all
+    // <all_urls> tabs. Favicons already reach the SW via chrome.tabs updates.
 }
 
 // Improve getFavIconUrl to get more favicon sources

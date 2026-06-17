@@ -1,4 +1,5 @@
 import {  exitSearchMode, clearSearchResults } from './search.js';
+import { activateNode } from './treemap.js';
 
 // Track currently focused elements
 let currentFocusedNode = null;
