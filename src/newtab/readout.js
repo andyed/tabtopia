@@ -265,17 +265,10 @@ async function searchHistoryForTab(url) {
         }
 
         // Search by domain instead of tab ID
-        const historyItems = await new Promise((resolve, reject) => {
-            chrome.history.search({
-                text: domain,
-                maxResults: 10,
-                startTime: 0
-            }, (results) => {
-                if (chrome.runtime.lastError) {
-                    return reject(chrome.runtime.lastError);
-                }
-                resolve(results);
-            });
+        const historyItems = await chrome.history.search({
+            text: domain,
+            maxResults: 10,
+            startTime: 0
         });
 
         // Further filter to ensure domain match
@@ -1294,6 +1287,11 @@ export async function displayReadout(d, event) {
     // Fetch bookmarks and history for the domain
     const bookmarks = await searchBookmarksForTab(url);
     const history = await searchHistoryForTab(url);
+
+    // Abort if the user hovered over a different cell while we were fetching
+    if (lastDisplayedNodeId !== currentNodeId) {
+        return;
+    }
 
     // Sort history by recency (most recent first)
     const sortedHistory = history.sort((a, b) => b.lastVisitTime - a.lastVisitTime);
