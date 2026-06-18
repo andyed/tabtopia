@@ -28,13 +28,13 @@
  * @requires state
  */
 
-import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from './utility.js';
-import { displayReadout, hideReadout } from './readout.js';
-import { handleKeyNavigation } from './keyboardNav.js';
-import { fetchRecentBookmarks, fetchRecentHistory } from './init.js';
-import { browserState } from './state.js';
-import { applyColorCoding } from './utility.js';
-import { globalTooltip } from './tooltip.js';
+import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from "./utility.js";
+import { displayReadout, hideReadout } from "./readout.js";
+import { handleKeyNavigation } from "./keyboardNav.js";
+import { fetchRecentBookmarks, fetchRecentHistory } from "./init.js";
+import { browserState } from "./state.js";
+import { applyColorCoding } from "./utility.js";
+import { globalTooltip } from "./tooltip.js";
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
@@ -93,10 +93,10 @@ let lastValidTargetTime = 0;
 // Initialize state from background
 async function initializeState() {
     try {
-        console.log('🔍 Requesting initial state from background...');
-        const response = await chrome.runtime.sendMessage({ action: 'getInitialState' });
+        console.log("🔍 Requesting initial state from background...");
+        const response = await chrome.runtime.sendMessage({ action: "getInitialState" });
 
-        console.log('📋 Received getInitialState response:', {
+        console.log("📋 Received getInitialState response:", {
             hasResponse: !!response,
             responseType: typeof response,
             responseKeys: response ? Object.keys(response) : [],
@@ -122,12 +122,12 @@ async function initializeState() {
         // More robust validation with better error handling
         if (!initialState) {
             // No data from this secondary self-init → leave newtab.js's render alone.
-            console.warn('No initial state from background; deferring to primary render');
+            console.warn("No initial state from background; deferring to primary render");
             return;
         }
 
         if (!initialState.activeWindows || !Array.isArray(initialState.activeWindows)) {
-            console.warn('Invalid initial state - missing or invalid activeWindows:', {
+            console.warn("Invalid initial state - missing or invalid activeWindows:", {
                 hasState: !!initialState,
                 hasActiveWindows: !!initialState.activeWindows,
                 isArray: Array.isArray(initialState.activeWindows),
@@ -136,24 +136,24 @@ async function initializeState() {
             });
 
             // Try to fix the state structure if possible
-            if (initialState && typeof initialState === 'object') {
+            if (initialState && typeof initialState === "object") {
                 // Check if activeWindows is nested elsewhere
                 if (initialState.data?.activeWindows) {
-                    console.log('Found activeWindows in nested data structure');
+                    console.log("Found activeWindows in nested data structure");
                     initialState.activeWindows = initialState.data.activeWindows;
                 } else if (initialState.browserState?.activeWindows) {
-                    console.log('Found activeWindows in browserState structure');
+                    console.log("Found activeWindows in browserState structure");
                     initialState.activeWindows = initialState.browserState.activeWindows;
                 } else if (initialState.tabs && Array.isArray(initialState.tabs)) {
                     // Convert tabs array to activeWindows structure
-                    console.log('Converting tabs array to activeWindows structure', {
+                    console.log("Converting tabs array to activeWindows structure", {
                         tabCount: initialState.tabs.length,
                         sampleTab: initialState.tabs[0]
                     });
                     const windowMap = new Map();
 
                     initialState.tabs.forEach(tab => {
-                        const windowId = tab.windowId || 'default';
+                        const windowId = tab.windowId || "default";
                         if (!windowMap.has(windowId)) {
                             windowMap.set(windowId, {
                                 id: windowId,
@@ -168,13 +168,13 @@ async function initializeState() {
                     });
 
                     initialState.activeWindows = Array.from(windowMap.values());
-                    console.log('✅ Created activeWindows structure:', {
+                    console.log("✅ Created activeWindows structure:", {
                         windowCount: initialState.activeWindows.length,
                         totalTabs: initialState.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0)
                     });
                 } else {
                     // Create empty state structure
-                    console.log('Creating empty activeWindows structure');
+                    console.log("Creating empty activeWindows structure");
                     initialState.activeWindows = [];
                 }
             } else {
@@ -184,7 +184,7 @@ async function initializeState() {
         }
 
         treemapState.data = initialState;
-        console.log('State initialized:', {
+        console.log("State initialized:", {
             windows: treemapState.data.activeWindows.length,
             totalTabs: treemapState.getTotalTabs(),
             windowsList: treemapState.data.activeWindows.map(w => w.id)
@@ -198,7 +198,7 @@ async function initializeState() {
             await drawTreemap(treemapState.data);
         }
     } catch (error) {
-        console.error('Failed to initialize state:', error);
+        console.error("Failed to initialize state:", error);
         // Do NOT showEmptyState() — leave any existing render intact.
     }
 }
@@ -208,34 +208,34 @@ async function updateCellFavicon(cell, url, size) {
     try {
         // Request favicon through background script
         chrome.runtime.sendMessage({
-            action: 'getFavicon',
+            action: "getFavicon",
             url: url,
             size: size
         }, response => {
             if (response?.faviconUrl) {
-                cell.select('image')
-                    .attr('xlink:href', response.faviconUrl)
-                    .attr('width', size)
-                    .attr('height', size)
-                    .attr('x', -size / 2)
-                    .attr('y', -size / 2)
-                    .on('error', function () {
+                cell.select("image")
+                    .attr("xlink:href", response.faviconUrl)
+                    .attr("width", size)
+                    .attr("height", size)
+                    .attr("x", -size / 2)
+                    .attr("y", -size / 2)
+                    .on("error", function () {
                         // If high-res fails, try smaller size
                         chrome.runtime.sendMessage({
-                            action: 'getFavicon',
+                            action: "getFavicon",
                             url: url,
                             size: 16
                         }, fallbackResponse => {
                             if (fallbackResponse?.faviconUrl) {
                                 d3.select(this)
-                                    .attr('xlink:href', fallbackResponse.faviconUrl);
+                                    .attr("xlink:href", fallbackResponse.faviconUrl);
                             }
                         });
                     });
             }
         });
     } catch (error) {
-        console.warn('Error loading favicon for:', url, error);
+        console.warn("Error loading favicon for:", url, error);
     }
 }
 
@@ -314,7 +314,7 @@ function getSafeColor(d) {
         // Otherwise use the default color scale
         return defaultColor(d.data ? d.data.id : d.id || 0);
     } catch (error) {
-        console.warn('Error getting color for node:', d);
+        console.warn("Error getting color for node:", d);
         return d3.color(defaultColor(0)); // Ensure we return a valid color object
     }
 }
@@ -325,7 +325,7 @@ function getDarkerColor(d, amount = 0.5) {
         const baseColor = getSafeColor(d);
         return baseColor ? baseColor.darker(amount) : d3.color(defaultColor(0)).darker(amount);
     } catch (error) {
-        console.warn('Error getting darker color:', error);
+        console.warn("Error getting darker color:", error);
         return d3.color(defaultColor(0)).darker(amount);
     }
 }
@@ -355,7 +355,7 @@ export async function drawTreemap(data) {
     // empty state on bad data is what made the treemap vanish until a manual
     // refresh. A bad call must leave the existing render untouched.
     if (!data || !data.activeWindows || !Array.isArray(data.activeWindows)) {
-        console.warn('drawTreemap: ignoring malformed data (no activeWindows array):', {
+        console.warn("drawTreemap: ignoring malformed data (no activeWindows array):", {
             hasData: !!data,
             dataKeys: Object.keys(data || {}),
             activeWindowsType: typeof data?.activeWindows
@@ -364,13 +364,13 @@ export async function drawTreemap(data) {
     }
 
     if (data.activeWindows.length === 0) {
-        console.log('No active windows available - relying on bookmarks');
+        console.log("No active windows available - relying on bookmarks");
         // Do not return early, allow drawing to proceed so bookmarks are shown
     }
 
-    const container = document.getElementById('treemap');
+    const container = document.getElementById("treemap");
     if (!container) {
-        console.warn('Treemap container not found - cannot draw treemap');
+        console.warn("Treemap container not found - cannot draw treemap");
         return;
     }
     const viewportHeight = window.innerHeight - 48;
@@ -382,28 +382,28 @@ export async function drawTreemap(data) {
 
     // Apply scroll only if necessary
     container.style.height = `${viewportHeight}px`;
-    container.style.overflowY = layout.enableScroll ? 'auto' : 'hidden';
-    container.style.overflowX = 'hidden';
+    container.style.overflowY = layout.enableScroll ? "auto" : "hidden";
+    container.style.overflowX = "hidden";
 
     // Create SVG with calculated height
-    d3.select('#treemap').selectAll('*').remove();
+    d3.select("#treemap").selectAll("*").remove();
 
     const margin = { top: 0, right: 0, bottom: 0, left: 0 };
 
-    const svg = d3.select('#treemap')
-        .append('svg')
-        .style('margin', '0')
-        .style('padding', '0')
-        .attr('width', width)
-        .attr('height', layout.height);
+    const svg = d3.select("#treemap")
+        .append("svg")
+        .style("margin", "0")
+        .style("padding", "0")
+        .attr("width", width)
+        .attr("height", layout.height);
 
-    const svgRoot = svg.append('g')
-        .attr('transform', `translate(${margin.left},${margin.top})`);
+    const svgRoot = svg.append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
 
     // Create color schemes
     const lightColors = [
-        '#e3f2fd', '#e8f5e9', '#fff3e0', '#ffebee',
-        '#f3e5f5', '#e0f7fa', '#fffde7', '#efebe9'
+        "#e3f2fd", "#e8f5e9", "#fff3e0", "#ffebee",
+        "#f3e5f5", "#e0f7fa", "#fffde7", "#efebe9"
     ];
 
     const windowColors = new Map();
@@ -414,18 +414,18 @@ export async function drawTreemap(data) {
     });
 
     // Set a default color for the bookmark window
-    windowColors.set('bookmark', '#f5f5f5'); // Light gray for bookmarks
+    windowColors.set("bookmark", "#f5f5f5"); // Light gray for bookmarks
 
     // Create hierarchy data
     const hierarchyData = {
-        name: 'root',
+        name: "root",
         children: data.activeWindows.map(window => ({
             name: `Window ${window.id}`,
             children: window.tabs.map(tab => ({
                 id: `tab${tab.id}`,
                 windowId: window.id,
-                title: tab.title || 'Untitled',
-                url: tab.url || '',
+                title: tab.title || "Untitled",
+                url: tab.url || "",
                 favIconUrl: tab.favIconUrl,
                 lastAccessed: tab.lastAccessed,
                 timeSpent: tab.totalTimeSpent || 1, // Use actual time spent
@@ -444,8 +444,8 @@ export async function drawTreemap(data) {
         const maxLastAccessed = d3.max(tabs, d => d.lastAccessed);
         const minLastAccessed = d3.min(tabs, d => d.lastAccessed);
 
-        const windowId = windowNode.name.includes('bookmark') ? 'bookmark' :
-            parseInt(windowNode.name.replace('Window ', ''), 10);
+        const windowId = windowNode.name.includes("bookmark") ? "bookmark" :
+            parseInt(windowNode.name.replace("Window ", ""), 10);
 
         const baseColor = d3.color(lightColors[windowId % lightColors.length]);
 
@@ -456,8 +456,8 @@ export async function drawTreemap(data) {
 
         tabs.forEach(tab => {
             // Check both the tab's isBookmark property AND if it belongs to the bookmark window
-            tab.color = (tab.isBookmark || windowNode.name === 'Window bookmark' || windowId === 'bookmark')
-                ? '#e8f4f8'  // Light blue for bookmarks (more distinct than light gray)
+            tab.color = (tab.isBookmark || windowNode.name === "Window bookmark" || windowId === "bookmark")
+                ? "#e8f4f8"  // Light blue for bookmarks (more distinct than light gray)
                 : colorScale(tab.lastAccessed);
         });
     });
@@ -466,7 +466,7 @@ export async function drawTreemap(data) {
     const currentTabs = hierarchyData.children.flatMap(window => window.children);
     const emptyCells = calculateEmptyCells(currentTabs.length);
 
-    console.log('Empty cells calculation:', {
+    console.log("Empty cells calculation:", {
         currentTabs: currentTabs.length,
         minimumCellCount: 4,
         emptyCells,
@@ -496,88 +496,88 @@ export async function drawTreemap(data) {
 
     treemap(root);
 
-    console.log('Treemap layout applied:', root); // Debug
+    console.log("Treemap layout applied:", root); // Debug
 
     // Apply colors to nodes
-    const nodes = svg.selectAll('.cell')
+    const nodes = svg.selectAll(".cell")
         .data(root.leaves())
         .enter()
-        .append('g')
-        .attr('class', d => {
+        .append("g")
+        .attr("class", d => {
             // Use the same comprehensive check for bookmarks as the color assignment
             const isBookmark = d.data.isBookmark ||
-                (d.parent && d.parent.data.name === 'Window bookmark') ||
-                (d.parent && d.parent.data.id === 'bookmark');
-            return isBookmark ? 'cell bookmark-cell' : 'cell';
+                (d.parent && d.parent.data.name === "Window bookmark") ||
+                (d.parent && d.parent.data.id === "bookmark");
+            return isBookmark ? "cell bookmark-cell" : "cell";
         })
-        .attr('transform', d => `translate(${d.x0},${d.y0})`)
-        .style('cursor', 'pointer')
-        .attr('tabindex', d => currentTabOrder.indexOf(d.data.id))
-        .attr('role', 'button')
-        .attr('aria-label', d => d.data.title)
+        .attr("transform", d => `translate(${d.x0},${d.y0})`)
+        .style("cursor", "pointer")
+        .attr("tabindex", d => currentTabOrder.indexOf(d.data.id))
+        .attr("role", "button")
+        .attr("aria-label", d => d.data.title)
         // Add these two data attributes for drag and drop
-        .attr('data-tabid', d => d.data.id)
-        .attr('data-windowid', d => d.data.windowId)
-        .attr('data-window-id', d => d.data.windowId); // Add this additional attribute
+        .attr("data-tabid", d => d.data.id)
+        .attr("data-windowid", d => d.data.windowId)
+        .attr("data-window-id", d => d.data.windowId); // Add this additional attribute
 
-    nodes.append('rect')
-        .attr('id', d => d.data.id)
-        .attr('width', d => d.x1 - d.x0)
-        .attr('height', d => d.y1 - d.y0)
-        .attr('fill', d => {
+    nodes.append("rect")
+        .attr("id", d => d.data.id)
+        .attr("width", d => d.x1 - d.x0)
+        .attr("height", d => d.y1 - d.y0)
+        .attr("fill", d => {
             const isBookmark = d.data.isBookmark ||
-                (d.parent && d.parent.data.name === 'Window bookmark') ||
-                (d.parent && d.parent.data.id === 'bookmark');
-            return isBookmark ? '#e8f4f8' : getSafeColor(d);
+                (d.parent && d.parent.data.name === "Window bookmark") ||
+                (d.parent && d.parent.data.id === "bookmark");
+            return isBookmark ? "#e8f4f8" : getSafeColor(d);
         })
-        .attr('opacity', d => {
+        .attr("opacity", d => {
             const isBookmark = d.data.isBookmark ||
-                (d.parent && d.parent.data.name === 'Window bookmark') ||
-                (d.parent && d.parent.data.id === 'bookmark');
+                (d.parent && d.parent.data.name === "Window bookmark") ||
+                (d.parent && d.parent.data.id === "bookmark");
             return isBookmark ? 0.9 : 1;
         })
-        .attr('stroke', d => {
+        .attr("stroke", d => {
             const isBookmark = d.data.isBookmark ||
-                (d.parent && d.parent.data.name === 'Window bookmark') ||
-                (d.parent && d.parent.data.id === 'bookmark');
-            return isBookmark ? '#99c2d7' : getDarkerColor(d, 0.2);
+                (d.parent && d.parent.data.name === "Window bookmark") ||
+                (d.parent && d.parent.data.id === "bookmark");
+            return isBookmark ? "#99c2d7" : getDarkerColor(d, 0.2);
         })
-        .attr('stroke-width', 1);
+        .attr("stroke-width", 1);
 
     // Attach awesome tooltip to treemap nodes
-    nodes.on('mouseenter', (event, d) => {
+    nodes.on("mouseenter.tooltip", (event, d) => {
         const isBookmark = d.data.isBookmark ||
-            (d.parent && d.parent.data.name === 'Window bookmark') ||
-            (d.parent && d.parent.data.id === 'bookmark');
+            (d.parent && d.parent.data.name === "Window bookmark") ||
+            (d.parent && d.parent.data.id === "bookmark");
 
         const content = `
-            <div class="tooltip-header">${d.data.title || 'Untitled'}</div>
+            <div class="tooltip-header">${d.data.title || "Untitled"}</div>
             <div class="tooltip-url">${d.data.url}</div>
             <div class="tooltip-section">
                 <div class="tooltip-row">
                     <span class="tooltip-label">Type</span>
-                    <span class="tooltip-value">${isBookmark ? 'Bookmark' : 'Active Tab'}</span>
+                    <span class="tooltip-value">${isBookmark ? "Bookmark" : "Active Tab"}</span>
                 </div>
                 ${d.data.lastAccessed ? `
                 <div class="tooltip-row">
                     <span class="tooltip-label">Last Accessed</span>
                     <span class="tooltip-value">${new Date(d.data.lastAccessed).toLocaleTimeString()}</span>
-                </div>` : ''}
+                </div>` : ""}
             </div>
         `;
         globalTooltip.show(content, event);
     })
-        .on('mousemove', (event) => {
+        .on("mousemove", (event) => {
             globalTooltip.move(event);
         })
-        .on('mouseleave', () => {
+        .on("mouseleave", () => {
             globalTooltip.hide();
         });
 
     // 3. Add cell content container
-    const cellContent = nodes.append('g')
-        .attr('class', 'cell-content')
-        .attr('transform', d => {
+    const cellContent = nodes.append("g")
+        .attr("class", "cell-content")
+        .attr("transform", d => {
             const cellWidth = d.x1 - d.x0;
             const cellHeight = d.y1 - d.y0;
             return `translate(${cellWidth / 2},${cellHeight / 2})`;
@@ -590,19 +590,19 @@ export async function drawTreemap(data) {
         });
 
     // 4. Add favicon and text to content container
-    cellContent.append('image')
-        .attr('class', 'favicon')
-        .attr('xlink:href', d => {
+    cellContent.append("image")
+        .attr("class", "favicon")
+        .attr("xlink:href", d => {
             // Only proceed if we have valid data
             if (!d.data?.url) {
-                return createPlaceholderFavicon('?');
+                return createPlaceholderFavicon("?");
             }
 
             // Handle special URLs that can't use chrome://favicon
-            if (d.data.url.startsWith('chrome://') ||
-                d.data.url.startsWith('chrome-extension://') ||
-                d.data.url.startsWith('file://') ||
-                d.data.url.startsWith('about:')) {
+            if (d.data.url.startsWith("chrome://") ||
+                d.data.url.startsWith("chrome-extension://") ||
+                d.data.url.startsWith("file://") ||
+                d.data.url.startsWith("about:")) {
 
                 // Use letter favicon immediately for special URLs
                 return createLetterFaviconForURL(d.data.url);
@@ -611,26 +611,26 @@ export async function drawTreemap(data) {
             // Return existing favicon if available. Guard on string type: some
             // callers have passed a Promise/object here, and `.includes` on a
             // non-string throws mid-render and drops the cell labels.
-            if (typeof d.data.favIconUrl === 'string' && !d.data.favIconUrl.includes('chrome://favicon')) {
+            if (typeof d.data.favIconUrl === "string" && !d.data.favIconUrl.includes("chrome://favicon")) {
                 return d.data.favIconUrl;
             }
 
             // Otherwise generate a letter favicon
             return createLetterFaviconForURL(d.data.url);
         })
-        .attr('width', d => d.iconSize)
-        .attr('height', d => d.iconSize)
-        .attr('x', d => -d.iconSize / 2)
-        .attr('y', d => -d.iconSize / 2)
-        .on('error', function (event, d) {
+        .attr("width", d => d.iconSize)
+        .attr("height", d => d.iconSize)
+        .attr("x", d => -d.iconSize / 2)
+        .attr("y", d => -d.iconSize / 2)
+        .on("error", function (event, d) {
             // On error, set to letter favicon based on URL
-            d3.select(this).attr('xlink:href',
-                d.data?.url ? createLetterFaviconForURL(d.data.url) : createPlaceholderFavicon('?'));
+            d3.select(this).attr("xlink:href",
+                d.data?.url ? createLetterFaviconForURL(d.data.url) : createPlaceholderFavicon("?"));
         });
 
     // Add audio indicator if tab has audio activity
     cellContent.filter(d => {
-        console.log('🔊 Checking tab:', {
+        console.log("🔊 Checking tab:", {
             title: d.data.title,
             audible: d.data.audible,
             isCurrentlyAudible: d.data.isCurrentlyAudible,
@@ -643,11 +643,11 @@ export async function drawTreemap(data) {
 
         return hasAudio;
     })
-        .append('g')
-        .attr('class', 'audio-indicator')
-        .attr('transform', d => {
+        .append("g")
+        .attr("class", "audio-indicator")
+        .attr("transform", d => {
             // Position in top-left corner for better visibility
-            return `translate(5, 5)`;
+            return "translate(5, 5)";
         })
         .each(function (d) {
             const indicator = d3.select(this);
@@ -656,79 +656,79 @@ export async function drawTreemap(data) {
 
             if (isCurrentlyPlaying) {
                 // Red circle for currently playing audio
-                indicator.append('circle')
-                    .attr('cx', 15)
-                    .attr('cy', 15)
-                    .attr('r', 12)
-                    .attr('fill', 'rgba(255, 0, 0, 0.9)')
-                    .attr('stroke', '#FF0000')
-                    .attr('stroke-width', 2);
+                indicator.append("circle")
+                    .attr("cx", 15)
+                    .attr("cy", 15)
+                    .attr("r", 12)
+                    .attr("fill", "rgba(255, 0, 0, 0.9)")
+                    .attr("stroke", "#FF0000")
+                    .attr("stroke-width", 2);
 
-                indicator.append('text')
-                    .attr('x', 15)
-                    .attr('y', 20)
-                    .attr('text-anchor', 'middle')
-                    .attr('fill', 'white')
-                    .attr('font-size', '12px')
-                    .attr('font-weight', 'bold')
-                    .text('🔊');
+                indicator.append("text")
+                    .attr("x", 15)
+                    .attr("y", 20)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "white")
+                    .attr("font-size", "12px")
+                    .attr("font-weight", "bold")
+                    .text("🔊");
             } else if (hasPlayedAudio) {
                 // Orange circle for tabs that have played audio
-                indicator.append('circle')
-                    .attr('cx', 15)
-                    .attr('cy', 15)
-                    .attr('r', 12)
-                    .attr('fill', 'rgba(255, 165, 0, 0.9)')
-                    .attr('stroke', '#FFA500')
-                    .attr('stroke-width', 2);
+                indicator.append("circle")
+                    .attr("cx", 15)
+                    .attr("cy", 15)
+                    .attr("r", 12)
+                    .attr("fill", "rgba(255, 165, 0, 0.9)")
+                    .attr("stroke", "#FFA500")
+                    .attr("stroke-width", 2);
 
-                indicator.append('text')
-                    .attr('x', 15)
-                    .attr('y', 20)
-                    .attr('text-anchor', 'middle')
-                    .attr('fill', 'white')
-                    .attr('font-size', '12px')
-                    .attr('font-weight', 'bold')
-                    .text('🎵');
+                indicator.append("text")
+                    .attr("x", 15)
+                    .attr("y", 20)
+                    .attr("text-anchor", "middle")
+                    .attr("fill", "white")
+                    .attr("font-size", "12px")
+                    .attr("font-weight", "bold")
+                    .text("🎵");
             }
         })
-        .attr('title', d => {
+        .attr("title", d => {
             const isCurrentlyPlaying = d.data.audible || d.data.isCurrentlyAudible;
             const totalMs = d.data.totalAudioDuration || 0;
 
             if (isCurrentlyPlaying && totalMs > 0) {
                 return `Currently playing audio • Total: ${formatAudioDuration(totalMs)}`;
             } else if (isCurrentlyPlaying) {
-                return 'Currently playing audio';
+                return "Currently playing audio";
             } else if (totalMs > 0) {
                 return `Audio played: ${formatAudioDuration(totalMs)}`;
             }
-            return 'Audio activity detected';
+            return "Audio activity detected";
         });
 
     // Centered text below favicon
-    const textElement = cellContent.append('text')
-        .attr('text-anchor', 'middle')
-        .attr('y', d => d.iconSize / 2 + 20) // Position text below icon
-        .attr('fill', 'black') // Black font color
-        .attr('opacity', 0.8) // 80% opacity
-        .attr('pointer-events', 'none')
+    const textElement = cellContent.append("text")
+        .attr("text-anchor", "middle")
+        .attr("y", d => d.iconSize / 2 + 20) // Position text below icon
+        .attr("fill", "black") // Black font color
+        .attr("opacity", 0.8) // 80% opacity
+        .attr("pointer-events", "none")
         .text(d => formatTitle(d.data.title));
 
     // Adjust font size to fit the available cell space
     nodes.each(function (d) {
-        const text = d3.select(this).select('text');
+        const text = d3.select(this).select("text");
         fitTextToCell(text, d.x1 - d.x0 - 16, d.y1 - d.y0 - (d.iconSize + 44)); // Account for icon size
     });
 
-    console.log('Text adjusted to fit cell'); // Debug
+    console.log("Text adjusted to fit cell"); // Debug
 
     // Add after cell content creation
     nodes.filter(d => !d.data.isBookmark) // Only add close button to non-bookmarks
-        .append('g')
-        .attr('class', 'close-button')
-        .style('cursor', 'pointer')
-        .attr('transform', d => {
+        .append("g")
+        .attr("class", "close-button")
+        .style("cursor", "pointer")
+        .attr("transform", d => {
             const cellWidth = d.x1 - d.x0;
             return `translate(${cellWidth - 32}, 8)`;  // Position in top right
         })
@@ -738,25 +738,25 @@ export async function drawTreemap(data) {
                 <path d="M12 2c5.523 0 10 4.477 10 10s-4.477 10 -10 10s-10 -4.477 -10 -10s4.477 -10 10 -10m3.6 5.2a1 1 0 0 0 -1.4 .2l-2.2 2.933l-2.2 -2.933a1 1 0 1 0 -1.6 1.2l2.55 3.4l-2.55 3.4a1 1 0 1 0 1.6 1.2l2.2 -2.933l2.2 2.933a1 1 0 0 0 1.6 -1.2l-2.55 -3.4l2.55 -3.4a1 1 0 0 0 -.2 -1.4"/>
             </svg>
         `)
-        .on('click', async function (event, d) {
+        .on("click", async function (event, d) {
             event.stopPropagation();
-            const tabId = parseInt(d.data.id.replace('tab', ''), 10);
+            const tabId = parseInt(d.data.id.replace("tab", ""), 10);
             try {
                 await chrome.tabs.remove(tabId);
                 // Let the onRemoved handler deal with the UI update
-                console.log('Tab removal requested:', tabId, event);
+                console.log("Tab removal requested:", tabId, event);
             } catch (error) {
-                console.error('Error removing tab:', error);
+                console.error("Error removing tab:", error);
             }
         });
 
     // Add after close button creation
-    nodes.append('g')
-        .attr('class', 'bookmark-button')
-        .style('cursor', 'pointer')
-        .attr('transform', d => {
+    nodes.append("g")
+        .attr("class", "bookmark-button")
+        .style("cursor", "pointer")
+        .attr("transform", d => {
             const cellWidth = d.x1 - d.x0;
-            return `translate(8, 8)`; // Position in top left
+            return "translate(8, 8)"; // Position in top left
         })
         .html(d => d.data.isBookmark ? `
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-filled icon-tabler-star">
@@ -769,36 +769,36 @@ export async function drawTreemap(data) {
                 <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" />
             </svg>
         `)
-        .on('click', function (event, d) {
+        .on("click", function (event, d) {
             event.stopPropagation();
             // Check if URL is valid before attempting to bookmark
             if (!d.data.url) {
-                console.warn('No URL to bookmark:', d.data);
+                console.warn("No URL to bookmark:", d.data);
                 return;
             }
 
             try {
                 chrome.bookmarks.create({
-                    title: d.data.title || 'Untitled',
+                    title: d.data.title || "Untitled",
                     url: d.data.url
                 }, (result) => {
                     if (chrome.runtime.lastError) {
-                        console.error('Error creating bookmark:', chrome.runtime.lastError);
+                        console.error("Error creating bookmark:", chrome.runtime.lastError);
                         return;
                     }
                     // Update star to filled state
-                    d3.select(this).select('svg')
-                        .attr('fill', '#FFD700')
-                        .attr('stroke', '#FFD700');
+                    d3.select(this).select("svg")
+                        .attr("fill", "#FFD700")
+                        .attr("stroke", "#FFD700");
                 });
             } catch (error) {
-                console.error('Failed to create bookmark:', error);
+                console.error("Failed to create bookmark:", error);
             }
         });
 
     // In the node creation section, add event listeners
     nodes
-        .on('dblclick', function (event, d) {
+        .on("dblclick", function (event, d) {
             event.stopPropagation();
             if (d.data.isBookmark) {
                 // Handle bookmark double-click
@@ -809,25 +809,25 @@ export async function drawTreemap(data) {
             } else {
                 // Handle regular tab double-click
                 const windowId = parseInt(d.data.windowId, 10);
-                const tabId = parseInt(d.data.id.replace('tab', ''), 10);
+                const tabId = parseInt(d.data.id.replace("tab", ""), 10);
                 chrome.windows.update(windowId, { focused: true }, () => {
                     chrome.tabs.update(tabId, { active: true });
                 });
             }
         })
-        .on('click', handleNodeClick);
+        .on("click", handleNodeClick);
 
     // Add debug logging
-    console.log('Event listeners attached:', {
+    console.log("Event listeners attached:", {
         nodes: nodes.size(),
         withDblClick: nodes.filter(function () {
-            return d3.select(this).on('dblclick');
+            return d3.select(this).on("dblclick");
         }).size()
     });
 
     // Add background click handler to clear selection
-    d3.select('#treemap').on('click', function (event) {
-        if (event.target.tagName === 'svg' || event.target.id === 'treemap') {
+    d3.select("#treemap").on("click", function (event) {
+        if (event.target.tagName === "svg" || event.target.id === "treemap") {
             // Clicking the background deselects: UNPIN so the hover preview
             // resumes. Previously this hid the readout but left activeNode set,
             // which permanently blocked the mouseenter hover guard — the bug
@@ -837,20 +837,20 @@ export async function drawTreemap(data) {
                 interactionState.activeNode = null;
             }
             interactionState.activeNodeId = null;
-            document.getElementById('readout')?.classList.remove('sticky');
-            nodes.classed('cell-selected', false)
-                .select('rect')
-                .attr('fill', d => d.data.color)
-                .attr('stroke', 'none');
+            document.getElementById("readout")?.classList.remove("sticky");
+            nodes.classed("cell-selected", false)
+                .select("rect")
+                .attr("fill", d => d.data.color)
+                .attr("stroke", "none");
             hideReadout();
         }
     });
 
-    console.log('Treemap drawn'); // Debug
+    console.log("Treemap drawn"); // Debug
 
     // Add event handlers right after node creation
     nodes
-        .on('mouseenter', function (event, d) {
+        .on("mouseenter.focus", function (event, d) {
             // (Removed a per-hover console.log of the full tab-data object — with
             //  DevTools open it serialized everything on every mouseenter, which
             //  stalled the main thread and made the hover response lag behind the
@@ -859,26 +859,26 @@ export async function drawTreemap(data) {
                 focusNode(this, d);
             }
         })
-        .on('mouseleave', function (event, d) {
+        .on("mouseleave.focus", function (event, d) {
             if (!interactionState.activeNode && !interactionState.isKeyboardMode) {
                 unfocusNode(this);
             }
         })
-        .on('click', function (event, d) {
+        .on("click", function (event, d) {
             event.stopPropagation();
             activateNode(this, d);
         })
-        .on('dblclick', handleNodeDblClick)
-        .on('focus', function (event, d) {
+        .on("dblclick", handleNodeDblClick)
+        .on("focus", function (event, d) {
             interactionState.isKeyboardMode = true;
             focusNode(this, d);
         })
-        .on('blur', function (event, d) {
+        .on("blur", function (event, d) {
             if (!interactionState.activeNode) {
                 unfocusNode(this);
             }
         })
-        .on('keydown', function (event, d) {
+        .on("keydown", function (event, d) {
             handleKeyNavigation(event, this, d, interactionState);
         });
 
@@ -894,20 +894,20 @@ export async function drawTreemap(data) {
         const pinned = nodes.filter(d => (d.data?.id ?? d.id) === interactionState.activeNodeId);
         if (!pinned.empty()) {
             interactionState.activeNode = pinned.node();
-            pinned.classed('node-activated', true)
-                .select('rect')
-                .attr('stroke', '#4CAF50')
-                .attr('stroke-width', '3px');
+            pinned.classed("node-activated", true)
+                .select("rect")
+                .attr("stroke", "#4CAF50")
+                .attr("stroke-width", "3px");
         } else {
             // The pinned tab no longer exists (closed) — clear the selection.
             interactionState.activeNode = null;
             interactionState.activeNodeId = null;
-            document.getElementById('readout')?.classList.remove('sticky');
+            document.getElementById("readout")?.classList.remove("sticky");
         }
     }
 
     // Debug logging
-    console.log('Event handlers attached:', {
+    console.log("Event handlers attached:", {
         nodes: nodes.size(),
         focusable: interactionState.focusableNodes.length
     });
@@ -926,27 +926,27 @@ export async function drawTreemap(data) {
 function formatTitle(title) {
     // If title has more than one underscore, split and join with spaces
     if ((title.match(/_/g) || []).length > 1) {
-        return title.split('_').join(' ');
+        return title.split("_").join(" ");
     }
     return title;
 }
 
 function fitTextToCell(textElement, cellWidth, cellHeight) {
-    const words = textElement.text().split(' ');
+    const words = textElement.text().split(" ");
     let lines = [];
     let line = [];
     const maxWordsPerLine = 4;
     const maxLines = 3;
     const lineHeight = 1.1; // ems
-    const y = textElement.attr('y');
+    const y = textElement.attr("y");
     const dy = 0;
 
     // Determine the number of lines based on the number of words
     for (let i = 0; i < words.length; i += maxWordsPerLine) {
-        lines.push(words.slice(i, i + maxWordsPerLine).join(' '));
+        lines.push(words.slice(i, i + maxWordsPerLine).join(" "));
         if (lines.length === maxLines) {
             if (i + maxWordsPerLine < words.length) {
-                lines[lines.length - 1] += '...';
+                lines[lines.length - 1] += "...";
             }
             break;
         }
@@ -954,23 +954,23 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
 
     textElement.text(null);
     lines.forEach((line, index) => {
-        textElement.append('tspan')
-            .attr('x', 0)
-            .attr('dy', index * lineHeight + dy + 'em')
+        textElement.append("tspan")
+            .attr("x", 0)
+            .attr("dy", index * lineHeight + dy + "em")
             .text(line);
     });
 
     // Adjust font size to fit the available cell space
     let fontSize = 12; // Start with a base font size
-    textElement.attr('font-size', fontSize + 'px');
+    textElement.attr("font-size", fontSize + "px");
 
     while (textElement.node().getBBox().width < cellWidth && textElement.node().getBBox().height < cellHeight) {
         fontSize += 1;
-        textElement.attr('font-size', fontSize + 'px');
+        textElement.attr("font-size", fontSize + "px");
     }
 
     // Reduce font size by 1 to fit within the cell
-    textElement.attr('font-size', (fontSize - 1) + 'px');
+    textElement.attr("font-size", (fontSize - 1) + "px");
     setTimeout(initDragDrop, 500);
 }
 
@@ -980,13 +980,13 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
 function initializeMessageHandling() {
     chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
         // Check for URL bar navigation specifically
-        if (message.action === 'tabUpdated' &&
-            message.changeInfo?.navigationType === 'urlBarNavigation') {
+        if (message.action === "tabUpdated" &&
+            message.changeInfo?.navigationType === "urlBarNavigation") {
 
-            console.log('URL bar navigation detected - updating treemap');
+            console.log("URL bar navigation detected - updating treemap");
 
             // For URL bar navigation, we want to ensure we have the latest data
-            chrome.runtime.sendMessage({ action: 'getInitialState' }, async (freshState) => {
+            chrome.runtime.sendMessage({ action: "getInitialState" }, async (freshState) => {
                 treemapState.data = freshState;
                 await drawTreemap(treemapState.data);
             });
@@ -995,16 +995,16 @@ function initializeMessageHandling() {
         }
 
         // Handle other message types as before...
-        console.log('Treemap received message:', {
+        console.log("Treemap received message:", {
             type: message?.type,
             action: message?.action,
             hasData: !!message?.data,
-            linkText: message?.data?.text || 'No text'
+            linkText: message?.data?.text || "No text"
         });
 
         // Handle navigation_event specifically to capture link text
-        if (message.type === 'navigation_event' && message.data) {
-            console.log('Link navigation detected with text:', message.data.text);
+        if (message.type === "navigation_event" && message.data) {
+            console.log("Link navigation detected with text:", message.data.text);
 
             // Store the clicked link text data in our state to preserve it
             if (!treemapState.linkTextCache) {
@@ -1023,14 +1023,14 @@ function initializeMessageHandling() {
                 changeInfo: {
                     url: message.data.targetUrl,
                     linkText: message.data.text, // Add this for the handler to use
-                    navigationType: 'linkClick'
+                    navigationType: "linkClick"
                 },
                 tab: {
                     id: sender.tab.id,
                     url: message.data.targetUrl,
                     windowId: sender.tab.windowId,
                     // Use link text as initial title until page loads
-                    title: message.data.text || 'Loading...',
+                    title: message.data.text || "Loading...",
                     lastAccessed: Date.now()
                 }
             };
@@ -1046,15 +1046,15 @@ function initializeMessageHandling() {
 }
 
 // Update the DOMContentLoaded handler to initialize message handling
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener("DOMContentLoaded", async () => {
     // Diagnostic: Log what page we're on
-    console.log('🔍 treemap.js DOMContentLoaded fired on page:', window.location.href);
-    console.log('🔍 Available elements:', document.querySelectorAll('[id]'));
+    console.log("🔍 treemap.js DOMContentLoaded fired on page:", window.location.href);
+    console.log("🔍 Available elements:", document.querySelectorAll("[id]"));
 
     // Guard: Only initialize if we're on a page with the treemap container
-    const treemapContainer = document.getElementById('treemap');
+    const treemapContainer = document.getElementById("treemap");
     if (!treemapContainer) {
-        console.log('Treemap container not found - skipping treemap initialization on', window.location.href);
+        console.log("Treemap container not found - skipping treemap initialization on", window.location.href);
         return;
     }
 
@@ -1067,21 +1067,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         // handling here; it fetches fresh state on demand and doesn't depend on
         // initializeState.
         initializeMessageHandling();
-        console.log('Treemap message handling initialized');
+        console.log("Treemap message handling initialized");
     } catch (error) {
-        console.error('Failed to initialize treemap message handling:', error);
+        console.error("Failed to initialize treemap message handling:", error);
     }
 });
 
 // Global debug function to refresh treemap
 window.refreshTreemapDebug = async function () {
-    console.log('🔄 Refreshing treemap with latest data...');
-    const response = await chrome.runtime.sendMessage({ action: 'getInitialState' });
+    console.log("🔄 Refreshing treemap with latest data...");
+    const response = await chrome.runtime.sendMessage({ action: "getInitialState" });
     if (response && response.data) {
-        console.log('📊 Fresh data received:', response.data);
+        console.log("📊 Fresh data received:", response.data);
         await drawTreemap(response.data);
     } else {
-        console.error('❌ Failed to get fresh data');
+        console.error("❌ Failed to get fresh data");
     }
 };
 
@@ -1089,7 +1089,7 @@ window.refreshTreemapDebug = async function () {
 async function handleTabUpdated(message) {
     const { tabId, changeInfo, tab } = message;
 
-    console.log('Processing tab update:', {
+    console.log("Processing tab update:", {
         tabId,
         changeInfo,
         currentUrl: tab?.url,
@@ -1098,13 +1098,13 @@ async function handleTabUpdated(message) {
     });
 
     if (!treemapState.data?.activeWindows) {
-        console.warn('No state data available');
+        console.warn("No state data available");
         return;
     }
 
     // Only process meaningful updates
     if (!changeInfo.url && !changeInfo.title && !changeInfo.favIconUrl) {
-        console.log('Skipping non-content update');
+        console.log("Skipping non-content update");
         return;
     }
 
@@ -1122,7 +1122,7 @@ async function handleTabUpdated(message) {
                     bestTitle = changeInfo.linkText;
                 }
                 // Otherwise try the tab title
-                else if (tab.title && tab.title !== 'New Tab') {
+                else if (tab.title && tab.title !== "New Tab") {
                     bestTitle = tab.title;
                 }
                 // If we have cached link text for this URL, use that
@@ -1144,7 +1144,7 @@ async function handleTabUpdated(message) {
                 hasContentChange = urlChanged || titleChanged || faviconChanged;
 
                 if (hasContentChange) {
-                    console.log('Content changed:', {
+                    console.log("Content changed:", {
                         urlChanged,
                         titleChanged,
                         faviconChanged,
@@ -1161,7 +1161,7 @@ async function handleTabUpdated(message) {
                         lastAccessed: hasContentChange ? Date.now() : t.lastAccessed // Only update timestamp if something changed
                     };
 
-                    console.log('Updating tab in window:', {
+                    console.log("Updating tab in window:", {
                         windowId: window.id,
                         tabId,
                         oldUrl: t.url,
@@ -1179,7 +1179,7 @@ async function handleTabUpdated(message) {
     });
 
     if (updated && hasContentChange) {
-        console.log('Redrawing treemap after content change');
+        console.log("Redrawing treemap after content change");
 
         // Use debouncing to prevent multiple redraws in quick succession
         clearTimeout(updateState.debounceTimer);
@@ -1187,15 +1187,15 @@ async function handleTabUpdated(message) {
             await drawTreemap(treemapState.data);
         }, 300); // Wait 300ms before redrawing
     } else if (updated) {
-        console.log('Tab updated but no visual content change, skipping redraw');
+        console.log("Tab updated but no visual content change, skipping redraw");
     } else {
-        console.warn('Tab not found in any window:', tabId);
+        console.warn("Tab not found in any window:", tabId);
     }
 }
 
 // Add a helper to log state changes
 function logStateChange(action, details) {
-    console.log('State update:', {
+    console.log("State update:", {
         action,
         windowCount: treemapState.data?.activeWindows?.length,
         tabCount: treemapState.getTotalTabs(),
@@ -1205,10 +1205,10 @@ function logStateChange(action, details) {
 
 // Update handleTabRemoved to be more robust
 async function handleTabRemoved(tabId, removeInfo) {
-    console.log('Tab removed:', { tabId, removeInfo });
+    console.log("Tab removed:", { tabId, removeInfo });
 
     if (!treemapState.data?.activeWindows) {
-        console.warn('No state data for tab removal');
+        console.warn("No state data for tab removal");
         return;
     }
 
@@ -1220,11 +1220,11 @@ async function handleTabRemoved(tabId, removeInfo) {
 
     // Remove empty windows (except bookmark window)
     treemapState.data.activeWindows = treemapState.data.activeWindows.filter(window =>
-        window.tabs.length > 0 || window.id === 'bookmark'
+        window.tabs.length > 0 || window.id === "bookmark"
     );
 
     const totalTabs = treemapState.getTotalTabs();
-    console.log('After tab removal:', { totalTabs, windows: treemapState.data.activeWindows });
+    console.log("After tab removal:", { totalTabs, windows: treemapState.data.activeWindows });
 
     // Update bookmark state if needed
     if (treemapState.needsBookmarks) {
@@ -1232,7 +1232,7 @@ async function handleTabRemoved(tabId, removeInfo) {
     } else {
         // Remove bookmark window if we have enough tabs
         treemapState.data.activeWindows = treemapState.data.activeWindows
-            .filter(w => w.id !== 'bookmark');
+            .filter(w => w.id !== "bookmark");
     }
 
     // Remove from search index
@@ -1244,15 +1244,15 @@ async function handleTabRemoved(tabId, removeInfo) {
 
 // Update handleTabCreated for better state management
 async function handleTabCreated(tab) {
-    console.log('Tab created:', tab);
+    console.log("Tab created:", tab);
 
     if (!tab?.id) {
-        console.warn('Invalid tab data:', tab);
+        console.warn("Invalid tab data:", tab);
         return;
     }
 
     if (!treemapState.data?.activeWindows) {
-        console.warn('State not initialized, deferring tab creation');
+        console.warn("State not initialized, deferring tab creation");
         initializeState().then(() => handleTabCreated(tab));
         return;
     }
@@ -1271,8 +1271,8 @@ async function handleTabCreated(tab) {
     const newTab = {
         id: tab.id,
         windowId: tab.windowId,
-        title: tab.title || 'New Tab',
-        url: tab.url || '',
+        title: tab.title || "New Tab",
+        url: tab.url || "",
         favIconUrl: tab.favIconUrl,
         lastAccessed: Date.now(),
         timeSpent: 100,
@@ -1284,7 +1284,7 @@ async function handleTabCreated(tab) {
     // Add to search index with validated data
     indexNode(`tab${tab.id}`, newTab);
 
-    console.log('Tab added to state:', {
+    console.log("Tab added to state:", {
         tabId: tab.id,
         windowId: tab.windowId,
         totalTabs: treemapState.getTotalTabs()
@@ -1328,8 +1328,8 @@ function updateTabOrder(searchResults) {
     }
 
     // Update tabindex for all nodes
-    d3.selectAll('#treemap g[role="button"]')
-        .attr('tabindex', d => currentTabOrder.indexOf(d.data.id));
+    d3.selectAll("#treemap g[role=\"button\"]")
+        .attr("tabindex", d => currentTabOrder.indexOf(d.data.id));
 }
 
 // Update the empty cells calculation
@@ -1362,16 +1362,16 @@ async function updateBookmarkState(totalTabs) {
         if (totalTabs < 4) {
             const emptyCells = 4 - totalTabs;
             const bookmarks = await fetchRecentBookmarks();
-            const bookmarkWindow = treemapState.data.activeWindows.find(w => w.id === 'bookmark');
+            const bookmarkWindow = treemapState.data.activeWindows.find(w => w.id === "bookmark");
             if (!bookmarkWindow) {
                 addBookmarkWindow(bookmarks.slice(0, emptyCells));
             } else if (bookmarkWindow.tabs.length !== emptyCells) {
                 // Only update if count changed
                 bookmarkWindow.tabs = bookmarks.slice(0, emptyCells).map(bookmark => ({
                     id: `bookmark${bookmark.id}`,
-                    windowId: 'bookmark',
-                    title: bookmark.title || 'Untitled',
-                    url: bookmark.url || '',
+                    windowId: "bookmark",
+                    title: bookmark.title || "Untitled",
+                    url: bookmark.url || "",
                     favIconUrl: bookmark.favIconUrl,
                     lastAccessed: Date.now(),
                     timeSpent: 1,
@@ -1382,9 +1382,9 @@ async function updateBookmarkState(totalTabs) {
             await drawTreemap(treemapState.data);
         } else {
             // Remove bookmark window if present
-            const hadBookmarks = treemapState.data.activeWindows.some(w => w.id === 'bookmark');
+            const hadBookmarks = treemapState.data.activeWindows.some(w => w.id === "bookmark");
             if (hadBookmarks) {
-                treemapState.data.activeWindows = treemapState.data.activeWindows.filter(w => w.id !== 'bookmark');
+                treemapState.data.activeWindows = treemapState.data.activeWindows.filter(w => w.id !== "bookmark");
                 await drawTreemap(treemapState.data);
             }
         }
@@ -1403,10 +1403,10 @@ function focusNode(node, data) {
 
     interactionState.focusedNode = node;
     d3.select(node)
-        .classed('node-focused', true)
-        .select('rect')
-        .attr('stroke', data.data.isBookmark ? '#4CAF50' : '#2196F3')
-        .attr('stroke-width', '2px');
+        .classed("node-focused", true)
+        .select("rect")
+        .attr("stroke", data.data.isBookmark ? "#4CAF50" : "#2196F3")
+        .attr("stroke-width", "2px");
     displayReadout(data.data); // Make sure we're passing the correct data structure
 }
 
@@ -1415,10 +1415,10 @@ function unfocusNode(node) {
 
     interactionState.focusedNode = null;
     d3.select(node)
-        .classed('node-focused', false)
-        .select('rect')
-        .attr('stroke', d => d.data.isBookmark ? '#ddd' : 'none')
-        .attr('stroke-width', '1px');
+        .classed("node-focused", false)
+        .select("rect")
+        .attr("stroke", d => d.data.isBookmark ? "#ddd" : "none")
+        .attr("stroke-width", "1px");
 
     // Intentionally NOT hiding the readout on mouseleave — keep the last preview
     // in the sidebar (hovering another cell updates it; clicking the background
@@ -1431,7 +1431,7 @@ function handleNodeDblClick(event, d) {
         chrome.tabs.create({ url: d.data.url, active: true });
     } else {
         const windowId = parseInt(d.data.windowId, 10);
-        const tabId = parseInt(d.data.id.replace('tab', ''), 10);
+        const tabId = parseInt(d.data.id.replace("tab", ""), 10);
         chrome.windows.update(windowId, { focused: true }, () => {
             chrome.tabs.update(tabId, { active: true });
         });
@@ -1449,7 +1449,7 @@ export function activateNode(node, data) {
         // Re-click the pinned cell → unpin; hover preview resumes.
         interactionState.activeNode = null;
         interactionState.activeNodeId = null;
-        document.getElementById('readout')?.classList.remove('sticky');
+        document.getElementById("readout")?.classList.remove("sticky");
         unfocusNode(node);
         return;
     }
@@ -1462,14 +1462,14 @@ export function activateNode(node, data) {
     interactionState.activeNode = node;
     interactionState.activeNodeId = nodeId;
     d3.select(node)
-        .classed('node-activated', true)
-        .select('rect')
-        .attr('stroke', '#4CAF50')
-        .attr('stroke-width', '3px');
+        .classed("node-activated", true)
+        .select("rect")
+        .attr("stroke", "#4CAF50")
+        .attr("stroke-width", "3px");
 
     // Pin the sidebar to this cell: hover no longer changes it, and the .sticky
     // border signals it's pinned. Click the cell again or the background to unpin.
-    document.getElementById('readout')?.classList.add('sticky');
+    document.getElementById("readout")?.classList.add("sticky");
     displayReadout(data);
 }
 
@@ -1490,13 +1490,13 @@ async function fillEmptyCellsWithBookmarks(emptyCells) {
     console.log(`Filling ${emptyCells} empty cells with random bookmarks from ${bookmarks.length} total`);
 
     return {
-        name: 'Window bookmark',
-        id: 'bookmark',
+        name: "Window bookmark",
+        id: "bookmark",
         children: randomizedBookmarks.slice(0, emptyCells).map(bookmark => ({
             id: `bookmark${bookmark.id}`,
-            windowId: 'bookmark',
-            title: bookmark.title || 'Untitled',
-            url: bookmark.url || '',
+            windowId: "bookmark",
+            title: bookmark.title || "Untitled",
+            url: bookmark.url || "",
             favIconUrl: bookmark.favIconUrl,
             lastAccessed: Date.now(),
             timeSpent: 1,
@@ -1507,86 +1507,86 @@ async function fillEmptyCellsWithBookmarks(emptyCells) {
 }
 
 async function handleWindowRemoved(windowId) {
-    console.log('Window removal detected:', {
+    console.log("Window removal detected:", {
         windowId,
         currentWindows: treemapState.data?.activeWindows?.length,
         windowsList: treemapState.data?.activeWindows?.map(w => w.id)
     });
 
     if (!treemapState.data?.activeWindows) {
-        console.warn('No state data for window removal');
+        console.warn("No state data for window removal");
         return;
     }
 
     // Remove the window
     treemapState.data.activeWindows = treemapState.data.activeWindows.filter(w => w.id !== windowId);
 
-    console.log('After window removal:', {
+    console.log("After window removal:", {
         remainingWindows: treemapState.data.activeWindows.length,
         windowsList: treemapState.data.activeWindows.map(w => w.id)
     });
 
     // If we still have windows, update the treemap
     if (treemapState.data.activeWindows.length > 0) {
-        console.log('Updating treemap with remaining windows');
+        console.log("Updating treemap with remaining windows");
         await drawTreemap(treemapState.data);
     } else {
         // Clear treemap if no windows remain (but keep state)
-        console.log('No remaining windows, attempting to draw bookmarks');
+        console.log("No remaining windows, attempting to draw bookmarks");
         await drawTreemap(treemapState.data);
     }
 }
 
 function showEmptyState() {
-    const container = document.getElementById('treemap');
+    const container = document.getElementById("treemap");
     if (!container) {
-        console.warn('Treemap container not found - cannot show empty state');
+        console.warn("Treemap container not found - cannot show empty state");
         return;
     }
-    d3.select('#treemap').selectAll('*').remove();
+    d3.select("#treemap").selectAll("*").remove();
 
-    const svg = d3.select('#treemap')
-        .append('svg')
-        .attr('width', container.offsetWidth)
-        .attr('height', window.innerHeight - 48);
+    const svg = d3.select("#treemap")
+        .append("svg")
+        .attr("width", container.offsetWidth)
+        .attr("height", window.innerHeight - 48);
 
-    svg.append('text')
-        .attr('x', container.offsetWidth / 2)
-        .attr('y', (window.innerHeight - 48) / 2)
-        .attr('text-anchor', 'middle')
-        .attr('class', 'empty-state-text')
-        .text('No open windows')
-        .append('tspan')
-        .attr('x', container.offsetWidth / 2)
-        .attr('dy', '1.5em')
-        .text('Open a new window to get started');
+    svg.append("text")
+        .attr("x", container.offsetWidth / 2)
+        .attr("y", (window.innerHeight - 48) / 2)
+        .attr("text-anchor", "middle")
+        .attr("class", "empty-state-text")
+        .text("No open windows")
+        .append("tspan")
+        .attr("x", container.offsetWidth / 2)
+        .attr("dy", "1.5em")
+        .text("Open a new window to get started");
 
     // Add Refresh Button
-    const buttonGroup = svg.append('g')
-        .attr('class', 'refresh-button')
-        .style('cursor', 'pointer')
-        .on('click', () => {
-            console.log('Manually refreshing treemap...');
-            d3.select('.refresh-button').style('opacity', 0.5); // Feedback
+    const buttonGroup = svg.append("g")
+        .attr("class", "refresh-button")
+        .style("cursor", "pointer")
+        .on("click", () => {
+            console.log("Manually refreshing treemap...");
+            d3.select(".refresh-button").style("opacity", 0.5); // Feedback
             initializeState();
         });
 
-    buttonGroup.append('rect')
-        .attr('x', container.offsetWidth / 2 - 50)
-        .attr('y', (window.innerHeight - 48) / 2 + 60)
-        .attr('width', 100)
-        .attr('height', 36)
-        .attr('rx', 18)
-        .attr('fill', '#007aff');
+    buttonGroup.append("rect")
+        .attr("x", container.offsetWidth / 2 - 50)
+        .attr("y", (window.innerHeight - 48) / 2 + 60)
+        .attr("width", 100)
+        .attr("height", 36)
+        .attr("rx", 18)
+        .attr("fill", "#007aff");
 
-    buttonGroup.append('text')
-        .attr('x', container.offsetWidth / 2)
-        .attr('y', (window.innerHeight - 48) / 2 + 83)
-        .attr('text-anchor', 'middle')
-        .attr('fill', 'white')
-        .attr('font-size', '14px')
-        .attr('font-weight', '500')
-        .text('Refresh');
+    buttonGroup.append("text")
+        .attr("x", container.offsetWidth / 2)
+        .attr("y", (window.innerHeight - 48) / 2 + 83)
+        .attr("text-anchor", "middle")
+        .attr("fill", "white")
+        .attr("font-size", "14px")
+        .attr("font-weight", "500")
+        .text("Refresh");
 }
 
 // Update your initialization
@@ -1599,7 +1599,7 @@ async function initializeTreemap() {
 
     // Subscribe to changes
     browserState.subscribe(async (update) => {
-        console.log('State update received:', update);
+        console.log("State update received:", update);
 
         // Request fresh data and update the visualization
         const freshData = await browserState.getTreemapData();
@@ -1628,7 +1628,7 @@ function handleNodeClick(event, d) {
                 chrome.windows.update(nodeData.windowId, { focused: true });
             }
         }).catch(error => {
-            console.error('Error fetching bookmarks or history:', error);
+            console.error("Error fetching bookmarks or history:", error);
         });
     }
 }
@@ -1660,7 +1660,7 @@ function initDragDrop() {
     let dragNode = null;
 
     const drag = d3.drag()
-        .on('start', function (event, d) {
+        .on("start", function (event, d) {
             // Clear any existing timer
             if (longPressTimer) {
                 clearTimeout(longPressTimer);
@@ -1675,7 +1675,7 @@ function initDragDrop() {
                 }
             }, 750); // 750ms delay for long press
         })
-        .on('drag', function (event, d) {
+        .on("drag", function (event, d) {
             // If drag movement happens before long press timer, cancel the timer
             if (!isDragging) {
                 if (longPressTimer) {
@@ -1689,7 +1689,7 @@ function initDragDrop() {
                 dragging(event, d, this);
             }
         })
-        .on('end', function (event, d) {
+        .on("end", function (event, d) {
             // Clear the timer if it exists
             if (longPressTimer) {
                 clearTimeout(longPressTimer);
@@ -1704,7 +1704,7 @@ function initDragDrop() {
         });
 
     // Apply drag behavior to all cells
-    d3.selectAll('.cell').call(drag);
+    d3.selectAll(".cell").call(drag);
 }
 
 // Keep the original working dragStarted function
@@ -1724,7 +1724,7 @@ function dragStarted(event, d, node) {
     // Extract tab ID and window ID
     let tabId = null;
     if (d && d.data && d.data.id) {
-        tabId = parseInt(d.data.id.toString().replace('tab', ''));
+        tabId = parseInt(d.data.id.toString().replace("tab", ""));
     }
 
     const windowId = d && d.data ? d.data.windowId : null;
@@ -1743,27 +1743,27 @@ function dragStarted(event, d, node) {
     };
 
     // Highlight the dragged element
-    d3.select(node).classed('being-dragged', true);
+    d3.select(node).classed("being-dragged", true);
 
     // Create drag ghost
-    const ghost = document.createElement('div');
-    ghost.className = 'dragging-tab';
-    ghost.textContent = 'Moving: ' + (d.data.title || ('Tab ' + tabId));
-    ghost.style.position = 'fixed';
-    ghost.style.left = event.sourceEvent.clientX + 'px';
-    ghost.style.top = event.sourceEvent.clientY + 'px';
+    const ghost = document.createElement("div");
+    ghost.className = "dragging-tab";
+    ghost.textContent = "Moving: " + (d.data.title || ("Tab " + tabId));
+    ghost.style.position = "fixed";
+    ghost.style.left = event.sourceEvent.clientX + "px";
+    ghost.style.top = event.sourceEvent.clientY + "px";
     ghost.style.zIndex = 10000;
-    ghost.style.pointerEvents = 'none';
+    ghost.style.pointerEvents = "none";
     document.body.appendChild(ghost);
 
     draggedTab.ghost = ghost;
 
     // Highlight potential drop targets (other windows)
-    d3.selectAll('.window-group')
+    d3.selectAll(".window-group")
         .each(function () {
-            const targetWindowId = parseInt(this.getAttribute('data-window-id'));
+            const targetWindowId = parseInt(this.getAttribute("data-window-id"));
             if (targetWindowId && targetWindowId !== windowId) {
-                d3.select(this).classed('valid-drop-target', true);
+                d3.select(this).classed("valid-drop-target", true);
             }
         });
 
@@ -1789,8 +1789,8 @@ function dragging(event, d, node) {
     if (!draggedTab || !draggedTab.ghost) return;
 
     // Update ghost position
-    draggedTab.ghost.style.left = (event.sourceEvent.clientX + 10) + 'px';
-    draggedTab.ghost.style.top = (event.sourceEvent.clientY + 10) + 'px';
+    draggedTab.ghost.style.left = (event.sourceEvent.clientX + 10) + "px";
+    draggedTab.ghost.style.top = (event.sourceEvent.clientY + 10) + "px";
 
     // Find what's under the cursor
     const elemBelow = document.elementFromPoint(
@@ -1810,21 +1810,21 @@ function dragging(event, d, node) {
         searchDepth++;
 
         // Check for direct data-window-id attribute first
-        if (current.hasAttribute && current.hasAttribute('data-window-id')) {
-            targetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
+        if (current.hasAttribute && current.hasAttribute("data-window-id")) {
+            targetWindowId = parseInt(current.getAttribute("data-window-id"), 10);
             console.log(`Found target directly with data-window-id: ${targetWindowId}`);
             break;
         }
 
         // Also check for data-windowid attribute for compatibility
-        if (current.hasAttribute && current.hasAttribute('data-windowid')) {
-            targetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
+        if (current.hasAttribute && current.hasAttribute("data-windowid")) {
+            targetWindowId = parseInt(current.getAttribute("data-windowid"), 10);
             console.log(`Found target with data-windowid: ${targetWindowId}`);
             break;
         }
 
         // Check if this is a cell with D3 data - use D3's data to get windowId
-        if (current.classList && current.classList.contains('cell')) {
+        if (current.classList && current.classList.contains("cell")) {
             const cellData = d3.select(current).datum();
             if (cellData && cellData.data && cellData.data.windowId) {
                 targetWindowId = parseInt(cellData.data.windowId, 10);
@@ -1837,7 +1837,7 @@ function dragging(event, d, node) {
     }
 
     // Reset highlights
-    d3.selectAll('.window-group').classed('drop-target-active', false);
+    d3.selectAll(".window-group").classed("drop-target-active", false);
 
     // If we found a window ID and it's different from source
     if (targetWindowId && targetWindowId !== draggedTab.windowId) {
@@ -1846,7 +1846,7 @@ function dragging(event, d, node) {
 
         if (windowGroup) {
             // Highlight as drop target
-            d3.select(windowGroup).classed('drop-target-active', true);
+            d3.select(windowGroup).classed("drop-target-active", true);
 
             // Store as drop target
             draggedTab.dropTarget = {
@@ -1878,7 +1878,7 @@ function dragging(event, d, node) {
             };
 
             if (lastValidTarget.element) {
-                d3.select(lastValidTarget.element).classed('drop-target-active', true);
+                d3.select(lastValidTarget.element).classed("drop-target-active", true);
                 console.log(`Using sticky target: Window ${lastValidTarget.windowId}`);
             }
         }
@@ -1918,15 +1918,15 @@ function dragEnded(event, d, node) {
             searchDepth++;
 
             // Check data-window-id attribute first
-            if (current.hasAttribute && current.hasAttribute('data-window-id')) {
-                finalTargetWindowId = parseInt(current.getAttribute('data-window-id'), 10);
+            if (current.hasAttribute && current.hasAttribute("data-window-id")) {
+                finalTargetWindowId = parseInt(current.getAttribute("data-window-id"), 10);
                 console.log(`Final drop directly found window ID: ${finalTargetWindowId}`);
                 break;
             }
 
             // Also check data-windowid
-            if (current.hasAttribute && current.hasAttribute('data-windowid')) {
-                finalTargetWindowId = parseInt(current.getAttribute('data-windowid'), 10);
+            if (current.hasAttribute && current.hasAttribute("data-windowid")) {
+                finalTargetWindowId = parseInt(current.getAttribute("data-windowid"), 10);
                 console.log(`Final drop found windowid: ${finalTargetWindowId}`);
                 break;
             }
@@ -1961,16 +1961,16 @@ function dragEnded(event, d, node) {
 
         chrome.tabs.move(tabId, { windowId: finalTargetWindowId, index: -1 }, function (movedTab) {
             if (chrome.runtime.lastError) {
-                console.error('Move failed:', chrome.runtime.lastError);
-                showNotification('Failed to move tab: ' + chrome.runtime.lastError.message, 'error');
+                console.error("Move failed:", chrome.runtime.lastError);
+                showNotification("Failed to move tab: " + chrome.runtime.lastError.message, "error");
                 return;
             }
 
-            console.log('Tab moved successfully:', movedTab);
-            showNotification('Tab moved successfully', 'success');
+            console.log("Tab moved successfully:", movedTab);
+            showNotification("Tab moved successfully", "success");
 
             // Store the moved tab ID in sessionStorage to focus after reload
-            sessionStorage.setItem('focusTabAfterMove', tabId.toString());
+            sessionStorage.setItem("focusTabAfterMove", tabId.toString());
 
             // Reload the page after a short delay to update the visualization
             setTimeout(() => {
@@ -1978,14 +1978,14 @@ function dragEnded(event, d, node) {
             }, 500);
         });
     } else {
-        console.log('No valid drop target found or source and target window are the same');
+        console.log("No valid drop target found or source and target window are the same");
     }
 
     // Clean up
-    d3.select(draggedTab.element).classed('being-dragged', false);
-    d3.selectAll('.window-group')
-        .classed('valid-drop-target', false)
-        .classed('drop-target-active', false);
+    d3.select(draggedTab.element).classed("being-dragged", false);
+    d3.selectAll(".window-group")
+        .classed("valid-drop-target", false)
+        .classed("drop-target-active", false);
 
     if (draggedTab.ghost) {
         draggedTab.ghost.remove();
@@ -2002,8 +2002,8 @@ function dragEnded(event, d, node) {
 function setupTabMoveListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Listen for tab movement notifications
-        if (message.action === 'tabMoved') {
-            console.log('Tab move detected in UI:', message);
+        if (message.action === "tabMoved") {
+            console.log("Tab move detected in UI:", message);
 
             // Refresh the data and redraw the treemap
             refreshTreemapAfterTabMove(message.tabId, message.tab.windowId);
@@ -2023,9 +2023,9 @@ function fetchDataAndBuildTreemap() {
     console.log("Fetching fresh data for treemap");
 
     // Get fresh data from background page
-    chrome.runtime.sendMessage({ action: 'getTreemapData' }, (response) => {
+    chrome.runtime.sendMessage({ action: "getTreemapData" }, (response) => {
         if (chrome.runtime.lastError) {
-            console.error('Error fetching treemap data:', chrome.runtime.lastError);
+            console.error("Error fetching treemap data:", chrome.runtime.lastError);
             return;
         }
 
@@ -2044,14 +2044,14 @@ function moveTabToWindow(tabId, windowId) {
 
     chrome.tabs.move(tabId, { windowId, index: -1 })
         .then(tab => {
-            console.log('Tab moved successfully:', tab);
-            showNotification('Tab moved successfully', 'success');
+            console.log("Tab moved successfully:", tab);
+            showNotification("Tab moved successfully", "success");
 
             // No need to manually refresh - the event listener will handle it
         })
         .catch(error => {
-            console.error('Error moving tab:', error);
-            showNotification('Failed to move tab: ' + error.message, 'error');
+            console.error("Error moving tab:", error);
+            showNotification("Failed to move tab: " + error.message, "error");
         });
 }
 
@@ -2059,18 +2059,18 @@ function refreshTreemapAfterTabMove(tabId, newWindowId) {
     console.log(`Refreshing treemap after moving tab ${tabId} to window ${newWindowId}`);
 
     // Show loading indicator
-    const loadingIndicator = document.createElement('div');
-    loadingIndicator.className = 'loading-indicator';
-    loadingIndicator.innerHTML = 'Updating visualization...';
-    loadingIndicator.style.position = 'fixed';
-    loadingIndicator.style.top = '10px';
-    loadingIndicator.style.left = '50%';
-    loadingIndicator.style.transform = 'translateX(-50%)';
-    loadingIndicator.style.background = 'rgba(0, 0, 0, 0.7)';
-    loadingIndicator.style.color = 'white';
-    loadingIndicator.style.padding = '10px 20px';
-    loadingIndicator.style.borderRadius = '4px';
-    loadingIndicator.style.zIndex = '9999';
+    const loadingIndicator = document.createElement("div");
+    loadingIndicator.className = "loading-indicator";
+    loadingIndicator.innerHTML = "Updating visualization...";
+    loadingIndicator.style.position = "fixed";
+    loadingIndicator.style.top = "10px";
+    loadingIndicator.style.left = "50%";
+    loadingIndicator.style.transform = "translateX(-50%)";
+    loadingIndicator.style.background = "rgba(0, 0, 0, 0.7)";
+    loadingIndicator.style.color = "white";
+    loadingIndicator.style.padding = "10px 20px";
+    loadingIndicator.style.borderRadius = "4px";
+    loadingIndicator.style.zIndex = "9999";
     document.body.appendChild(loadingIndicator);
 
     // Wait a bit and then reload the page to get fresh data
@@ -2088,54 +2088,54 @@ function refreshTreemapAfterTabMove(tabId, newWindowId) {
 
 // Add a function to focus on a specific tab after reload
 function focusMovedTabAfterReload() {
-    const tabIdToFocus = sessionStorage.getItem('focusTabAfterMove');
+    const tabIdToFocus = sessionStorage.getItem("focusTabAfterMove");
 
     if (!tabIdToFocus) return; // Nothing to focus
 
     console.log(`Looking for tab ${tabIdToFocus} to focus after move`);
 
     // Clear the storage so we don't focus again on next reload
-    sessionStorage.removeItem('focusTabAfterMove');
+    sessionStorage.removeItem("focusTabAfterMove");
 
     // Use a longer delay to ensure DOM is fully ready
     setTimeout(() => {
         // Find the tab node in the treemap
         let foundNode = null;
 
-        d3.selectAll('.cell').each(function (d) {
+        d3.selectAll(".cell").each(function (d) {
             if (!d || !d.data || !d.data.id) return;
 
-            const nodeTabId = d.data.id.toString().replace('tab', '');
+            const nodeTabId = d.data.id.toString().replace("tab", "");
 
             if (nodeTabId === tabIdToFocus) {
                 foundNode = { node: this, data: d };
-                console.log('Found moved tab element:', this);
+                console.log("Found moved tab element:", this);
                 return;
             }
         });
 
         if (foundNode) {
-            console.log('Found moved tab, focusing:', foundNode);
+            console.log("Found moved tab, focusing:", foundNode);
 
             // Focus the node using your existing focus function
             focusNode(foundNode.node, foundNode.data);
 
             // Scroll the node into view
             foundNode.node.scrollIntoView({
-                behavior: 'smooth',
-                block: 'center'
+                behavior: "smooth",
+                block: "center"
             });
 
             // Add a STRONG highlight effect with both D3 and direct DOM methods
             const $node = d3.select(foundNode.node);
-            $node.classed('moved-tab-highlight', true);
+            $node.classed("moved-tab-highlight", true);
 
             // Also add an outline directly for immediate feedback
-            foundNode.node.style.outline = '3px solid #ff5722';
-            foundNode.node.style.outlineOffset = '-3px';
-            foundNode.node.style.boxShadow = '0 0 20px rgba(255, 87, 34, 0.8)';
-            foundNode.node.style.zIndex = '1000';
-            foundNode.node.style.position = 'relative';
+            foundNode.node.style.outline = "3px solid #ff5722";
+            foundNode.node.style.outlineOffset = "-3px";
+            foundNode.node.style.boxShadow = "0 0 20px rgba(255, 87, 34, 0.8)";
+            foundNode.node.style.zIndex = "1000";
+            foundNode.node.style.position = "relative";
 
             // Flash effect
             let flashCount = 0;
@@ -2145,17 +2145,17 @@ function focusMovedTabAfterReload() {
                     return;
                 }
 
-                foundNode.node.style.opacity = flashCount % 2 === 0 ? '0.5' : '1';
+                foundNode.node.style.opacity = flashCount % 2 === 0 ? "0.5" : "1";
                 flashCount++;
             }, 250);
 
             // Remove the highlight effects after a delay
             setTimeout(() => {
-                $node.classed('moved-tab-highlight', false);
-                foundNode.node.style.outline = '';
-                foundNode.node.style.outlineOffset = '';
-                foundNode.node.style.boxShadow = '';
-                foundNode.node.style.opacity = '1';
+                $node.classed("moved-tab-highlight", false);
+                foundNode.node.style.outline = "";
+                foundNode.node.style.outlineOffset = "";
+                foundNode.node.style.boxShadow = "";
+                foundNode.node.style.opacity = "1";
             }, 3000);
         } else {
             console.log(`Could not find moved tab ${tabIdToFocus} in the treemap`);
@@ -2185,48 +2185,48 @@ function showNotification(message, type) {
     existingNotifications.forEach(notification => notification.remove());
 
     // Create notification element
-    const notification = document.createElement('div');
+    const notification = document.createElement("div");
     notification.className = `notification ${type}`;
     notification.textContent = message;
 
     // Style the notification
-    notification.style.position = 'fixed';
-    notification.style.bottom = '20px';
-    notification.style.right = '20px';
-    notification.style.padding = '12px 20px';
-    notification.style.borderRadius = '4px';
-    notification.style.color = 'white';
-    notification.style.fontWeight = '500';
-    notification.style.boxShadow = '0 3px 10px rgba(0,0,0,0.2)';
-    notification.style.zIndex = '10000';
+    notification.style.position = "fixed";
+    notification.style.bottom = "20px";
+    notification.style.right = "20px";
+    notification.style.padding = "12px 20px";
+    notification.style.borderRadius = "4px";
+    notification.style.color = "white";
+    notification.style.fontWeight = "500";
+    notification.style.boxShadow = "0 3px 10px rgba(0,0,0,0.2)";
+    notification.style.zIndex = "10000";
 
     // Apply type-specific styling
-    if (type === 'success') {
-        notification.style.backgroundColor = '#43a047';
-    } else if (type === 'error') {
-        notification.style.backgroundColor = '#e53935';
+    if (type === "success") {
+        notification.style.backgroundColor = "#43a047";
+    } else if (type === "error") {
+        notification.style.backgroundColor = "#e53935";
     } else {
-        notification.style.backgroundColor = '#1976d2';
+        notification.style.backgroundColor = "#1976d2";
     }
 
     // Initial state for animation
-    notification.style.transform = 'translateY(100px)';
-    notification.style.opacity = '0';
-    notification.style.transition = 'all 0.3s ease';
+    notification.style.transform = "translateY(100px)";
+    notification.style.opacity = "0";
+    notification.style.transition = "all 0.3s ease";
 
     // Add to document
     document.body.appendChild(notification);
 
     // Trigger animation to show
     setTimeout(() => {
-        notification.style.transform = 'translateY(0)';
-        notification.style.opacity = '1';
+        notification.style.transform = "translateY(0)";
+        notification.style.opacity = "1";
     }, 10);
 
     // Remove after delay
     setTimeout(() => {
-        notification.style.transform = 'translateY(100px)';
-        notification.style.opacity = '0';
+        notification.style.transform = "translateY(100px)";
+        notification.style.opacity = "0";
 
         // Remove from DOM after transition
         setTimeout(() => notification.remove(), 300);
@@ -2241,40 +2241,40 @@ function showNotification(message, type) {
 function createLetterFaviconForURL(url) {
     try {
         // Extract domain or URL part for the letter
-        let letter = '?';
-        let domain = '';
+        let letter = "?";
+        let domain = "";
 
-        if (url.startsWith('chrome://')) {
-            letter = 'C';
-            domain = 'chrome';
+        if (url.startsWith("chrome://")) {
+            letter = "C";
+            domain = "chrome";
         }
-        else if (url.startsWith('chrome-extension://')) {
-            letter = 'E';
-            domain = 'extension';
+        else if (url.startsWith("chrome-extension://")) {
+            letter = "E";
+            domain = "extension";
         }
-        else if (url.startsWith('file://')) {
-            letter = 'F';
-            domain = 'file';
+        else if (url.startsWith("file://")) {
+            letter = "F";
+            domain = "file";
         }
-        else if (url.startsWith('about:')) {
-            letter = 'A';
-            domain = 'about';
+        else if (url.startsWith("about:")) {
+            letter = "A";
+            domain = "about";
         }
         else {
             try {
                 const urlObj = new URL(url);
-                domain = urlObj.hostname.replace(/^www\./, '');
+                domain = urlObj.hostname.replace(/^www\./, "");
                 letter = domain.charAt(0).toUpperCase();
 
                 // Handle domains starting with numbers or symbols
                 if (!letter.match(/[A-Z]/i)) {
-                    letter = domain.charAt(1)?.toUpperCase() || 'X';
+                    letter = domain.charAt(1)?.toUpperCase() || "X";
                     if (!letter.match(/[A-Z]/i)) {
-                        letter = 'X';
+                        letter = "X";
                     }
                 }
             } catch (e) {
-                letter = url.charAt(0).toUpperCase() || '?';
+                letter = url.charAt(0).toUpperCase() || "?";
             }
         }
 
@@ -2285,8 +2285,8 @@ function createLetterFaviconForURL(url) {
 
         return createLetterFaviconSVG(letter, color, textColor);
     } catch (error) {
-        console.warn('Error creating letter favicon:', error);
-        return createPlaceholderFavicon('?');
+        console.warn("Error creating letter favicon:", error);
+        return createPlaceholderFavicon("?");
     }
 }
 
@@ -2311,7 +2311,7 @@ function hashCode(str) {
  * @param {string} textColor - Text color
  * @return {string} - Data URL for SVG favicon
  */
-function createLetterFaviconSVG(letter, bgColor = '#e0e0e0', textColor = '#505050') {
+function createLetterFaviconSVG(letter, bgColor = "#e0e0e0", textColor = "#505050") {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
         <rect width="32" height="32" fill="${bgColor}" rx="4" />
         <text x="16" y="22" font-family="Arial, sans-serif" font-size="16" 
@@ -2326,8 +2326,8 @@ function createLetterFaviconSVG(letter, bgColor = '#e0e0e0', textColor = '#50505
  * @param {string} symbol - Symbol to display
  * @return {string} - Data URL for SVG favicon
  */
-function createPlaceholderFavicon(symbol = '?') {
-    return createLetterFaviconSVG(symbol, '#eeeeee', '#999999');
+function createPlaceholderFavicon(symbol = "?") {
+    return createLetterFaviconSVG(symbol, "#eeeeee", "#999999");
 }
 
 /**
@@ -2337,7 +2337,7 @@ function createPlaceholderFavicon(symbol = '?') {
  */
 function formatAudioDuration(milliseconds) {
     if (!milliseconds || milliseconds < 1000) {
-        return '< 1s';
+        return "< 1s";
     }
 
     const seconds = Math.floor(milliseconds / 1000);
@@ -2346,10 +2346,10 @@ function formatAudioDuration(milliseconds) {
 
     if (hours > 0) {
         const remainingMinutes = minutes % 60;
-        return `${hours}h${remainingMinutes > 0 ? ` ${remainingMinutes}m` : ''}`;
+        return `${hours}h${remainingMinutes > 0 ? ` ${remainingMinutes}m` : ""}`;
     } else if (minutes > 0) {
         const remainingSeconds = seconds % 60;
-        return `${minutes}m${remainingSeconds > 0 ? ` ${remainingSeconds}s` : ''}`;
+        return `${minutes}m${remainingSeconds > 0 ? ` ${remainingSeconds}s` : ""}`;
     } else {
         return `${seconds}s`;
     }

@@ -1,21 +1,11 @@
-import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from './utility.js';
-import { updateStats } from './stats.js';
-import { showDefaultReadout, loadNanoSummariesFromStorage } from './readout.js';
-import { initializeApp } from './init.js';
-import { tabSearch } from './search.js';
-import { drawTreemap } from './treemap.js';
+import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from "./utility.js";
+import { updateStats } from "./stats.js";
+import { showDefaultReadout, loadNanoSummariesFromStorage } from "./readout.js";
+import { initializeApp } from "./init.js";
+import { tabSearch } from "./search.js";
+import { drawTreemap } from "./treemap.js";
 
-// Stubs for legacy/planned functions referenced below but never implemented.
-// These used to throw ReferenceError when their (still-reachable) call sites ran.
-// Keeping them as no-ops preserves behavior while the call sites are cleaned up.
-function updateGraph(_data) { /* visualization redraw handled elsewhere */ }
-function updateTimeline(_data) { /* timeline redraw not implemented */ }
-function getNodeIdForUrl(_url) { return null; }
-function getNode(_nodeId) { return null; }
-// NOTE: categorizeHistoryData and fetchActiveWindowsAndTabs are intentionally
-// NOT stubbed here — both already have real implementations later in this file.
-// Adding stub copies made newtab.js a duplicate top-level declaration, which is
-// a hard SyntaxError in an ES module — the entire new-tab script failed to load.
+// Legacy stubs removed.
 async function fetchRecentBookmarks(count) {
     return new Promise(resolve => {
         chrome.bookmarks.getRecent(count || 4, resolve);
@@ -23,15 +13,15 @@ async function fetchRecentBookmarks(count) {
 }
 function createTreemapData(stateObj) {
     return {
-        name: 'root',
+        name: "root",
         children: (stateObj?.activeWindows || []).map(window => ({
             name: `Window ${window.id}`,
             id: window.id,
             children: (window.tabs || []).map(tab => ({
                 id: `tab${tab.id}`,
                 windowId: window.id,
-                title: tab.title || 'Untitled',
-                url: tab.url || '',
+                title: tab.title || "Untitled",
+                url: tab.url || "",
                 favIconUrl: tab.favIconUrl,
                 lastAccessed: tab.lastAccessed || Date.now(),
                 timeSpent: tab.totalTimeSpent || 100,
@@ -71,12 +61,12 @@ let currentData = null;
 // paint and otherwise forces a full redundant redraw on every boot.
 let lastTreemapSignature = null;
 function treemapSignature(activeWindows) {
-    if (!Array.isArray(activeWindows)) return '';
+    if (!Array.isArray(activeWindows)) return "";
     return activeWindows
         .map(w => `${w.id}:` + (w.tabs || [])
-            .map(t => `${t.id}|${t.active ? 1 : 0}|${t.url || ''}|${t.title || ''}`)
-            .join(','))
-        .join(';');
+            .map(t => `${t.id}|${t.active ? 1 : 0}|${t.url || ""}|${t.title || ""}`)
+            .join(","))
+        .join(";");
 }
 
 // Define treemapState at the top of your file or in an appropriate scope
@@ -96,10 +86,18 @@ function resetInactivityTimer(categorizedData) {
     }, INACTIVITY_TIMEOUT);
 }
 
-// Add mousemove listener to the document
-document.addEventListener('mousemove', () => {
-    if (categorizedDataCache && !document.querySelector('.cell-selected')) {
-        resetInactivityTimer(categorizedDataCache);
+// Add throttled mousemove listener to the document
+let lastMouseMove = 0;
+document.addEventListener("mousemove", () => {
+    const now = Date.now();
+    if (now - lastMouseMove > 500) {
+        lastMouseMove = now;
+        const isPinned = document.getElementById("readout")?.classList.contains("sticky");
+        if (categorizedDataCache && !isPinned) {
+            resetInactivityTimer(categorizedDataCache);
+        } else if (isPinned) {
+            clearTimeout(inactivityTimer);
+        }
     }
 });
 
@@ -144,65 +142,65 @@ function categorizeData(history, windows) {
 function handleTabSearch(event) {
     const searchTerm = event.target.value.trim();
 
-    console.log('Search input:', searchTerm);
+    console.log("Search input:", searchTerm);
 
     // Reset all cells if search is empty
     if (!searchTerm) {
-        d3.selectAll('.cell')
-            .style('opacity', 1)
-            .classed('cell-search-match', false)
-            .classed('cell-search-nomatch', false);
+        d3.selectAll(".cell")
+            .style("opacity", 1)
+            .classed("cell-search-match", false)
+            .classed("cell-search-nomatch", false);
         return;
     }
 
     const results = tabSearch.search(searchTerm);
-    console.log('Search results:', {
+    console.log("Search results:", {
         term: searchTerm,
         count: results.length,
         firstResult: results[0]
     });
 
     // Update visualization based on search results
-    d3.selectAll('.cell')
+    d3.selectAll(".cell")
         .each(function (d) {
             if (!d || !d.data) return;
 
             const isMatch = results.some(r => r.id === d.data.id);
 
             d3.select(this)
-                .classed('cell-search-match', isMatch)
-                .classed('cell-search-nomatch', !isMatch)
-                .style('opacity', isMatch ? 1 : 0.3)
-                .style('transition', 'opacity 0.2s ease-in-out');
+                .classed("cell-search-match", isMatch)
+                .classed("cell-search-nomatch", !isMatch)
+                .style("opacity", isMatch ? 1 : 0.3)
+                .style("transition", "opacity 0.2s ease-in-out");
         });
 
     // Change tab order to jump between matching cells
     if (results.length > 0) {
         const firstMatch = results[0];
-        const matchingCell = d3.selectAll('.cell-search-match').node();
+        const matchingCell = d3.selectAll(".cell-search-match").node();
         if (matchingCell) {
-            matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            matchingCell.scrollIntoView({ behavior: "smooth", block: "center" });
         }
     }
 }
 
 function exitSearchMode() {
-    const searchInput = document.getElementById('tabSearch');
-    searchInput.value = '';
-    handleTabSearch({ target: { value: '' } }); // Clear search results
+    const searchInput = document.getElementById("tabSearch");
+    searchInput.value = "";
+    handleTabSearch({ target: { value: "" } }); // Clear search results
     clearSearchStyles(); // Clear search styles from treemap
 }
 
 export function clearSearchStyles() {
-    d3.selectAll('.cell')
-        .style('opacity', 1)
-        .classed('cell-search-match', false)
-        .classed('cell-search-nomatch', false)
-        .classed('cell-selected', false)
-        .style('transition', 'opacity 0.2s ease-in-out');
+    d3.selectAll(".cell")
+        .style("opacity", 1)
+        .classed("cell-search-match", false)
+        .classed("cell-search-nomatch", false)
+        .classed("cell-selected", false)
+        .style("transition", "opacity 0.2s ease-in-out");
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener("DOMContentLoaded", async () => {
     try {
         // Boot from open windows/tabs only. The treemap, search index, and
         // default readout all read `activeWindows` exclusively — the previous
@@ -218,34 +216,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         tabSearch.buildIndex(categorizedDataCache);
 
         // Set up search handler — input + Escape/ArrowUp/ArrowDown navigation
-        const searchInput = document.getElementById('tabSearch');
+        const searchInput = document.getElementById("tabSearch");
         if (searchInput) {
             let searchResults = [];
             let currentIndex = -1;
 
-            searchInput.addEventListener('input', debounce((event) => {
+            searchInput.addEventListener("input", debounce((event) => {
                 handleTabSearch(event);
                 searchResults = tabSearch.search(event.target.value.trim());
                 currentIndex = -1;
             }, 200));
 
-            searchInput.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') {
+            searchInput.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") {
                     exitSearchMode();
                     searchResults = [];
                     currentIndex = -1;
-                } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                     if (searchResults.length > 0) {
-                        if (event.key === 'ArrowDown') {
+                        if (event.key === "ArrowDown") {
                             currentIndex = (currentIndex + 1) % searchResults.length;
                         } else {
                             currentIndex = (currentIndex - 1 + searchResults.length) % searchResults.length;
                         }
-                        const matchingCell = d3.selectAll('.cell-search-match').nodes()[currentIndex];
+                        const matchingCell = d3.selectAll(".cell-search-match").nodes()[currentIndex];
                         if (matchingCell) {
-                            matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            d3.selectAll('.cell-search-match').classed('cell-selected', false);
-                            d3.select(matchingCell).classed('cell-selected', true);
+                            matchingCell.scrollIntoView({ behavior: "smooth", block: "center" });
+                            d3.selectAll(".cell-search-match").classed("cell-selected", false);
+                            d3.select(matchingCell).classed("cell-selected", true);
                         }
                     }
                 }
@@ -268,7 +266,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             showDefaultReadout(categorizedDataCache);
 
             // Start inactivity timer only if we have data
-            if (!document.querySelector('.cell-selected')) {
+            if (!document.querySelector(".cell-selected")) {
                 resetInactivityTimer(categorizedDataCache);
             }
 
@@ -277,10 +275,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             // first paint, so this must not be awaited before drawTreemap.
             loadNanoSummariesFromStorage();
         } else {
-            console.error('Invalid data structure:', categorizedDataCache);
+            console.error("Invalid data structure:", categorizedDataCache);
         }
     } catch (error) {
-        console.error('Error initializing page:', error);
+        console.error("Error initializing page:", error);
     }
 });
 
@@ -288,7 +286,7 @@ async function fetchHistoryData(limit, startTime) {
     return new Promise((resolve) => {
         chrome.history.search(
             {
-                text: '',
+                text: "",
                 maxResults: limit,
                 startTime: startTime || Date.now() - (24 * 60 * 60 * 1000) // Last 24 hours
             },
@@ -310,10 +308,10 @@ async function fetchHistoryData(limit, startTime) {
                                     visits.find(v => v.visitId === latestVisit.referringVisit)?.url :
                                     null
                             });
-                        })
+                        });
                     })
                 )).then(detailedHistoryItems => {
-                    console.log('Detailed history items with transitions:', detailedHistoryItems);
+                    console.log("Detailed history items with transitions:", detailedHistoryItems);
                     resolve(detailedHistoryItems);
                 });
             }
@@ -365,7 +363,7 @@ async function fetchActiveWindowsAndTabs() {
                 }))
             })));
 
-            console.log('Active windows and tabs with time spent:', activeWindows);
+            console.log("Active windows and tabs with time spent:", activeWindows);
             resolve(activeWindows);
         });
     });
@@ -434,7 +432,7 @@ function categorizeHistoryData(data) {
     });
 
     // Debug output
-    console.log('Categorized Data:', {
+    console.log("Categorized Data:", {
         activeWindows: activeWindowsAndTabs,
         windowSwimlanes,
         historySwimlane,
@@ -482,15 +480,15 @@ function displayStats(data, sessionCount) {
     const totalActiveTabs = Object.values(windowSwimlanes).reduce((acc, items) => acc + items.length, 0);
     const averageEdgesConnected = (nodesWithEdges / totalHistoryItems) * 100;
 
-    document.getElementById('total-history-items').textContent = `Total History Items: ${totalHistoryItems}`;
-    document.getElementById('total-active-tabs').textContent = `Total Active Tabs: ${totalActiveTabs}`;
-    document.getElementById('total-edges').textContent = `Total Edges: ${totalEdges}`;
-    document.getElementById('average-edges-connected').textContent = `Average % of Nodes with Edges: ${averageEdgesConnected.toFixed(2)}%`;
-    document.getElementById('total-sessions').textContent = `Total Sessions: ${sessionCount}`;
+    document.getElementById("total-history-items").textContent = `Total History Items: ${totalHistoryItems}`;
+    document.getElementById("total-active-tabs").textContent = `Total Active Tabs: ${totalActiveTabs}`;
+    document.getElementById("total-edges").textContent = `Total Edges: ${totalEdges}`;
+    document.getElementById("average-edges-connected").textContent = `Average % of Nodes with Edges: ${averageEdgesConnected.toFixed(2)}%`;
+    document.getElementById("total-sessions").textContent = `Total Sessions: ${sessionCount}`;
 }
 
 function updateReadoutText(text) {
-    const readout = document.getElementById('readout');
+    const readout = document.getElementById("readout");
     if (readout) {
         readout.textContent = text;
     }
@@ -498,7 +496,7 @@ function updateReadoutText(text) {
 
 // Add navigation event listeners
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tab.url) {
+    if (changeInfo.status === "complete" && tab.url) {
         console.log("Tab updated:", tab); // Debug
         updateTimelineWithNavigation(tab);
 
@@ -568,12 +566,12 @@ async function updateTimelineWithNavigation(tab) {
             currentData.windowSwimlanes[tab.windowId] = [];
         }
         currentData.windowSwimlanes[tab.windowId].push(newNavigation);
-        console.log('Updated window swimlanes:', currentData.windowSwimlanes); // Debug
+        console.log("Updated window swimlanes:", currentData.windowSwimlanes); // Debug
 
         // Update the visualizations
         updateTreemap();
     } catch (error) {
-        console.error('Error updating timeline with navigation:', error);
+        console.error("Error updating timeline with navigation:", error);
     }
 }
 
@@ -584,7 +582,7 @@ async function updateTimelineWithNavigation(tab) {
 // Replace direct tab activity tracking with message-based sync
 async function syncTabActivity() {
     try {
-        const response = await chrome.runtime.sendMessage({ type: 'GET_TAB_ACTIVITY' });
+        const response = await chrome.runtime.sendMessage({ type: "GET_TAB_ACTIVITY" });
         if (response) {
             tabActivityLog = new Map(response.tabActivityLog);
             navigationEvents = new Map(response.navigationEvents);
@@ -596,12 +594,11 @@ async function syncTabActivity() {
                     history: currentData.historySwimlane,
                     activeWindowsAndTabs
                 });
-                updateTimeline(currentData);
-                updateGraph(currentData);
+                // Visualizations are now reactive; legacy manual redraw calls removed
             }
         }
     } catch (error) {
-        console.error('Error syncing tab activity:', error);
+        console.error("Error syncing tab activity:", error);
     }
 }
 
@@ -613,7 +610,7 @@ function setupTimelineUpdates() {
     }
 
     // Setup visibility change handling
-    document.addEventListener('visibilitychange', () => {
+    document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
             clearInterval(updateTimer);
             updateTimer = null;
@@ -648,19 +645,19 @@ function cleanup() {
 }
 
 // Add event listener for page unload
-window.addEventListener('unload', cleanup);
+window.addEventListener("unload", cleanup);
 
 async function fetchHistoryRange(type, value) {
     const query = {
-        text: '',
+        text: "",
         maxResults: 10000 // Default max results
     };
 
-    if (type === 'time') {
+    if (type === "time") {
         // Calculate start time based on selected range
         const startTime = new Date(Date.now() - (value * 1000));
         query.startTime = startTime.getTime();
-    } else if (type === 'count') {
+    } else if (type === "count") {
         // Use specified count as maxResults
         query.maxResults = value;
     }
@@ -674,7 +671,7 @@ chrome.tabs.onCreated.addListener((tab) => {
         const edge = {
             source: tab.openerTabId,
             target: tab.id,
-            type: 'new-tab'
+            type: "new-tab"
         };
         tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
         updateGraphWithNewEdge(edge);
@@ -683,11 +680,11 @@ chrome.tabs.onCreated.addListener((tab) => {
 
 // Capture tab updates to ensure edges are tracked
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tab.openerTabId) {
+    if (changeInfo.status === "complete" && tab.openerTabId) {
         const edge = {
             source: tab.openerTabId,
             target: tab.id,
-            type: 'new-tab'
+            type: "new-tab"
         };
         tabEdges.set(`${tab.openerTabId}-${tab.id}`, edge);
         updateGraphWithNewEdge(edge);
@@ -711,9 +708,7 @@ function updateGraphWithNewEdge(edge) {
     if (sourceTab && targetTab && shouldCreateNavigationEdge(targetTab, sourceTab)) {
         currentData.edges.push(edge);
         currentData.totalEdges++;
-        currentData.nodesWithEdges.add(sourceTab.id);
         currentData.nodesWithEdges.add(targetTab.id);
-        updateGraph(currentData);
     }
 }
 
@@ -769,7 +764,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
     });
 
     tabActivityLog.set(tabId, currentActivity);
-    console.log('Tab activity log updated:', tabActivityLog);
+    console.log("Tab activity log updated:", tabActivityLog);
 
     // Update the last accessed time in the current data
     if (currentData && currentData.windowSwimlanes[windowId]) {
@@ -813,16 +808,16 @@ function shouldCreateNavigationEdge(current, previous) {
     console.log("--- Considering edge between:", previous, current);
     try {
         // Skip chrome:// and extension URLs
-        if (current.url.startsWith('chrome://') ||
-            previous.url.startsWith('chrome://') ||
-            current.url.startsWith('chrome-extension://') ||
-            previous.url.startsWith('chrome-extension://')) {
+        if (current.url.startsWith("chrome://") ||
+            previous.url.startsWith("chrome://") ||
+            current.url.startsWith("chrome-extension://") ||
+            previous.url.startsWith("chrome-extension://")) {
             return false;
         }
 
         // Only create edges for explicit navigation types
         const navigationType = current.transitionType;
-        if (!['link', 'form_submit'].includes(navigationType)) {
+        if (!["link", "form_submit"].includes(navigationType)) {
             return false;
         }
 
@@ -868,7 +863,7 @@ const state = {
 
 // 2. Single update function that handles all state changes
 async function updateTreemapState(changes) {
-    console.log('State update:', {
+    console.log("State update:", {
         before: {
             tabCount: state.currentTabCount,
             hasBookmarks: state.needsBookmarks,
@@ -891,7 +886,7 @@ async function updateTreemapState(changes) {
         state.bookmarks = [];
     }
 
-    console.log('State update:', {
+    console.log("State update:", {
         after: {
             tabCount: state.currentTabCount,
             hasBookmarks: state.needsBookmarks,
@@ -901,7 +896,7 @@ async function updateTreemapState(changes) {
 
     // Single point of truth for treemap data
     const treeData = {
-        name: 'root',
+        name: "root",
         children: [
             ...state.activeWindows.map(window => ({
                 name: `Window ${window.id}`,
@@ -909,8 +904,8 @@ async function updateTreemapState(changes) {
                 children: window.tabs.map(tab => ({
                     id: `tab${tab.id}`,
                     windowId: window.id,
-                    title: tab.title || 'Untitled',
-                    url: tab.url || '',
+                    title: tab.title || "Untitled",
+                    url: tab.url || "",
                     favIconUrl: tab.favIconUrl,
                     lastAccessed: Date.now(),
                     timeSpent: tab.totalTimeSpent || 100,
@@ -920,13 +915,13 @@ async function updateTreemapState(changes) {
             })),
             // Only add bookmark window if needed
             ...(state.needsBookmarks ? [{
-                name: 'Window bookmark',
-                id: 'bookmark',
+                name: "Window bookmark",
+                id: "bookmark",
                 children: state.bookmarks.map(bookmark => ({
                     id: `bookmark${bookmark.id}`,
-                    windowId: 'bookmark',
-                    title: bookmark.title || 'Untitled',
-                    url: bookmark.url || '',
+                    windowId: "bookmark",
+                    title: bookmark.title || "Untitled",
+                    url: bookmark.url || "",
                     favIconUrl: bookmark.favIconUrl,
                     lastAccessed: Date.now(),
                     timeSpent: 100,
@@ -946,7 +941,7 @@ async function updateTreemapState(changes) {
 
 // Add a central state update handler
 function handleStateUpdate(stateUpdate) {
-    console.log('State update received:', {
+    console.log("State update received:", {
         type: stateUpdate.type,
         tabId: stateUpdate.tabId,
         url: stateUpdate.tab?.url,
@@ -954,13 +949,13 @@ function handleStateUpdate(stateUpdate) {
     });
 
     // Update timeline
-    if (stateUpdate.action === 'tabUpdated' || stateUpdate.type === 'tabUpdate') {
+    if (stateUpdate.action === "tabUpdated" || stateUpdate.type === "tabUpdate") {
         updateTimelineWithNavigation(stateUpdate.tab);
     }
 
     // Force treemap redraw on URL or title changes
     if (stateUpdate.tab && (stateUpdate.changeInfo?.url || stateUpdate.changeInfo?.title)) {
-        console.log('Tab content changed, updating treemap:', {
+        console.log("Tab content changed, updating treemap:", {
             tabId: stateUpdate.tabId,
             url: stateUpdate.tab.url,
             title: stateUpdate.tab.title
@@ -970,32 +965,7 @@ function handleStateUpdate(stateUpdate) {
         updateTreemap();
     }
 
-    // Add this new condition to handle link navigation events
-    if (stateUpdate.type === 'STATE_UPDATED' &&
-        stateUpdate.event &&
-        stateUpdate.event.type === 'LINK_NAVIGATION') {
-
-        const event = stateUpdate.event;
-        console.log("Looking up node for URL:", event.url); // Debug
-        const nodeId = getNodeIdForUrl(event.url);
-
-        if (nodeId) {
-            // Update the node with link text
-            const node = getNode(nodeId);
-            if (node) {
-                node.linkText = event.linkText;
-                node.linkTitle = event.title;
-                node.clickTimestamp = event.timestamp;
-
-                // Notify about updated node - use your existing notification mechanism
-                console.debug(`Updated node ${nodeId} with link text: ${event.linkText}`);
-
-                // If you have a redraw or update function, call it here
-                // For example: updateVisualization();
-                updateTreemap();
-            }
-        }
-    }
+    // Legacy LINK_NAVIGATION handler removed
 }
 
 async function updateTreemap() {
@@ -1011,33 +981,33 @@ async function updateTreemap() {
 // Update the message listener to properly handle responses
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Log incoming message
-    console.log('Newtab received message:', {
+    console.log("Newtab received message:", {
         type: message.type,
         action: message.action
     });
 
     // Handle different message types
-    if (message.action === 'tabUpdated' || message.type === 'tabUpdate') {
+    if (message.action === "tabUpdated" || message.type === "tabUpdate") {
         try {
             handleStateUpdate(message);
             // Send immediate response
             sendResponse({ success: true });
         } catch (error) {
-            console.error('Error handling state update:', error);
+            console.error("Error handling state update:", error);
             sendResponse({ success: false, error: error.message });
         }
         return false; // We're not using an async response
     }
 
     // For async handlers, manage the sendResponse properly
-    if (message.type === 'getTabHistory') {
+    if (message.type === "getTabHistory") {
         // Handle asynchronously
         chrome.storage.local.get(`history_${message.tabId}`)
             .then(result => {
                 sendResponse(result);
             })
             .catch(error => {
-                console.error('Error fetching tab history:', error);
+                console.error("Error fetching tab history:", error);
                 sendResponse({ error: error.message });
             });
         return true; // Keep the message channel open
@@ -1051,14 +1021,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Update window removal handler
 chrome.windows.onRemoved.addListener(async (windowId) => {
     try {
-        console.log('Window removal detected:', {
+        console.log("Window removal detected:", {
             windowId,
             existingWindows: state.activeWindows.length,
             cachedWindows: categorizedDataCache?.activeWindows?.length
         });
 
         if (!categorizedDataCache?.activeWindows) {
-            console.warn('No cache data available for window removal');
+            console.warn("No cache data available for window removal");
             return;
         }
 
@@ -1073,7 +1043,7 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
             delete categorizedDataCache.windowSwimlanes[windowId];
         }
 
-        console.log('Window counts after removal:', {
+        console.log("Window counts after removal:", {
             stateWindows: state.activeWindows.length,
             cachedWindows: categorizedDataCache.activeWindows.length,
             remainingWindows: await getWindowCount()
@@ -1082,23 +1052,23 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
         // Handle empty state or update visualization
         if (categorizedDataCache.activeWindows.length === 0) {
             // No windows left, show empty state
-            document.getElementById('treemap').innerHTML =
-                '<div class="empty-state"><h2>No windows open</h2><p>Open a new window to see your tabs</p></div>';
-            console.log('No windows remaining, showing empty state');
+            document.getElementById("treemap").innerHTML =
+                "<div class=\"empty-state\"><h2>No windows open</h2><p>Open a new window to see your tabs</p></div>";
+            console.log("No windows remaining, showing empty state");
         } else {
             // Update visualization
             await updateTreemap();
-            console.log('Treemap updated after window removal');
+            console.log("Treemap updated after window removal");
         }
     } catch (error) {
-        console.error('Error handling window removal:', error);
+        console.error("Error handling window removal:", error);
     }
 });
 
 // Add window creation handler
 chrome.windows.onCreated.addListener(async (window) => {
     try {
-        console.log('New window created:', {
+        console.log("New window created:", {
             windowId: window.id,
             currentWindows: state.activeWindows.length
         });
@@ -1108,14 +1078,14 @@ chrome.windows.onCreated.addListener(async (window) => {
             // Force refresh of all window data
             await updateTreemap();
 
-            console.log('Window counts after creation:', {
+            console.log("Window counts after creation:", {
                 stateWindows: state.activeWindows.length,
                 cachedWindows: categorizedDataCache.activeWindows.length,
                 actualWindows: await getWindowCount()
             });
         }, 500);
     } catch (error) {
-        console.error('Error handling window creation:', error);
+        console.error("Error handling window creation:", error);
     }
 });
 
@@ -1125,14 +1095,14 @@ async function getWindowCount() {
         const windows = await chrome.windows.getAll();
         return windows.length;
     } catch (error) {
-        console.error('Error getting window count:', error);
+        console.error("Error getting window count:", error);
         return 0;
     }
 }
 
 // Update treemap state management to ensure window counts sync properly
 async function refreshTreemapState(changes) {
-    console.log('State update:', {
+    console.log("State update:", {
         before: {
             windows: state.activeWindows.length,
             tabCount: state.currentTabCount
@@ -1149,7 +1119,7 @@ async function refreshTreemapState(changes) {
     // Sync with actual window count to ensure accuracy
     const actualWindowCount = await getWindowCount();
     if (actualWindowCount !== state.activeWindows.length) {
-        console.warn('Window count mismatch:', {
+        console.warn("Window count mismatch:", {
             stateCount: state.activeWindows.length,
             actualCount: actualWindowCount
         });
@@ -1181,7 +1151,7 @@ async function refreshTreemapState(changes) {
         );
     }
 
-    console.log('State after update:', {
+    console.log("State after update:", {
         windows: state.activeWindows.length,
         tabCount: state.currentTabCount
     });
