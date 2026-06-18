@@ -17,11 +17,11 @@
 // there. Bundled Chromium loads it cleanly, even in (new) headless. Set HEADED=1
 // to watch the run.
 
-const path = require('path');
-const http = require('http');
-const crypto = require('crypto');
-const base = require('@playwright/test');
-const { chromium } = require('@playwright/test');
+const path = require("path");
+const http = require("http");
+const crypto = require("crypto");
+const base = require("@playwright/test");
+const { chromium } = require("@playwright/test");
 
 // Chrome derives an unpacked extension's id from the SHA-256 of its absolute
 // path: take the first 16 bytes and map each nibble 0..15 -> 'a'..'p'. This lets
@@ -30,8 +30,8 @@ const { chromium } = require('@playwright/test');
 // and the hover/click path call chrome.windows/bookmarks/history directly — no
 // worker round-trip — so a worker-independent id is enough to drive the UI.
 function extensionIdFromPath(absPath) {
-  const hash = crypto.createHash('sha256').update(absPath).digest();
-  let id = '';
+  const hash = crypto.createHash("sha256").update(absPath).digest();
+  let id = "";
   for (let i = 0; i < 16; i++) {
     id += String.fromCharCode(97 + (hash[i] >> 4));
     id += String.fromCharCode(97 + (hash[i] & 0x0f));
@@ -41,16 +41,16 @@ function extensionIdFromPath(absPath) {
 
 // Repo root IS the extension (manifest.json lives at the top level). Chrome only
 // reads files the manifest references, so loading the whole repo is fine.
-const EXTENSION_PATH = path.resolve(__dirname, '..', '..');
+const EXTENSION_PATH = path.resolve(__dirname, "..", "..");
 
 // pathname -> document.title. The title becomes the tab title, which the treemap
 // copies onto each cell's aria-label (treemap.js: .attr('aria-label', d.data.title)).
 const PAGES = {
-  '/alpha': 'Alpha Page',
-  '/beta': 'Beta Page',
-  '/gamma': 'Gamma Page',
+  "/alpha": "Alpha Page",
+  "/beta": "Beta Page",
+  "/gamma": "Gamma Page",
   // Used by the pin test to navigate an existing tab and force a treemap redraw.
-  '/delta': 'Delta Page',
+  "/delta": "Delta Page",
 };
 
 const test = base.test.extend({
@@ -58,43 +58,43 @@ const test = base.test.extend({
   server: [
     async ({}, use) => {
       const httpServer = http.createServer((req, res) => {
-        const pathname = (req.url || '/').split('?')[0];
+        const pathname = (req.url || "/").split("?")[0];
         const title = PAGES[pathname];
         if (!title) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end('not found');
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("not found");
           return;
         }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(
-          `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+          "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
           `<title>${title}</title></head><body><h1>${title}</h1>` +
           `<p>${title} — fixture content for the Tabtopia e2e suite.</p></body></html>`
         );
       });
-      await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+      await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
       const { port } = httpServer.address();
       await use(`http://127.0.0.1:${port}`);
       await new Promise((resolve) => httpServer.close(resolve));
     },
-    { scope: 'worker' },
+    { scope: "worker" },
   ],
 
   // ---- test-scoped extension-loaded Chrome ------------------------------------
   context: async ({}, use) => {
-    const headless = process.env.HEADED !== '1';
+    const headless = process.env.HEADED !== "1";
     const args = [
       `--disable-extensions-except=${EXTENSION_PATH}`,
       `--load-extension=${EXTENSION_PATH}`,
-      '--no-first-run',
-      '--no-default-browser-check',
+      "--no-first-run",
+      "--no-default-browser-check",
     ];
     // Playwright's headless:true historically used the *old* headless, which does
     // NOT load extensions. The new headless mode does — request it explicitly and
     // leave headless:false so Playwright doesn't override us with the old flag.
-    if (headless) args.push('--headless=new');
+    if (headless) args.push("--headless=new");
 
-    const context = await chromium.launchPersistentContext('', {
+    const context = await chromium.launchPersistentContext("", {
       headless: false,
       viewport: { width: 1600, height: 1000 },
       args,
@@ -110,11 +110,11 @@ const test = base.test.extend({
     let [sw] = context.serviceWorkers();
     if (!sw) {
       sw = await context
-        .waitForEvent('serviceworker', { timeout: 5_000 })
+        .waitForEvent("serviceworker", { timeout: 5_000 })
         .catch(() => null);
     }
     const extensionId = sw
-      ? sw.url().split('/')[2]
+      ? sw.url().split("/")[2]
       : extensionIdFromPath(EXTENSION_PATH);
     await use(extensionId);
   },

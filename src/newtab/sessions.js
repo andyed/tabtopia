@@ -1,21 +1,19 @@
 // Sessions view JavaScript
-console.log('sessions.js loaded');
+console.log("sessions.js loaded");
 
 // Import the summary cache and helper functions from readout.js
-import { summaryCache, getCachedSummary, summaryQueue, processSummaryQueue } from './readout.js';
-import { getLocalFaviconUrl } from './utility.js';
+import { summaryCache, getCachedSummary, summaryQueue, processSummaryQueue } from "./readout.js";
+import { getLocalFaviconUrl } from "./utility.js";
 // Import the debug tools bridge for ES module compatibility
 
 // Import session renderers
-import { renderSessionCards } from './sessions_renderer.js';
+import { renderSessionCards } from "./sessions_renderer.js";
 // Import hero image utilities
-import { createSessionCard, clearSeenHeroImages } from './hero_images_display.js';
+import { createSessionCard, clearSeenHeroImages } from "./hero_images_display.js";
 // Import time formatting utilities
-import { formatTimeAgo } from './timeago.js';
-// Import the tooltip utility
-import { globalTooltip } from './tooltip.js';
+import { formatTimeAgo } from "./timeago.js";
 // Import URL utilities
-import { extractSearchQuery } from '../lib/url-utils.js';
+import { extractSearchQuery } from "../lib/url-utils.js";
 
 /**
  * Format milliseconds into a human-readable duration string
@@ -23,21 +21,21 @@ import { extractSearchQuery } from '../lib/url-utils.js';
  * @returns {string} Formatted duration string (e.g. "2h 30m 15s")
  */
 function formatDuration(milliseconds) {
-    if (milliseconds === undefined || milliseconds === null || isNaN(milliseconds)) return 'N/A';
+    if (milliseconds === undefined || milliseconds === null || isNaN(milliseconds)) return "N/A";
 
     // Handle negative durations
-    if (milliseconds < 0) return 'Duration unknown';
+    if (milliseconds < 0) return "Duration unknown";
 
     // Handle zero or very small durations
-    if (milliseconds === 0) return 'Brief view';
-    if (milliseconds < 1000) return '< 1s';
+    if (milliseconds === 0) return "Brief view";
+    if (milliseconds < 1000) return "< 1s";
 
     if (milliseconds < 60000) return `${Math.round(milliseconds / 1000)}s`;
     if (milliseconds < 3600000) return `${Math.round(milliseconds / 60000)}m`;
 
     const hours = Math.floor(milliseconds / 3600000);
     const minutes = Math.round((milliseconds % 3600000) / 60000);
-    return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`;
+    return `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}`;
 }
 
 
@@ -53,40 +51,40 @@ function getFaviconDisplayUrl(url) {
         return getLocalFaviconUrl(url, 32);
     } catch (e) {
         // Fallback for invalid URLs
-        return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik04IDIuNWEuNS41IDAgMCAxIC41LjVWOGEuNS41IDAgMCAxLTEgMFYzYS41LjUgMCAwIDEgLjUtLjVaTTggMTBhLjc1Ljc1IDAgMSAwIDAgMS41Ljc1Ljc1IDAgMCAwIDAtMS41WiIgZmlsbD0iIzVGNjM2OCIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNOCAxNUE3IDcgMCAxIDAgOCAxYTcgNyAwIDAgMCAwIDE0Wm0wLTFBNiA2IDAgMSAwIDggMmE2IDYgMCAwIDAgMCAxMloiIGZpbGw9IiM1RjYzNjgiLz48L3N2Zz4=';
+        return "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik04IDIuNWEuNS41IDAgMCAxIC41LjVWOGEuNS41IDAgMCAxLTEgMFYzYS41LjUgMCAwIDEgLjUtLjVaTTggMTBhLjc1Ljc1IDAgMSAwIDAgMS41Ljc1Ljc1IDAgMCAwIDAtMS41WiIgZmlsbD0iIzVGNjM2OCIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNOCAxNUE3IDcgMCAxIDAgOCAxYTcgNyAwIDAgMCAwIDE0Wm0wLTFBNiA2IDAgMSAwIDggMmE2IDYgMCAwIDAgMCAxMloiIGZpbGw9IiM1RjYzNjgiLz48L3N2Zz4=";
     }
 }
 
 // Helper function to create a truncated summary display (simplified version from readout.js)
-function createTruncatedSummary(summary, searchTerm = '') {
-    if (!summary) return '';
+function createTruncatedSummary(summary, searchTerm = "") {
+    if (!summary) return "";
 
     const MAX_SUMMARY_LINES = 3;
-    const lines = summary.split('\n');
+    const lines = summary.split("\n");
     const isTruncated = lines.length > MAX_SUMMARY_LINES;
 
     let truncatedSummary = isTruncated
-        ? lines.slice(0, MAX_SUMMARY_LINES).join('\n')
+        ? lines.slice(0, MAX_SUMMARY_LINES).join("\n")
         : summary;
 
     // Highlight search term if provided
-    if (searchTerm && searchTerm.trim() !== '') {
+    if (searchTerm && searchTerm.trim() !== "") {
         truncatedSummary = highlightText(truncatedSummary, searchTerm);
     }
 
-    return `<div class="summary-content"><div class="summary-text">${truncatedSummary.trim()}</div>${isTruncated ? `<div class="summary-expand"><button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, '\\`').trim()}\`">Show more...</button></div>` : ''}</div>`;
+    return `<div class="summary-content"><div class="summary-text">${truncatedSummary.trim()}</div>${isTruncated ? `<div class="summary-expand"><button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, "\\`").trim()}\`">Show more...</button></div>` : ""}</div>`;
 }
 
 // Helper function to highlight search matches in text
 function highlightText(text, searchTerm) {
     if (!searchTerm || !text) return text;
 
-    const searchRegex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const searchRegex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
     return text.replace(searchRegex, match => `<span class="search-highlight">${match}</span>`);
 }
 
 let allSessionsData = []; // To store the original full list of sessions
-let currentSearchTerm = ''; // Track current search term for highlighting
+let currentSearchTerm = ""; // Track current search term for highlighting
 let sessionsData = []; // Store the processed sessions data
 
 /**
@@ -139,7 +137,7 @@ async function getHeroImagesForUrl(url) {
         heroImageRequestCache.lastRequested.set(url, now);
 
         // First check browserState if available (core shared data structure)
-        if (typeof browserState !== 'undefined' && browserState.heroImages && browserState.heroImages.get) {
+        if (typeof browserState !== "undefined" && browserState.heroImages && browserState.heroImages.get) {
             const heroImageData = browserState.heroImages.get(url);
             if (heroImageData && heroImageData.images) {
                 resolve(heroImageData.images);
@@ -148,15 +146,15 @@ async function getHeroImagesForUrl(url) {
         }
 
         // Then check local storage
-        chrome.storage.local.get(['heroImages'], (result) => {
+        chrome.storage.local.get(["heroImages"], (result) => {
             const heroImagesStore = result.heroImages || {};
             if (heroImagesStore[url]) {
                 resolve(heroImagesStore[url].images);
             } else {
                 // If not in storage, try asking background script directly
-                chrome.runtime.sendMessage({ action: 'getHeroImagesForUrl', url: url }, (response) => {
+                chrome.runtime.sendMessage({ action: "getHeroImagesForUrl", url: url }, (response) => {
                     if (chrome.runtime.lastError) {
-                        console.error('❌ Error getting hero images:', chrome.runtime.lastError);
+                        console.error("❌ Error getting hero images:", chrome.runtime.lastError);
                         resolve(null);
                     } else if (response && response.images) {
                         resolve(response.images);
@@ -200,45 +198,45 @@ async function renderHeroImagesForPage(page) {
     }
 
     // Create a horizontal strip of thumbnails
-    const strip = document.createElement('div');
-    strip.className = 'hero-image-strip';
+    const strip = document.createElement("div");
+    strip.className = "hero-image-strip";
 
     // Add each thumbnail
     heroImages.forEach((image, index) => {
         // Skip invalid images
         if (!image.src) return;
 
-        const thumb = document.createElement('img');
-        thumb.className = 'hero-image-thumbnail';
+        const thumb = document.createElement("img");
+        thumb.className = "hero-image-thumbnail";
         thumb.src = image.src;
-        thumb.alt = image.alt || '';
+        thumb.alt = image.alt || "";
         thumb.dataset.index = index;
         thumb.dataset.fullsize = image.src;
 
         // Add click handler to expand image
-        thumb.addEventListener('click', (e) => {
+        thumb.addEventListener("click", (e) => {
             // Find or create container for expanded image
             let container = strip.nextElementSibling;
-            if (!container || !container.classList.contains('hero-image-container')) {
-                container = document.createElement('div');
-                container.className = 'hero-image-container';
-                strip.insertAdjacentElement('afterend', container);
+            if (!container || !container.classList.contains("hero-image-container")) {
+                container = document.createElement("div");
+                container.className = "hero-image-container";
+                strip.insertAdjacentElement("afterend", container);
             } else {
                 // Clear existing content
-                container.innerHTML = '';
+                container.innerHTML = "";
             }
 
             // Create expanded image
-            const expandedImg = document.createElement('img');
-            expandedImg.className = 'hero-image-expanded';
+            const expandedImg = document.createElement("img");
+            expandedImg.className = "hero-image-expanded";
             expandedImg.src = image.src;
-            expandedImg.alt = image.alt || '';
+            expandedImg.alt = image.alt || "";
 
             // Add close button
-            const closeBtn = document.createElement('button');
-            closeBtn.className = 'hero-image-close';
-            closeBtn.textContent = '×';
-            closeBtn.addEventListener('click', () => {
+            const closeBtn = document.createElement("button");
+            closeBtn.className = "hero-image-close";
+            closeBtn.textContent = "×";
+            closeBtn.addEventListener("click", () => {
                 container.remove();
             });
 
@@ -256,7 +254,7 @@ async function renderHeroImagesForPage(page) {
  * Add dynamic styles for tab groups and micro-session separators to the document head
  */
 function addTabGroupStyles() {
-    const style = document.createElement('style');
+    const style = document.createElement("style");
     style.textContent = `
         /* Tab group coloring styles */
         .tab-group-indicator {
@@ -333,43 +331,43 @@ async function refreshSessionsIfNecessary() {
 
     // Throttle to avoid refreshing too frequently
     if (now - lastStateUpdateTime < REFRESH_THROTTLE_PERIOD) {
-        console.log('Refresh throttled');
+        console.log("Refresh throttled");
         return;
     }
 
     // Check if the state has been updated since the last refresh
     const lastUpdated = await new Promise(resolve => {
-        chrome.storage.local.get('lastStateSave', (result) => {
+        chrome.storage.local.get("lastStateSave", (result) => {
             resolve(result.lastStateSave || 0);
         });
     });
 
     if (lastUpdated > lastStateUpdateTime) {
-        console.log('State has been updated, refreshing sessions data...');
+        console.log("State has been updated, refreshing sessions data...");
         lastStateUpdateTime = now; // Update time before refresh
         await initSessions(true);
     } else {
-        console.log('No state update detected, skipping refresh');
+        console.log("No state update detected, skipping refresh");
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('Sessions view DOM fully loaded and parsed');
+document.addEventListener("DOMContentLoaded", () => {
+    console.log("Sessions view DOM fully loaded and parsed");
     addTabGroupStyles();
     initSessions();
 
-    const searchInput = document.getElementById('sessionSearch');
+    const searchInput = document.getElementById("sessionSearch");
     if (searchInput) {
-        searchInput.addEventListener('input', (event) => {
+        searchInput.addEventListener("input", (event) => {
             currentSearchTerm = event.target.value.toLowerCase();
             filterAndRenderSessions(currentSearchTerm);
         });
     }
 
     // Check for updates when the tab becomes visible
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            console.log('Tab is visible, checking for session updates...');
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            console.log("Tab is visible, checking for session updates...");
             refreshSessionsIfNecessary();
         }
     });
@@ -384,7 +382,7 @@ function filterAndRenderSessions(searchTerm) {
     // Local Filter (Instant) — standalone build searches only the in-memory
     // session corpus; there is no backend semantic search.
     let filteredSessions;
-    if (!searchTerm || searchTerm.trim() === '') {
+    if (!searchTerm || searchTerm.trim() === "") {
         filteredSessions = allSessionsData;
         renderSessions(filteredSessions);
         return;
@@ -432,7 +430,7 @@ async function processSessionsData(activeTabUrls = [], isRefresh = false) {
         // Standalone build: Chrome's own history is the sole sessions source.
         const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
         const historyItems = await chrome.history.search({
-            text: '',
+            text: "",
             // Most-recent N items in the window. The removed backend returned a
             // curated set; pulling 10000 raw history items made the sessions view
             // slow to fetch, sessionize, and render. 3000 keeps plenty of recent
@@ -457,7 +455,7 @@ async function processSessionsData(activeTabUrls = [], isRefresh = false) {
         // Apply any current search filter but don't render here
         let sessionsToReturn = processedSessions;
 
-        if (currentSearchTerm && currentSearchTerm.trim() !== '') {
+        if (currentSearchTerm && currentSearchTerm.trim() !== "") {
             sessionsToReturn = processedSessions.filter(session => {
                 // Check session name
                 if (session.name && session.name.toLowerCase().includes(currentSearchTerm)) {
@@ -503,13 +501,13 @@ async function processSessionsData(activeTabUrls = [], isRefresh = false) {
 
         return { sessions: sessionsToReturn };
     } catch (error) {
-        console.error('Error processing sessions data:', error);
+        console.error("Error processing sessions data:", error);
         return { sessions: [] };
     }
 }
 
 async function initSessions(isRefresh = false) {
-    const container = document.getElementById('sessions-container');
+    const container = document.getElementById("sessions-container");
     const startTime = performance.now();
 
     try {
@@ -537,9 +535,9 @@ async function initSessions(isRefresh = false) {
 
         // Log performance metrics
         const endTime = performance.now();
-        console.log(`Sessions data ${isRefresh ? 'refreshed' : 'loaded'} in ${(endTime - startTime).toFixed(2)}ms`);
+        console.log(`Sessions data ${isRefresh ? "refreshed" : "loaded"} in ${(endTime - startTime).toFixed(2)}ms`);
     } catch (error) {
-        console.error('Failed to initialize sessions view:', error);
+        console.error("Failed to initialize sessions view:", error);
         if (container && !isRefresh) { // Only show error on initial load
             container.innerHTML = `<p class="error-message">Error loading sessions: ${error.message}</p>`;
         }
@@ -552,13 +550,13 @@ async function initSessions(isRefresh = false) {
  */
 function createRefreshIndicator() {
     // Check if it already exists
-    let indicator = document.getElementById('refresh-indicator');
+    let indicator = document.getElementById("refresh-indicator");
     if (indicator) return indicator;
 
     // Create new indicator
-    indicator = document.createElement('div');
-    indicator.id = 'refresh-indicator';
-    indicator.textContent = 'Refreshing data...';
+    indicator = document.createElement("div");
+    indicator.id = "refresh-indicator";
+    indicator.textContent = "Refreshing data...";
     indicator.style.cssText = `
         position: fixed;
         top: 10px;
@@ -575,7 +573,7 @@ function createRefreshIndicator() {
     `;
 
     // Add a style for the active state
-    const style = document.createElement('style');
+    const style = document.createElement("style");
     style.textContent = `
         #refresh-indicator.active {
             opacity: 1;
@@ -586,10 +584,10 @@ function createRefreshIndicator() {
     // Attach helper methods to control visibility for callers
     // These are used by setupSessionsAutoRefresh()
     indicator.show = () => {
-        indicator.classList.add('active');
+        indicator.classList.add("active");
     };
     indicator.hide = () => {
-        indicator.classList.remove('active');
+        indicator.classList.remove("active");
     };
 
     // Add to DOM
@@ -598,7 +596,7 @@ function createRefreshIndicator() {
 }
 
 async function processDataIntoSessions(historyItems, allWindows) { // Made async
-    console.log('Processing data into sessions...');
+    console.log("Processing data into sessions...");
     const SESSION_GAP_THRESHOLD = 30 * 60 * 1000; // 30 minutes in milliseconds
     const MICRO_SESSION_GAP_THRESHOLD = 5 * 60 * 1000; // 5 minutes for micro-sessions
     const SESSION_CONTEXT_THRESHOLD = 4 * 60 * 60 * 1000; // 4 hours as extended context threshold
@@ -611,8 +609,8 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         url: item.url,
         title: item.title || item.url,
         timestamp: item.lastVisitTime,
-        type: item.type || 'history',
-        _layer: item._layer || 'raw',
+        type: item.type || "history",
+        _layer: item._layer || "raw",
         tags: item.tags || [],
         visitCount: item.visitCount
     }));
@@ -624,7 +622,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
     allWindows.forEach(window => {
         if (window.tabs) {
             window.tabs.forEach(tab => {
-                if (tab.url && !tab.url.startsWith('chrome://')) { // Exclude internal chrome pages
+                if (tab.url && !tab.url.startsWith("chrome://")) { // Exclude internal chrome pages
                     // Store the URL for later active session identification
                     activeTabUrls.add(tab.url);
                     activeTabIds.add(tab.id);
@@ -637,7 +635,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                         title: tab.title || tab.url,
                         timestamp: accessTime,
                         lastAccessTime: accessTime, // Store explicitly for filtering later
-                        type: 'active_tab',
+                        type: "active_tab",
                         tabId: tab.id,
                         windowId: window.id,
                         active: tab.active
@@ -657,7 +655,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         if (!x) {
             // No duplicate found, add the current activity
             return acc.concat([current]);
-        } else if (current.type === 'active_tab' && x.type === 'history') {
+        } else if (current.type === "active_tab" && x.type === "history") {
             // Replace history with active_tab if it's essentially the same event
             return acc.filter(item => item !== x).concat([current]);
         }
@@ -671,7 +669,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
     activities.sort((a, b) => a.timestamp - b.timestamp);
 
     if (activities.length === 0) {
-        console.log('No activities to process into sessions.');
+        console.log("No activities to process into sessions.");
         return [];
     }
 
@@ -686,8 +684,8 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         // Get day key for the activity for context matching
         const activityDate = new Date(activity.timestamp);
         const year = activityDate.getFullYear();
-        const month = String(activityDate.getMonth() + 1).padStart(2, '0');
-        const day = String(activityDate.getDate()).padStart(2, '0');
+        const month = String(activityDate.getMonth() + 1).padStart(2, "0");
+        const day = String(activityDate.getDate()).padStart(2, "0");
         const dayKey = `${year}-${month}-${day}`;
 
         if (!sessionsByDay[dayKey]) {
@@ -720,8 +718,8 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                 activity.windowId !== currentSession.lastWindowId;
 
             // Check if this is likely an explicit new tab or window navigation
-            const isExplicitNewTab = activity.openContext === 'user_command' ||
-                activity.url.includes('chrome://newtab');
+            const isExplicitNewTab = activity.openContext === "user_command" ||
+                activity.url.includes("chrome://newtab");
 
             // Calculate if this should be a micro-session break
             const isMicroSessionBreak = (timeDiff > MICRO_SESSION_GAP_THRESHOLD) ||
@@ -763,14 +761,14 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                 }
                 // Micro-session break (new window, explicit navigation, or smaller time gap)
             } else if (isMicroSessionBreak) {
-                console.log(`Creating micro-session break for ${activity.url} - ${isNewWindow ? 'new window' : 'time gap or explicit navigation'}`);
+                console.log(`Creating micro-session break for ${activity.url} - ${isNewWindow ? "new window" : "time gap or explicit navigation"}`);
 
                 // Create a micro-session marker in current session
                 currentSession.microSessionBreaks = currentSession.microSessionBreaks || [];
                 currentSession.microSessionBreaks.push({
                     timestamp: activity.timestamp,
-                    reason: isNewWindow ? 'new_window' :
-                        isExplicitNewTab ? 'new_tab' : 'time_gap'
+                    reason: isNewWindow ? "new_window" :
+                        isExplicitNewTab ? "new_tab" : "time_gap"
                 });
 
                 // Add the page with a micro-session marker
@@ -782,8 +780,8 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
                     windowId: activity.windowId,
                     tabId: activity.tabId,
                     isMicroSessionStart: true,
-                    microSessionReason: isNewWindow ? 'new_window' :
-                        isExplicitNewTab ? 'new_tab' : 'time_gap'
+                    microSessionReason: isNewWindow ? "new_window" :
+                        isExplicitNewTab ? "new_tab" : "time_gap"
                 });
 
                 currentSession.endTime = activity.timestamp;
@@ -814,11 +812,11 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
     }
 
     // Enrich sessions with dwell time and referral data
-    if (typeof window.browserState !== 'undefined' && window.browserState.getPageActivityAndReferrals) {
-        console.log('Enriching sessions with activity and referral data...');
+    if (typeof window.browserState !== "undefined" && window.browserState.getPageActivityAndReferrals) {
+        console.log("Enriching sessions with activity and referral data...");
 
         // Optimize: Fetch state once before the loop to avoid redundant background IPC calls
-        if (typeof window.browserState.getState === 'function') {
+        if (typeof window.browserState.getState === "function") {
             await window.browserState.getState();
         }
 
@@ -847,16 +845,16 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         }
     }
     else {
-        console.warn('browserState.getPageActivityAndReferrals not available. Skipping session enrichment.');
+        console.warn("browserState.getPageActivityAndReferrals not available. Skipping session enrichment.");
         // More detailed diagnostics
-        console.warn(`window.browserState exists: ${typeof window.browserState !== 'undefined'}`);
-        if (typeof window.browserState !== 'undefined') {
-            console.warn(`window.browserState properties:`, Object.keys(window.browserState));
-            console.warn(`getPageActivityAndReferrals is function: ${typeof window.browserState.getPageActivityAndReferrals === 'function'}`);
+        console.warn(`window.browserState exists: ${typeof window.browserState !== "undefined"}`);
+        if (typeof window.browserState !== "undefined") {
+            console.warn("window.browserState properties:", Object.keys(window.browserState));
+            console.warn(`getPageActivityAndReferrals is function: ${typeof window.browserState.getPageActivityAndReferrals === "function"}`);
         }
     }
 
-    console.log('Processed sessions (enriched):', processedSessions);
+    console.log("Processed sessions (enriched):", processedSessions);
 
     // Queue important pages for summary generation
     const pagesToSummarize = new Set();
@@ -882,7 +880,7 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
     // Add to summary queue if not already cached
     pagesToSummarize.forEach(url => {
         // Skip restricted URLs
-        if (url.startsWith('chrome://') || url.startsWith('file://')) return;
+        if (url.startsWith("chrome://") || url.startsWith("file://")) return;
 
         // Skip if we already have a summary
         if (!getCachedSummary(url)) {
@@ -988,38 +986,38 @@ function finalizeSession(session, activeTabUrls) {
  * @param {string} searchTerm - Optional search term to highlight
  * @returns {HTMLElement} - The rendered page list container
  */
-function renderPageList(session, searchTerm = '') {
-    const pageListContainer = document.createElement('div');
-    pageListContainer.className = 'session-page-list';
+function renderPageList(session, searchTerm = "") {
+    const pageListContainer = document.createElement("div");
+    pageListContainer.className = "session-page-list";
 
     // Sort pages chronologically
     const sortedPages = session.pages.sort((a, b) => a.visitTime - b.visitTime);
 
     // Create list for pages
-    const ul = document.createElement('ul');
-    ul.className = 'session-pages-ul';
+    const ul = document.createElement("ul");
+    ul.className = "session-pages-ul";
 
     // Add summary at the top
-    const summary = document.createElement('div');
-    summary.className = 'session-summary';
+    const summary = document.createElement("div");
+    summary.className = "session-summary";
 
     // Add summary details like page count and duration
-    const summaryDetails = document.createElement('div');
-    summaryDetails.className = 'session-summary-details';
+    const summaryDetails = document.createElement("div");
+    summaryDetails.className = "session-summary-details";
 
     // Add top domains if available
     if (session.topDomains && session.topDomains.length > 0) {
-        const domainsList = document.createElement('div');
-        domainsList.className = 'detail';
-        domainsList.innerHTML = `<span class="detail-label">Top domains:</span> ${session.topDomains.slice(0, 3).map(d => d.domain).join(', ')}`;
+        const domainsList = document.createElement("div");
+        domainsList.className = "detail";
+        domainsList.innerHTML = `<span class="detail-label">Top domains:</span> ${session.topDomains.slice(0, 3).map(d => d.domain).join(", ")}`;
         summaryDetails.appendChild(domainsList);
     }
 
     // Add search queries if available
     if (session.searchQueries && session.searchQueries.length > 0) {
-        const queriesList = document.createElement('div');
-        queriesList.className = 'detail search-queries';
-        queriesList.innerHTML = `<span class="detail-label">Search queries:</span> ${session.searchQueries.slice(0, 3).map(q => `<span class="search-query">${q}</span>`).join(', ')}`;
+        const queriesList = document.createElement("div");
+        queriesList.className = "detail search-queries";
+        queriesList.innerHTML = `<span class="detail-label">Search queries:</span> ${session.searchQueries.slice(0, 3).map(q => `<span class="search-query">${q}</span>`).join(", ")}`;
         summaryDetails.appendChild(queriesList);
     }
 
@@ -1028,31 +1026,31 @@ function renderPageList(session, searchTerm = '') {
 
     // Add session header with date if available
     if (session && session.startTime) {
-        const sessionHeader = document.createElement('div');
-        sessionHeader.className = 'session-detail-header';
+        const sessionHeader = document.createElement("div");
+        sessionHeader.className = "session-detail-header";
         sessionHeader.textContent = `Session started: ${new Date(session.startTime).toLocaleString()}`;
         pageListContainer.appendChild(sessionHeader);
 
         // Add domain histogram if we have top domains
         if (session.topDomains && session.topDomains.length > 0) {
-            const domainHistogram = document.createElement('div');
-            domainHistogram.className = 'domain-histogram';
+            const domainHistogram = document.createElement("div");
+            domainHistogram.className = "domain-histogram";
 
             // Show top 5 domains max
             const topDomains = session.topDomains.slice(0, 5);
 
             topDomains.forEach(domainInfo => {
-                const domainPill = document.createElement('div');
-                domainPill.className = 'domain-histogram-pill';
+                const domainPill = document.createElement("div");
+                domainPill.className = "domain-histogram-pill";
 
-                const domainFavicon = document.createElement('img');
+                const domainFavicon = document.createElement("img");
                 domainFavicon.src = domainInfo.faviconUrl;
-                domainFavicon.alt = '';
-                domainFavicon.className = 'domain-histogram-favicon';
+                domainFavicon.alt = "";
+                domainFavicon.className = "domain-histogram-favicon";
 
-                const domainName = document.createElement('span');
+                const domainName = document.createElement("span");
                 domainName.textContent = domainInfo.domain;
-                domainName.className = 'domain-histogram-name';
+                domainName.className = "domain-histogram-name";
 
                 domainPill.appendChild(domainFavicon);
                 domainPill.appendChild(domainName);
@@ -1073,33 +1071,33 @@ function renderPageList(session, searchTerm = '') {
         // Check if this page starts a new micro-session
         if (page.isMicroSessionStart && index > 0) {
             // Create a micro-session separator
-            const separator = document.createElement('div');
-            separator.className = 'micro-session-separator';
+            const separator = document.createElement("div");
+            separator.className = "micro-session-separator";
 
             // Add data attribute for reason-specific styling
             if (page.microSessionReason) {
                 separator.dataset.reason = page.microSessionReason;
-                let reasonText = '';
+                let reasonText = "";
                 switch (page.microSessionReason) {
-                    case 'new_window':
-                        reasonText = 'New Window';
+                    case "new_window":
+                        reasonText = "New Window";
                         break;
-                    case 'new_tab':
-                        reasonText = 'New Tab';
+                    case "new_tab":
+                        reasonText = "New Tab";
                         break;
-                    case 'time_gap':
-                        reasonText = 'Time Gap';
+                    case "time_gap":
+                        reasonText = "Time Gap";
                         break;
                     default:
-                        reasonText = 'Session Break';
+                        reasonText = "Session Break";
                 }
 
                 separator.innerHTML = `<span class="micro-session-reason">${reasonText}</span>`;
             }
 
             // Add the separator to the list
-            const separatorItem = document.createElement('li');
-            separatorItem.className = 'micro-session-separator-item';
+            const separatorItem = document.createElement("li");
+            separatorItem.className = "micro-session-separator-item";
             separatorItem.appendChild(separator);
             ul.appendChild(separatorItem);
 
@@ -1107,41 +1105,41 @@ function renderPageList(session, searchTerm = '') {
             currentMicroSessionIndex++;
         }
 
-        const li = document.createElement('li');
-        li.className = 'session-page-item';
+        const li = document.createElement("li");
+        li.className = "session-page-item";
 
         // Add micro-session indicator if this starts a micro-session
         if (page.isMicroSessionStart) {
-            li.classList.add('micro-session-start');
+            li.classList.add("micro-session-start");
         }
 
         // Create container for favicon and domain
-        const faviconDomainContainer = document.createElement('div');
-        faviconDomainContainer.className = 'favicon-domain-container';
+        const faviconDomainContainer = document.createElement("div");
+        faviconDomainContainer.className = "favicon-domain-container";
 
         // Add favicon
-        const faviconImg = document.createElement('img');
-        faviconImg.className = 'page-favicon-img';
+        const faviconImg = document.createElement("img");
+        faviconImg.className = "page-favicon-img";
         faviconImg.src = getFaviconDisplayUrl(page.url);
-        faviconImg.alt = ''; // Decorative
+        faviconImg.alt = ""; // Decorative
         faviconDomainContainer.appendChild(faviconImg);
 
         // Add domain pill next to favicon
         try {
             const url = new URL(page.url);
-            const domainPill = document.createElement('span');
-            domainPill.className = 'domain-pill';
+            const domainPill = document.createElement("span");
+            domainPill.className = "domain-pill";
             domainPill.textContent = url.hostname;
             faviconDomainContainer.appendChild(domainPill);
         } catch (e) { /* Invalid URL, skip domain pill */ }
 
         li.appendChild(faviconDomainContainer);
 
-        const pageDetails = document.createElement('div');
-        pageDetails.className = 'page-item-details';
+        const pageDetails = document.createElement("div");
+        pageDetails.className = "page-item-details";
 
         // Title with optional highlight - with 4x larger font
-        const titleLink = document.createElement('a');
+        const titleLink = document.createElement("a");
         titleLink.href = page.url;
         const titleText = page.title || page.url;
         if (searchTerm && titleText.toLowerCase().includes(searchTerm)) {
@@ -1149,13 +1147,13 @@ function renderPageList(session, searchTerm = '') {
         } else {
             titleLink.textContent = titleText;
         }
-        titleLink.className = 'page-title-link';
-        titleLink.target = '_blank'; // Open in new tab
+        titleLink.className = "page-title-link";
+        titleLink.target = "_blank"; // Open in new tab
         pageDetails.appendChild(titleLink);
 
         // URL with optional highlight
-        const urlText = document.createElement('span');
-        urlText.className = 'page-url-text';
+        const urlText = document.createElement("span");
+        urlText.className = "page-url-text";
         if (searchTerm && page.url.toLowerCase().includes(searchTerm)) {
             urlText.innerHTML = highlightText(page.url, searchTerm);
         } else {
@@ -1166,12 +1164,12 @@ function renderPageList(session, searchTerm = '') {
         // Format the current page time and check if it's different from the last shown time
         const currentTime = new Date(page.visitTime);
         const timeFormatted = currentTime.toLocaleString();
-        const timeKey = currentTime.getHours() + ':' + currentTime.getMinutes();
+        const timeKey = currentTime.getHours() + ":" + currentTime.getMinutes();
 
         // Only show time if it's different from the last one we showed
         if (!lastShownTime || timeKey !== lastShownTime) {
-            const visitTimeText = document.createElement('span');
-            visitTimeText.className = 'page-visit-time';
+            const visitTimeText = document.createElement("span");
+            visitTimeText.className = "page-visit-time";
             visitTimeText.textContent = `Visited: ${timeFormatted}`;
             pageDetails.appendChild(visitTimeText);
 
@@ -1183,8 +1181,8 @@ function renderPageList(session, searchTerm = '') {
         const dwellTimeMs = parseFloat(page.dwellTimeMs || 0);
         if (dwellTimeMs > 0) {
             console.log(`[Page Render2] Page ${page.url}: dwellTimeMs = ${dwellTimeMs} (${typeof dwellTimeMs})`);
-            const dwellTimeText = document.createElement('span');
-            dwellTimeText.className = 'page-dwell-time';
+            const dwellTimeText = document.createElement("span");
+            dwellTimeText.className = "page-dwell-time";
             dwellTimeText.textContent = `Dwell time: ${formatDuration(dwellTimeMs)}`;
             pageDetails.appendChild(dwellTimeText);
         }
@@ -1194,55 +1192,55 @@ function renderPageList(session, searchTerm = '') {
         const heroImageDwellMs = parseFloat(page.dwellTimeMs || 0);
         if (heroImageDwellMs >= 60000 && !page.heroImagesRendered) {
             // Add a loading placeholder that will be replaced asynchronously
-            const heroImagePlaceholder = document.createElement('div');
-            heroImagePlaceholder.className = 'hero-image-placeholder';
-            heroImagePlaceholder.setAttribute('data-url', page.url);
+            const heroImagePlaceholder = document.createElement("div");
+            heroImagePlaceholder.className = "hero-image-placeholder";
+            heroImagePlaceholder.setAttribute("data-url", page.url);
             pageDetails.appendChild(heroImagePlaceholder);
 
             // Asynchronously load hero images
             getHeroImagesForUrl(page.url).then(heroImages => {
                 if (heroImages && heroImages.length > 0) {
                     // Create a horizontal strip of thumbnails
-                    const strip = document.createElement('div');
-                    strip.className = 'hero-image-strip';
+                    const strip = document.createElement("div");
+                    strip.className = "hero-image-strip";
 
                     // Add each thumbnail
                     heroImages.forEach((image, index) => {
                         // Skip invalid images
                         if (!image.src) return;
 
-                        const thumb = document.createElement('img');
-                        thumb.className = 'hero-image-thumbnail';
+                        const thumb = document.createElement("img");
+                        thumb.className = "hero-image-thumbnail";
                         thumb.src = image.src;
-                        thumb.alt = image.alt || '';
+                        thumb.alt = image.alt || "";
                         thumb.dataset.index = index;
 
                         // Add click handler to expand image
-                        thumb.addEventListener('click', (e) => {
+                        thumb.addEventListener("click", (e) => {
                             e.stopPropagation(); // Prevent bubbling
 
                             // Find or create container for expanded image
                             let container = strip.nextElementSibling;
-                            if (!container || !container.classList.contains('hero-image-container')) {
-                                container = document.createElement('div');
-                                container.className = 'hero-image-container';
-                                strip.insertAdjacentElement('afterend', container);
+                            if (!container || !container.classList.contains("hero-image-container")) {
+                                container = document.createElement("div");
+                                container.className = "hero-image-container";
+                                strip.insertAdjacentElement("afterend", container);
                             } else {
                                 // Clear existing content
-                                container.innerHTML = '';
+                                container.innerHTML = "";
                             }
 
                             // Create expanded image
-                            const expandedImg = document.createElement('img');
-                            expandedImg.className = 'hero-image-expanded';
+                            const expandedImg = document.createElement("img");
+                            expandedImg.className = "hero-image-expanded";
                             expandedImg.src = image.src;
-                            expandedImg.alt = image.alt || '';
+                            expandedImg.alt = image.alt || "";
 
                             // Add close button
-                            const closeBtn = document.createElement('button');
-                            closeBtn.className = 'hero-image-close';
-                            closeBtn.textContent = '\u00d7'; // × symbol
-                            closeBtn.addEventListener('click', (e) => {
+                            const closeBtn = document.createElement("button");
+                            closeBtn.className = "hero-image-close";
+                            closeBtn.textContent = "\u00d7"; // × symbol
+                            closeBtn.addEventListener("click", (e) => {
                                 e.stopPropagation(); // Prevent bubbling
                                 container.remove();
                             });
@@ -1272,48 +1270,48 @@ function renderPageList(session, searchTerm = '') {
 
         // Display Referral Info
         if (page.referral) {
-            const referralDiv = document.createElement('div');
-            referralDiv.className = 'page-referral-info';
-            let referralHtml = 'Referred by: ';
-            if (page.referral.type === 'tabOpen') {
+            const referralDiv = document.createElement("div");
+            referralDiv.className = "page-referral-info";
+            let referralHtml = "Referred by: ";
+            if (page.referral.type === "tabOpen") {
                 if (page.referral.sourceUrl) {
-                    const sourceLink = document.createElement('a');
+                    const sourceLink = document.createElement("a");
                     sourceLink.href = page.referral.sourceUrl;
-                    sourceLink.textContent = page.referral.sourceUrl.length > 70 ? page.referral.sourceUrl.substring(0, 67) + '...' : page.referral.sourceUrl;
-                    sourceLink.target = '_blank';
+                    sourceLink.textContent = page.referral.sourceUrl.length > 70 ? page.referral.sourceUrl.substring(0, 67) + "..." : page.referral.sourceUrl;
+                    sourceLink.target = "_blank";
                     referralDiv.appendChild(document.createTextNode(referralHtml));
                     referralDiv.appendChild(sourceLink);
                 } else {
-                    referralDiv.textContent = referralHtml + 'an unknown source tab';
+                    referralDiv.textContent = referralHtml + "an unknown source tab";
                 }
                 if (page.referral.linkText) {
                     referralDiv.appendChild(document.createTextNode(` (link: "${page.referral.linkText}")`));
                 }
             } else {
                 // Fallback for other referral types if ever introduced
-                referralDiv.textContent = referralHtml + 'unknown mechanism.';
+                referralDiv.textContent = referralHtml + "unknown mechanism.";
             }
             pageDetails.appendChild(referralDiv);
         }
 
         // Handle summary display with loading indicator for non-cached summaries
         const cachedSummary = getCachedSummary(page.url);
-        const isInternalUrl = page.url.startsWith('chrome://') || page.url.startsWith('file:///');
+        const isInternalUrl = page.url.startsWith("chrome://") || page.url.startsWith("file:///");
 
         // Only show summary section if we have a cached summary or if URL is valid for summarization
         if (cachedSummary || !isInternalUrl) {
-            const summaryDiv = document.createElement('div');
-            summaryDiv.className = 'page-summary';
+            const summaryDiv = document.createElement("div");
+            summaryDiv.className = "page-summary";
 
             // Add a small label indicating this is an AI summary
-            const summaryLabel = document.createElement('div');
-            summaryLabel.className = 'summary-label';
+            const summaryLabel = document.createElement("div");
+            summaryLabel.className = "summary-label";
 
             if (cachedSummary) {
-                summaryLabel.textContent = 'AI Summary';
+                summaryLabel.textContent = "AI Summary";
             } else {
                 // Use a loading indicator instead of static text
-                summaryLabel.innerHTML = 'AI Summary <span class="loading-indicator">...</span>';
+                summaryLabel.innerHTML = "AI Summary <span class=\"loading-indicator\">...</span>";
 
                 // Set up polling to check for summary availability
                 const checkSummaryInterval = setInterval(() => {
@@ -1321,9 +1319,9 @@ function renderPageList(session, searchTerm = '') {
                     if (updatedSummary) {
                         clearInterval(checkSummaryInterval);
                         // Update the label to remove loading indicator
-                        summaryLabel.textContent = 'AI Summary';
+                        summaryLabel.textContent = "AI Summary";
                         // Create and add summary content
-                        const summaryContent = document.createElement('div');
+                        const summaryContent = document.createElement("div");
                         summaryContent.innerHTML = createTruncatedSummary(updatedSummary, searchTerm);
                         summaryDiv.appendChild(summaryContent);
                     }
@@ -1337,7 +1335,7 @@ function renderPageList(session, searchTerm = '') {
 
             // Only add content if we have a cached summary
             if (cachedSummary) {
-                const summaryContent = document.createElement('div');
+                const summaryContent = document.createElement("div");
                 summaryContent.innerHTML = createTruncatedSummary(cachedSummary, searchTerm);
                 summaryDiv.appendChild(summaryContent);
             }
@@ -1346,26 +1344,6 @@ function renderPageList(session, searchTerm = '') {
         }
 
         li.appendChild(pageDetails);
-        // Attach awesome tooltip to the page item
-        globalTooltip.attach(li, (target) => {
-            const dwellTimeStr = dwellTimeMs > 0 ? formatDuration(dwellTimeMs) : 'Brief view';
-
-            return `
-                <div class="tooltip-header">${page.title || 'Untitled Page'}</div>
-                <div class="tooltip-url">${page.url}</div>
-                <div class="tooltip-section">
-                    <div class="tooltip-row">
-                        <span class="tooltip-label">Visited</span>
-                        <span class="tooltip-value">${new Date(page.visitTime).toLocaleTimeString()}</span>
-                    </div>
-                    <div class="tooltip-row">
-                        <span class="tooltip-label">Dwell Time</span>
-                        <span class="tooltip-value">${dwellTimeStr}</span>
-                    </div>
-                </div>
-                ${dwellTimeMs >= 60000 ? '<div class="tooltip-badge badge-duration">Deep View</div>' : ''}
-            `;
-        });
 
         ul.appendChild(li);
     });
@@ -1380,20 +1358,20 @@ function renderPageList(session, searchTerm = '') {
  * @param {boolean} isRefresh - Whether this is a refresh operation
  */
 function renderSessions(sessions, isRefresh = false) {
-    const container = document.getElementById('sessions-container');
+    const container = document.getElementById("sessions-container");
     if (!container) return;
 
     // If not a refresh (initial load), clear the global seen hero images registry
     // This ensures a clean state for the initial session rendering
     if (!isRefresh) {
         clearSeenHeroImages();
-        container.innerHTML = '<p class="loading-message">Loading sessions data...</p>';
+        container.innerHTML = "<p class=\"loading-message\">Loading sessions data...</p>";
     } else {
         // If this is a refresh, show indicator and keep existing content
         const indicator = createRefreshIndicator();
-        indicator.classList.add('active');
+        indicator.classList.add("active");
         setTimeout(() => {
-            indicator.classList.remove('active');
+            indicator.classList.remove("active");
         }, 1000);
     }
 
@@ -1409,7 +1387,7 @@ function setupSessionsAutoRefresh() {
     const refreshIndicator = createRefreshIndicator();
 
     setInterval(async () => {
-        console.log('Auto-refreshing sessions data...');
+        console.log("Auto-refreshing sessions data...");
         refreshIndicator.show();
 
         try {
@@ -1419,9 +1397,9 @@ function setupSessionsAutoRefresh() {
             // Refresh data and render with isRefresh flag
             await refreshSessionsData(activeTabUrls);
 
-            console.log('Sessions auto-refresh complete');
+            console.log("Sessions auto-refresh complete");
         } catch (error) {
-            console.error('Error during sessions auto-refresh:', error);
+            console.error("Error during sessions auto-refresh:", error);
         } finally {
             refreshIndicator.hide();
         }
@@ -1429,23 +1407,23 @@ function setupSessionsAutoRefresh() {
 
     // Also add a manual refresh button
     const addRefreshButton = () => {
-        const existingButton = document.getElementById('manual-refresh-button');
+        const existingButton = document.getElementById("manual-refresh-button");
         if (existingButton) return;
 
         // sessions.html uses .header-controls (the page never had a .page-header
         // element, so the previous selector silently no-op'd and the button never
         // appeared). Fall back across both selectors for safety.
-        const container = document.querySelector('.header-controls')
-            || document.querySelector('.app-header')
-            || document.querySelector('.page-header');
+        const container = document.querySelector(".header-controls")
+            || document.querySelector(".app-header")
+            || document.querySelector(".page-header");
         if (!container) return;
 
-        const refreshButton = document.createElement('button');
-        refreshButton.id = 'manual-refresh-button';
-        refreshButton.className = 'refresh-button';
-        refreshButton.innerHTML = '<span>↻</span> Refresh';
-        refreshButton.title = 'Refresh sessions data';
-        refreshButton.addEventListener('click', async () => {
+        const refreshButton = document.createElement("button");
+        refreshButton.id = "manual-refresh-button";
+        refreshButton.className = "refresh-button";
+        refreshButton.innerHTML = "<span>↻</span> Refresh";
+        refreshButton.title = "Refresh sessions data";
+        refreshButton.addEventListener("click", async () => {
             refreshButton.disabled = true;
             refreshIndicator.show();
 
@@ -1456,9 +1434,9 @@ function setupSessionsAutoRefresh() {
                 // Refresh data and render with isRefresh flag
                 await refreshSessionsData(activeTabUrls);
 
-                console.log('Manual sessions refresh complete');
+                console.log("Manual sessions refresh complete");
             } catch (error) {
-                console.error('Error during manual sessions refresh:', error);
+                console.error("Error during manual sessions refresh:", error);
             } finally {
                 refreshButton.disabled = false;
                 refreshIndicator.hide();
@@ -1469,8 +1447,8 @@ function setupSessionsAutoRefresh() {
     };
 
     // Add refresh button when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', addRefreshButton);
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", addRefreshButton);
     } else {
         addRefreshButton();
     }
@@ -1495,9 +1473,9 @@ async function refreshSessionsData(activeTabUrls) {
         // Render the refreshed sessions
         renderSessions(sessions, true);
 
-        console.log('Sessions data refreshed successfully');
+        console.log("Sessions data refreshed successfully");
     } catch (error) {
-        console.error('Error refreshing sessions data:', error);
+        console.error("Error refreshing sessions data:", error);
     }
 }
 
