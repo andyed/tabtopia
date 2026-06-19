@@ -268,7 +268,8 @@ async function searchHistoryForTab(url) {
         const historyItems = await chrome.history.search({
             text: domain,
             maxResults: 10,
-            startTime: 0
+            // Only search last 90 days to prevent hanging on massive history DBs
+            startTime: Date.now() - (90 * 24 * 60 * 60 * 1000)
         });
 
         // Further filter to ensure domain match
