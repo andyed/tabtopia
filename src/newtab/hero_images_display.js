@@ -1,8 +1,8 @@
 // Hero images display for sessions view
-import { showSessionModal, extractTitleFromSession } from './sessions_modal.js';
+import { showSessionModal, extractTitleFromSession } from "./sessions_modal.js";
 
-import { formatTimeAgo } from './timeago.js';
-import { getLocalFaviconUrl } from './utility.js';
+import { formatTimeAgo } from "./timeago.js";
+import { getLocalFaviconUrl } from "./utility.js";
 
 // Global registry of seen image URLs to prevent duplicates across pages/sessions
 const globalSeenImageUrls = new Set();
@@ -34,20 +34,20 @@ export async function createSessionCard(session, options = {}) {
 
   // Helper function to extract domain from URL
   function extractDomainFromUrl(url) {
-    if (!url) return '';
+    if (!url) return "";
 
     // Add protocol if it's missing
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://' + url;
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      url = "https://" + url;
     }
 
     try {
       const urlObj = new URL(url);
-      return urlObj.hostname || '';
+      return urlObj.hostname || "";
     } catch (e) {
       // Try to extract domain using regex as fallback
       const domainMatch = url.match(/[^/]*\.[^./]+(\.[^./]+)?/);
-      return domainMatch ? domainMatch[0] : '';
+      return domainMatch ? domainMatch[0] : "";
     }
   }
 
@@ -69,12 +69,12 @@ export async function createSessionCard(session, options = {}) {
         !seenImageUrls.has(page.heroImage) &&
         !globalSeenImageUrls.has(page.heroImage)) {
 
-        const domain = extractDomainFromUrl(page.url || '');
+        const domain = extractDomainFromUrl(page.url || "");
         const imgObj = {
           src: page.heroImage,
-          alt: page.title || '',
-          pageTitle: page.title || '',
-          pageUrl: page.url || '',
+          alt: page.title || "",
+          pageTitle: page.title || "",
+          pageUrl: page.url || "",
           domain: domain,
           favicon: getFaviconUrl(domain),
           quality: Math.min(page.dwellTimeMs / 1000, 300) // Cap quality at 300 (5 minutes)
@@ -95,9 +95,9 @@ export async function createSessionCard(session, options = {}) {
 
           const imgObj = {
             src: page.heroImage,
-            alt: page.title || '',
-            pageTitle: page.title || '',
-            pageUrl: page.url || '',
+            alt: page.title || "",
+            pageTitle: page.title || "",
+            pageUrl: page.url || "",
             quality: Math.min((page.dwellTimeMs || 1000) / 1000, 60) // Default to 1 second if no dwell time
           };
           heroImages.push(imgObj);
@@ -144,7 +144,7 @@ export async function createSessionCard(session, options = {}) {
 
             return {
               ...img,
-              pageTitle: page.title || '',
+              pageTitle: page.title || "",
               pageUrl: page.url,
               quality: 40 + Math.min(20, (page.dwellTimeMs / 30000) * 5) // Quality 40-60 for regular pages
             };
@@ -170,8 +170,8 @@ export async function createSessionCard(session, options = {}) {
 
   // Set the main hero image and quality
   const heroImage = heroImages.length > 0 ? heroImages[0] : null;
-  const pageTitle = heroImages.length > 0 ? heroImages[0].pageTitle : '';
-  const pageUrl = heroImages.length > 0 ? heroImages[0].pageUrl : '';
+  const pageTitle = heroImages.length > 0 ? heroImages[0].pageTitle : "";
+  const pageUrl = heroImages.length > 0 ? heroImages[0].pageUrl : "";
   imageQuality = heroImages.length > 0 ? heroImages[0].quality : 0;
 
   // Decide if this should be a double-width card
@@ -184,15 +184,15 @@ export async function createSessionCard(session, options = {}) {
   const shouldBeDoubleWidth = (hasQualityImage || hasMultipleImages) && (isLongSession || hasManyPages || hasMultipleImages);
 
   // Create the card element with appropriate class
-  const card = document.createElement('div');
-  card.className = shouldBeDoubleWidth ? 'session-card double-width' : 'session-card standard-width';
+  const card = document.createElement("div");
+  card.className = shouldBeDoubleWidth ? "session-card double-width" : "session-card standard-width";
   if (!hasHeroImage) {
-    card.classList.add('no-image');
+    card.classList.add("no-image");
   }
 
   // Add active indicator if the session has active pages
   if (hasActivePagesInSession) {
-    card.classList.add('has-active-pages');
+    card.classList.add("has-active-pages");
   }
 
   // Add data attributes for age-based hue and session id for modal matching
@@ -246,12 +246,12 @@ export async function createSessionCard(session, options = {}) {
   const firstPage = displaySession.pages.length > 0 ? displaySession.pages[0] : null;
   const lastPage = displaySession.pages.length > 0 ? displaySession.pages[displaySession.pages.length - 1] : null;
 
-  const firstPageTitle = firstPage?.title || 'Unknown page';
-  const lastPageTitle = lastPage?.title || 'Unknown page';
+  const firstPageTitle = firstPage?.title || "Unknown page";
+  const lastPageTitle = lastPage?.title || "Unknown page";
 
   // Build the card HTML with different layouts based on type
   // Check if card is double-width or standard
-  const isDoubleWidth = card.classList.contains('double-width');
+  const isDoubleWidth = card.classList.contains("double-width");
 
   if (hasHeroImage) {
     if (isDoubleWidth) {
@@ -261,26 +261,26 @@ export async function createSessionCard(session, options = {}) {
           ${heroImages.length > 1 ?
           `<div class="session-mosaic mosaic-${heroImages.length}">
               ${heroImages.map((img, i) => {
-            const domain = extractDomainFromUrl(img.pageUrl || '');
+            const domain = extractDomainFromUrl(img.pageUrl || "");
             const faviconUrl = getFaviconUrl(domain);
             return `<div class="mosaic-item-wrapper mosaic-item-${heroImages.length}-${i + 1}">
-                  <img src="${img.src}" alt="${img.alt || img.pageTitle || 'Session image'}" 
+                  <img src="${img.src}" alt="${img.alt || img.pageTitle || "Session image"}" 
                        class="mosaic-item hero-image-element" 
-                       title="${img.pageTitle || ''}" 
-                       data-page-url="${img.pageUrl || ''}">
+                       title="${img.pageTitle || ""}" 
+                       data-page-url="${img.pageUrl || ""}">
                   <img src="${faviconUrl}" alt="Favicon for ${domain}" 
                        class="mosaic-favicon" 
                        title="${domain}">  
                 </div>`;
-          }).join('')}
+          }).join("")}
             </div>
-            <div class="image-source">${pageTitle ? `From: ${pageTitle.substring(0, 40)}${pageTitle.length > 40 ? '...' : ''}` : ''}</div>` :
-          `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || 'Session image'}" class="card-image hero-image-element">
-             <div class="image-source">${pageTitle ? `From: ${pageTitle.substring(0, 40)}${pageTitle.length > 40 ? '...' : ''}` : ''}</div>`
+            <div class="image-source">${pageTitle ? `From: ${pageTitle.substring(0, 40)}${pageTitle.length > 40 ? "..." : ""}` : ""}</div>` :
+          `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || "Session image"}" class="card-image hero-image-element">
+             <div class="image-source">${pageTitle ? `From: ${pageTitle.substring(0, 40)}${pageTitle.length > 40 ? "..." : ""}` : ""}</div>`
         }
         </div>
-        <div class="card-content-section"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ''}>
-          <h3 class="card-title">${session.name || extractTitleFromSession(session) || 'Browsing Session'}</h3>
+        <div class="card-content-section"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ""}>
+          <h3 class="card-title">${session.name || extractTitleFromSession(session) || "Browsing Session"}</h3>
           
           <div class="card-stats">
             <!-- Combined page count and favicon stack -->
@@ -291,7 +291,7 @@ export async function createSessionCard(session, options = {}) {
           `<img src="${getLocalFaviconUrl(domain, 16)}" 
                    class="stacked-favicon" 
                    style="z-index:${10 - index}; margin-left:${index * -6}px" 
-                   title="${domain}" />`).join('')}
+                   title="${domain}" />`).join("")}
               </div>
             </div>
             <!-- Timeline visualization for duration and start time -->
@@ -309,16 +309,16 @@ export async function createSessionCard(session, options = {}) {
           </div>
           
           <div class="card-domains">
-            ${topDomains.map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace('www.', '')}</span>`).join('')}
+            ${topDomains.map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace("www.", "")}</span>`).join("")}
           </div>
           
           <div class="card-summary">
-            <div class="journey-summary">From "${firstPageTitle.substring(0, 30)}${firstPageTitle.length > 30 ? '...' : ''}" to "${lastPageTitle.substring(0, 30)}${lastPageTitle.length > 30 ? '...' : ''}"</div>
+            <div class="journey-summary">From "${firstPageTitle.substring(0, 30)}${firstPageTitle.length > 30 ? "..." : ""}" to "${lastPageTitle.substring(0, 30)}${lastPageTitle.length > 30 ? "..." : ""}"</div>
             ${session.summary ? `
             <div class="session-page-summary">
               <h4>Session Summary</h4>
-              <div class="summary-content">${session.summary.substring(0, 200)}${session.summary.length > 200 ? '...' : ''}</div>
-            </div>` : ''}
+              <div class="summary-content">${session.summary.substring(0, 200)}${session.summary.length > 200 ? "..." : ""}</div>
+            </div>` : ""}
           </div>
         </div>
       `;
@@ -329,24 +329,24 @@ export async function createSessionCard(session, options = {}) {
           ${heroImages.length > 1 ?
           `<div class="session-mosaic mosaic-${heroImages.length}">
               ${heroImages.map((img, i) => {
-            const domain = extractDomainFromUrl(img.pageUrl || '');
+            const domain = extractDomainFromUrl(img.pageUrl || "");
             const faviconUrl = getFaviconUrl(domain);
             return `<div class="mosaic-item-wrapper mosaic-item-${heroImages.length}-${i + 1}">
-                  <img src="${img.src}" alt="${img.alt || img.pageTitle || 'Session image'}" 
+                  <img src="${img.src}" alt="${img.alt || img.pageTitle || "Session image"}" 
                        class="mosaic-item hero-image-element" 
-                       title="${img.pageTitle || ''}" 
-                       data-page-url="${img.pageUrl || ''}">
+                       title="${img.pageTitle || ""}" 
+                       data-page-url="${img.pageUrl || ""}">
                   <img src="${faviconUrl}" alt="Favicon for ${domain}" 
                        class="mosaic-favicon" 
                        title="${domain}">  
                 </div>`;
-          }).join('')}
+          }).join("")}
             </div>` :
-          `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || 'Session image'}" class="card-image hero-image-element">`
+          `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || "Session image"}" class="card-image hero-image-element">`
         }
         </div>
-        <div class="card-content-section compact"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ''}>
-          <h3 class="card-title compact">${session.name || extractTitleFromSession(session) || 'Browsing Session'}</h3>
+        <div class="card-content-section compact"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ""}>
+          <h3 class="card-title compact">${session.name || extractTitleFromSession(session) || "Browsing Session"}</h3>
           
           <div class="card-stats compact">
             <!-- Combined page count and favicon stack (compact version) -->
@@ -357,7 +357,7 @@ export async function createSessionCard(session, options = {}) {
           `<img src="${getLocalFaviconUrl(domain, 16)}" 
                    class="stacked-favicon" 
                    style="z-index:${10 - index}; margin-left:${index * -6}px" 
-                   title="${domain}" />`).join('')}
+                   title="${domain}" />`).join("")}
               </div>
             </div>
             <!-- Timeline visualization (compact version) -->
@@ -374,13 +374,13 @@ export async function createSessionCard(session, options = {}) {
           </div>
           
           <div class="card-domains compact">
-            ${topDomains.slice(0, 2).map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace('www.', '')}</span>`).join('')}
+            ${topDomains.slice(0, 2).map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace("www.", "")}</span>`).join("")}
           </div>
           
           ${session.summary ? `
           <div class="session-page-summary compact">
-            <div class="summary-content">${session.summary.substring(0, 100)}${session.summary.length > 100 ? '...' : ''}</div>
-          </div>` : ''}
+            <div class="summary-content">${session.summary.substring(0, 100)}${session.summary.length > 100 ? "..." : ""}</div>
+          </div>` : ""}
         </div>
       `;
     }
@@ -388,7 +388,7 @@ export async function createSessionCard(session, options = {}) {
     // Fallback layout for cards without images
     card.innerHTML = `
       <div class="card-content-section full-width">
-        <h3 class="card-title">${session.name || extractTitleFromSession(session) || 'Browsing Session'}</h3>
+        <h3 class="card-title">${session.name || extractTitleFromSession(session) || "Browsing Session"}</h3>
         
         <div class="card-stats">
           <!-- Combined page count and favicon stack -->
@@ -399,7 +399,7 @@ export async function createSessionCard(session, options = {}) {
       `<img src="${getLocalFaviconUrl(domain, 16)}" 
                  class="stacked-favicon" 
                  style="z-index:${10 - index}; margin-left:${index * -6}px" 
-                 title="${domain}" />`).join('')}
+                 title="${domain}" />`).join("")}
             </div>
           </div>
           <!-- Timeline visualization for duration and start time -->
@@ -417,37 +417,37 @@ export async function createSessionCard(session, options = {}) {
         </div>
         
         <div class="card-domains">
-          ${topDomains.map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace('www.', '')}</span>`).join('')}
+          ${topDomains.map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace("www.", "")}</span>`).join("")}
         </div>
         
         <div class="card-journey">
-          <span class="first-page" title="${firstPageTitle}">${firstPageTitle.substring(0, 20)}${firstPageTitle.length > 20 ? '...' : ''}</span>
+          <span class="first-page" title="${firstPageTitle}">${firstPageTitle.substring(0, 20)}${firstPageTitle.length > 20 ? "..." : ""}</span>
           <span class="journey-arrow">→</span>
-          <span class="last-page" title="${lastPageTitle}">${lastPageTitle.substring(0, 20)}${lastPageTitle.length > 20 ? '...' : ''}</span>
+          <span class="last-page" title="${lastPageTitle}">${lastPageTitle.substring(0, 20)}${lastPageTitle.length > 20 ? "..." : ""}</span>
         </div>
         
         ${session.summary ? `
         <div class="session-page-summary">
           <h4>Session Summary</h4>
-          <div class="summary-content">${session.summary.substring(0, 200)}${session.summary.length > 200 ? '...' : ''}</div>
-        </div>` : ''}
+          <div class="summary-content">${session.summary.substring(0, 200)}${session.summary.length > 200 ? "..." : ""}</div>
+        </div>` : ""}
       </div>
     `;
   }
 
   // Make the entire card clickable to open the modal
-  card.addEventListener('click', (e) => {
+  card.addEventListener("click", (e) => {
     // Keep original pages in the session when showing modal
     const modalSession = { ...session };
     // If the click is on a mosaic image or favicon, navigate to that URL
-    if ((e.target.classList.contains('mosaic-item') || e.target.classList.contains('mosaic-favicon')) &&
-      (e.target.dataset.pageUrl || (e.target.closest('.mosaic-item-wrapper') &&
-        e.target.closest('.mosaic-item-wrapper').querySelector('.mosaic-item').dataset.pageUrl))) {
+    if ((e.target.classList.contains("mosaic-item") || e.target.classList.contains("mosaic-favicon")) &&
+      (e.target.dataset.pageUrl || (e.target.closest(".mosaic-item-wrapper") &&
+        e.target.closest(".mosaic-item-wrapper").querySelector(".mosaic-item").dataset.pageUrl))) {
 
       e.stopPropagation(); // Prevent opening the modal
       const url = e.target.dataset.pageUrl ||
-        e.target.closest('.mosaic-item-wrapper').querySelector('.mosaic-item').dataset.pageUrl;
-      window.open(url, '_blank');
+        e.target.closest(".mosaic-item-wrapper").querySelector(".mosaic-item").dataset.pageUrl;
+      window.open(url, "_blank");
     } else {
       // Otherwise show the session modal
       showSessionModal(modalSession);
@@ -466,17 +466,17 @@ export async function createSessionCard(session, options = {}) {
  */
 function setupHeroImageErrorHandling(card) {
   // Find all hero image elements
-  const heroImages = card.querySelectorAll('.hero-image-element');
+  const heroImages = card.querySelectorAll(".hero-image-element");
 
   // Add error handling to each image
   heroImages.forEach(img => {
-    img.addEventListener('error', function () {
+    img.addEventListener("error", function () {
       // Hide the image
-      this.style.display = 'none';
+      this.style.display = "none";
 
       // Add error class to parent container
       if (this.parentNode) {
-        this.parentNode.classList.add('image-error');
+        this.parentNode.classList.add("image-error");
       }
 
       console.error(`Failed to load hero image: ${this.src}`);
@@ -535,14 +535,14 @@ export async function createSessionMosaic(session) {
   // Validate image URLs before displaying
   const validImages = allImages.filter(img => {
     if (!img || !img.src) {
-      console.warn('Hero image missing src attribute:', img);
+      console.warn("Hero image missing src attribute:", img);
       return false;
     }
 
     // Basic URL validation
     try {
       // Check if it's a valid URL or a data URI
-      if (img.src.startsWith('data:')) {
+      if (img.src.startsWith("data:")) {
         return true;
       }
       try {
@@ -552,50 +552,50 @@ export async function createSessionMosaic(session) {
         return false;
       }
     } catch (e) {
-      console.warn('Invalid hero image URL:', img.src);
+      console.warn("Invalid hero image URL:", img.src);
       return false;
     }
     return false;
   });
 
   if (!validImages.length) {
-    console.warn('No valid hero images found');
+    console.warn("No valid hero images found");
     return;
   }
 
   // Create the mosaic container
-  const mosaicContainer = document.createElement('div');
-  mosaicContainer.className = 'session-mosaic';
+  const mosaicContainer = document.createElement("div");
+  mosaicContainer.className = "session-mosaic";
 
   // Only use up to 5 images for the mosaic
   const mosaicImages = validImages.slice(0, 5);
 
   // Add the images to the mosaic with different layout based on count
   mosaicImages.forEach((img, index) => {
-    const imgElement = document.createElement('img');
+    const imgElement = document.createElement("img");
     imgElement.src = img.src;
-    imgElement.alt = img.alt || img.pageTitle || '';
+    imgElement.alt = img.alt || img.pageTitle || "";
     imgElement.className = `mosaic-item mosaic-item-${mosaicImages.length}-${index + 1}`;
 
     // Add error handling
     imgElement.onerror = function () {
       this.onerror = null;
-      this.style.display = 'none';
+      this.style.display = "none";
       if (this.parentNode) {
-        this.parentNode.classList.add('image-error');
+        this.parentNode.classList.add("image-error");
       }
       console.error(`Failed to load hero image: ${this.src}`);
     };
 
     // Add data attributes for tooltip/details
-    imgElement.dataset.pageTitle = img.pageTitle || '';
-    imgElement.dataset.pageUrl = img.pageUrl || '';
+    imgElement.dataset.pageTitle = img.pageTitle || "";
+    imgElement.dataset.pageUrl = img.pageUrl || "";
 
     // Add click handler to navigate to the page
-    imgElement.addEventListener('click', (e) => {
+    imgElement.addEventListener("click", (e) => {
       e.stopPropagation(); // Don't trigger session expansion
       if (img.pageUrl) {
-        window.open(img.pageUrl, '_blank');
+        window.open(img.pageUrl, "_blank");
       }
     });
 
@@ -655,7 +655,7 @@ async function getHeroImagesForUrl(url) {
     heroImageRequestCache.lastRequested.set(url, now);
 
     // First check browserState if available (core shared data structure)
-    if (typeof browserState !== 'undefined' && browserState.heroImages && browserState.heroImages.get) {
+    if (typeof browserState !== "undefined" && browserState.heroImages && browserState.heroImages.get) {
       const heroImageData = browserState.heroImages.get(url);
       if (heroImageData && heroImageData.images) {
         resolve(heroImageData.images);
@@ -664,15 +664,15 @@ async function getHeroImagesForUrl(url) {
     }
 
     // Then check local storage
-    chrome.storage.local.get(['heroImages'], (result) => {
+    chrome.storage.local.get(["heroImages"], (result) => {
       const heroImagesStore = result.heroImages || {};
       if (heroImagesStore[url]) {
         resolve(heroImagesStore[url].images);
       } else {
         // If not in storage, try asking background script directly
-        chrome.runtime.sendMessage({ action: 'getHeroImagesForUrl', url: url }, (response) => {
+        chrome.runtime.sendMessage({ action: "getHeroImagesForUrl", url: url }, (response) => {
           if (chrome.runtime.lastError) {
-            console.error('❌ Error getting hero images:', chrome.runtime.lastError);
+            console.error("❌ Error getting hero images:", chrome.runtime.lastError);
             resolve(null);
           } else if (response && response.images) {
             resolve(response.images);

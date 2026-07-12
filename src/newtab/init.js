@@ -1,18 +1,18 @@
-import { drawTreemap } from './treemap.js';
-import { displayReadout, loadNanoSummariesFromStorage } from './readout.js';
+import { drawTreemap } from "./treemap.js";
+import { displayReadout, loadNanoSummariesFromStorage } from "./readout.js";
 
 // Make this a module-level variable so it's accessible to all functions
 let categorizedDataCache = null;
 
 export async function initializeApp() {
-    console.log('Initializing app...');
+    console.log("Initializing app...");
     
     // Load nano summaries from storage first
     await loadNanoSummariesFromStorage();
     
     // Only fetch the categorized tab data on load - this is necessary
     categorizedDataCache = await fetchCategorizedData();
-    console.log('Categorized data fetched:', categorizedDataCache);
+    console.log("Categorized data fetched:", categorizedDataCache);
     
     // Set up tab event listeners
     setupTabEventListeners();
@@ -53,10 +53,10 @@ function setupTabEventListeners() {
 
 // Handle tab removed events
 function handleTabRemoved(tabId, removeInfo) {
-    console.log('Tab removed:', tabId, removeInfo);
+    console.log("Tab removed:", tabId, removeInfo);
     
     if (!categorizedDataCache?.activeWindows) {
-        console.warn('No treemap data available');
+        console.warn("No treemap data available");
         return;
     }
     
@@ -66,7 +66,7 @@ function handleTabRemoved(tabId, removeInfo) {
     // Find the window containing this tab
     for (const window of categorizedDataCache.activeWindows) {
         // Skip placeholder windows
-        if (window.id === 'placeholder-window') continue;
+        if (window.id === "placeholder-window") continue;
         
         // Look for the tab in this window
         const tabIndex = window.tabs.findIndex(tab => tab.id === tabId);
@@ -105,7 +105,7 @@ function handleTabRemoved(tabId, removeInfo) {
 
 // Handle tab created events
 function handleTabCreated(tab) {
-    console.log('Tab created:', tab);
+    console.log("Tab created:", tab);
     
     // This is less critical since the next refresh will catch new tabs,
     // but it can provide a more responsive experience
@@ -123,7 +123,7 @@ function handleTabUpdated(tabId, changeInfo, tab) {
     // Only respond to complete tab updates with title changes
     if (!changeInfo.title && !changeInfo.url) return;
     
-    console.log('Tab updated:', tabId, changeInfo);
+    console.log("Tab updated:", tabId, changeInfo);
     
     // Find and update the tab in our cache
     if (categorizedDataCache?.activeWindows) {
@@ -166,7 +166,7 @@ function ensureMinimumCellsLightweight(categorizedDataCache) {
         // Create a simple placeholder window with dummy tabs
         if (!categorizedDataCache.placeholderWindow) {
             categorizedDataCache.placeholderWindow = {
-                id: 'placeholder-window',
+                id: "placeholder-window",
                 tabs: []
             };
             
@@ -181,9 +181,9 @@ function ensureMinimumCellsLightweight(categorizedDataCache) {
         for (let i = 0; i < placeholdersNeeded; i++) {
             categorizedDataCache.placeholderWindow.tabs.push({
                 id: `placeholder-${i}`,
-                title: 'Getting started',
-                url: 'chrome://newtab/',
-                favIconUrl: 'chrome://favicon/size/16@1x/chrome://newtab/',
+                title: "Getting started",
+                url: "chrome://newtab/",
+                favIconUrl: "chrome://favicon/size/16@1x/chrome://newtab/",
                 lastAccessed: Date.now() - (i * 10000),
                 timeSpent: 1,
                 isPlaceholder: true
@@ -199,15 +199,15 @@ async function refreshData(existingData) {
         
         // Only redraw if the data has actually changed
         if (hasDataChanged(existingData, freshData)) {
-            console.log('Tab data changed, updating treemap');
+            console.log("Tab data changed, updating treemap");
             await drawTreemap(freshData);
             return freshData;
         } else {
-            console.log('No change in data detected');
+            console.log("No change in data detected");
             return existingData;
         }
     } catch (error) {
-        console.error('Error refreshing data:', error);
+        console.error("Error refreshing data:", error);
         return existingData;
     }
 }
@@ -251,27 +251,27 @@ export async function fetchRecentBookmarks(count = 10) {
     try {
         const bookmarks = await chrome.bookmarks.getRecent(count);
         
-        console.log('Raw bookmark data:', bookmarks); // Debug raw data
+        console.log("Raw bookmark data:", bookmarks); // Debug raw data
         
         // Map bookmarks to ensure all required fields for display
         const enhancedBookmarks = bookmarks.map(bookmark => ({
             ...bookmark,  // Keep all original properties
             id: bookmark.id,
-            title: bookmark.title || 'Untitled Bookmark',
-            url: bookmark.url || '',
-            type: 'bookmark',  // Add explicit type
+            title: bookmark.title || "Untitled Bookmark",
+            url: bookmark.url || "",
+            type: "bookmark",  // Add explicit type
             isBookmark: true,  // Add explicit flag
             dateAdded: bookmark.dateAdded,  // Chrome provides this in milliseconds
             lastAccessed: bookmark.dateAdded || Date.now(),
             // Generate favicon URL if not present
-            favIconUrl: bookmark.favIconUrl || (bookmark.url ? `chrome://favicon/size/16@1x/${bookmark.url}` : '')
+            favIconUrl: bookmark.favIconUrl || (bookmark.url ? `chrome://favicon/size/16@1x/${bookmark.url}` : "")
         }));
         
-        console.log('Enhanced bookmark data:', enhancedBookmarks); // Debug enhanced data
+        console.log("Enhanced bookmark data:", enhancedBookmarks); // Debug enhanced data
         
         return enhancedBookmarks;
     } catch (error) {
-        console.error('Error fetching bookmarks:', error);
+        console.error("Error fetching bookmarks:", error);
         return [];
     }
 }
@@ -279,31 +279,31 @@ export async function fetchRecentBookmarks(count = 10) {
 export async function fetchRecentHistory(count = 10) {
     try {
         const historyItems = await chrome.history.search({
-            text: '',
+            text: "",
             maxResults: count,
             startTime: 0
         });
 
-        console.log('Raw history data:', historyItems); // Debug raw data
+        console.log("Raw history data:", historyItems); // Debug raw data
 
         // Map history items to ensure all required fields for display
         const enhancedHistory = historyItems.map(item => ({
             ...item,  // Keep all original properties
             id: item.id,
-            title: item.title || 'Untitled History Item',
-            url: item.url || '',
-            type: 'history',  // Add explicit type
+            title: item.title || "Untitled History Item",
+            url: item.url || "",
+            type: "history",  // Add explicit type
             isHistory: true,  // Add explicit flag
             lastVisitTime: item.lastVisitTime || Date.now(),
             // Generate favicon URL if not present
-            favIconUrl: item.favIconUrl || (item.url ? `chrome://favicon/size/16@1x/${item.url}` : '')
+            favIconUrl: item.favIconUrl || (item.url ? `chrome://favicon/size/16@1x/${item.url}` : "")
         }));
 
-        console.log('Enhanced history data:', enhancedHistory); // Debug enhanced data
+        console.log("Enhanced history data:", enhancedHistory); // Debug enhanced data
 
         return enhancedHistory;
     } catch (error) {
-        console.error('Error fetching history:', error);
+        console.error("Error fetching history:", error);
         return [];
     }
 }
@@ -320,19 +320,19 @@ function ensureMinimumCells(data, bookmarks) {
 
 function getRandomBookmarks(bookmarks, count) {
     const shuffled = bookmarks.sort(() => 0.5 - Math.random());
-    console.log("Picking random bookmarks", bookmarks)
+    console.log("Picking random bookmarks", bookmarks);
     return shuffled.slice(0, count);
 }
 
 function addBookmarksToData(data, bookmarks) {
     const bookmarkWindow = {
-        id: 'bookmarkWindow',
+        id: "bookmarkWindow",
         tabs: bookmarks.map((bookmark, index) => ({
             id: `bookmark${index}`,
-            windowId: 'bookmarkWindow',
-            title: bookmark.title || 'Untitled',
-            url: bookmark.url || '',
-            favIconUrl: '',
+            windowId: "bookmarkWindow",
+            title: bookmark.title || "Untitled",
+            url: bookmark.url || "",
+            favIconUrl: "",
             lastAccessed: Date.now(),
             timeSpent: 100,
             children: [],
@@ -361,8 +361,8 @@ async function fetchCategorizedData() {
                 tabs: window.tabs.map(tab => ({
                     id: tab.id,
                     windowId: window.id,
-                    title: tab.title || 'Untitled',
-                    url: tab.url || '',
+                    title: tab.title || "Untitled",
+                    url: tab.url || "",
                     favIconUrl: tab.favIconUrl || `chrome://favicon/size/16@1x/${tab.url}`,
                     lastAccessed: Date.now() - Math.floor(Math.random() * 3600000), // Approximate for demo
                     timeSpent: 100, // Default value, replace with actual tracking data if available
@@ -374,7 +374,7 @@ async function fetchCategorizedData() {
         
         return categorizedData;
     } catch (error) {
-        console.error('Error fetching browser data:', error);
+        console.error("Error fetching browser data:", error);
         // Return fallback data structure with empty windows array
         return { activeWindows: [] };
     }

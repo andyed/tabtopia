@@ -6,21 +6,21 @@
  */
 export function initViewToggle() {
   // Get current display mode from localStorage or default to 'default' (list view)
-  const currentMode = localStorage.getItem('sessionDisplayMode') || 'default';
+  const currentMode = localStorage.getItem("sessionDisplayMode") || "default";
   
   // Create toggle button
-  const toggleButton = document.createElement('button');
-  toggleButton.className = 'view-toggle-button';
-  toggleButton.id = 'view-toggle-button';
+  const toggleButton = document.createElement("button");
+  toggleButton.className = "view-toggle-button";
+  toggleButton.id = "view-toggle-button";
   
   // Set initial button state
   updateToggleButton(toggleButton, currentMode);
   
   // Add click handler
-  toggleButton.addEventListener('click', () => {
+  toggleButton.addEventListener("click", () => {
     // Toggle between modes
-    const newMode = currentMode === 'default' ? 'card' : 'default';
-    localStorage.setItem('sessionDisplayMode', newMode);
+    const newMode = currentMode === "default" ? "card" : "default";
+    localStorage.setItem("sessionDisplayMode", newMode);
     
     // Update button state
     updateToggleButton(toggleButton, newMode);
@@ -30,7 +30,7 @@ export function initViewToggle() {
   });
   
   // Find the header controls container to add the button
-  const headerControls = document.querySelector('.header-controls');
+  const headerControls = document.querySelector(".header-controls");
   if (headerControls) {
     // Add the toggle button to header controls
     headerControls.insertBefore(toggleButton, headerControls.firstChild);
@@ -43,7 +43,7 @@ export function initViewToggle() {
  * @param {string} mode - Current display mode ('default' or 'card')
  */
 function updateToggleButton(button, mode) {
-  if (mode === 'card') {
+  if (mode === "card") {
     button.innerHTML = `
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" 
         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -1,8 +1,8 @@
-import { getFaviconUrl, formatUrl, abbreviateTitle, debounce } from "./utility.js";
+import { getFaviconUrl, formatUrl, abbreviateTitle } from "./utility.js";
 import { updateStats } from "./stats.js";
 import { showDefaultReadout, loadNanoSummariesFromStorage } from "./readout.js";
 import { initializeApp } from "./init.js";
-import { tabSearch } from "./search.js";
+import { tabSearch, initializeSearch } from "./search.js";
 import { drawTreemap } from "./treemap.js";
 
 // Legacy stubs removed.
@@ -139,67 +139,6 @@ function categorizeData(history, windows) {
     };
 }
 
-function handleTabSearch(event) {
-    const searchTerm = event.target.value.trim();
-
-    console.log("Search input:", searchTerm);
-
-    // Reset all cells if search is empty
-    if (!searchTerm) {
-        d3.selectAll(".cell")
-            .style("opacity", 1)
-            .classed("cell-search-match", false)
-            .classed("cell-search-nomatch", false);
-        return;
-    }
-
-    const results = tabSearch.search(searchTerm);
-    console.log("Search results:", {
-        term: searchTerm,
-        count: results.length,
-        firstResult: results[0]
-    });
-
-    // Update visualization based on search results
-    d3.selectAll(".cell")
-        .each(function (d) {
-            if (!d || !d.data) return;
-
-            const isMatch = results.some(r => r.id === d.data.id);
-
-            d3.select(this)
-                .classed("cell-search-match", isMatch)
-                .classed("cell-search-nomatch", !isMatch)
-                .style("opacity", isMatch ? 1 : 0.3)
-                .style("transition", "opacity 0.2s ease-in-out");
-        });
-
-    // Change tab order to jump between matching cells
-    if (results.length > 0) {
-        const firstMatch = results[0];
-        const matchingCell = d3.selectAll(".cell-search-match").node();
-        if (matchingCell) {
-            matchingCell.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-    }
-}
-
-function exitSearchMode() {
-    const searchInput = document.getElementById("tabSearch");
-    searchInput.value = "";
-    handleTabSearch({ target: { value: "" } }); // Clear search results
-    clearSearchStyles(); // Clear search styles from treemap
-}
-
-export function clearSearchStyles() {
-    d3.selectAll(".cell")
-        .style("opacity", 1)
-        .classed("cell-search-match", false)
-        .classed("cell-search-nomatch", false)
-        .classed("cell-selected", false)
-        .style("transition", "opacity 0.2s ease-in-out");
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
     try {
         // Boot from open windows/tabs only. The treemap, search index, and
@@ -215,40 +154,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Initialize search index
         tabSearch.buildIndex(categorizedDataCache);
 
-        // Set up search handler — input + Escape/ArrowUp/ArrowDown navigation
-        const searchInput = document.getElementById("tabSearch");
-        if (searchInput) {
-            let searchResults = [];
-            let currentIndex = -1;
-
-            searchInput.addEventListener("input", debounce((event) => {
-                handleTabSearch(event);
-                searchResults = tabSearch.search(event.target.value.trim());
-                currentIndex = -1;
-            }, 200));
-
-            searchInput.addEventListener("keydown", (event) => {
-                if (event.key === "Escape") {
-                    exitSearchMode();
-                    searchResults = [];
-                    currentIndex = -1;
-                } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                    if (searchResults.length > 0) {
-                        if (event.key === "ArrowDown") {
-                            currentIndex = (currentIndex + 1) % searchResults.length;
-                        } else {
-                            currentIndex = (currentIndex - 1 + searchResults.length) % searchResults.length;
-                        }
-                        const matchingCell = d3.selectAll(".cell-search-match").nodes()[currentIndex];
-                        if (matchingCell) {
-                            matchingCell.scrollIntoView({ behavior: "smooth", block: "center" });
-                            d3.selectAll(".cell-search-match").classed("cell-selected", false);
-                            d3.select(matchingCell).classed("cell-selected", true);
-                        }
-                    }
-                }
-            });
-        }
+        // Single authoritative search wiring (input, keyboard nav, persistence,
+        // cross-newtab sync) — lives in search.js. The persisted query is
+        // restored into the box here; the filter itself is applied by
+        // reapplySearch() at the end of drawTreemap below.
+        initializeSearch();
 
         // Initialize visualizations
         if (categorizedDataCache?.activeWindows) {

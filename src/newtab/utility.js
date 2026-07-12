@@ -2,7 +2,7 @@
 
 export function abbreviateTitle(title, maxLength) {
   if (title.length > maxLength) {
-    return title.substring(0, maxLength) + '...';
+    return title.substring(0, maxLength) + "...";
   }
   return title;
 }
@@ -10,14 +10,14 @@ export function abbreviateTitle(title, maxLength) {
 export function formatUrl(url) {
   try {
     const urlObj = new URL(url);
-    let cleanHost = urlObj.hostname.replace(/^www\./, '');
+    let cleanHost = urlObj.hostname.replace(/^www\./, "");
     let cleanPath = urlObj.pathname;
     
-    let params = '';
+    let params = "";
     const searchParams = new URLSearchParams(urlObj.search);
     const firstParam = searchParams.entries().next().value;
     if (firstParam) {
-      params = `?${firstParam[0]}=${firstParam[1]}${searchParams.size > 1 ? '...' : ''}`;
+      params = `?${firstParam[0]}=${firstParam[1]}${searchParams.size > 1 ? "..." : ""}`;
     }
     
     return `${cleanHost}${cleanPath}${params}`;
@@ -42,14 +42,14 @@ export function debounce(func, wait) {
 export function createLetterFavicon(url) {
   try {
     // Get domain and extract first letter
-    const domain = getDomainFromUrl(url) || 'unknown';
+    const domain = getDomainFromUrl(url) || "unknown";
     let letter = domain.charAt(0).toUpperCase();
     
     // Handle numeric or special character domains
     if (!letter.match(/[A-Z]/i)) {
-      letter = domain.charAt(1).toUpperCase() || 'X';
+      letter = domain.charAt(1).toUpperCase() || "X";
       if (!letter.match(/[A-Z]/i)) {
-        letter = 'X';
+        letter = "X";
       }
     }
     
@@ -66,10 +66,10 @@ export function createLetterFavicon(url) {
     </svg>`;
     
     // Convert SVG to base64 data URL
-    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+    return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
   } catch (error) {
-    console.warn('Error creating letter favicon:', error);
-    return '/images/default-favicon.png';
+    console.warn("Error creating letter favicon:", error);
+    return "/images/default-favicon.png";
   }
 }
 
@@ -92,7 +92,7 @@ export async function getFaviconUrl(url, preferredSize = 128) {
   // redirects to gstatic and 404s — an external request on a page that should
   // stay offline-capable. Go straight to the generated letter favicon.
   if (!url || !/^https?:\/\//i.test(url)) {
-    return createLetterFavicon(url || '');
+    return createLetterFavicon(url || "");
   }
   // Try to get favicon using chrome.tabs.favIconUrl for active tabs
   try {
@@ -102,7 +102,7 @@ export async function getFaviconUrl(url, preferredSize = 128) {
     
     if (tab?.favIconUrl) {
       // Check if we have a high-res favicon
-      if (tab.favIconUrl.includes('chrome://favicon/size/128')) {
+      if (tab.favIconUrl.includes("chrome://favicon/size/128")) {
         return tab.favIconUrl;
       }
       // Try to request high-res version
@@ -114,7 +114,7 @@ export async function getFaviconUrl(url, preferredSize = 128) {
       }
     }
   } catch (error) {
-    console.warn('Error fetching tab favicon:', error);
+    console.warn("Error fetching tab favicon:", error);
   }
 
   // Fallback 1: Try chrome.favicon API if available
@@ -140,7 +140,7 @@ export async function getFaviconUrl(url, preferredSize = 128) {
         });
       });
     } catch (error) {
-      console.warn('Error with chrome.favicon API:', error);
+      console.warn("Error with chrome.favicon API:", error);
     }
   }
 
@@ -149,7 +149,7 @@ export async function getFaviconUrl(url, preferredSize = 128) {
   try {
     return getLocalFaviconUrl(url, preferredSize);
   } catch (error) {
-    console.warn('Error building local favicon URL:', error);
+    console.warn("Error building local favicon URL:", error);
   }
 
   // Final fallback: Generate letter favicon
@@ -162,8 +162,8 @@ export async function getFaviconUrl(url, preferredSize = 128) {
 // cache: no network request, works offline. Use this for <img src> in place of
 // the external google.com/s2/favicons service. Accepts a full URL or a domain.
 export function getLocalFaviconUrl(pageUrlOrDomain, size = 32) {
-  const raw = pageUrlOrDomain || '';
-  const pageUrl = /^[a-z]+:\/\//i.test(raw) ? raw : (raw ? `https://${raw}` : '');
+  const raw = pageUrlOrDomain || "";
+  const pageUrl = /^[a-z]+:\/\//i.test(raw) ? raw : (raw ? `https://${raw}` : "");
   return chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(pageUrl)}&size=${size}`);
 }
 
@@ -188,13 +188,13 @@ export function formatDistanceToNow(date) {
   const months = Math.floor(days / 30);
   const years = Math.floor(days / 365);
 
-  if (years > 0) return `${years} year${years > 1 ? 's' : ''} ago`;
-  if (months > 0) return `${months} month${months > 1 ? 's' : ''} ago`;
-  if (weeks > 0) return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
-  if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-  return `${seconds} second${seconds > 1 ? 's' : ''} ago`;
+  if (years > 0) return `${years} year${years > 1 ? "s" : ""} ago`;
+  if (months > 0) return `${months} month${months > 1 ? "s" : ""} ago`;
+  if (weeks > 0) return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
+  if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
+  if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+  if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+  return `${seconds} second${seconds > 1 ? "s" : ""} ago`;
 }
 
 export function formatSessionDuration(start, end) {
@@ -205,10 +205,10 @@ export function formatSessionDuration(start, end) {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (days > 0) return `${days} day${days > 1 ? 's' : ''}`;
-  if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''}`;
-  if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''}`;
-  return `${seconds} second${seconds > 1 ? 's' : ''}`;
+  if (days > 0) return `${days} day${days > 1 ? "s" : ""}`;
+  if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""}`;
+  if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""}`;
+  return `${seconds} second${seconds > 1 ? "s" : ""}`;
 }
 
 export function applyColorCoding(tabs, windowColors) {
@@ -218,7 +218,7 @@ export function applyColorCoding(tabs, windowColors) {
         const baseColor = d3.color(windowColors.get(windowId));
         if (!baseColor) {
             console.warn(`No color found for window ${windowId}, using default`);
-            tab.data.color = '#f5f5f5'; // Default color
+            tab.data.color = "#f5f5f5"; // Default color
             return;
         }
 
@@ -237,14 +237,14 @@ export function getDomainFromUrl(url) {
   
   try {
     // Handle chrome:// and other special URLs
-    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
-      return url.split('/')[2];
+    if (url.startsWith("chrome://") || url.startsWith("chrome-extension://")) {
+      return url.split("/")[2];
     }
     
     // Handle regular URLs
     const urlObj = new URL(url);
     // Remove 'www.' prefix if present
-    let domain = urlObj.hostname.replace(/^www\./, '');
+    let domain = urlObj.hostname.replace(/^www\./, "");
     return domain;
   } catch (e) {
     return null;
@@ -327,8 +327,8 @@ export function getWindowColorPalette(windowId, options = {}) {
 
 // Predefined colors for windows - can be used directly in both views
 export const lightColors = [
-  '#e3f2fd', '#e8f5e9', '#fff3e0', '#ffebee', 
-  '#f3e5f5', '#e0f7fa', '#fffde7', '#efebe9'
+  "#e3f2fd", "#e8f5e9", "#fff3e0", "#ffebee", 
+  "#f3e5f5", "#e0f7fa", "#fffde7", "#efebe9"
 ];
 
 // SINGLE getWindowColor function that combines both approaches
@@ -353,7 +353,7 @@ export function getWindowColor(windowId, options = {}) {
       base: lightColors[windowId % lightColors.length],
       getTabColor: () => lightColors[windowId % lightColors.length],
       background: lightColors[windowId % lightColors.length],
-      getBorder: (focused) => focused ? '#64b5f6' : '#403c36'
+      getBorder: (focused) => focused ? "#64b5f6" : "#403c36"
     };
   }
   
@@ -408,10 +408,10 @@ export function resetWindowColors() {
 // Fallback colors for bookmarks or special windows
 export const specialColors = {
   bookmark: {
-    base: 'hsl(195, 53%, 79%)',
-    background: 'hsl(195, 33%, 89%)',
-    getBorder: (focused) => focused ? 'hsl(195, 70%, 50%)' : 'hsl(195, 40%, 65%)',
-    getTabColor: () => 'hsl(195, 53%, 79%)'
+    base: "hsl(195, 53%, 79%)",
+    background: "hsl(195, 33%, 89%)",
+    getBorder: (focused) => focused ? "hsl(195, 70%, 50%)" : "hsl(195, 40%, 65%)",
+    getTabColor: () => "hsl(195, 53%, 79%)"
   }
 };
 

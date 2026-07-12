@@ -26,7 +26,7 @@ dwellTimer = setTimeout(() => {
 }, DWELL_THRESHOLD_MS);
 
 // Track maximum scroll depth
-document.addEventListener('scroll', () => {
+document.addEventListener("scroll", () => {
   const scrollDepth = Math.max(
     window.pageYOffset,
     document.documentElement.scrollTop,
@@ -52,7 +52,7 @@ document.addEventListener('scroll', () => {
 });
 
 // Check for page unload/navigation away
-window.addEventListener('beforeunload', () => {
+window.addEventListener("beforeunload", () => {
   const dwellTime = Date.now() - pageLoadTime;
 
   // Only extract if we haven't already AND we meet minimum engagement criteria
@@ -91,7 +91,7 @@ function extractAndSendHeroImages() {
   if (!chrome.runtime?.id) return;
   try {
     chrome.runtime.sendMessage({
-      action: 'storeHeroImages',
+      action: "storeHeroImages",
       data: {
         url: pageUrl,
         title: pageTitle,
@@ -111,11 +111,11 @@ function extractAndSendHeroImages() {
  * @returns {Array} An array of image objects with URL, dimensions, and score
  */
 function findHeroImages() {
-  const images = Array.from(document.querySelectorAll('img'));
+  const images = Array.from(document.querySelectorAll("img"));
   const heroImages = [];
 
   // First check for explicit metadata
-  const ogImage = document.querySelector('meta[property="og:image"]')?.content;
+  const ogImage = document.querySelector("meta[property=\"og:image\"]")?.content;
   if (ogImage) {
     heroImages.push({
       src: ogImage,
@@ -127,7 +127,7 @@ function findHeroImages() {
   }
 
   // Check for twitter image
-  const twitterImage = document.querySelector('meta[name="twitter:image"]')?.content;
+  const twitterImage = document.querySelector("meta[name=\"twitter:image\"]")?.content;
   if (twitterImage && twitterImage !== ogImage) {
     heroImages.push({
       src: twitterImage,
@@ -140,32 +140,32 @@ function findHeroImages() {
 
   // Wiki-specific extraction - check for main wiki images
   // These often appear in infoboxes, galleries, or at the beginning of articles
-  if (window.location.hostname.includes('wiki')) {
-    console.log('Wiki page detected, using specialized image extraction');
+  if (window.location.hostname.includes("wiki")) {
+    console.log("Wiki page detected, using specialized image extraction");
 
     // For Wikibooks specifically, look for images in specific locations
-    if (window.location.hostname.includes('wikibooks')) {
-      console.log('Wikibooks page detected - using specialized Wikibooks extraction');
+    if (window.location.hostname.includes("wikibooks")) {
+      console.log("Wikibooks page detected - using specialized Wikibooks extraction");
 
       // Special case for cookbook/recipe pages
-      if (window.location.pathname.includes('Cookbook:')) {
-        console.log('Recipe page detected, checking for recipe images');
+      if (window.location.pathname.includes("Cookbook:")) {
+        console.log("Recipe page detected, checking for recipe images");
 
         // First check if page has Wikipedia Commons links that might contain images
-        const commonsLinks = Array.from(document.querySelectorAll('a[href*="commons.wikimedia.org"]'));
+        const commonsLinks = Array.from(document.querySelectorAll("a[href*=\"commons.wikimedia.org\"]"));
         console.log(`Found ${commonsLinks.length} wikimedia commons links`);
 
         // Find image on linked Wikipedia page if this recipe doesn't have direct images
         // Often recipe books link to Wikipedia articles which have images
-        const wikipediaLinks = Array.from(document.querySelectorAll('a[href*="wikipedia.org"]'))
+        const wikipediaLinks = Array.from(document.querySelectorAll("a[href*=\"wikipedia.org\"]"))
           .filter(link => {
             // Only consider links in the main content area that are likely related
-            const isInContent = link.closest('.mw-body-content') !== null;
+            const isInContent = link.closest(".mw-body-content") !== null;
             const linkText = link.textContent.toLowerCase();
             const pageTitle = document.title.toLowerCase();
 
             // Check if link is relevant to the page topic
-            const isTitleMatch = pageTitle.includes(linkText) || linkText.includes(pageTitle.split(':').pop());
+            const isTitleMatch = pageTitle.includes(linkText) || linkText.includes(pageTitle.split(":").pop());
             return isInContent && isTitleMatch;
           });
 
@@ -178,8 +178,8 @@ function findHeroImages() {
 
       // Get ALL images on page with much lower threshold for wikibooks
       // Wikibooks often has smaller but meaningful images
-      const allWikiImages = Array.from(document.querySelectorAll('img'))
-        .filter(img => img.complete && img.naturalWidth >= 30 && img.naturalHeight >= 30 && !img.src.includes('Special:'));
+      const allWikiImages = Array.from(document.querySelectorAll("img"))
+        .filter(img => img.complete && img.naturalWidth >= 30 && img.naturalHeight >= 30 && !img.src.includes("Special:"));
 
       console.log(`Found ${allWikiImages.length} potential wiki images to analyze`);
 
@@ -206,7 +206,7 @@ function findHeroImages() {
               height: img.naturalHeight,
               score: 95,
               isWikiImage: true,
-              alt: img.alt || '',
+              alt: img.alt || "",
               documentPosition: relativeToDoc
             });
           }
@@ -214,7 +214,7 @@ function findHeroImages() {
     }
 
     // Check for infobox images (typically right-aligned tables with images)
-    const infoboxImages = document.querySelectorAll('.infobox img, .thumbimage, .image img, .thumb img');
+    const infoboxImages = document.querySelectorAll(".infobox img, .thumbimage, .image img, .thumb img");
     if (infoboxImages && infoboxImages.length > 0) {
       console.log(`Found ${infoboxImages.length} infobox/thumb images`);
       Array.from(infoboxImages).forEach(img => {
@@ -225,7 +225,7 @@ function findHeroImages() {
             height: img.naturalHeight,
             score: 90, // High score for infobox images
             isWikiImage: true,
-            alt: img.alt || ''
+            alt: img.alt || ""
           });
         }
       });
@@ -233,7 +233,7 @@ function findHeroImages() {
 
     // Check for featured/main images that might be within content
     // Wiki pages often have these in specific sections or with certain class names
-    const contentImages = document.querySelectorAll('.mw-body-content img, .mw-content-ltr img');
+    const contentImages = document.querySelectorAll(".mw-body-content img, .mw-content-ltr img");
     if (contentImages && contentImages.length > 0) {
       console.log(`Found ${contentImages.length} content images`);
       // Sort by size (largest first) for content images
@@ -249,7 +249,7 @@ function findHeroImages() {
           height: img.naturalHeight,
           score: 85,
           isWikiContentImage: true,
-          alt: img.alt || ''
+          alt: img.alt || ""
         });
       });
     }
@@ -260,7 +260,7 @@ function findHeroImages() {
     // Skip tiny images, hidden images, or data URIs
     if (!img.complete || !img.naturalWidth || !img.naturalHeight ||
       img.naturalWidth < 100 || img.naturalHeight < 100 ||
-      !isVisibleInViewport(img) || img.src.startsWith('data:')) {
+      !isVisibleInViewport(img) || img.src.startsWith("data:")) {
       return;
     }
 
@@ -279,14 +279,14 @@ function findHeroImages() {
     score += 20 * Math.min(area / viewportArea, 1);
 
     // Check for hero-related classes/IDs
-    const heroTerms = ['hero', 'banner', 'featured', 'main', 'cover', 'header'];
+    const heroTerms = ["hero", "banner", "featured", "main", "cover", "header"];
     const parentElements = [img, img.parentElement, img.parentElement?.parentElement];
 
     for (const el of parentElements) {
       if (!el) continue;
       for (const term of heroTerms) {
         if ((el.id && el.id.toLowerCase().includes(term)) ||
-          (el.className && typeof el.className === 'string' && el.className.toLowerCase().includes(term))) {
+          (el.className && typeof el.className === "string" && el.className.toLowerCase().includes(term))) {
           score += 15;
           break;
         }
@@ -299,8 +299,8 @@ function findHeroImages() {
     }
 
     // Check if near an h1/h2
-    const nearby = img.closest('section, article, div');
-    if (nearby && nearby.querySelector('h1, h2')) {
+    const nearby = img.closest("section, article, div");
+    if (nearby && nearby.querySelector("h1, h2")) {
       score += 10;
     }
 
@@ -311,7 +311,7 @@ function findHeroImages() {
         width: img.naturalWidth,
         height: img.naturalHeight,
         score: score,
-        alt: img.alt || ''
+        alt: img.alt || ""
       });
     }
   });
@@ -333,7 +333,7 @@ function isVisibleInViewport(el) {
   if (!el) return false;
 
   const rect = el.getBoundingClientRect();
-  const isWikiPage = window.location.hostname.includes('wiki');
+  const isWikiPage = window.location.hostname.includes("wiki");
 
   // For wiki pages, we're more lenient about visibility
   // We want to capture images even if they're partially outside viewport

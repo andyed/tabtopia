@@ -1280,3 +1280,58 @@ mark {
 .cell:hover .audio-indicator {
     opacity: 1;
 }
+
+/* Recent stars — default readout panel content.
+   Panel bg is #33302b; colors below are chosen for the 8:1 contrast floor:
+   #a6d4fa links = 8.4:1, #cccccc meta text = 8.2:1, #ffffff heading = 13:1. */
+.recent-stars {
+    padding: 1rem 0.5rem;
+}
+
+.recent-stars h3 {
+    color: #ffffff;
+    margin: 0 0 10px 0;
+    font-size: 1.1em;
+}
+
+.star-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.star-item {
+    padding: 8px 0;
+    border-bottom: 1px solid #403c36;
+}
+
+.star-item:last-child {
+    border-bottom: none;
+}
+
+/* Must out-cascade `#readout a { color: #64b5f6 !important }` above (5.9:1,
+   below the contrast floor) — higher specificity, later in file, !important. */
+#readout .recent-stars a {
+    color: #a6d4fa !important;
+    text-decoration: none;
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#readout .recent-stars a:hover {
+    text-decoration: underline;
+    color: #c7e3fc !important;
+}
+
+.star-meta {
+    display: block;
+    font-size: 0.8em;
+    color: #cccccc;
+    margin-top: 2px;
+}
+
+.star-empty {
+    color: #cccccc;
+}

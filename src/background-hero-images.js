@@ -6,7 +6,7 @@ let heroImageStore = new Map();
 
 // Listen for hero image data from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'storeHeroImages') {
+  if (message.action === "storeHeroImages") {
     handleHeroImages(message.data, sender);
     sendResponse({ success: true });
     return true;
@@ -22,7 +22,7 @@ function handleHeroImages(data, sender) {
   const { url, heroImages, dwellTime, scrollDepth } = data;
   
   if (!url || !heroImages || !heroImages.length) {
-    console.log('Invalid hero image data received');
+    console.log("Invalid hero image data received");
     return;
   }
   
@@ -42,7 +42,7 @@ function handleHeroImages(data, sender) {
     });
     
     // Also store in chrome.storage for persistence
-    chrome.storage.local.get(['heroImages'], (result) => {
+    chrome.storage.local.get(["heroImages"], (result) => {
       const existingImages = result.heroImages || {};
       
       // Add new images, overwrite if already exists
@@ -75,7 +75,7 @@ function handleHeroImages(data, sender) {
       
       chrome.storage.local.set({ heroImages: existingImages }, () => {
         if (chrome.runtime.lastError) {
-          console.error('Error saving hero images:', chrome.runtime.lastError);
+          console.error("Error saving hero images:", chrome.runtime.lastError);
         } else {
           console.log(`Stored hero images for ${url}`);
         }
@@ -98,7 +98,7 @@ function getHeroImagesForUrl(url) {
     }
     
     // Fall back to persistent storage
-    chrome.storage.local.get(['heroImages'], (result) => {
+    chrome.storage.local.get(["heroImages"], (result) => {
       const existingImages = result.heroImages || {};
       if (existingImages[url]) {
         // Also update in-memory cache

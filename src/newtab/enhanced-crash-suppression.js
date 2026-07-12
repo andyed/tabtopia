@@ -7,7 +7,7 @@
 
 // IMMEDIATE and AGGRESSIVE crash suppression
 (function () {
-    console.log('🚫 Initializing ENHANCED crash suppression...');
+    console.log("🚫 Initializing ENHANCED crash suppression...");
 
     let suppressionCount = 0;
 
@@ -19,28 +19,28 @@
 
     // Target crash message patterns
     const crashPatterns = [
-        'The model process crashed too many times for this version.',
-        'The model process crashed too many times',
-        'model process crashed too many times',
-        'crashed too many times for this version',
-        'crashed too many times'
+        "The model process crashed too many times for this version.",
+        "The model process crashed too many times",
+        "model process crashed too many times",
+        "crashed too many times for this version",
+        "crashed too many times"
     ];
 
     function isCrashMessage(message) {
         const msg = String(message).toLowerCase();
         const isMatch = crashPatterns.some(pattern => msg.includes(pattern.toLowerCase()));
         if (isMatch) {
-            console.log('🔍 [DEBUG] Crash message detected:', message);
+            console.log("🔍 [DEBUG] Crash message detected:", message);
         }
         return isMatch;
     }
 
     function suppressMessage(originalMethod, args) {
-        const message = args.join(' ');
+        const message = args.join(" ");
         if (isCrashMessage(message)) {
             suppressionCount++;
             if (suppressionCount === 1) {
-                originalMethod.call(console, '🚫 [ENHANCED SUPPRESSION] Chrome Summarizer crash detected - suppressing messages');
+                originalMethod.call(console, "🚫 [ENHANCED SUPPRESSION] Chrome Summarizer crash detected - suppressing messages");
             }
             return true; // Suppressed
         }
@@ -76,7 +76,7 @@
     const originalConsole = window.console;
     const consoleProxy = new Proxy(originalConsole, {
         get(target, prop) {
-            if (['warn', 'error', 'log', 'info'].includes(prop)) {
+            if (["warn", "error", "log", "info"].includes(prop)) {
                 return function (...args) {
                     if (!suppressMessage(target[prop], args)) {
                         return target[prop].apply(target, args);
@@ -88,18 +88,18 @@
     });
 
     // Replace the console object
-    Object.defineProperty(window, 'console', {
+    Object.defineProperty(window, "console", {
         value: consoleProxy,
         writable: false,
         configurable: true
     });
 
     // Intercept error events at window level
-    window.addEventListener('error', function (event) {
+    window.addEventListener("error", function (event) {
         if (event.message && isCrashMessage(event.message)) {
             suppressionCount++;
             if (suppressionCount === 1) {
-                console.log('🚫 [ENHANCED SUPPRESSION] Window error event suppressed');
+                console.log("🚫 [ENHANCED SUPPRESSION] Window error event suppressed");
             }
             event.preventDefault();
             event.stopPropagation();
@@ -108,11 +108,11 @@
     }, true); // Use capture phase
 
     // Intercept unhandled promise rejections
-    window.addEventListener('unhandledrejection', function (event) {
+    window.addEventListener("unhandledrejection", function (event) {
         if (event.reason && isCrashMessage(String(event.reason))) {
             suppressionCount++;
             if (suppressionCount === 1) {
-                console.log('🚫 [ENHANCED SUPPRESSION] Promise rejection suppressed');
+                console.log("🚫 [ENHANCED SUPPRESSION] Promise rejection suppressed");
             }
             event.preventDefault();
             return false;
@@ -120,15 +120,15 @@
     });
 
     // Try to intercept Chrome's internal logging (experimental)
-    if (typeof chrome !== 'undefined' && chrome.runtime) {
+    if (typeof chrome !== "undefined" && chrome.runtime) {
         // Override potential Chrome internal logging
         const originalSendMessage = chrome.runtime.sendMessage;
         chrome.runtime.sendMessage = function (...args) {
             try {
-                if (args.length > 0 && typeof args[0] === 'object' && args[0].message) {
+                if (args.length > 0 && typeof args[0] === "object" && args[0].message) {
                     if (isCrashMessage(args[0].message)) {
                         suppressionCount++;
-                        console.log('🚫 [ENHANCED SUPPRESSION] Chrome runtime message suppressed');
+                        console.log("🚫 [ENHANCED SUPPRESSION] Chrome runtime message suppressed");
                         return;
                     }
                 }
@@ -145,7 +145,7 @@
         if (message && isCrashMessage(message)) {
             suppressionCount++;
             if (suppressionCount === 1) {
-                console.log('🚫 [ENHANCED SUPPRESSION] Global error handler suppressed crash');
+                console.log("🚫 [ENHANCED SUPPRESSION] Global error handler suppressed crash");
             }
             return true; // Prevent default error handling
         }
@@ -160,37 +160,37 @@
         suppressionCount: () => suppressionCount,
         reset: () => {
             suppressionCount = 0;
-            console.log('🔄 Enhanced crash suppression reset');
+            console.log("🔄 Enhanced crash suppression reset");
         }
     };
 
-    console.log('✅ ENHANCED crash suppression active - monitoring all channels');
+    console.log("✅ ENHANCED crash suppression active - monitoring all channels");
 
     // Additional debugging: Log when we detect potential Summarizer API access
     let originalSummarizer = window.Summarizer;
-    Object.defineProperty(window, 'Summarizer', {
+    Object.defineProperty(window, "Summarizer", {
         get() {
             if (originalSummarizer) {
-                console.log('🔍 [DEBUG] Summarizer API accessed');
+                console.log("🔍 [DEBUG] Summarizer API accessed");
             }
             return originalSummarizer;
         },
         set(value) {
-            console.log('🔍 [DEBUG] Summarizer API set to:', value);
+            console.log("🔍 [DEBUG] Summarizer API set to:", value);
             originalSummarizer = value;
         }
     });
 
     // Monitor for any AI-related property access
     if (window.ai) {
-        console.log('🔍 [DEBUG] window.ai detected at startup');
+        console.log("🔍 [DEBUG] window.ai detected at startup");
     }
 
     // Log page load timing
-    console.log('🔍 [DEBUG] Enhanced crash suppression loaded at:', new Date().toISOString());
+    console.log("🔍 [DEBUG] Enhanced crash suppression loaded at:", new Date().toISOString());
 })();
 
 // Export for debugging
-if (typeof module !== 'undefined' && module.exports) {
+if (typeof module !== "undefined" && module.exports) {
     module.exports = { enhancedCrashSuppression: true };
 }

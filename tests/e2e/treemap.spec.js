@@ -106,4 +106,24 @@ test.describe("treemap ↔ readout", () => {
     await beta.click();
     await expect(readout).not.toHaveClass(/sticky/);
   });
+
+  test("default readout shows recent stars", async ({ context, server }) => {
+    const { nt } = await openApp(context, server);
+
+    // The fresh profile has no bookmarks — the panel should say so.
+    await expect(nt.locator("#readout .recent-stars h3")).toHaveText(/Recent stars/);
+    await expect(nt.locator("#readout .star-empty")).toHaveCount(1);
+
+    // Create a bookmark from the extension page (it has the bookmarks
+    // permission), then reload — the default panel must list it, newest first.
+    await nt.evaluate(() =>
+      chrome.bookmarks.create({ title: "Starred Fixture", url: "https://example.com/star" })
+    );
+    await nt.reload({ waitUntil: "domcontentloaded" });
+
+    const star = nt.locator("#readout .star-item", { hasText: "Starred Fixture" });
+    await expect(star).toHaveCount(1);
+    await expect(star.locator("a")).toHaveAttribute("href", "https://example.com/star");
+    await expect(star.locator(".star-meta")).toContainText("example.com");
+  });
 });

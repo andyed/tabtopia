@@ -12,14 +12,14 @@ export function getDomainFromUrl(url) {
   
   try {
     // Handle chrome:// and other special URLs
-    if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
-      return url.split('/')[2];
+    if (url.startsWith("chrome://") || url.startsWith("chrome-extension://")) {
+      return url.split("/")[2];
     }
     
     // Handle regular URLs
     const urlObj = new URL(url);
     // Remove 'www.' prefix if present
-    let domain = urlObj.hostname.replace(/^www\./, '');
+    let domain = urlObj.hostname.replace(/^www\./, "");
     return domain;
   } catch (e) {
     return null;

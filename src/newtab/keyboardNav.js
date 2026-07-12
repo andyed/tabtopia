@@ -1,41 +1,41 @@
-import {  exitSearchMode, clearSearchResults } from './search.js';
-import { activateNode } from './treemap.js';
+import {  exitSearchMode, clearSearchResults } from "./search.js";
+import { activateNode } from "./treemap.js";
 
 // Track currently focused elements
 let currentFocusedNode = null;
 
 export function handleKeyNavigation(event, node, data, state) {
     switch (event.key) {
-        case ' ': // Space
+        case " ": // Space
             event.preventDefault();
             activateNode(node, data);
             break;
-        case 'Enter':
+        case "Enter":
             event.preventDefault();
             if (data.data.isBookmark) {
                 chrome.tabs.create({ url: data.data.url, active: true });
             } else {
                 const windowId = parseInt(data.data.windowId, 10);
-                const tabId = parseInt(data.data.id.replace('tab', ''), 10);
+                const tabId = parseInt(data.data.id.replace("tab", ""), 10);
                 chrome.windows.update(windowId, { focused: true }, () => {
                     chrome.tabs.update(tabId, { active: true });
                 });
             }
             break;
-        case 'Tab':
+        case "Tab":
             // Only handle Tab if we're in search mode
-            if (document.querySelector('.cell-search-match')) {
+            if (document.querySelector(".cell-search-match")) {
                 event.preventDefault();
-                navigateSearchResults(event.shiftKey ? 'prev' : 'next');
+                navigateSearchResults(event.shiftKey ? "prev" : "next");
             }
             break;
-        case 'Escape':
+        case "Escape":
             exitSearchMode();
             break;
-        case 'ArrowRight':
-        case 'ArrowLeft':
-        case 'ArrowUp':
-        case 'ArrowDown':
+        case "ArrowRight":
+        case "ArrowLeft":
+        case "ArrowUp":
+        case "ArrowDown":
             const nextNode = findClosestNodeInDirection(node, event.key, state.focusableNodes);
             if (nextNode) {
                 nextNode.focus();
@@ -45,55 +45,55 @@ export function handleKeyNavigation(event, node, data, state) {
 }
 
 export function initializeKeyboardNavigation() {
-    console.log('Initializing keyboard navigation...');
+    console.log("Initializing keyboard navigation...");
     
     // Make the treemap container focusable
-    const treemap = document.getElementById('treemap');
+    const treemap = document.getElementById("treemap");
     if (!treemap) {
-        console.error('Treemap container not found');
+        console.error("Treemap container not found");
         return;
     }
     
     // Make treemap focusable
-    treemap.setAttribute('tabindex', '0');
+    treemap.setAttribute("tabindex", "0");
     
     // Global keyboard event listener
-    document.addEventListener('keydown', handleGlobalKeyboardNavigation);
+    document.addEventListener("keydown", handleGlobalKeyboardNavigation);
     
     // Listen for focus and click events to manage focus states
-    document.addEventListener('click', handleDocumentClick);
-    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener("click", handleDocumentClick);
+    document.addEventListener("focusin", handleFocusIn);
     
-    console.log('Keyboard navigation initialized');
+    console.log("Keyboard navigation initialized");
 }
 
 // Handle global keyboard events
 function handleGlobalKeyboardNavigation(event) {
     // Skip if we're in an input field
-    if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+    if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") {
         return;
     }
     
-    console.log('Keyboard nav event:', event.key);
+    console.log("Keyboard nav event:", event.key);
     
     switch (event.key) {
-        case 'ArrowUp':
-        case 'ArrowDown':
-        case 'ArrowLeft':
-        case 'ArrowRight':
+        case "ArrowUp":
+        case "ArrowDown":
+        case "ArrowLeft":
+        case "ArrowRight":
             event.preventDefault();
             navigateTreemap(event.key);
             break;
-        case 'Enter':
-        case ' ': // Space
+        case "Enter":
+        case " ": // Space
             event.preventDefault();
             activateCurrentNode();
             break;
-        case 'Escape':
+        case "Escape":
             event.preventDefault();
             clearAllFocus();
             break;
-        case '/':
+        case "/":
             event.preventDefault();
             focusSearch();
             break;
@@ -102,19 +102,19 @@ function handleGlobalKeyboardNavigation(event) {
 
 // Clear focus from all elements and reset state
 export function clearAllFocus() {
-    console.log('Clearing all focus states');
+    console.log("Clearing all focus states");
     
     // Clear any selected cells
-    d3.selectAll('.cell')
-        .classed('cell-focused', false)
-        .classed('cell-selected', false)
-        .classed('keyboard-focused', false);
+    d3.selectAll(".cell")
+        .classed("cell-focused", false)
+        .classed("cell-selected", false)
+        .classed("keyboard-focused", false);
     
     // Clear current focus tracking
     currentFocusedNode = null;
     
     // Focus back on treemap container
-    const treemap = document.getElementById('treemap');
+    const treemap = document.getElementById("treemap");
     if (treemap) {
         treemap.focus();
     }
@@ -123,8 +123,8 @@ export function clearAllFocus() {
 // Handle document clicks to clear keyboard focus when clicking
 function handleDocumentClick(event) {
     // If clicking outside a cell, clear keyboard focus
-    if (!event.target.closest('.cell')) {
-        d3.selectAll('.cell').classed('keyboard-focused', false);
+    if (!event.target.closest(".cell")) {
+        d3.selectAll(".cell").classed("keyboard-focused", false);
         currentFocusedNode = null;
     }
 }
@@ -132,23 +132,23 @@ function handleDocumentClick(event) {
 // Track when elements receive focus
 function handleFocusIn(event) {
     // If focusing on the treemap container, clear cell focus
-    if (event.target.id === 'treemap') {
-        d3.selectAll('.cell').classed('keyboard-focused', false);
+    if (event.target.id === "treemap") {
+        d3.selectAll(".cell").classed("keyboard-focused", false);
         currentFocusedNode = null;
     }
     
     // If focusing on a search input, clear cell focus
-    if (event.target.id === 'tabSearch') {
-        d3.selectAll('.cell').classed('keyboard-focused', false);
+    if (event.target.id === "tabSearch") {
+        d3.selectAll(".cell").classed("keyboard-focused", false);
         currentFocusedNode = null;
     }
 }
 
 // Navigate between cells using keyboard
 function navigateTreemap(direction) {
-    console.log('Navigating treemap:', direction);
+    console.log("Navigating treemap:", direction);
     
-    const cells = d3.selectAll('.cell').nodes();
+    const cells = d3.selectAll(".cell").nodes();
     if (cells.length === 0) return;
     
     // Find currently focused cell or start with first
@@ -160,17 +160,17 @@ function navigateTreemap(direction) {
     // Determine next cell to focus
     let nextIndex;
     switch (direction) {
-        case 'ArrowRight':
+        case "ArrowRight":
             nextIndex = currentIndex < cells.length - 1 ? currentIndex + 1 : 0;
             break;
-        case 'ArrowLeft':
+        case "ArrowLeft":
             nextIndex = currentIndex > 0 ? currentIndex - 1 : cells.length - 1;
             break;
-        case 'ArrowDown':
+        case "ArrowDown":
             // Find cell in row below current position
             nextIndex = findCellBelow(cells, currentFocusedNode);
             break;
-        case 'ArrowUp':
+        case "ArrowUp":
             // Find cell in row above current position
             nextIndex = findCellAbove(cells, currentFocusedNode);
             break;
@@ -189,17 +189,17 @@ function navigateTreemap(direction) {
 function setFocusToCell(cellElement) {
     if (!cellElement) return;
     
-    console.log('Setting focus to cell');
+    console.log("Setting focus to cell");
     
     // Clear previous focus
-    d3.selectAll('.cell').classed('keyboard-focused', false);
+    d3.selectAll(".cell").classed("keyboard-focused", false);
     
     // Set new focus
-    d3.select(cellElement).classed('keyboard-focused', true);
+    d3.select(cellElement).classed("keyboard-focused", true);
     currentFocusedNode = cellElement;
     
     // Make cell focusable and focus it
-    cellElement.setAttribute('tabindex', '0');
+    cellElement.setAttribute("tabindex", "0");
     cellElement.focus();
 }
 
@@ -207,7 +207,7 @@ function setFocusToCell(cellElement) {
 function activateCurrentNode() {
     if (!currentFocusedNode) return;
     
-    console.log('Activating current node');
+    console.log("Activating current node");
     
     // Get data associated with node
     const nodeData = d3.select(currentFocusedNode).datum();
@@ -235,7 +235,7 @@ function activateCurrentNode() {
 
 // Focus the search box
 function focusSearch() {
-    const searchInput = document.getElementById('tabSearch');
+    const searchInput = document.getElementById("tabSearch");
     if (searchInput) {
         searchInput.focus();
     }
@@ -314,7 +314,7 @@ function findCellAbove(cells, currentCell) {
 export function focusCellById(id) {
     if (!id) return;
     
-    const cell = d3.selectAll('.cell')
+    const cell = d3.selectAll(".cell")
         .filter(d => d.data.id === id)
         .node();
     
@@ -342,13 +342,13 @@ function findClosestNodeInDirection(currentNode, direction, allNodes) {
         };
 
         switch (direction) {
-            case 'ArrowRight':
+            case "ArrowRight":
                 return center.x > currentCenter.x;
-            case 'ArrowLeft':
+            case "ArrowLeft":
                 return center.x < currentCenter.x;
-            case 'ArrowUp':
+            case "ArrowUp":
                 return center.y < currentCenter.y;
-            case 'ArrowDown':
+            case "ArrowDown":
                 return center.y > currentCenter.y;
             default:
                 return false;
@@ -383,14 +383,14 @@ function findClosestNodeInDirection(currentNode, direction, allNodes) {
 }
 
 function navigateSearchResults(direction) {
-    const matches = Array.from(document.querySelectorAll('.cell-search-match'));
+    const matches = Array.from(document.querySelectorAll(".cell-search-match"));
     if (!matches.length) return;
 
     const currentFocus = document.activeElement;
     const currentIndex = matches.indexOf(currentFocus);
     
     let nextIndex;
-    if (direction === 'next') {
+    if (direction === "next") {
         nextIndex = currentIndex < matches.length - 1 ? currentIndex + 1 : 0;
     } else {
         nextIndex = currentIndex > 0 ? currentIndex - 1 : matches.length - 1;

@@ -20,7 +20,7 @@
  */
 
 // Import utility functions
-import { extractSearchQuery, isLikelyRedirect } from './lib/url-utils.js';
+import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log("[Tabtopia] installed successfully.");
@@ -43,7 +43,7 @@ setInterval(() => {
 
 // Handle browser suspend/resume events
 chrome.runtime.onSuspend.addListener(() => {
-    console.log('[DwellTime] Browser suspending, saving last active state');
+    console.log("[DwellTime] Browser suspending, saving last active state");
     // Save the last active state when the browser is closing
     if (browserState.lastActive) {
         // Calculate final dwell time for the currently active tab
@@ -69,7 +69,7 @@ chrome.runtime.onSuspend.addListener(() => {
         chrome.storage.local.set({
             lastActiveTab: {
                 tabId: browserState.lastActive.tabId,
-                url: browserState.tabs.get(browserState.lastActive.tabId)?.url || '',
+                url: browserState.tabs.get(browserState.lastActive.tabId)?.url || "",
                 timestamp: Date.now()
             }
         });
@@ -78,12 +78,12 @@ chrome.runtime.onSuspend.addListener(() => {
 
 // Handle browser resume
 chrome.runtime.onStartup.addListener(() => {
-    console.log('[DwellTime] Browser starting up, checking for previous session');
+    console.log("[DwellTime] Browser starting up, checking for previous session");
 
     // Try to restore last active tab information
-    chrome.storage.local.get(['lastActiveTab'], (result) => {
+    chrome.storage.local.get(["lastActiveTab"], (result) => {
         if (result.lastActiveTab) {
-            console.log('[DwellTime] Found previous session data:', result.lastActiveTab);
+            console.log("[DwellTime] Found previous session data:", result.lastActiveTab);
 
             // Set a reasonable timestamp for the new session
             const previousData = result.lastActiveTab;
@@ -93,7 +93,7 @@ chrome.runtime.onStartup.addListener(() => {
             chrome.tabs.query({}, (tabs) => {
                 for (const tab of tabs) {
                     if (tab.url === previousData.url) {
-                        console.log('[DwellTime] Found matching tab for previous session:', tab.id);
+                        console.log("[DwellTime] Found matching tab for previous session:", tab.id);
                         // Initialize tracking with this tab
                         browserState.lastActive = {
                             tabId: tab.id,
@@ -186,7 +186,7 @@ function initializeActiveTabTracking() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs && tabs.length > 0) {
             const activeTab = tabs[0];
-            console.log('[DwellTime] Initializing active tab tracking with tab:', activeTab.id);
+            console.log("[DwellTime] Initializing active tab tracking with tab:", activeTab.id);
 
             // Set the currently active tab
             browserState.lastActive = {
@@ -763,7 +763,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         // Record tab focus event
         const focusEvent = {
             timestamp: Date.now(),
-            type: 'focus'
+            type: "focus"
         };
 
         // Update or initialize tab activity log
@@ -804,7 +804,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
         // Debounce full tab data update to reduce overhead
         // Using global variable instead of window (which doesn't exist in service workers)
-        if (typeof tabActivationTimeout !== 'undefined') {
+        if (typeof tabActivationTimeout !== "undefined") {
             clearTimeout(tabActivationTimeout);
         }
 
@@ -1432,10 +1432,10 @@ let pendingLinkData = {};
 function updateBrowserState(data) {
     // Dispatch the event to browser state via notifyChange
     if (browserState && browserState.notifyChange) {
-        browserState.notifyChange('navigation', data);
-        console.debug('Browser state updated with navigation data', data);
+        browserState.notifyChange("navigation", data);
+        console.debug("Browser state updated with navigation data", data);
     } else {
-        console.warn('browserState.notifyChange not available, skipping update', data);
+        console.warn("browserState.notifyChange not available, skipping update", data);
     }
 }
 
@@ -1719,7 +1719,7 @@ const webRequestData = new Map();
 chrome.webRequest.onBeforeSendHeaders.addListener(
     (details) => {
         const { requestId, url, timeStamp, method, type, initiator, requestHeaders } = details;
-        const referer = requestHeaders.find(h => h.name.toLowerCase() === 'referer')?.value;
+        const referer = requestHeaders.find(h => h.name.toLowerCase() === "referer")?.value;
         webRequestData.set(requestId, {
             url,
             timeStamp,
@@ -1730,8 +1730,8 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
             redirects: [],
         });
     },
-    { urls: ['<all_urls>'], types: ['main_frame'] },
-    ['requestHeaders']
+    { urls: ["<all_urls>"], types: ["main_frame"] },
+    ["requestHeaders"]
 );
 
 chrome.webRequest.onBeforeRedirect.addListener(
@@ -1742,7 +1742,7 @@ chrome.webRequest.onBeforeRedirect.addListener(
             request.redirects.push({ url: redirectUrl, timeStamp });
         }
     },
-    { urls: ['<all_urls>'], types: ['main_frame'] }
+    { urls: ["<all_urls>"], types: ["main_frame"] }
 );
 
 // Clean, focused implementation for web navigation events
@@ -1912,31 +1912,31 @@ const tabsWithOpener = new Set();
 
 // Message handler for various actions
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'hasOpener') {
+    if (message.type === "hasOpener") {
         if (sender.tab) {
             tabsWithOpener.add(sender.tab.id);
         }
         sendResponse({ received: true });
         return;
     }
-    console.log('🔍 Background script received message:', message);
-    console.log('🔍 Message action:', message.action);
-    console.log('🔍 Message type:', message.type);
-    console.log('🔍 Sender tab ID:', sender.tab?.id);
+    console.log("🔍 Background script received message:", message);
+    console.log("🔍 Message action:", message.action);
+    console.log("🔍 Message type:", message.type);
+    console.log("🔍 Sender tab ID:", sender.tab?.id);
 
     // Handle ping requests for testing
-    if (message.action === 'ping') {
-        console.log('Ping received from debug tools');
-        sendResponse({ success: true, message: 'pong', timestamp: Date.now() });
+    if (message.action === "ping") {
+        console.log("Ping received from debug tools");
+        sendResponse({ success: true, message: "pong", timestamp: Date.now() });
         return true;
     }
 
     // Handle debug state requests
-    if (message.action === 'getDebugState') {
-        console.log('✅ getDebugState action detected!');
-        console.log('Message received (getDebugState) from tab', sender.tab.id);
-        console.log('browserState available:', !!browserState);
-        console.log('browserState properties:', browserState ? Object.keys(browserState) : 'null');
+    if (message.action === "getDebugState") {
+        console.log("✅ getDebugState action detected!");
+        console.log("Message received (getDebugState) from tab", sender.tab.id);
+        console.log("browserState available:", !!browserState);
+        console.log("browserState properties:", browserState ? Object.keys(browserState) : "null");
 
         // Prepare the response with detailed logging
         const stateToSend = {
@@ -1950,18 +1950,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         };
 
         // Log what we're sending
-        console.log('Sending debug state response with:', {
-            'tabHistory': stateToSend.tabHistory ? `present (${Array.isArray(stateToSend.tabHistory) ? 'array' : typeof stateToSend.tabHistory})` : 'missing',
-            'tabRelationships': stateToSend.tabRelationships ? `present (${Array.isArray(stateToSend.tabRelationships) ? 'array' : typeof stateToSend.tabRelationships})` : 'missing',
-            'tabActivityLog': stateToSend.tabActivityLog ? `present (${Array.isArray(stateToSend.tabActivityLog) ? 'array' : typeof stateToSend.tabActivityLog})` : 'missing',
-            'graphData': stateToSend.graphData ? 'present' : 'missing',
-            'tabs count': stateToSend.tabs ? (Array.isArray(stateToSend.tabs) ? stateToSend.tabs.length : 'not array') : 'missing',
-            'windows count': stateToSend.windows ? (Array.isArray(stateToSend.windows) ? stateToSend.windows.length : 'not array') : 'missing'
+        console.log("Sending debug state response with:", {
+            "tabHistory": stateToSend.tabHistory ? `present (${Array.isArray(stateToSend.tabHistory) ? "array" : typeof stateToSend.tabHistory})` : "missing",
+            "tabRelationships": stateToSend.tabRelationships ? `present (${Array.isArray(stateToSend.tabRelationships) ? "array" : typeof stateToSend.tabRelationships})` : "missing",
+            "tabActivityLog": stateToSend.tabActivityLog ? `present (${Array.isArray(stateToSend.tabActivityLog) ? "array" : typeof stateToSend.tabActivityLog})` : "missing",
+            "graphData": stateToSend.graphData ? "present" : "missing",
+            "tabs count": stateToSend.tabs ? (Array.isArray(stateToSend.tabs) ? stateToSend.tabs.length : "not array") : "missing",
+            "windows count": stateToSend.windows ? (Array.isArray(stateToSend.windows) ? stateToSend.windows.length : "not array") : "missing"
         });
 
         // Convert Maps to Arrays for serialization if needed
         if (browserState.tabHistory instanceof Map) {
-            console.log('Converting tabHistory Map to Array for serialization');
+            console.log("Converting tabHistory Map to Array for serialization");
             const historyArray = [];
             browserState.tabHistory.forEach((entries, tabId) => {
                 entries.forEach(entry => {
@@ -1975,7 +1975,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         if (browserState.tabRelationships instanceof Map) {
-            console.log('Converting tabRelationships Map to Array for serialization');
+            console.log("Converting tabRelationships Map to Array for serialization");
             const relationshipsArray = [];
             browserState.tabRelationships.forEach((relationship, tabId) => {
                 relationshipsArray.push({
@@ -1987,7 +1987,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         if (browserState.tabActivityLog instanceof Map) {
-            console.log('Converting tabActivityLog Map to Array for serialization');
+            console.log("Converting tabActivityLog Map to Array for serialization");
             const activityArray = [];
             browserState.tabActivityLog.forEach((activities, tabId) => {
                 if (Array.isArray(activities)) {
@@ -1997,7 +1997,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             ...activity
                         });
                     });
-                } else if (activities && typeof activities === 'object') {
+                } else if (activities && typeof activities === "object") {
                     activityArray.push({
                         tabId: tabId,
                         ...activities
@@ -2012,16 +2012,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             state: stateToSend
         };
 
-        console.log('Sending response to debug tools:', response);
-        console.log('Response keys:', Object.keys(response));
-        console.log('State keys:', Object.keys(stateToSend));
+        console.log("Sending response to debug tools:", response);
+        console.log("Response keys:", Object.keys(response));
+        console.log("State keys:", Object.keys(stateToSend));
 
         sendResponse(response);
         return true; // Keep the message channel open for async response
     }
 
     // Handle clearing graph data
-    if (message.action === 'clearGraphData') {
+    if (message.action === "clearGraphData") {
         browserState.graphData = { nodePositions: {}, customEdges: [], summaries: {} };
         saveStateToStorage();
         sendResponse({ success: true });
@@ -2029,7 +2029,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // Handle clearing history data
-    if (message.action === 'clearHistoryData') {
+    if (message.action === "clearHistoryData") {
         // tabHistory is a Map — clear in place rather than reassigning to []
         if (browserState.tabHistory instanceof Map) {
             browserState.tabHistory.clear();
@@ -2042,7 +2042,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // Handle clearing activity log
-    if (message.action === 'clearActivityLog') {
+    if (message.action === "clearActivityLog") {
         // tabActivityLog is a Map — clear in place rather than reassigning to []
         if (browserState.tabActivityLog instanceof Map) {
             browserState.tabActivityLog.clear();
@@ -2061,7 +2061,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // Handle tab activity events from newtab pages
-    if (message.action === 'updateTabActivity' && message.tabId && message.event) {
+    if (message.action === "updateTabActivity" && message.tabId && message.event) {
         const activityLog = browserState.tabActivityLog.get(message.tabId) || {
             totalTimeSpent: 0,
             firstSeen: Date.now(),
@@ -2124,7 +2124,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
                 return true; // Prevent fallback handler
             case "getInitialState":
-                console.log('🔍 🔍 🔍 getInitialState request received - AUDIO DEBUG MODE 🔍 🔍 🔍');
+                console.log("🔍 🔍 🔍 getInitialState request received - AUDIO DEBUG MODE 🔍 🔍 🔍");
 
                 // Handle getInitialState request with current tabs and bookmark fallback
                 (async () => {
@@ -2171,8 +2171,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             return {
                                 id: tab.id,
                                 windowId: tab.windowId,
-                                title: tab.title || 'Untitled',
-                                url: tab.url || '',
+                                title: tab.title || "Untitled",
+                                url: tab.url || "",
                                 favIconUrl: tab.favIconUrl,
                                 active: tab.active,
                                 audible: tab.audible || false,
@@ -2188,11 +2188,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                         // Add bookmark fallback data if needed
                         const bookmarkFallback = {
-                            id: 'bookmark-fallback',
-                            windowId: 'bookmark',
-                            title: 'Bookmarks',
-                            url: 'chrome://bookmarks/',
-                            favIconUrl: 'chrome://favicon/chrome://bookmarks/',
+                            id: "bookmark-fallback",
+                            windowId: "bookmark",
+                            title: "Bookmarks",
+                            url: "chrome://bookmarks/",
+                            favIconUrl: "chrome://favicon/chrome://bookmarks/",
                             active: false,
                             lastAccessed: Date.now(),
                             timeSpent: 0,
@@ -2213,11 +2213,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             timestamp: Date.now()
                         };
 
-                        console.log('✅ Sending getInitialState response with', formattedTabs.length, 'tabs');
+                        console.log("✅ Sending getInitialState response with", formattedTabs.length, "tabs");
                         sendResponse(response);
 
                     } catch (error) {
-                        console.error('❌ Error in getInitialState handler:', error);
+                        console.error("❌ Error in getInitialState handler:", error);
                         sendResponse({
                             success: false,
                             error: error.message,
@@ -2235,7 +2235,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 return true; // Keep message channel open for async response
             case "getDebugState":
-                console.log('✅ getDebugState case in switch statement triggered!');
+                console.log("✅ getDebugState case in switch statement triggered!");
                 // Prepare the response with detailed logging
                 const stateToSend = {
                     tabs: browserState.tabs ? [...browserState.tabs.values()] : [],
@@ -2248,7 +2248,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 // Convert Maps to Arrays for serialization if needed
                 if (browserState.tabHistory instanceof Map) {
-                    console.log('Converting tabHistory Map to Array for serialization');
+                    console.log("Converting tabHistory Map to Array for serialization");
                     const historyArray = [];
                     browserState.tabHistory.forEach((entries, tabId) => {
                         entries.forEach(entry => {
@@ -2262,7 +2262,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
 
                 if (browserState.tabRelationships instanceof Map) {
-                    console.log('Converting tabRelationships Map to Array for serialization');
+                    console.log("Converting tabRelationships Map to Array for serialization");
                     const relationshipsArray = [];
                     browserState.tabRelationships.forEach((relationship, tabId) => {
                         relationshipsArray.push({
@@ -2274,7 +2274,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
 
                 if (browserState.tabActivityLog instanceof Map) {
-                    console.log('Converting tabActivityLog Map to Array for serialization');
+                    console.log("Converting tabActivityLog Map to Array for serialization");
                     const activityArray = [];
                     browserState.tabActivityLog.forEach((activities, tabId) => {
                         if (Array.isArray(activities)) {
@@ -2284,7 +2284,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     ...activity
                                 });
                             });
-                        } else if (activities && typeof activities === 'object') {
+                        } else if (activities && typeof activities === "object") {
                             activityArray.push({
                                 tabId: tabId,
                                 ...activities
@@ -2299,9 +2299,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     state: stateToSend
                 };
 
-                console.log('Sending response to debug tools:', response);
-                console.log('Response keys:', Object.keys(response));
-                console.log('State keys:', Object.keys(stateToSend));
+                console.log("Sending response to debug tools:", response);
+                console.log("Response keys:", Object.keys(response));
+                console.log("State keys:", Object.keys(stateToSend));
 
                 sendResponse(response);
                 return true;
@@ -2425,7 +2425,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true;
             case "extractContent":
                 // Handle content extraction requests from newtab page
-                console.log('🔍 Content extraction request:', message.url);
+                console.log("🔍 Content extraction request:", message.url);
 
                 (async () => {
                     try {
@@ -2433,11 +2433,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({
                             success: true,
                             content: content,
-                            source: 'background-worker',
+                            source: "background-worker",
                             timestamp: Date.now()
                         });
                     } catch (error) {
-                        console.error('Error extracting content in worker:', error);
+                        console.error("Error extracting content in worker:", error);
                         sendResponse({
                             success: false,
                             error: error.message,
@@ -2460,7 +2460,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     // Log the actual images being extracted
                     console.log("📸 Hero images found:", message.data.heroImages.map(img => ({
-                        src: img.src.substring(0, 100) + (img.src.length > 100 ? '...' : ''),
+                        src: img.src.substring(0, 100) + (img.src.length > 100 ? "..." : ""),
                         score: img.score,
                         dimensions: `${img.width}x${img.height}`,
                         isMetaImage: !!img.isMetaImage
@@ -2500,8 +2500,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 saveStateToStorage();
 
                 // Notify all listeners about new hero image data
-                browserState.notifyChange('heroImage', {
-                    type: 'added',
+                browserState.notifyChange("heroImage", {
+                    type: "added",
                     url: message.data.url,
                     data: heroImageData
                 });
@@ -2527,8 +2527,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true; // Prevent fallback handler
 
             case "getAudioTrackingStats":
-                console.log('🔍 getAudioTrackingStats request received');
-                console.log('🔊 [DEBUG] Current tabAudioTracking map:', Array.from(browserState.tabAudioTracking.entries()));
+                console.log("🔍 getAudioTrackingStats request received");
+                console.log("🔊 [DEBUG] Current tabAudioTracking map:", Array.from(browserState.tabAudioTracking.entries()));
 
                 const audioStats = {
                     totalTrackedTabs: browserState.tabAudioTracking.size,
@@ -2554,10 +2554,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true;
 
             case "getCurrentAudioDuration":
-                console.log('🔍 getCurrentAudioDuration request received for tab:', message.tabId);
+                console.log("🔍 getCurrentAudioDuration request received for tab:", message.tabId);
 
                 if (!message.tabId) {
-                    sendResponse({ success: false, error: 'Tab ID required' });
+                    sendResponse({ success: false, error: "Tab ID required" });
                     return true;
                 }
 
@@ -2566,7 +2566,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true;
 
             case "resetAudioTracking":
-                console.log('🔍 resetAudioTracking request received');
+                console.log("🔍 resetAudioTracking request received");
 
                 if (message.tabId) {
                     // Reset specific tab
@@ -2585,16 +2585,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 } else {
                     // Reset all audio tracking
                     browserState.tabAudioTracking.clear();
-                    console.log('[AudioTracking] Reset all audio tracking data');
-                    sendResponse({ success: true, message: 'All audio tracking data reset' });
+                    console.log("[AudioTracking] Reset all audio tracking data");
+                    sendResponse({ success: true, message: "All audio tracking data reset" });
                 }
 
                 saveStateToStorage();
                 return true;
 
             default:
-                console.warn('Unknown message type:', messageType);
-                sendResponse({ received: true, error: 'Unknown message type' });
+                console.warn("Unknown message type:", messageType);
+                sendResponse({ received: true, error: "Unknown message type" });
                 return true; // Prevent fallback handler
         }
     } catch (error) {
@@ -2891,10 +2891,10 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
  */
 async function extractTabContentInWorker(url) {
     try {
-        console.log('🔧 Worker extracting content for:', url);
+        console.log("🔧 Worker extracting content for:", url);
 
-        if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('file://')) {
-            console.log('⏭️ Skipping restricted URL in worker:', url);
+        if (url.startsWith("chrome://") || url.startsWith("chrome-extension://") || url.startsWith("file://")) {
+            console.log("⏭️ Skipping restricted URL in worker:", url);
             return null;
         }
 
@@ -2919,18 +2919,18 @@ async function extractTabContentInWorker(url) {
                     console.log(`🔍 Worker found ${tabs.length} tabs for domain ${domain}`);
                 }
             } catch (e) {
-                console.warn('Error in worker domain search:', e);
+                console.warn("Error in worker domain search:", e);
             }
         }
 
         // Strategy 3: If no tabs found, try to get content from history/bookmarks
         if (!tabs || tabs.length === 0) {
-            console.log('📚 No tabs found, trying metadata extraction in worker');
+            console.log("📚 No tabs found, trying metadata extraction in worker");
             return await extractContentFromMetadataInWorker(url);
         }
 
         const tab = tabs[0];
-        console.log('🎯 Worker targeting tab:', tab.id, tab.url);
+        console.log("🎯 Worker targeting tab:", tab.id, tab.url);
 
         try {
             // Enhanced content extraction script with worker privileges
@@ -2938,14 +2938,14 @@ async function extractTabContentInWorker(url) {
                 target: { tabId: tab.id },
                 func: () => {
                     try {
-                        console.log('📄 Worker script executing in tab');
+                        console.log("📄 Worker script executing in tab");
 
-                        let content = '';
+                        let content = "";
 
                         // Strategy 1: Try semantic HTML5 elements first
                         const semanticSelectors = [
-                            'main', 'article', 'section[role="main"]',
-                            '[role="main"]', '[role="article"]'
+                            "main", "article", "section[role=\"main\"]",
+                            "[role=\"main\"]", "[role=\"article\"]"
                         ];
 
                         for (const selector of semanticSelectors) {
@@ -2963,10 +2963,10 @@ async function extractTabContentInWorker(url) {
                         // Strategy 2: Try content-specific selectors
                         if (!content) {
                             const contentSelectors = [
-                                '.post-content', '.entry-content', '.content-body',
-                                '.article-content', '.story-content', '.post-body',
-                                '#content', '#main-content', '.main-content',
-                                '.content', '.post', '.article'
+                                ".post-content", ".entry-content", ".content-body",
+                                ".article-content", ".story-content", ".post-body",
+                                "#content", "#main-content", ".main-content",
+                                ".content", ".post", ".article"
                             ];
 
                             for (const selector of contentSelectors) {
@@ -2981,7 +2981,7 @@ async function extractTabContentInWorker(url) {
 
                         // Strategy 3: Smart body traversal with content filtering
                         if (!content && document.body) {
-                            console.log('📝 Trying smart body traversal');
+                            console.log("📝 Trying smart body traversal");
 
                             // Get all text nodes with smart filtering
                             const walker = document.createTreeWalker(
@@ -2994,23 +2994,23 @@ async function extractTabContentInWorker(url) {
 
                                         // Skip hidden elements
                                         const style = window.getComputedStyle(parent);
-                                        if (style.display === 'none' || style.visibility === 'hidden' ||
-                                            style.opacity === '0') {
+                                        if (style.display === "none" || style.visibility === "hidden" ||
+                                            style.opacity === "0") {
                                             return NodeFilter.FILTER_REJECT;
                                         }
 
                                         // Skip elements that are likely not content
                                         const tag = parent.tagName.toLowerCase();
-                                        if (['script', 'style', 'noscript', 'nav', 'header',
-                                            'footer', 'aside', 'menu', 'button'].includes(tag)) {
+                                        if (["script", "style", "noscript", "nav", "header",
+                                            "footer", "aside", "menu", "button"].includes(tag)) {
                                             return NodeFilter.FILTER_REJECT;
                                         }
 
                                         // Skip elements with navigation/UI class names
                                         const className = parent.className.toLowerCase();
-                                        if (className.includes('nav') || className.includes('menu') ||
-                                            className.includes('sidebar') || className.includes('ad') ||
-                                            className.includes('banner') || className.includes('cookie')) {
+                                        if (className.includes("nav") || className.includes("menu") ||
+                                            className.includes("sidebar") || className.includes("ad") ||
+                                            className.includes("banner") || className.includes("cookie")) {
                                             return NodeFilter.FILTER_REJECT;
                                         }
 
@@ -3019,7 +3019,7 @@ async function extractTabContentInWorker(url) {
                                 }
                             );
 
-                            let textContent = '';
+                            let textContent = "";
                             let node;
                             let counter = 0;
                             const maxNodes = 8000; // Increased limit for worker
@@ -3027,7 +3027,7 @@ async function extractTabContentInWorker(url) {
                             while ((node = walker.nextNode()) && counter < maxNodes) {
                                 const text = node.textContent.trim();
                                 if (text && text.length > 5) { // Filter out very short text
-                                    textContent += text + ' ';
+                                    textContent += text + " ";
                                 }
                                 counter++;
                             }
@@ -3038,7 +3038,7 @@ async function extractTabContentInWorker(url) {
 
                         // Strategy 4: Enhanced metadata extraction
                         if (!content || content.length < 100) {
-                            console.log('🏷️ Trying enhanced metadata extraction');
+                            console.log("🏷️ Trying enhanced metadata extraction");
 
                             const metadataParts = [];
 
@@ -3048,25 +3048,25 @@ async function extractTabContentInWorker(url) {
                             }
 
                             // Meta description
-                            const metaDesc = document.querySelector('meta[name="description"]')?.content;
+                            const metaDesc = document.querySelector("meta[name=\"description\"]")?.content;
                             if (metaDesc && metaDesc.length > 10) {
                                 metadataParts.push(metaDesc);
                             }
 
                             // Open Graph data
-                            const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
-                            const ogDesc = document.querySelector('meta[property="og:description"]')?.content;
+                            const ogTitle = document.querySelector("meta[property=\"og:title\"]")?.content;
+                            const ogDesc = document.querySelector("meta[property=\"og:description\"]")?.content;
                             if (ogTitle && ogTitle !== document.title) metadataParts.push(ogTitle);
                             if (ogDesc && ogDesc !== metaDesc) metadataParts.push(ogDesc);
 
                             // Twitter Card data
-                            const twitterTitle = document.querySelector('meta[name="twitter:title"]')?.content;
-                            const twitterDesc = document.querySelector('meta[name="twitter:description"]')?.content;
+                            const twitterTitle = document.querySelector("meta[name=\"twitter:title\"]")?.content;
+                            const twitterDesc = document.querySelector("meta[name=\"twitter:description\"]")?.content;
                             if (twitterTitle && !metadataParts.includes(twitterTitle)) metadataParts.push(twitterTitle);
                             if (twitterDesc && !metadataParts.includes(twitterDesc)) metadataParts.push(twitterDesc);
 
                             // Main headings
-                            const headings = document.querySelectorAll('h1, h2, h3');
+                            const headings = document.querySelectorAll("h1, h2, h3");
                             for (const heading of Array.from(headings).slice(0, 5)) {
                                 const headingText = heading.innerText.trim();
                                 if (headingText.length > 5 && headingText.length < 200) {
@@ -3075,7 +3075,7 @@ async function extractTabContentInWorker(url) {
                             }
 
                             // Key paragraphs (first few substantial paragraphs)
-                            const paragraphs = document.querySelectorAll('p');
+                            const paragraphs = document.querySelectorAll("p");
                             for (const p of Array.from(paragraphs).slice(0, 3)) {
                                 const pText = p.innerText.trim();
                                 if (pText.length > 50 && pText.length < 500) {
@@ -3084,7 +3084,7 @@ async function extractTabContentInWorker(url) {
                             }
 
                             if (metadataParts.length > 0) {
-                                content = metadataParts.join('. ');
+                                content = metadataParts.join(". ");
                                 console.log(`🏷️ Metadata extraction: ${content.length} chars from ${metadataParts.length} parts`);
                             }
                         }
@@ -3093,19 +3093,19 @@ async function extractTabContentInWorker(url) {
                         if (content && content.length > 20) {
                             // Clean up the content
                             content = content
-                                .replace(/\s+/g, ' ') // Normalize whitespace
-                                .replace(/\n{3,}/g, '\n\n') // Limit consecutive newlines
+                                .replace(/\s+/g, " ") // Normalize whitespace
+                                .replace(/\n{3,}/g, "\n\n") // Limit consecutive newlines
                                 .trim();
 
                             console.log(`🎉 Worker extraction successful: ${content.length} characters`);
                             return content;
                         } else {
-                            console.log('⚠️ Worker extraction insufficient content');
+                            console.log("⚠️ Worker extraction insufficient content");
                             return null;
                         }
 
                     } catch (err) {
-                        console.error('💥 Worker script error:', err);
+                        console.error("💥 Worker script error:", err);
                         return null;
                     }
                 }
@@ -3117,18 +3117,18 @@ async function extractTabContentInWorker(url) {
                 console.log(`✅ Worker successfully extracted ${extractedContent.length} characters from tab ${tab.id}`);
                 return extractedContent;
             } else {
-                console.log(`⚠️ Worker tab extraction insufficient, trying metadata fallback`);
+                console.log("⚠️ Worker tab extraction insufficient, trying metadata fallback");
                 return await extractContentFromMetadataInWorker(url);
             }
 
         } catch (scriptError) {
-            console.warn('🚫 Worker script injection failed:', scriptError.message);
+            console.warn("🚫 Worker script injection failed:", scriptError.message);
             // Try metadata extraction as fallback
             return await extractContentFromMetadataInWorker(url);
         }
 
     } catch (error) {
-        console.error('💥 Worker content extraction error:', error);
+        console.error("💥 Worker content extraction error:", error);
         // Final fallback
         return await extractContentFromMetadataInWorker(url);
     }
@@ -3142,9 +3142,9 @@ async function extractTabContentInWorker(url) {
  */
 async function extractContentFromMetadataInWorker(url) {
     try {
-        console.log('📊 Worker metadata extraction for:', url);
+        console.log("📊 Worker metadata extraction for:", url);
 
-        let content = '';
+        let content = "";
 
         // Get history data for this URL
         const historyItems = await new Promise((resolve) => {
@@ -3164,11 +3164,11 @@ async function extractContentFromMetadataInWorker(url) {
         if (historyItems.length > 0) {
             const historyTitles = historyItems
                 .map(item => item.title)
-                .filter(title => title && title !== 'New Tab' && title.length > 3)
+                .filter(title => title && title !== "New Tab" && title.length > 3)
                 .slice(0, 3);
 
             if (historyTitles.length > 0) {
-                content += historyTitles.join('. ') + '. ';
+                content += historyTitles.join(". ") + ". ";
             }
         }
 
@@ -3176,24 +3176,24 @@ async function extractContentFromMetadataInWorker(url) {
         if (bookmarks.length > 0) {
             const bookmarkTitles = bookmarks
                 .map(bookmark => bookmark.title)
-                .filter(title => title && title !== 'New Tab' && title.length > 3)
+                .filter(title => title && title !== "New Tab" && title.length > 3)
                 .slice(0, 2);
 
             if (bookmarkTitles.length > 0) {
-                content += bookmarkTitles.join('. ') + '. ';
+                content += bookmarkTitles.join(". ") + ". ";
             }
         }
 
         // Enhanced URL analysis
         try {
             const urlObj = new URL(url);
-            const domain = urlObj.hostname.replace(/^www\./, '');
+            const domain = urlObj.hostname.replace(/^www\./, "");
             const pathname = urlObj.pathname;
             const searchParams = urlObj.searchParams;
 
             // Extract search queries with better decoding
             const searchQueries = [];
-            const searchKeys = ['q', 'query', 'search', 's', 'term', 'keyword'];
+            const searchKeys = ["q", "query", "search", "s", "term", "keyword"];
             for (const key of searchKeys) {
                 const value = searchParams.get(key);
                 if (value) {
@@ -3209,51 +3209,51 @@ async function extractContentFromMetadataInWorker(url) {
             }
 
             if (searchQueries.length > 0) {
-                content += `Search queries: ${searchQueries.join(', ')}. `;
+                content += `Search queries: ${searchQueries.join(", ")}. `;
             }
 
             // Enhanced path analysis
-            const pathSegments = pathname.split('/')
+            const pathSegments = pathname.split("/")
                 .filter(segment => segment.length > 2)
-                .filter(segment => !['www', 'com', 'org', 'net', 'html', 'php', 'asp', 'jsp', 'index'].includes(segment.toLowerCase()))
-                .map(segment => segment.replace(/[-_]/g, ' ').replace(/\.[a-z]+$/i, ''))
+                .filter(segment => !["www", "com", "org", "net", "html", "php", "asp", "jsp", "index"].includes(segment.toLowerCase()))
+                .map(segment => segment.replace(/[-_]/g, " ").replace(/\.[a-z]+$/i, ""))
                 .filter(segment => segment.length > 2)
                 .slice(0, 5);
 
             if (pathSegments.length > 0) {
-                content += `Content topics: ${pathSegments.join(', ')}. `;
+                content += `Content topics: ${pathSegments.join(", ")}. `;
             }
 
             // Domain context with better categorization
-            const domainParts = domain.split('.');
+            const domainParts = domain.split(".");
             const mainDomain = domainParts.length > 1 ? domainParts[domainParts.length - 2] : domain;
 
             content += `This is content from ${domain}`;
 
             // Add context based on domain type
-            if (domain.includes('github')) {
-                content += ', a software development platform';
-            } else if (domain.includes('stackoverflow') || domain.includes('stackexchange')) {
-                content += ', a programming Q&A community';
-            } else if (domain.includes('wikipedia')) {
-                content += ', an online encyclopedia';
-            } else if (domain.includes('reddit')) {
-                content += ', a social discussion platform';
-            } else if (domain.includes('youtube')) {
-                content += ', a video sharing platform';
-            } else if (domain.includes('news') || domain.includes('cnn') || domain.includes('bbc')) {
-                content += ', a news publication';
+            if (domain.includes("github")) {
+                content += ", a software development platform";
+            } else if (domain.includes("stackoverflow") || domain.includes("stackexchange")) {
+                content += ", a programming Q&A community";
+            } else if (domain.includes("wikipedia")) {
+                content += ", an online encyclopedia";
+            } else if (domain.includes("reddit")) {
+                content += ", a social discussion platform";
+            } else if (domain.includes("youtube")) {
+                content += ", a video sharing platform";
+            } else if (domain.includes("news") || domain.includes("cnn") || domain.includes("bbc")) {
+                content += ", a news publication";
             }
 
-            content += '. ';
+            content += ". ";
 
         } catch (e) {
-            console.warn('Error in worker URL analysis:', e);
+            console.warn("Error in worker URL analysis:", e);
         }
 
         // If still minimal content, create descriptive fallback
         if (content.trim().length < 100) {
-            const domain = url.split('/')[2]?.replace(/^www\./, '') || 'unknown';
+            const domain = url.split("/")[2]?.replace(/^www\./, "") || "unknown";
             content = `This webpage from ${domain} contains content that could not be directly extracted. The page likely contains information relevant to the site's topic and purpose, and may include text, articles, or other content that would be useful for understanding the subject matter discussed on this domain.`;
         }
 
@@ -3261,9 +3261,9 @@ async function extractContentFromMetadataInWorker(url) {
         return content.trim();
 
     } catch (error) {
-        console.error('💥 Worker metadata extraction error:', error);
+        console.error("💥 Worker metadata extraction error:", error);
         // Ultimate fallback
-        const domain = url.split('/')[2]?.replace(/^www\./, '') || 'unknown';
+        const domain = url.split("/")[2]?.replace(/^www\./, "") || "unknown";
         return `This is a webpage from ${domain} that contains content related to the site's topic and purpose.`;
     }
 }
@@ -3289,7 +3289,7 @@ function saveStateToStorage() {
  */
 function persistStateNow() {
     try {
-        console.log('Saving browserState to persistent storage...');
+        console.log("Saving browserState to persistent storage...");
 
         // Convert Maps to serializable objects for storage
         const stateToSave = {
@@ -3345,18 +3345,18 @@ function persistStateNow() {
 
         // Save to chrome.storage.local
         chrome.storage.local.set({
-            'browserState': stateToSave,
-            'lastStateSave': stateToSave.lastSaved
+            "browserState": stateToSave,
+            "lastStateSave": stateToSave.lastSaved
         }, () => {
             if (chrome.runtime.lastError) {
-                console.error('Error saving browserState:', chrome.runtime.lastError);
+                console.error("Error saving browserState:", chrome.runtime.lastError);
             } else {
-                console.log('✅ browserState saved successfully');
+                console.log("✅ browserState saved successfully");
             }
         });
 
     } catch (error) {
-        console.error('Error in saveStateToStorage:', error);
+        console.error("Error in saveStateToStorage:", error);
     }
 }
 
@@ -3366,21 +3366,21 @@ function persistStateNow() {
  */
 function loadStateFromStorage() {
     try {
-        console.log('Loading browserState from persistent storage...');
+        console.log("Loading browserState from persistent storage...");
 
-        chrome.storage.local.get(['browserState'], (result) => {
+        chrome.storage.local.get(["browserState"], (result) => {
             if (chrome.runtime.lastError) {
-                console.error('Error loading browserState:', chrome.runtime.lastError);
+                console.error("Error loading browserState:", chrome.runtime.lastError);
                 return;
             }
 
             const savedState = result.browserState;
             if (!savedState) {
-                console.log('No saved browserState found, starting fresh');
+                console.log("No saved browserState found, starting fresh");
                 return;
             }
 
-            console.log('Found saved browserState, restoring data...');
+            console.log("Found saved browserState, restoring data...");
 
             // Restore tabHistory
             if (savedState.tabHistory) {
@@ -3462,21 +3462,21 @@ function loadStateFromStorage() {
                 const timeSinceSave = Date.now() - savedState.lastSaved;
                 if (timeSinceSave < 3600000) { // 1 hour
                     browserState.lastActive = savedState.lastActive;
-                    console.log('Restored lastActive tab state');
+                    console.log("Restored lastActive tab state");
                 }
             }
 
-            console.log('✅ browserState restoration complete');
+            console.log("✅ browserState restoration complete");
         });
 
     } catch (error) {
-        console.error('Error in loadStateFromStorage:', error);
+        console.error("Error in loadStateFromStorage:", error);
     }
 }
 
 function createRefreshIndicator() {
     // Check if it already exists
-    let indicator = document.getElementById('refresh-indicator');
+    let indicator = document.getElementById("refresh-indicator");
     if (indicator) return indicator;
 
     // ... creates DOM element ...
@@ -3486,12 +3486,12 @@ function createRefreshIndicator() {
 
 // Enhanced content extraction with pure innerText approach
 function extractContentFromPage() {
-    let content = '';
+    let content = "";
 
     // Phase 1: Try semantic elements (keep current approach)
     const semanticSelectors = [
-        'main', 'article', 'section[role="main"]',
-        '[role="main"]', '[role="article"]'
+        "main", "article", "section[role=\"main\"]",
+        "[role=\"main\"]", "[role=\"article\"]"
     ];
 
     for (const selector of semanticSelectors) {
@@ -3506,8 +3506,8 @@ function extractContentFromPage() {
     // Phase 2: Content-specific selectors (if needed)
     if (!content) {
         const contentSelectors = [
-            '.post-content', '.entry-content', '.article-content',
-            '#content', '#main-content', '.content'
+            ".post-content", ".entry-content", ".article-content",
+            "#content", "#main-content", ".content"
         ];
 
         for (const selector of contentSelectors) {
@@ -3522,8 +3522,8 @@ function extractContentFromPage() {
     // Phase 3: Simple text cleaning (no HTML regex needed!)
     if (content) {
         content = content
-            .replace(/\s+/g, ' ')                    // Normalize whitespace
-            .replace(/[^\x00-\x7F\u00C0-\u017F]/g, ' ')  // Basic char filtering
+            .replace(/\s+/g, " ")                    // Normalize whitespace
+            .replace(/[^\x00-\x7F\u00C0-\u017F]/g, " ")  // Basic char filtering
             .trim();
     }
 
@@ -3538,7 +3538,7 @@ function updateAudioBasedDwellTime() {
     const currentTime = Date.now();
     let updatesCount = 0;
 
-    console.log('[AudioDwellTime] Starting periodic audio-based dwell time update');
+    console.log("[AudioDwellTime] Starting periodic audio-based dwell time update");
 
     // Get currently active tab to exclude from background audio processing
     const activeTabId = browserState.lastActive?.tabId;
@@ -3613,6 +3613,6 @@ function updateAudioBasedDwellTime() {
         console.log(`[AudioDwellTime] Updated ${updatesCount} tabs with audio-based dwell time`);
         saveStateToStorage(); // Persist the updates
     } else {
-        console.log('[AudioDwellTime] No background audio tabs to update');
+        console.log("[AudioDwellTime] No background audio tabs to update");
     }
 }

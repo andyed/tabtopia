@@ -1,13 +1,13 @@
 export function updateStats(currentTimeScale, currentData) {
   if (!currentData?.historySwimlane) {
-    document.getElementById('time-range-stat').textContent = '--:-- - --:--';
-    document.getElementById('events-stat').textContent = '0 shown';
-    document.getElementById('sessions-stat').textContent = '0';
+    document.getElementById("time-range-stat").textContent = "--:-- - --:--";
+    document.getElementById("events-stat").textContent = "0 shown";
+    document.getElementById("sessions-stat").textContent = "0";
     return;
   }
 
   const [start, end] = currentTimeScale.domain();
-  const timeRange = `${d3.timeFormat('%H:%M')(start)} - ${d3.timeFormat('%H:%M')(end)}`;
+  const timeRange = `${d3.timeFormat("%H:%M")(start)} - ${d3.timeFormat("%H:%M")(end)}`;
   
   const visibleNodes = currentData.historySwimlane.filter(d => {
     const time = new Date(d.lastVisitTime);
@@ -16,9 +16,9 @@ export function updateStats(currentTimeScale, currentData) {
 
   const sessions = countSessions(currentData.historySwimlane, start, end);
 
-  document.getElementById('time-range-stat').textContent = timeRange;
-  document.getElementById('events-stat').textContent = `${visibleNodes} shown`;
-  document.getElementById('sessions-stat').textContent = sessions;
+  document.getElementById("time-range-stat").textContent = timeRange;
+  document.getElementById("events-stat").textContent = `${visibleNodes} shown`;
+  document.getElementById("sessions-stat").textContent = sessions;
 }
 
 function countSessions(data, start, end) {

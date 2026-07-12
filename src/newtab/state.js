@@ -17,31 +17,31 @@
  */
 export const ActionTypes = {
   // Tab actions
-  TAB_CREATED: 'TAB_CREATED',
-  TAB_UPDATED: 'TAB_UPDATED',
-  TAB_REMOVED: 'TAB_REMOVED',
-  TAB_ACTIVATED: 'TAB_ACTIVATED',
+  TAB_CREATED: "TAB_CREATED",
+  TAB_UPDATED: "TAB_UPDATED",
+  TAB_REMOVED: "TAB_REMOVED",
+  TAB_ACTIVATED: "TAB_ACTIVATED",
 
   // Window actions
-  WINDOW_CREATED: 'WINDOW_CREATED',
-  WINDOW_UPDATED: 'WINDOW_UPDATED',
-  WINDOW_REMOVED: 'WINDOW_REMOVED',
+  WINDOW_CREATED: "WINDOW_CREATED",
+  WINDOW_UPDATED: "WINDOW_UPDATED",
+  WINDOW_REMOVED: "WINDOW_REMOVED",
 
   // UI actions
-  UI_SELECT_TAB: 'UI_SELECT_TAB',
-  UI_CHANGE_VIEW: 'UI_CHANGE_VIEW',
+  UI_SELECT_TAB: "UI_SELECT_TAB",
+  UI_CHANGE_VIEW: "UI_CHANGE_VIEW",
 
   // Relationship actions
-  RELATIONSHIP_ADDED: 'RELATIONSHIP_ADDED',
-  RELATIONSHIP_REMOVED: 'RELATIONSHIP_REMOVED',
+  RELATIONSHIP_ADDED: "RELATIONSHIP_ADDED",
+  RELATIONSHIP_REMOVED: "RELATIONSHIP_REMOVED",
 
   // Data actions
-  SUMMARY_STORED: 'SUMMARY_STORED',
-  NODE_POSITION_UPDATED: 'NODE_POSITION_UPDATED',
-  DWELL_TIME_UPDATED: 'DWELL_TIME_UPDATED', // New action type
+  SUMMARY_STORED: "SUMMARY_STORED",
+  NODE_POSITION_UPDATED: "NODE_POSITION_UPDATED",
+  DWELL_TIME_UPDATED: "DWELL_TIME_UPDATED", // New action type
 
   // Batch actions
-  BATCH_STATE_UPDATE: 'BATCH_STATE_UPDATE',
+  BATCH_STATE_UPDATE: "BATCH_STATE_UPDATE",
 };
 
 /**
@@ -59,8 +59,8 @@ const initialState = {
   ui: {
     selectedTab: null,
     selectedWindow: null,
-    currentView: 'treemap',
-    searchQuery: '',
+    currentView: "treemap",
+    searchQuery: "",
   },
 
   // Persistent data
@@ -113,11 +113,11 @@ export const browserState = {
       return new Promise((resolve) => {
         // Add timeout to prevent hanging if background doesn't respond
         const timeoutId = setTimeout(() => {
-          console.warn('getState timed out after 3 seconds');
+          console.warn("getState timed out after 3 seconds");
           resolve(this._store); // Use local store if timeout
         }, 3000);
 
-        chrome.runtime.sendMessage({ type: 'getState', action: 'getState' }, (response) => {
+        chrome.runtime.sendMessage({ type: "getState", action: "getState" }, (response) => {
           clearTimeout(timeoutId); // Clear timeout on response
 
           if (response) {
@@ -130,14 +130,14 @@ export const browserState = {
             // Return full state
             resolve(this._store);
           } else {
-            console.warn('No response from background script for getState');
+            console.warn("No response from background script for getState");
             // Return current local state if no response
             resolve(this._store);
           }
         });
       });
     } catch (error) {
-      console.error('Error fetching state:', error);
+      console.error("Error fetching state:", error);
       return this._getLocalState();
     }
   },
@@ -166,27 +166,27 @@ export const browserState = {
   subscribe(callback) {
     const listener = (message) => {
       // Map Chrome message events to actions
-      if (message.action === 'tabUpdated') {
+      if (message.action === "tabUpdated") {
         this._dispatch({
           type: ActionTypes.TAB_UPDATED,
           payload: message.data
         });
-      } else if (message.action === 'tabCreated') {
+      } else if (message.action === "tabCreated") {
         this._dispatch({
           type: ActionTypes.TAB_CREATED,
           payload: message.data
         });
-      } else if (message.action === 'tabRemoved') {
+      } else if (message.action === "tabRemoved") {
         this._dispatch({
           type: ActionTypes.TAB_REMOVED,
           payload: message.data
         });
-      } else if (message.action === 'windowUpdated') {
+      } else if (message.action === "windowUpdated") {
         this._dispatch({
           type: ActionTypes.WINDOW_UPDATED,
           payload: message.data
         });
-      } else if (message.action === 'dwellTimeUpdated') {
+      } else if (message.action === "dwellTimeUpdated") {
         this._dispatch({
           type: ActionTypes.DWELL_TIME_UPDATED,
           payload: message.data
@@ -239,7 +239,7 @@ export const browserState = {
    * @param {Object} action - Action object
    */
   _dispatch(action) {
-    console.log('Action dispatched:', action);
+    console.log("Action dispatched:", action);
 
     // Run action through middleware
     let processedAction = action;
@@ -275,7 +275,7 @@ export const browserState = {
           data: data
         });
       } catch (error) {
-        console.error('Error in state listener:', error);
+        console.error("Error in state listener:", error);
       }
     });
   },
@@ -289,14 +289,14 @@ export const browserState = {
    */
   _mapActionTypeToLegacyAction(actionType) {
     const mapping = {
-      [ActionTypes.TAB_CREATED]: 'tabCreated',
-      [ActionTypes.TAB_UPDATED]: 'tabUpdated',
-      [ActionTypes.TAB_REMOVED]: 'tabRemoved',
-      [ActionTypes.WINDOW_UPDATED]: 'windowUpdated',
-      [ActionTypes.DWELL_TIME_UPDATED]: 'dwellTimeUpdated', // New mapping
+      [ActionTypes.TAB_CREATED]: "tabCreated",
+      [ActionTypes.TAB_UPDATED]: "tabUpdated",
+      [ActionTypes.TAB_REMOVED]: "tabRemoved",
+      [ActionTypes.WINDOW_UPDATED]: "windowUpdated",
+      [ActionTypes.DWELL_TIME_UPDATED]: "dwellTimeUpdated", // New mapping
       // Add more mappings as needed
     };
-    return mapping[actionType] || 'stateChanged';
+    return mapping[actionType] || "stateChanged";
   },
 
   /**
@@ -479,7 +479,7 @@ export const browserState = {
     summaryStored(state, payload) {
       // Handle clear operation
       if (payload.clear) {
-        console.log('Clearing all summaries from state');
+        console.log("Clearing all summaries from state");
         return {
           ...state,
           graphData: {
@@ -541,13 +541,13 @@ export const browserState = {
      * @returns {Object} New state
      */
     dwellTimeUpdated(state, payload) {
-      console.log('[DwellTime] Received real-time update:', payload);
+      console.log("[DwellTime] Received real-time update:", payload);
 
       const { tabId, url, dwellTimeMs, timestamp } = payload;
 
       // Skip invalid payloads
       if (!tabId || !url || !dwellTimeMs) {
-        console.warn('[DwellTime] Invalid dwell time update payload:', payload);
+        console.warn("[DwellTime] Invalid dwell time update payload:", payload);
         return state;
       }
 
@@ -669,7 +669,7 @@ export const browserState = {
       : new Map(stateSnapshot.tabs || []);
 
     return {
-      name: 'root',
+      name: "root",
       children: windows.map(window => ({
         name: `Window ${window.id}`,
         id: window.id,
@@ -678,8 +678,8 @@ export const browserState = {
           return {
             id: `tab${tabId}`,
             windowId: window.id,
-            title: tab.title || 'Untitled',
-            url: tab.url || '',
+            title: tab.title || "Untitled",
+            url: tab.url || "",
             favIconUrl: tab.favIconUrl,
             lastAccessed: tab.lastAccessed,
             active: tab.active,
@@ -711,7 +711,7 @@ export const browserState = {
 
     // Also persist to storage
     return chrome.storage.local.set({
-      'graphPersistentData': {
+      "graphPersistentData": {
         summaries: graphData.summaries || {},
         customEdges: graphData.customEdges || [],
         nodePositions: graphData.nodePositions || {},
@@ -733,7 +733,7 @@ export const browserState = {
 
     // Otherwise fetch from storage
     return new Promise((resolve) => {
-      chrome.storage.local.get('graphPersistentData', (result) => {
+      chrome.storage.local.get("graphPersistentData", (result) => {
         const data = result.graphPersistentData || {
           summaries: {},
           customEdges: [],
@@ -875,7 +875,7 @@ export const browserState = {
     try {
       const fetchPromise = new Promise(async (resolve) => {
         chrome.runtime.sendMessage(
-          { type: 'getFavicon', url, size: 16 },
+          { type: "getFavicon", url, size: 16 },
           response => {
             if (response && response.faviconUrl) {
               this.faviconCache.set(domain, response.faviconUrl);
@@ -892,7 +892,7 @@ export const browserState = {
       this.faviconCache.set(domain, fetchPromise);
       return fetchPromise;
     } catch (error) {
-      console.warn('Error fetching favicon:', error);
+      console.warn("Error fetching favicon:", error);
       return null;
     }
   },
@@ -904,17 +904,17 @@ export const browserState = {
    */
   _getDomainFromUrl(url) {
     try {
-      if (!url || typeof url !== 'string') return 'unknown';
-      if (!url.includes('://')) url = 'https://' + url;
-      return new URL(url).hostname || 'unknown';
+      if (!url || typeof url !== "string") return "unknown";
+      if (!url.includes("://")) url = "https://" + url;
+      return new URL(url).hostname || "unknown";
     } catch (e) {
-      return 'unknown';
+      return "unknown";
     }
   },
 
   async getPageActivityAndReferrals(pageInfoArray, options = { skipRefresh: false }) {
     console.log(`[PageActivity] Starting getPageActivityAndReferrals for ${pageInfoArray.length} pages (skipRefresh: ${options.skipRefresh})`);
-    console.log(`[PageActivity] Current state of _store:`, {
+    console.log("[PageActivity] Current state of _store:", {
       hasTabHistory: !!this._store.tabHistory,
       tabHistorySize: this._store.tabHistory ? this._store.tabHistory.size : 0,
       hasTabActivityLog: !!this._store.tabActivityLog,
@@ -928,7 +928,7 @@ export const browserState = {
       await this.getState();
     }
 
-    console.log(`[PageActivity] After getState() refresh:`, {
+    console.log("[PageActivity] After getState() refresh:", {
       hasTabHistory: !!this._store.tabHistory,
       tabHistorySize: this._store.tabHistory ? this._store.tabHistory.size : 0,
       hasTabActivityLog: !!this._store.tabActivityLog,
@@ -939,7 +939,7 @@ export const browserState = {
 
     // Helper function for formatting duration in logs
     function formatDurationLog(milliseconds) {
-      if (milliseconds < 0 || isNaN(milliseconds)) return 'N/A';
+      if (milliseconds < 0 || isNaN(milliseconds)) return "N/A";
       let totalSeconds = Math.floor(milliseconds / 1000);
       let hours = Math.floor(totalSeconds / 3600);
       let minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -950,7 +950,7 @@ export const browserState = {
       if (minutes > 0) parts.push(`${minutes}m`);
       if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
 
-      return parts.join(' ');
+      return parts.join(" ");
     }
 
     console.log(`[PageActivity] Processing activity data for ${pageInfoArray.length} pages`);
@@ -985,7 +985,7 @@ export const browserState = {
       // Calculate dwell time with improved fallback mechanisms
       // PRIORITIZE existing dwell time if passed in (e.g. from backend/Memory Kernel)
       let dwellTimeMs = page.dwellTimeMs || null;
-      let dwellTimeSource = dwellTimeMs ? 'existing-metadata' : 'unknown';
+      let dwellTimeSource = dwellTimeMs ? "existing-metadata" : "unknown";
 
       // Debug the navigation entries
       console.log(`[DwellTime DEBUG] Navigation entries for ${page.url}:`, {
@@ -1003,7 +1003,7 @@ export const browserState = {
 
         if (duration > 0) {
           dwellTimeMs = duration;
-          dwellTimeSource = 'next-navigation';
+          dwellTimeSource = "next-navigation";
           console.log(`[DwellTime] Standard calculation for ${page.url}: ${dwellTimeMs}ms (${formatDurationLog(dwellTimeMs)}) - from next navigation`);
         } else {
           console.log(`[DwellTime] Warning: Invalid standard duration (${duration}ms) - timestamps may be out of order`);
@@ -1012,7 +1012,7 @@ export const browserState = {
         // IMPROVED: Fallback dwell time calculation for the last navigation in a tab
         // Use either the session end time from page data, tab close time, or current time
         const endTime = page.sessionEndTime || Date.now();
-        console.log(`[DwellTime] Fallback calculation inputs:`, {
+        console.log("[DwellTime] Fallback calculation inputs:", {
           sessionEndTime: page.sessionEndTime,
           currentTime: Date.now(),
           endTimeUsed: endTime,
@@ -1021,7 +1021,7 @@ export const browserState = {
         });
 
         dwellTimeMs = endTime - navigationEntry.timestamp;
-        dwellTimeSource = 'session-end';
+        dwellTimeSource = "session-end";
         console.log(`[DwellTime] Fallback calculation for ${page.url}: ${dwellTimeMs}ms (${formatDurationLog(dwellTimeMs)}) - from session end/current time`);
 
         // Additional check: If we have tab activity logs for this tab, we might be able to get a more accurate dwell time
@@ -1033,7 +1033,7 @@ export const browserState = {
             // Filter events relevant to this navigation (after it happened)
             const relevantEvents = activityLog.filter(event =>
               event.timestamp >= navigationEntry.timestamp &&
-              (event.type === 'tab_focus' || event.type === 'tab_blur' || event.type === 'link_interaction')
+              (event.type === "tab_focus" || event.type === "tab_blur" || event.type === "link_interaction")
             );
 
             // Get the last relevant event (if any)
@@ -1048,7 +1048,7 @@ export const browserState = {
                 // Success: We found a better dwell time estimate
                 console.log(`[DwellTime] Found better dwell time from activity log for ${page.url}: ${activityDwellTimeMs}ms (${formatDurationLog(activityDwellTimeMs)}) - from ${lastEvent.type} event`);
                 dwellTimeMs = activityDwellTimeMs;
-                dwellTimeSource = 'activity-log';
+                dwellTimeSource = "activity-log";
               } else {
                 console.log(`[DwellTime] Activity log calculation failed for ${page.url}: ${activityDwellTimeMs}ms - out of reasonable range`);
               }
@@ -1066,7 +1066,7 @@ export const browserState = {
         // This relationship describes how the 'visitTabId' itself was opened
         if (relationship && relationship.referringTabId) {
           referral = {
-            type: 'tabOpen',
+            type: "tabOpen",
             sourceTabId: relationship.referringTabId,
             sourceUrl: relationship.referringURL,
             linkText: relationship.linkText || null,
@@ -1081,8 +1081,8 @@ export const browserState = {
               ...referral,
               linkText: clickData.text || clickData.linkText || referral.linkText,
               surroundingText: clickData.surroundingText || null,
-              interactionType: clickData.interactionType || 'click',
-              elementType: clickData.elementType || clickData.sourceElementType || 'link',
+              interactionType: clickData.interactionType || "click",
+              elementType: clickData.elementType || clickData.sourceElementType || "link",
               sourceDomain: clickData.sourceDomain || null,
               targetDomain: clickData.targetDomain || null,
               attributes: clickData.attributes || null
@@ -1099,7 +1099,7 @@ export const browserState = {
           // Look for link interactions just before this navigation (within 5 seconds)
           // Increased window to catch more interactions that might be related
           const relevantEvents = activityLog.filter(event =>
-            event.type === 'link_interaction' &&
+            event.type === "link_interaction" &&
             event.data?.targetUrl && // Ensure we have target URL data
             event.timestamp <= navigationEntry.timestamp &&
             navigationEntry.timestamp - event.timestamp < 5000 && // Expanded window to 5s
@@ -1117,13 +1117,13 @@ export const browserState = {
             const eventData = mostRelevantEvent.data;
 
             referral = {
-              type: 'intraTab',
+              type: "intraTab",
               sourceUrl: eventData.sourceUrl,
               sourceDomain: eventData.sourceDomain || (eventData.sourceUrl ? new URL(eventData.sourceUrl).hostname : null),
               linkText: eventData.text || eventData.linkText || null,
               timestamp: mostRelevantEvent.timestamp,
-              interactionType: eventData.interactionType || 'click',
-              elementType: eventData.elementType || eventData.sourceElementType || 'link',
+              interactionType: eventData.interactionType || "click",
+              elementType: eventData.elementType || eventData.sourceElementType || "link",
               // Include rich context data
               surroundingText: eventData.surroundingText || null,
               attributes: eventData.attributes || null,
@@ -1143,15 +1143,15 @@ export const browserState = {
       // 3. Fallback to navigation entry transition info if available
       if (!referral && navigationEntry && navigationEntry.transitionType) {
         referral = {
-          type: 'navigation',
+          type: "navigation",
           transitionType: navigationEntry.transitionType,
           transitionQualifiers: navigationEntry.transitionQualifiers || [],
           timestamp: navigationEntry.timestamp,
           // Check for special transition types
-          isTypedEntry: navigationEntry.transitionType === 'typed',
-          isReload: navigationEntry.transitionQualifiers?.includes('forward_back') ||
-            navigationEntry.transitionType === 'reload',
-          isBookmark: navigationEntry.transitionType === 'auto_bookmark'
+          isTypedEntry: navigationEntry.transitionType === "typed",
+          isReload: navigationEntry.transitionQualifiers?.includes("forward_back") ||
+            navigationEntry.transitionType === "reload",
+          isBookmark: navigationEntry.transitionType === "auto_bookmark"
         };
       }
 
@@ -1162,7 +1162,7 @@ export const browserState = {
           pageDomain = new URL(page.url).hostname;
         }
       } catch (e) {
-        console.warn('Error extracting domain from URL:', e);
+        console.warn("Error extracting domain from URL:", e);
       }
 
       // Apply minimum dwell time if calculated as zero or invalid
@@ -1170,7 +1170,7 @@ export const browserState = {
         const oldValue = dwellTimeMs;
         // Set a minimum value of 5 seconds as fallback - better than zero
         dwellTimeMs = 5000;
-        dwellTimeSource = 'minimum-fallback';
+        dwellTimeSource = "minimum-fallback";
         console.log(`[DwellTime] Applied minimum fallback: ${oldValue} → ${dwellTimeMs}ms - for ${page.url}`);
       }
 
@@ -1211,7 +1211,7 @@ export const browserState = {
     // Add a focus event
     const focusEvent = {
       timestamp: Date.now(),
-      type: 'focus'
+      type: "focus"
     };
 
     this._store.tabActivityLog.get(tabId).push(focusEvent);
@@ -1221,7 +1221,7 @@ export const browserState = {
 
     // Persist to background script
     chrome.runtime.sendMessage({
-      action: 'updateTabActivity',
+      action: "updateTabActivity",
       tabId,
       event: focusEvent
     });
@@ -1246,7 +1246,7 @@ export const browserState = {
     // Check for focus events during the session
     const activityLog = this._store.tabActivityLog.get(tabId) || [];
     return activityLog.some(event =>
-      event.type === 'focus' &&
+      event.type === "focus" &&
       event.timestamp >= sessionStartTime &&
       event.timestamp <= sessionEndTime
     );
@@ -1289,7 +1289,7 @@ export const browserState = {
   try {
     // Load persisted graph data
     const graphData = await new Promise((resolve) => {
-      chrome.storage.local.get('graphPersistentData', (result) => {
+      chrome.storage.local.get("graphPersistentData", (result) => {
         resolve(result.graphPersistentData || {
           summaries: {},
           customEdges: [],
@@ -1302,14 +1302,14 @@ export const browserState = {
     // Initialize with stored graph data
     browserState._store.graphData = graphData;
   } catch (error) {
-    console.error('Error initializing state:', error);
+    console.error("Error initializing state:", error);
   }
 })();
 
 // Initialize message listener for dwell time updates
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message && message.action === 'dwellTimeUpdated') {
-    console.log('[DwellTime] Received dwellTimeUpdated message:', message);
+  if (message && message.action === "dwellTimeUpdated") {
+    console.log("[DwellTime] Received dwellTimeUpdated message:", message);
     browserState.dispatch({
       type: ActionTypes.DWELL_TIME_UPDATED,
       payload: {
@@ -1324,7 +1324,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Final export for global access in modules that don't support ES imports yet
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   window.browserState = browserState;
 }
 

@@ -1,5 +1,4 @@
 import { formatDistanceToNow, formatSessionDuration } from "./utility.js";
-import { getMotivationalMessage } from "./motivational-posters.js";
 import { tabSearch } from "./search.js";
 import { fetchRecentBookmarks, fetchRecentHistory } from "./init.js";
 
@@ -10,8 +9,6 @@ let stickyCell = null;  // Track currently sticky cell
 
 let inactivityTimer = null;
 const INACTIVITY_TIMEOUT = 600000;
-
-let currentMotivationalMessage = null;
 
 // Add cache for summaries at the top of the file
 export const summaryCache = new Map();
@@ -191,32 +188,6 @@ function resetInactivityTimer(categorizedDataCache) {
     inactivityTimer = setTimeout(() => {
         showDefaultReadout(categorizedDataCache);
     }, INACTIVITY_TIMEOUT);
-}
-
-function initializeSearchBox() {
-    const readoutContainer = document.getElementById("readout");
-    if (!readoutContainer) return;
-
-    // Create search box wrapper if it doesn't exist
-    let searchContainer = document.querySelector(".search-container");
-    if (!searchContainer) {
-        searchContainer = document.createElement("div");
-        searchContainer.className = "search-container";
-        searchContainer.innerHTML = `
-            <input type="text" 
-                id="tabSearch" 
-                placeholder="Search tabs..." 
-                class="search-input"
-            />
-        `;
-        readoutContainer.insertBefore(searchContainer, readoutContainer.firstChild);
-
-        // Add search handler
-        const searchInput = document.getElementById("tabSearch");
-        if (searchInput) {
-            searchInput.addEventListener("input", handleTabSearch);
-        }
-    }
 }
 
 // Function to search bookmarks for a specific domain
@@ -1530,27 +1501,73 @@ export function hideReadout() {
     }
 }
 
+// Recent stars (bookmarks) for the default readout panel. Cached at module
+// scope: the default panel is re-shown constantly (inactivity timer, hover-out),
+// and hitting chrome.bookmarks.getRecent on every reset is pointless — the list
+// only changes on bookmark churn, so those events invalidate the cache.
+const RECENT_STARS_COUNT = 10;
+let recentStarsCache = null;
+if (typeof chrome !== "undefined" && chrome.bookmarks) {
+    chrome.bookmarks.onCreated.addListener(() => { recentStarsCache = null; });
+    chrome.bookmarks.onRemoved.addListener(() => { recentStarsCache = null; });
+    chrome.bookmarks.onChanged.addListener(() => { recentStarsCache = null; });
+}
+
+async function renderRecentStars(listEl) {
+    try {
+        if (!recentStarsCache) {
+            recentStarsCache = await fetchRecentBookmarks(RECENT_STARS_COUNT);
+        }
+    } catch (error) {
+        console.error("Error fetching recent stars:", error);
+    }
+    const stars = recentStarsCache || [];
+
+    // The user may have hovered a cell while getRecent was in flight, replacing
+    // the default panel — don't paint into a detached node.
+    if (!listEl.isConnected) return;
+
+    if (!stars.length) {
+        const empty = document.createElement("li");
+        empty.className = "star-empty";
+        empty.textContent = "No starred pages yet.";
+        listEl.replaceChildren(empty);
+        return;
+    }
+
+    // Built with DOM APIs (not innerHTML) — bookmark titles are arbitrary text.
+    listEl.replaceChildren(...stars.map(bookmark => {
+        const li = document.createElement("li");
+        li.className = "star-item";
+
+        const link = document.createElement("a");
+        link.href = bookmark.url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = bookmark.title || formatUrlForDisplay(bookmark.url);
+
+        const meta = document.createElement("span");
+        meta.className = "star-meta";
+        meta.textContent = `${getDomain(bookmark.url)} · ${formatDistanceToNow(new Date(bookmark.dateAdded))}`;
+
+        li.append(link, meta);
+        return li;
+    }));
+}
+
 function showDefaultReadout(categorizedDataCache) {
     const readoutContainer = document.getElementById("readout");
     if (!readoutContainer || !categorizedDataCache?.activeWindows) {
         console.warn("Readout container or data not available");
         return;
     }
-    
+
     // Reset so hovering the last cell works again after inactivity timeout
     lastDisplayedNodeId = null;
-    
-    // First, clear any existing content
+
+    // First, clear any existing content. (The search box lives in the header,
+    // not in #readout, so this doesn't touch it.)
     readoutContainer.innerHTML = "";
-    // Initialize search box if needed
-    initializeSearchBox();
-
-    const windows = categorizedDataCache.activeWindows.length;
-    const tabs = categorizedDataCache.activeWindows.reduce((sum, w) => sum + w.tabs.length, 0);
-
-    if (!currentMotivationalMessage) {
-        currentMotivationalMessage = getMotivationalMessage(windows, tabs);
-    }
 
     // Get the content container or create it
     let contentContainer = document.querySelector(".readout-content");
@@ -1560,59 +1577,19 @@ function showDefaultReadout(categorizedDataCache) {
         readoutContainer.appendChild(contentContainer);
     }
 
+    // Skeleton paints immediately; the list fills in when getRecent resolves
+    // (cached after the first call, so usually same tick).
     contentContainer.innerHTML = `
-        <div class="readout-default">
-            <h1 class="status-message">${currentMotivationalMessage}</h1>
-            <div class="stats">
-                <span>${windows} window${windows !== 1 ? "s" : ""}</span>
-                <span>•</span>
-                <span>${tabs} tab${tabs !== 1 ? "s" : ""}</span>
-            </div>
+        <div class="recent-stars">
+            <h3>★ Recent stars</h3>
+            <ul class="star-list"></ul>
         </div>
     `;
+    renderRecentStars(contentContainer.querySelector(".star-list"));
 
-    // Maintain search index
-    tabSearch.buildIndex(categorizedDataCache);
-}
-
-function handleTabSearch(event) {
-    const searchTerm = event.target.value.trim().toLowerCase();
-
-    // Reset all cells if search is empty
-    if (!searchTerm) {
-        d3.selectAll("#treemap g")
-            .style("opacity", 1)
-            .style("transition", "opacity 0.2s ease-in-out");
-        return;
-    }
-
-    const results = tabSearch.search(searchTerm);
-    const matchedIds = new Set(results.map(r => r.tab.id));
-
-    // Update visualization based on search results
-    d3.selectAll("#treemap g").each(function (d) {
-        const tabId = parseInt(d.data.id.replace("tab", ""));
-        const isMatch = matchedIds.has(tabId);
-        const matchType = results.find(r => r.tab.id === tabId)?.matchType;
-
-        // Higher opacity for summary matches
-        const opacity = isMatch ? (matchType === "summary" ? 0.8 : 1) : 0.3;
-
-        d3.select(this)
-            .style("opacity", opacity)
-            .style("transition", "opacity 0.2s ease-in-out");
-
-        // Add a subtle indicator for summary matches
-        if (isMatch && matchType === "summary") {
-            d3.select(this).select("rect")
-                .style("stroke", "#4CAF50")
-                .style("stroke-width", "2px");
-        } else {
-            d3.select(this).select("rect")
-                .style("stroke", null)
-                .style("stroke-width", null);
-        }
-    });
+    // NOTE: no tabSearch.buildIndex() here. This function is always called with
+    // the boot-time cache, so rebuilding on the inactivity timer clobbered the
+    // fresh index drawTreemap maintains with stale tab data.
 }
 
 // Make queue functions available globally for console access and debug tools

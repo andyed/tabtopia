@@ -7,23 +7,23 @@
  */
 
 // Track when the document becomes visible
-document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible') {
+document.addEventListener("visibilitychange", function() {
+  if (document.visibilityState === "visible") {
     // Tab has been focused - send message to background script
     notifyTabFocus();
   }
 });
 
 // Also track focus when the page loads
-window.addEventListener('load', function() {
-  if (document.visibilityState === 'visible') {
+window.addEventListener("load", function() {
+  if (document.visibilityState === "visible") {
     // Initial focus on page load
     notifyTabFocus();
   }
 });
 
 // Track when window gets focus
-window.addEventListener('focus', function() {
+window.addEventListener("focus", function() {
   notifyTabFocus();
 });
 
@@ -39,14 +39,14 @@ function notifyTabFocus() {
 
   try {
     // Get the current tab ID
-    chrome.runtime.sendMessage({ action: 'getTabId' }, function (response) {
+    chrome.runtime.sendMessage({ action: "getTabId" }, function (response) {
       if (chrome.runtime.lastError) return; // context went away mid-call
       if (response && response.tabId) {
         // Send a message to track the focus event
         chrome.runtime.sendMessage({
-          action: 'updateTabActivity',
+          action: "updateTabActivity",
           tabId: response.tabId,
-          event: { timestamp: Date.now(), type: 'focus' }
+          event: { timestamp: Date.now(), type: "focus" }
         }, () => { void chrome.runtime.lastError; });
       }
     });

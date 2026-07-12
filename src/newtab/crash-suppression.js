@@ -7,7 +7,7 @@
 
 // IMMEDIATE crash suppression - execute synchronously
 (function() {
-    console.log('🚫 Initializing IMMEDIATE crash suppression...');
+    console.log("🚫 Initializing IMMEDIATE crash suppression...");
     
     // Store original methods immediately
     const originalWarn = console.warn;
@@ -16,24 +16,24 @@
     
     // Override console methods IMMEDIATELY
     console.warn = function(...args) {
-        const message = args.join(' ');
-        if (message === 'The model process crashed too many times for this version.') {
-            originalWarn.call(console, '🚫 [SUPPRESSED] Chrome Summarizer crash message intercepted');
+        const message = args.join(" ");
+        if (message === "The model process crashed too many times for this version.") {
+            originalWarn.call(console, "🚫 [SUPPRESSED] Chrome Summarizer crash message intercepted");
             return;
         }
         originalWarn.apply(console, args);
     };
     
     console.error = function(...args) {
-        const message = args.join(' ');
-        if (message === 'The model process crashed too many times for this version.') {
-            originalError.call(console, '🚫 [SUPPRESSED] Chrome Summarizer crash message intercepted');
+        const message = args.join(" ");
+        if (message === "The model process crashed too many times for this version.") {
+            originalError.call(console, "🚫 [SUPPRESSED] Chrome Summarizer crash message intercepted");
             return;
         }
         originalError.apply(console, args);
     };
     
-    console.log('✅ IMMEDIATE crash suppression active');
+    console.log("✅ IMMEDIATE crash suppression active");
 })();
 
 // Immediate crash message suppression for launch
@@ -42,16 +42,16 @@ let globalSummarizerDisabled = false;
 const GLOBAL_DISABLE_DURATION = 600000; // 10 minutes
 
 const crashPatterns = [
-    'model process crashed too many times',
-    'The model process crashed',
-    'crashed too many times for this version'
+    "model process crashed too many times",
+    "The model process crashed",
+    "crashed too many times for this version"
 ];
 
 function isCrashMessage(message) {
     const messageStr = String(message).toLowerCase();
     return crashPatterns.some(pattern => {
-        if (pattern.includes('.*')) {
-            return new RegExp(pattern, 'i').test(messageStr);
+        if (pattern.includes(".*")) {
+            return new RegExp(pattern, "i").test(messageStr);
         }
         return messageStr.includes(pattern.toLowerCase());
     });
@@ -66,11 +66,11 @@ const originalConsoleLog = console.log;
 // Instead of overriding all console methods, use event listeners and targeted suppression
 
 // Listen for Chrome's built-in crash messages through error events
-window.addEventListener('error', (event) => {
+window.addEventListener("error", (event) => {
     if (event.message && isCrashMessage(event.message)) {
         crashMessageCount++;
         if (crashMessageCount === 1) {
-            console.log('🚫 Chrome Summarizer crashed - suppressing further messages');
+            console.log("🚫 Chrome Summarizer crashed - suppressing further messages");
         }
         globalSummarizerDisabled = true;
         setTimeout(() => {
@@ -85,11 +85,11 @@ window.addEventListener('error', (event) => {
 });
 
 // Listen for unhandled promise rejections that might contain crash messages
-window.addEventListener('unhandledrejection', (event) => {
+window.addEventListener("unhandledrejection", (event) => {
     if (event.reason && isCrashMessage(String(event.reason))) {
         crashMessageCount++;
         if (crashMessageCount === 1) {
-            console.log('🚫 Chrome Summarizer crashed (promise rejection) - suppressing further messages');
+            console.log("🚫 Chrome Summarizer crashed (promise rejection) - suppressing further messages");
         }
         globalSummarizerDisabled = true;
         setTimeout(() => {
@@ -111,13 +111,13 @@ const originalMethods = {
 
 // Very targeted console override - ONLY for the exact Chrome crash message
 console.warn = function(...args) {
-    const message = args.join(' ');
+    const message = args.join(" ");
     
     // ONLY intercept the exact Chrome Summarizer crash message
-    if (message === 'The model process crashed too many times for this version.') {
+    if (message === "The model process crashed too many times for this version.") {
         crashMessageCount++;
         if (crashMessageCount === 1) {
-            originalConsoleWarn.call(console, '🚫 Chrome Summarizer crashed - suppressing further messages');
+            originalConsoleWarn.call(console, "🚫 Chrome Summarizer crashed - suppressing further messages");
         }
         globalSummarizerDisabled = true;
         setTimeout(() => {
@@ -138,7 +138,7 @@ window.summarizerCrashState = {
     reset() {
         globalSummarizerDisabled = false;
         crashMessageCount = 0;
-        console.log('🔄 Global crash state reset');
+        console.log("🔄 Global crash state reset");
     }
 };
 
@@ -146,7 +146,7 @@ window.summarizerCrashState = {
 window.resetGlobalCrashState = () => {
     globalSummarizerDisabled = false;
     crashMessageCount = 0;
-    console.log('🔄 Global crash state reset via debug function');
+    console.log("🔄 Global crash state reset via debug function");
 };
 
-console.log('✅ Crash suppression system initialized');
+console.log("✅ Crash suppression system initialized");

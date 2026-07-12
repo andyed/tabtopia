@@ -3,15 +3,15 @@
  */
 
 // Add at top with other imports
-import { getWindowColor, specialColors } from './utility.js';
+import { getWindowColor, specialColors } from "./utility.js";
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
     // Get DOM elements
-    const treemapContainer = document.getElementById('popup-treemap');
-    const searchInput = document.getElementById('popupSearch');
-    const tabCountEl = document.getElementById('tabCount');
-    const windowCountEl = document.getElementById('windowCount');
-    const tooltip = document.getElementById('tooltip');
+    const treemapContainer = document.getElementById("popup-treemap");
+    const searchInput = document.getElementById("popupSearch");
+    const tabCountEl = document.getElementById("tabCount");
+    const windowCountEl = document.getElementById("windowCount");
+    const tooltip = document.getElementById("tooltip");
 
     // Focus the search input as soon as the popup loads
     if (searchInput) {
@@ -33,12 +33,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const width = treemapContainer.clientWidth;
     const height = treemapContainer.clientHeight;
     
-    const svg = d3.select('#popup-treemap')
-        .append('svg')
-        .attr('width', width)
-        .attr('height', height);
+    const svg = d3.select("#popup-treemap")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
     
-    const root = svg.append('g');
+    const root = svg.append("g");
     
     // Fetch and render browser data
     fetchBrowserData()
@@ -53,8 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
             setupEventListeners();
             // Keyboard navigation: allow up/down/enter to select tabs
             if (searchInput) {
-                searchInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'ArrowDown') {
+                searchInput.addEventListener("keydown", (e) => {
+                    if (e.key === "ArrowDown") {
                         // Move focus to first matching tab cell (after search)
                         if (focusableElements.length > 0) {
                             moveFocusToIndex(0);
@@ -65,8 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         })
         .catch(error => {
-            console.error('Error fetching browser data:', error);
-            showEmptyState('Could not load tab data. Please try again.');
+            console.error("Error fetching browser data:", error);
+            showEmptyState("Could not load tab data. Please try again.");
         });
     
     /**
@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return new Promise((resolve) => {
             chrome.windows.getAll({ populate: true }, windows => {
                 const hierarchicalData = {
-                    name: 'root',
+                    name: "root",
                     children: windows.map(window => {
                         // Sort tabs by lastAccessed time if available
                         const sortedTabs = [...window.tabs].sort((a, b) => {
@@ -93,9 +93,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             children: sortedTabs.map((tab, index) => ({
                                 id: tab.id,
                                 windowId: window.id,
-                                title: tab.title || 'Untitled',
-                                url: tab.url || '',
-                                favIconUrl: tab.favIconUrl || getLetterFavicon(tab.url || ''),
+                                title: tab.title || "Untitled",
+                                url: tab.url || "",
+                                favIconUrl: tab.favIconUrl || getLetterFavicon(tab.url || ""),
                                 active: tab.active,
                                 lastAccessed: tab.lastAccessed || Date.now() - (index * 60000), // Fallback to fake timestamps
                                 index: index, // Store position for coloring
@@ -115,14 +115,14 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function renderTreemap(data) {
         // Clear previous content
-        root.selectAll('*').remove();
+        root.selectAll("*").remove();
         
         // Debug data
         console.log("Rendering treemap with data:", data);
         
         // Check if we have valid data
         if (!data || !data.children || data.children.length === 0) {
-            showEmptyState('No browser windows found');
+            showEmptyState("No browser windows found");
             return;
         }
         
@@ -145,74 +145,74 @@ document.addEventListener('DOMContentLoaded', () => {
         treemapLayout(hierarchy);
         
         // Create groups for windows
-        const windows = root.selectAll('.window')
+        const windows = root.selectAll(".window")
             .data(hierarchy.children)
             .enter()
-            .append('g')
-            .attr('class', 'window')
-            .attr('transform', d => `translate(${d.x0},${d.y0})`);
+            .append("g")
+            .attr("class", "window")
+            .attr("transform", d => `translate(${d.x0},${d.y0})`);
         
         // Add window background
-        windows.append('rect')
-            .attr('width', d => d.x1 - d.x0)
-            .attr('height', d => d.y1 - d.y0)
-            .attr('fill', d => getWindowColor(d.data.id).background)
-            .attr('stroke', d => getWindowColor(d.data.id).getBorder(d.data.focused))
-            .attr('stroke-width', d => d.data.focused ? 2 : 1)
-            .attr('rx', 3)
-            .attr('ry', 3);
+        windows.append("rect")
+            .attr("width", d => d.x1 - d.x0)
+            .attr("height", d => d.y1 - d.y0)
+            .attr("fill", d => getWindowColor(d.data.id).background)
+            .attr("stroke", d => getWindowColor(d.data.id).getBorder(d.data.focused))
+            .attr("stroke-width", d => d.data.focused ? 2 : 1)
+            .attr("rx", 3)
+            .attr("ry", 3);
         
         // Add window label
-        windows.append('text')
-            .attr('class', 'window-label')
-            .attr('x', 4)
-            .attr('y', 12)
+        windows.append("text")
+            .attr("class", "window-label")
+            .attr("x", 4)
+            .attr("y", 12)
             .text(d => `Window ${d.data.id}`);
         
         // Add cells for each tab
         windows.each(function(windowNode) {
-            d3.select(this).selectAll('.cell')
+            d3.select(this).selectAll(".cell")
                 .data(windowNode.children || [])
                 .enter()
-                .append('g')
-                .attr('class', 'cell')
-                .attr('tabindex', '0') // Make focusable
-                .attr('transform', d => `translate(${d.x0 - windowNode.x0},${d.y0 - windowNode.y0})`)
-                .on('click', handleTabClick)
-                .on('mouseover', showTabTooltip)
-                .on('mouseout', hideTooltip)
-                .on('focus', handleCellFocus) // Add focus handler
-                .on('blur', handleCellBlur)   // Add blur handler
+                .append("g")
+                .attr("class", "cell")
+                .attr("tabindex", "0") // Make focusable
+                .attr("transform", d => `translate(${d.x0 - windowNode.x0},${d.y0 - windowNode.y0})`)
+                .on("click", handleTabClick)
+                .on("mouseover", showTabTooltip)
+                .on("mouseout", hideTooltip)
+                .on("focus", handleCellFocus) // Add focus handler
+                .on("blur", handleCellBlur)   // Add blur handler
                 .each(function(d) {
                     const cell = d3.select(this);
                     const width = d.x1 - d.x0;
                     const height = d.y1 - d.y0;
                     
                     // Background rectangle
-                    cell.append('rect')
-                        .attr('width', width)
-                        .attr('height', height)
-                        .attr('fill', d => getColorForTab(d.data))
-                        .attr('rx', 2)
-                        .attr('ry', 2)
+                    cell.append("rect")
+                        .attr("width", width)
+                        .attr("height", height)
+                        .attr("fill", d => getColorForTab(d.data))
+                        .attr("rx", 2)
+                        .attr("ry", 2)
                         // Add a stroke for active tabs
-                        .attr('stroke', d => d.data.active ? '#ffffff' : 'none')
-                        .attr('stroke-width', d => d.data.active ? 1 : 0);
+                        .attr("stroke", d => d.data.active ? "#ffffff" : "none")
+                        .attr("stroke-width", d => d.data.active ? 1 : 0);
                     
                     // Favicon
-                    cell.append('image')
-                        .attr('class', 'favicon')
-                        .attr('x', width / 2 - 8)
-                        .attr('y', height / 2 - 8)
-                        .attr('width', 16)
-                        .attr('height', 16)
-                        .attr('href', d => d.data.favIconUrl || getLetterFavicon(d.data.url));
+                    cell.append("image")
+                        .attr("class", "favicon")
+                        .attr("x", width / 2 - 8)
+                        .attr("y", height / 2 - 8)
+                        .attr("width", 16)
+                        .attr("height", 16)
+                        .attr("href", d => d.data.favIconUrl || getLetterFavicon(d.data.url));
                 });
         });
 
         // After rendering is complete, update the focusable elements list
         setTimeout(() => {
-            focusableElements = Array.from(document.querySelectorAll('.cell'));
+            focusableElements = Array.from(document.querySelectorAll(".cell"));
             console.log(`Found ${focusableElements.length} focusable tab elements`);
         }, 100);
     }
@@ -223,14 +223,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function getLetterFavicon(url) {
         try {
             // Get first letter of domain
-            let letter = '?';
+            let letter = "?";
             
-            if (url.startsWith('chrome://')) {
-                const parts = url.split('/');
-                letter = parts[2] ? parts[2].charAt(0).toUpperCase() : 'C';
+            if (url.startsWith("chrome://")) {
+                const parts = url.split("/");
+                letter = parts[2] ? parts[2].charAt(0).toUpperCase() : "C";
             } 
-            else if (url.startsWith('file://')) {
-                letter = 'F';
+            else if (url.startsWith("file://")) {
+                letter = "F";
             }
             else {
                 try {
@@ -243,9 +243,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Generate color based on letter
             const colors = [
-                '#F44336', '#E91E63', '#9C27B0', '#673AB7', '#3F51B5', 
-                '#2196F3', '#03A9F4', '#00BCD4', '#009688', '#4CAF50',
-                '#8BC34A', '#CDDC39', '#FFC107', '#FF9800', '#FF5722'
+                "#F44336", "#E91E63", "#9C27B0", "#673AB7", "#3F51B5", 
+                "#2196F3", "#03A9F4", "#00BCD4", "#009688", "#4CAF50",
+                "#8BC34A", "#CDDC39", "#FFC107", "#FF9800", "#FF5722"
             ];
             
             const colorIndex = letter.charCodeAt(0) % colors.length;
@@ -262,8 +262,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return `data:image/svg+xml;base64,${btoa(svg)}`;
         } catch (error) {
-            console.error('Error generating letter favicon:', error);
-            return 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjNzU3NTc1IiByeD0iMiIgcnk9IjIiLz48dGV4dCB4PSI4IiB5PSIxMiIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEwIiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC13ZWlnaHQ9ImJvbGQiPj88L3RleHQ+PC9zdmc+';
+            console.error("Error generating letter favicon:", error);
+            return "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjNzU3NTc1IiByeD0iMiIgcnk9IjIiLz48dGV4dCB4PSI4IiB5PSIxMiIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEwIiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC13ZWlnaHQ9ImJvbGQiPj88L3RleHQ+PC9zdmc+";
         }
     }
     
@@ -319,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * Get color for a tab based on its state and recency
      */
     function getColorForTab(tab) {
-        if (!tab || !tab.windowId) return '#999999';
+        if (!tab || !tab.windowId) return "#999999";
         
         // Use the imported getWindowColor function
         const windowColor = getWindowColor(tab.windowId);
@@ -332,9 +332,9 @@ document.addEventListener('DOMContentLoaded', () => {
      * Show loading state
      */
     function showLoading() {
-        const loadingEl = document.createElement('div');
-        loadingEl.className = 'loading';
-        loadingEl.innerHTML = '<div class="spinner"></div>';
+        const loadingEl = document.createElement("div");
+        loadingEl.className = "loading";
+        loadingEl.innerHTML = "<div class=\"spinner\"></div>";
         treemapContainer.appendChild(loadingEl);
     }
     
@@ -342,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * Hide loading state
      */
     function hideLoading() {
-        const loadingEl = treemapContainer.querySelector('.loading');
+        const loadingEl = treemapContainer.querySelector(".loading");
         if (loadingEl) {
             loadingEl.remove();
         }
@@ -354,11 +354,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function showEmptyState(message) {
         hideLoading();
         
-        const emptyStateEl = document.createElement('div');
-        emptyStateEl.className = 'empty-state';
+        const emptyStateEl = document.createElement("div");
+        emptyStateEl.className = "empty-state";
         emptyStateEl.innerHTML = `
             <div class="empty-state-icon">📁</div>
-            <div class="empty-state-text">${message || 'No tabs open'}</div>
+            <div class="empty-state-text">${message || "No tabs open"}</div>
         `;
         treemapContainer.appendChild(emptyStateEl);
     }
@@ -374,8 +374,8 @@ document.addEventListener('DOMContentLoaded', () => {
             tabCount += window.children.length;
         });
         
-        tabCountEl.textContent = `${tabCount} tab${tabCount !== 1 ? 's' : ''}`;
-        windowCountEl.textContent = `${windowCount} window${windowCount !== 1 ? 's' : ''}`;
+        tabCountEl.textContent = `${tabCount} tab${tabCount !== 1 ? "s" : ""}`;
+        windowCountEl.textContent = `${windowCount} window${windowCount !== 1 ? "s" : ""}`;
     }
     
     /**
@@ -400,11 +400,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const tabData = d.data;
         
         // Skip if already showing keyboard tooltip
-        if (tooltip.classList.contains('keyboard-tooltip')) {
+        if (tooltip.classList.contains("keyboard-tooltip")) {
             return;
         }
         
-        tooltip.style.display = 'block';
+        tooltip.style.display = "block";
         tooltip.innerHTML = `
             <div>${tabData.title}</div>
             <div style="font-size:10px; color:#9e9e9e; margin-top:4px; overflow:hidden; text-overflow:ellipsis;">${tabData.url}</div>
@@ -436,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * Hide tooltip
      */
     function hideTooltip() {
-        tooltip.style.display = 'none';
+        tooltip.style.display = "none";
     }
     
     /**
@@ -444,13 +444,13 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function handleCellFocus(event, d) {
         // Mark the current element as focused
-        d3.select(this).classed('keyboard-focused', true);
+        d3.select(this).classed("keyboard-focused", true);
         
         // Show tooltip with a keyboard-specific class
         const tabData = d.data;
         
-        tooltip.style.display = 'block';
-        tooltip.classList.add('keyboard-tooltip');
+        tooltip.style.display = "block";
+        tooltip.classList.add("keyboard-tooltip");
         tooltip.innerHTML = `
             <div><strong>${tabData.title}</strong></div>
             <div style="font-size:10px; color:#9e9e9e; margin-top:4px; overflow:hidden; text-overflow:ellipsis;">${tabData.url}</div>
@@ -488,13 +488,13 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function handleCellBlur() {
         // Remove focus styling
-        d3.select(this).classed('keyboard-focused', false);
+        d3.select(this).classed("keyboard-focused", false);
         
         // Hide tooltip with a small delay to prevent flashing during focus changes
         setTimeout(() => {
-            if (!document.activeElement.classList.contains('cell')) {
-                tooltip.style.display = 'none';
-                tooltip.classList.remove('keyboard-tooltip');
+            if (!document.activeElement.classList.contains("cell")) {
+                tooltip.style.display = "none";
+                tooltip.classList.remove("keyboard-tooltip");
             }
         }, 50);
     }
@@ -508,42 +508,42 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Handle various key presses
         switch (e.key) {
-            case 'ArrowRight':
+            case "ArrowRight":
                 e.preventDefault();
                 moveFocus(1);
                 break;
                 
-            case 'ArrowLeft':
+            case "ArrowLeft":
                 e.preventDefault();
                 moveFocus(-1);
                 break;
                 
-            case 'ArrowDown':
+            case "ArrowDown":
                 e.preventDefault();
                 // Estimate number of items per row based on container width
                 const itemsPerRow = Math.max(1, Math.floor(treemapContainer.clientWidth / 50));
                 moveFocus(itemsPerRow);
                 break;
                 
-            case 'ArrowUp':
+            case "ArrowUp":
                 e.preventDefault();
                 const itemsPerRowUp = Math.max(1, Math.floor(treemapContainer.clientWidth / 50));
                 moveFocus(-itemsPerRowUp);
                 break;
                 
-            case 'Home':
+            case "Home":
                 e.preventDefault();
                 moveFocusToIndex(0);
                 break;
                 
-            case 'End':
+            case "End":
                 e.preventDefault();
                 moveFocusToIndex(focusableElements.length - 1);
                 break;
                 
-            case 'Enter':
-            case ' ': // Space
-                if (document.activeElement.classList.contains('cell')) {
+            case "Enter":
+            case " ": // Space
+                if (document.activeElement.classList.contains("cell")) {
                     e.preventDefault();
                     // Trigger activation of the focused tab
                     const focusedElement = document.activeElement;
@@ -599,18 +599,18 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     function setupEventListeners() {
         // Search
-        searchInput.addEventListener('input', handleSearch);
+        searchInput.addEventListener("input", handleSearch);
         
         // Keyboard navigation
-        document.addEventListener('keydown', handleKeyNavigation);
+        document.addEventListener("keydown", handleKeyNavigation);
         
         // Mouse interaction
-        document.addEventListener('mousemove', handleMouseMovement);
+        document.addEventListener("mousemove", handleMouseMovement);
         
         // Update focusable elements list when window resizes
-        window.addEventListener('resize', () => {
+        window.addEventListener("resize", () => {
             setTimeout(() => {
-                focusableElements = Array.from(document.querySelectorAll('.cell'));
+                focusableElements = Array.from(document.querySelectorAll(".cell"));
             }, 200);
         });
     }
@@ -621,15 +621,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleSearch() {
         const query = searchInput.value.toLowerCase();
         // Filter tabs based on search
-        d3.selectAll('.cell')
-            .style('opacity', d => {
+        d3.selectAll(".cell")
+            .style("opacity", d => {
                 const tabData = d.data;
                 const matchesTitle = tabData.title.toLowerCase().includes(query);
                 const matchesUrl = tabData.url.toLowerCase().includes(query);
                 return (matchesTitle || matchesUrl || !query) ? 1 : 0.3;
             });
         // Update focusableElements to only include matching cells
-        focusableElements = Array.from(document.querySelectorAll('.cell')).filter(el => {
+        focusableElements = Array.from(document.querySelectorAll(".cell")).filter(el => {
             const d = d3.select(el).datum();
             const title = d.data.title.toLowerCase();
             const url = d.data.url.toLowerCase();

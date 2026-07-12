@@ -1,14 +1,14 @@
 // Enhanced link click handler with rich context capture
-document.addEventListener('click', function(event) {
+document.addEventListener("click", function(event) {
   // Find closest anchor in case we clicked on a child element
-  const target = event.target.closest('a');
+  const target = event.target.closest("a");
   if (!target || !target.href) return;
   
   // Get surrounding text context (up to 100 chars before and after)
-  let surroundingText = '';
+  let surroundingText = "";
   if (target.parentElement) {
-    const parentText = target.parentElement.innerText || target.parentElement.textContent || '';
-    const targetText = target.innerText || target.textContent || '';
+    const parentText = target.parentElement.innerText || target.parentElement.textContent || "";
+    const targetText = target.innerText || target.textContent || "";
     const targetIndex = parentText.indexOf(targetText);
     
     if (targetIndex !== -1) {
@@ -23,18 +23,18 @@ document.addEventListener('click', function(event) {
     const linkData = {
       sourceUrl: window.location.href,
       targetUrl: target.href,
-      text: (target.innerText || target.textContent || '').trim().substring(0, 200),
-      title: target.title || '',
+      text: (target.innerText || target.textContent || "").trim().substring(0, 200),
+      title: target.title || "",
       timestamp: Date.now(),
-      interactionType: 'click',
-      elementType: 'link',
+      interactionType: "click",
+      elementType: "link",
       surroundingText,
       // Include attributes that might help with context
       attributes: {
         id: target.id,
         className: target.className,
         rel: target.rel,
-        ariaLabel: target.getAttribute('aria-label')
+        ariaLabel: target.getAttribute("aria-label")
       },
       // Add page context
       pageContext: {
@@ -45,28 +45,28 @@ document.addEventListener('click', function(event) {
     
     // Send the enriched data to the background script
     chrome.runtime.sendMessage({
-      type: 'store_link_context',
+      type: "store_link_context",
       data: linkData
     });
     
     // Also send for legacy support
     chrome.runtime.sendMessage({
-      type: 'LINK_TEXT_CAPTURED',
+      type: "LINK_TEXT_CAPTURED",
       data: linkData
     });
     
-    console.log('Link click captured with rich context:', linkData.text);
+    console.log("Link click captured with rich context:", linkData.text);
   } catch (err) {
-    console.warn('Error capturing link context:', err);
+    console.warn("Error capturing link context:", err);
   }
   
   // Don't interfere with normal event flow
 }, true); // true = use capturing phase to get event first
 
 // Enhanced form submission tracking
-document.addEventListener('submit', (event) => {
+document.addEventListener("submit", (event) => {
   const form = event.target;
-  const submitButton = form.querySelector('input[type="submit"], button[type="submit"]');
+  const submitButton = form.querySelector("input[type=\"submit\"], button[type=\"submit\"]");
   
   try {
     // Record which form fields were submitted — NAMES only, never values.
@@ -75,30 +75,30 @@ document.addEventListener('submit', (event) => {
     // selector. The search term, when present, is captured separately below and is
     // also recoverable from the resulting URL.
     const formFields = {};
-    const fieldElements = form.querySelectorAll('input:not([type="password"]), select, textarea');
+    const fieldElements = form.querySelectorAll("input:not([type=\"password\"]), select, textarea");
     fieldElements.forEach(el => {
-      if (el.name && el.value && el.type !== 'password') {
-        formFields[el.name] = '[FIELD_VALUE]';
+      if (el.name && el.value && el.type !== "password") {
+        formFields[el.name] = "[FIELD_VALUE]";
       }
     });
     
     // Look for search inputs specifically
-    const searchInputs = Array.from(form.querySelectorAll('input[type="search"], input[name*="search"], input[placeholder*="search" i]'));
+    const searchInputs = Array.from(form.querySelectorAll("input[type=\"search\"], input[name*=\"search\"], input[placeholder*=\"search\" i]"));
     const searchQuery = searchInputs.length > 0 ? searchInputs[0].value : null;
     
     const formInfo = {
-      type: 'form',
+      type: "form",
       url: form.action,
       targetUrl: form.action,
       sourceUrl: window.location.href,
-      text: submitButton ? (submitButton.value || submitButton.innerText || 'Submit') : 'Form Submit',
-      elementType: 'form',
-      interactionType: 'submit',
+      text: submitButton ? (submitButton.value || submitButton.innerText || "Submit") : "Form Submit",
+      elementType: "form",
+      interactionType: "submit",
       timestamp: Date.now(),
       isFormSubmission: true,
       formData: {
         id: form.id,
-        method: form.method || 'get',
+        method: form.method || "get",
         action: form.action,
         // Only include field info if there's a search query to avoid privacy concerns
         searchQuery: searchQuery,
@@ -113,32 +113,32 @@ document.addEventListener('submit', (event) => {
 
     // Send to background script for both tabs and navigation tracking
     chrome.runtime.sendMessage({
-      type: 'store_link_context', // Use the same handler for consistency
+      type: "store_link_context", // Use the same handler for consistency
       data: formInfo
     });
 
     // Also send via legacy format for compatibility
     chrome.runtime.sendMessage({
-      type: 'navigation_event',
+      type: "navigation_event",
       data: formInfo
     });
     
-    console.log('Form submission captured:', form.action);
+    console.log("Form submission captured:", form.action);
   } catch (err) {
-    console.warn('Error capturing form submission:', err);
+    console.warn("Error capturing form submission:", err);
   }
 }, true);
 
 // Enhanced right-click context menu handler
-document.addEventListener('contextmenu', (event) => {
+document.addEventListener("contextmenu", (event) => {
   let target = event.target;
   while (target && target !== document.body) {
-    if (target.tagName === 'A') {
+    if (target.tagName === "A") {
       // Get surrounding text context (up to 100 chars before and after)
-      let surroundingText = '';
+      let surroundingText = "";
       if (target.parentElement) {
-        const parentText = target.parentElement.innerText || target.parentElement.textContent || '';
-        const targetText = target.innerText || target.textContent || '';
+        const parentText = target.parentElement.innerText || target.parentElement.textContent || "";
+        const targetText = target.innerText || target.textContent || "";
         const targetIndex = parentText.indexOf(targetText);
         
         if (targetIndex !== -1) {
@@ -150,22 +150,22 @@ document.addEventListener('contextmenu', (event) => {
 
       // Store the enhanced link info in background script
       chrome.runtime.sendMessage({
-        type: 'store_link_context',
+        type: "store_link_context",
         data: {
           sourceUrl: window.location.href,
           targetUrl: target.href,
-          text: (target.innerText || target.textContent || '').trim().substring(0, 200),
-          title: target.title || '',
+          text: (target.innerText || target.textContent || "").trim().substring(0, 200),
+          title: target.title || "",
           timestamp: Date.now(),
-          interactionType: 'contextmenu',
-          elementType: 'link',
+          interactionType: "contextmenu",
+          elementType: "link",
           surroundingText,
           // Include attributes that might help with context
           attributes: {
             id: target.id,
             className: target.className,
             rel: target.rel,
-            ariaLabel: target.getAttribute('aria-label')
+            ariaLabel: target.getAttribute("aria-label")
           },
           // Add page context
           pageContext: {
@@ -174,7 +174,7 @@ document.addEventListener('contextmenu', (event) => {
           }
         }
       });
-      console.log('Context menu on link captured:', target.href);
+      console.log("Context menu on link captured:", target.href);
       break;
     }
     target = target.parentElement;
@@ -183,19 +183,19 @@ document.addEventListener('contextmenu', (event) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!request.type && !request.action) {
-        console.warn('Invalid message format:', request);
+        console.warn("Invalid message format:", request);
         return true;
     }
 
-    console.log('Content script received message:', {
+    console.log("Content script received message:", {
         type: request.type,
         action: request.action,
         sender: sender?.tab?.id
     });
 
-    if (request.type === 'getTabData' || request.action === 'getTabData') {
+    if (request.type === "getTabData" || request.action === "getTabData") {
         const tabData = {
-            title: document.title || '',
+            title: document.title || "",
             url: window.location.href,
             favIconUrl: getFavIconUrl(),
             lastAccessed: Date.now(),
@@ -217,15 +217,15 @@ let currentTabId;
 
 // Update initialization message
 chrome.runtime.sendMessage({
-    type: 'getTabId',
-    action: 'initialize',
+    type: "getTabId",
+    action: "initialize",
     timestamp: Date.now()
 }, (response) => {
     if (response?.tabId) {
         currentTabId = response.tabId;
         initializeObservers();
     } else {
-        console.warn('Failed to get tab ID:', response);
+        console.warn("Failed to get tab ID:", response);
     }
 });
 
@@ -234,11 +234,11 @@ function safelySendMessage(message) {
     try {
         chrome.runtime.sendMessage(message, response => {
             if (chrome.runtime.lastError) {
-                console.warn('Error sending message:', chrome.runtime.lastError);
+                console.warn("Error sending message:", chrome.runtime.lastError);
             }
         });
     } catch (err) {
-        console.warn('Failed to send message:', err);
+        console.warn("Failed to send message:", err);
     }
 }
 
@@ -249,7 +249,7 @@ function handleUrlChange() {
     const favIconUrl = getFavIconUrl();
     const timestamp = Date.now();
     
-    console.log('URL change detected:', {
+    console.log("URL change detected:", {
         url,
         title,
         tabId: currentTabId,
@@ -258,26 +258,26 @@ function handleUrlChange() {
 
     // Send a single consolidated message instead of multiple ones
     safelySendMessage({
-        type: 'navigation_event',
-        action: 'updateNavigation',
+        type: "navigation_event",
+        action: "updateNavigation",
         data: {
             tabId: currentTabId,
             windowId: null, // Don't reference chrome.windows here
-            type: 'navigation',
+            type: "navigation",
             sourceUrl: document.referrer,
             targetUrl: url,
             title: title,
             text: title,
             favIconUrl: favIconUrl,
             timestamp: timestamp,
-            status: 'complete'
+            status: "complete"
         }
     });
 }
 
 function sendContentUpdate() {
     if (!currentTabId) {
-        console.warn('No tab ID available for content update');
+        console.warn("No tab ID available for content update");
         return;
     }
 
@@ -288,7 +288,7 @@ function sendContentUpdate() {
 
     // Send direct tab update
     safelySendMessage({
-        action: 'tabUpdated',
+        action: "tabUpdated",
         tabId: currentTabId,
         changeInfo: {
             url,
@@ -317,7 +317,7 @@ function initializeObservers() {
     try {
         const observer = new PerformanceObserver((list) => {
             for (const entry of list.getEntries()) {
-                if (entry.entryType === 'navigation') {
+                if (entry.entryType === "navigation") {
                     const currentTime = Date.now();
                     // Only trigger if more than 100ms since last navigation
                     if (currentTime - lastNavigationStart > 100) {
@@ -328,9 +328,9 @@ function initializeObservers() {
             }
         });
         
-        observer.observe({ entryTypes: ['navigation'] });
+        observer.observe({ entryTypes: ["navigation"] });
     } catch (err) {
-        console.warn('PerformanceObserver error:', err);
+        console.warn("PerformanceObserver error:", err);
     }
 
     // Add a flag to avoid recursive triggers from DOM observer
@@ -375,7 +375,7 @@ function initializeObservers() {
         });
     } else {
         // If body isn't available yet, wait for it
-        window.addEventListener('load', () => {
+        window.addEventListener("load", () => {
             domObserver.observe(document.body, {
                 subtree: true,
                 childList: true,
@@ -393,17 +393,17 @@ function initializeObservers() {
 // Improve getFavIconUrl to get more favicon sources
 function getFavIconUrl() {
     // Try multiple selectors in order of preference
-    const favicon = document.querySelector('link[rel="icon"][sizes="32x32"]') || 
-                   document.querySelector('link[rel="icon"][sizes="16x16"]') ||
-                   document.querySelector('link[rel="shortcut icon"]') ||
-                   document.querySelector('link[rel="icon"]') ||
-                   document.querySelector('link[rel="apple-touch-icon"]');
+    const favicon = document.querySelector("link[rel=\"icon\"][sizes=\"32x32\"]") || 
+                   document.querySelector("link[rel=\"icon\"][sizes=\"16x16\"]") ||
+                   document.querySelector("link[rel=\"shortcut icon\"]") ||
+                   document.querySelector("link[rel=\"icon\"]") ||
+                   document.querySelector("link[rel=\"apple-touch-icon\"]");
                    
     if (favicon && favicon.href) {
         return favicon.href;
     }
     
     // Fallback to default location
-    const defaultIcon = new URL('/favicon.ico', window.location.origin).href;
+    const defaultIcon = new URL("/favicon.ico", window.location.origin).href;
     return defaultIcon;
 }

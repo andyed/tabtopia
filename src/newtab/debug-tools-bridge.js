@@ -14,7 +14,7 @@ let debugToolsPromise = new Promise(resolve => {
   }
   
   // Otherwise listen for the tabtopiaDebugReady event
-  document.addEventListener('tabtopiaDebugReady', (event) => {
+  document.addEventListener("tabtopiaDebugReady", (event) => {
     debugTools = event.detail;
     resolve(event.detail);
   }, { once: true });
@@ -22,7 +22,7 @@ let debugToolsPromise = new Promise(resolve => {
   // Add timeout to avoid hanging forever
   setTimeout(() => {
     if (!debugTools) {
-      console.warn('Debug tools not available within timeout period');
+      console.warn("Debug tools not available within timeout period");
       resolve(null);
     }
   }, 2000);
@@ -38,11 +38,11 @@ debugToolsPromise.then(tools => {
       clearAllHeroImages: () => tools.clearAllHeroImages()
     };
     
-    console.log('%c🛠️ Hero Image Debug Tools Ready', 'color: green; font-weight: bold');
-    console.log('%cAvailable commands:', 'font-weight: bold');
-    console.log('%c- tabtopiaConsoleDebug.forceExtractHeroImages()', 'color: blue');
-    console.log('%c- tabtopiaConsoleDebug.viewStoredHeroImages()', 'color: blue');
-    console.log('%c- tabtopiaConsoleDebug.clearAllHeroImages()', 'color: blue');
+    console.log("%c🛠️ Hero Image Debug Tools Ready", "color: green; font-weight: bold");
+    console.log("%cAvailable commands:", "font-weight: bold");
+    console.log("%c- tabtopiaConsoleDebug.forceExtractHeroImages()", "color: blue");
+    console.log("%c- tabtopiaConsoleDebug.viewStoredHeroImages()", "color: blue");
+    console.log("%c- tabtopiaConsoleDebug.clearAllHeroImages()", "color: blue");
   }
 });
 
@@ -62,7 +62,7 @@ export async function forceExtractHeroImages(debug = true) {
   // Get current tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) {
-    return { success: false, error: 'No active tab found' };
+    return { success: false, error: "No active tab found" };
   }
   
   console.log(`📸 Forcing hero image extraction for: ${tab.url}`);
@@ -76,13 +76,13 @@ export async function forceExtractHeroImages(debug = true) {
         func: () => {
           // Temporary override for debugging
           window.__heroImageDebug = true;
-          console.log('🔍 Hero image debug mode activated');
+          console.log("🔍 Hero image debug mode activated");
         }
       });
     }
     
     const response = await chrome.tabs.sendMessage(tab.id, { 
-      action: 'forceExtractHeroImages',
+      action: "forceExtractHeroImages",
       debug: debug 
     });
     
@@ -97,7 +97,7 @@ export async function forceExtractHeroImages(debug = true) {
       response 
     };
   } catch (error) {
-    console.error('Error forcing hero image extraction:', error);
+    console.error("Error forcing hero image extraction:", error);
     return { 
       success: false, 
       url: tab.url,
