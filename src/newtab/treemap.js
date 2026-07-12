@@ -31,10 +31,10 @@
 import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from "./utility.js";
 import { displayReadout, hideReadout } from "./readout.js";
 import { handleKeyNavigation } from "./keyboardNav.js";
+import { tabSearch, reapplySearch } from "./search.js";
 import { fetchRecentBookmarks, fetchRecentHistory } from "./init.js";
 import { browserState } from "./state.js";
 import { applyColorCoding } from "./utility.js";
-import { globalTooltip } from "./tooltip.js";
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
@@ -544,36 +544,6 @@ export async function drawTreemap(data) {
         })
         .attr("stroke-width", 1);
 
-    // Attach awesome tooltip to treemap nodes
-    nodes.on("mouseenter.tooltip", (event, d) => {
-        const isBookmark = d.data.isBookmark ||
-            (d.parent && d.parent.data.name === "Window bookmark") ||
-            (d.parent && d.parent.data.id === "bookmark");
-
-        const content = `
-            <div class="tooltip-header">${d.data.title || "Untitled"}</div>
-            <div class="tooltip-url">${d.data.url}</div>
-            <div class="tooltip-section">
-                <div class="tooltip-row">
-                    <span class="tooltip-label">Type</span>
-                    <span class="tooltip-value">${isBookmark ? "Bookmark" : "Active Tab"}</span>
-                </div>
-                ${d.data.lastAccessed ? `
-                <div class="tooltip-row">
-                    <span class="tooltip-label">Last Accessed</span>
-                    <span class="tooltip-value">${new Date(d.data.lastAccessed).toLocaleTimeString()}</span>
-                </div>` : ""}
-            </div>
-        `;
-        globalTooltip.show(content, event);
-    })
-        .on("mousemove", (event) => {
-            globalTooltip.move(event);
-        })
-        .on("mouseleave", () => {
-            globalTooltip.hide();
-        });
-
     // 3. Add cell content container
     const cellContent = nodes.append("g")
         .attr("class", "cell-content")
@@ -906,6 +876,14 @@ export async function drawTreemap(data) {
         }
     }
 
+    // Keep the search layer in step with what was just painted. Every redraw
+    // recreates the cell <g> elements (dropping the match/nomatch classes) and
+    // may reflect tab churn the boot-time index has never seen — so rebuild the
+    // index from the same data we drew, then re-apply the query still sitting
+    // in the search box. Same survives-redraw treatment as the pinned cell above.
+    tabSearch.buildIndex(data);
+    reapplySearch();
+
     // Debug logging
     console.log("Event handlers attached:", {
         nodes: nodes.size(),
@@ -924,6 +902,10 @@ export async function drawTreemap(data) {
 
 // Helper function to format title
 function formatTitle(title) {
+    // Restored/ghost tab entries (e.g. right after a browser restart) can have
+    // no title at all — one undefined here used to throw inside the d3 .text()
+    // callback and abort the ENTIRE treemap draw. Degrade to empty, not crash.
+    if (typeof title !== "string") return "";
     // If title has more than one underscore, split and join with spaces
     if ((title.match(/_/g) || []).length > 1) {
         return title.split("_").join(" ");
@@ -960,11 +942,18 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
             .text(line);
     });
 
-    // Adjust font size to fit the available cell space
+    // Adjust font size to fit the available cell space. The grow-until-overflow
+    // loop MUST be bounded: empty text (titleless restored tabs) has a 0-size
+    // bbox at any font size, so without the cap this spins forever and hangs
+    // the newtab page.
     let fontSize = 12; // Start with a base font size
+    const MAX_FONT_SIZE = 48;
     textElement.attr("font-size", fontSize + "px");
 
-    while (textElement.node().getBBox().width < cellWidth && textElement.node().getBBox().height < cellHeight) {
+    const hasText = lines.some(l => l && l.trim());
+    while (hasText && fontSize < MAX_FONT_SIZE &&
+           textElement.node().getBBox().width < cellWidth &&
+           textElement.node().getBBox().height < cellHeight) {
         fontSize += 1;
         textElement.attr("font-size", fontSize + "px");
     }
@@ -1235,10 +1224,9 @@ async function handleTabRemoved(tabId, removeInfo) {
             .filter(w => w.id !== "bookmark");
     }
 
-    // Remove from search index
-    removeFromIndex(`tab${tabId}`);
-
-    // Redraw immediately
+    // Redraw immediately — drawTreemap rebuilds the search index from the data
+    // it paints. (The old removeFromIndex() call here referenced a function
+    // that was never defined, so this handler threw before ever redrawing.)
     await drawTreemap(treemapState.data); // Ensure this is awaited
 }
 
@@ -1281,9 +1269,9 @@ async function handleTabCreated(tab) {
 
     targetWindow.tabs.push(newTab);
 
-    // Add to search index with validated data
-    indexNode(`tab${tab.id}`, newTab);
-
+    // Search indexing happens inside drawTreemap below. (The old indexNode()
+    // call here referenced a function that was never defined, so this handler
+    // threw before ever redrawing.)
     console.log("Tab added to state:", {
         tabId: tab.id,
         windowId: tab.windowId,

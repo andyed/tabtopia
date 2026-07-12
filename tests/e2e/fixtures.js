@@ -53,6 +53,30 @@ const PAGES = {
   "/delta": "Delta Page",
 };
 
+// Launch an extension-loaded Chrome. `userDataDir` of "" gives a throwaway
+// temp profile (the default per-test context). Pass a real directory — and
+// reuse it across two launches — to simulate a browser RESTART on the same
+// profile (used by the search-persistence session-scoping test).
+async function launchExtensionContext(userDataDir) {
+  const headless = process.env.HEADED !== "1";
+  const args = [
+    `--disable-extensions-except=${EXTENSION_PATH}`,
+    `--load-extension=${EXTENSION_PATH}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+  ];
+  // Playwright's headless:true historically used the *old* headless, which does
+  // NOT load extensions. The new headless mode does — request it explicitly and
+  // leave headless:false so Playwright doesn't override us with the old flag.
+  if (headless) args.push("--headless=new");
+
+  return chromium.launchPersistentContext(userDataDir, {
+    headless: false,
+    viewport: { width: 1600, height: 1000 },
+    args,
+  });
+}
+
 const test = base.test.extend({
   // ---- worker-scoped local fixture server -------------------------------------
   server: [
@@ -82,23 +106,7 @@ const test = base.test.extend({
 
   // ---- test-scoped extension-loaded Chrome ------------------------------------
   context: async ({}, use) => {
-    const headless = process.env.HEADED !== "1";
-    const args = [
-      `--disable-extensions-except=${EXTENSION_PATH}`,
-      `--load-extension=${EXTENSION_PATH}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-    ];
-    // Playwright's headless:true historically used the *old* headless, which does
-    // NOT load extensions. The new headless mode does — request it explicitly and
-    // leave headless:false so Playwright doesn't override us with the old flag.
-    if (headless) args.push("--headless=new");
-
-    const context = await chromium.launchPersistentContext("", {
-      headless: false,
-      viewport: { width: 1600, height: 1000 },
-      args,
-    });
+    const context = await launchExtensionContext("");
     await use(context);
     await context.close();
   },
@@ -120,4 +128,4 @@ const test = base.test.extend({
   },
 });
 
-module.exports = { test, expect: base.expect };
+module.exports = { test, expect: base.expect, launchExtensionContext };

@@ -14,6 +14,13 @@ import { createSessionCard, clearSeenHeroImages } from "./hero_images_display.js
 import { formatTimeAgo } from "./timeago.js";
 // Import URL utilities
 import { extractSearchQuery } from "../lib/url-utils.js";
+// Cross-view search query hand-off (URL ?q= + chrome.storage.session)
+import {
+    readSharedQuery,
+    publishSharedQuery,
+    decorateViewLinks,
+    onSharedQueryChange
+} from "./search-persistence.js";
 
 /**
  * Format milliseconds into a human-readable duration string
@@ -354,13 +361,36 @@ async function refreshSessionsIfNecessary() {
 document.addEventListener("DOMContentLoaded", () => {
     console.log("Sessions view DOM fully loaded and parsed");
     addTabGroupStyles();
-    initSessions();
 
+    // Seed with the query carried from another view (URL ?q= or chrome.storage.session);
+    // the filter itself runs once initSessions has rendered the data.
     const searchInput = document.getElementById("sessionSearch");
+    const initialQuery = readSharedQuery();
+    if (searchInput) {
+        searchInput.value = initialQuery;
+    }
+    decorateViewLinks(initialQuery.trim());
+    currentSearchTerm = initialQuery.toLowerCase();
+
+    initSessions().then(() => {
+        if (currentSearchTerm.trim()) {
+            filterAndRenderSessions(currentSearchTerm);
+        }
+    });
+
     if (searchInput) {
         searchInput.addEventListener("input", (event) => {
+            publishSharedQuery(event.target.value.trim());
             currentSearchTerm = event.target.value.toLowerCase();
             filterAndRenderSessions(currentSearchTerm);
+        });
+
+        // Live-sync with edits made in other open views.
+        onSharedQueryChange((query) => {
+            searchInput.value = query;
+            currentSearchTerm = query.toLowerCase();
+            filterAndRenderSessions(currentSearchTerm);
+            decorateViewLinks(query.trim());
         });
     }
 
