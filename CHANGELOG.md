@@ -5,6 +5,29 @@ All notable changes to tabtopia are recorded here.
 Tabtopia ships **unpacked** — it is not distributed through the Chrome Web Store.
 To run a release, load the repo at that tag via `chrome://extensions` → *Load unpacked*.
 
+## [1.1.1] — 2026-07-16
+
+Icon and asset fixes. Shipped same-day as 1.1, which carried all three of these.
+
+### Fixed
+
+- **The 128px extension icon was actually a 16×16 image**, so Chrome upscaled it
+  8× everywhere the large icon appears. Now a true 128×128 of the same
+  node-graph design.
+- **The fallback favicon was a 0-byte PNG.** `images/default-favicon.png` was
+  empty, so the fallback returned from `createLetterFavicon`'s catch block
+  rendered broken. It's now an inline `data:` URI, encoded with
+  `encodeURIComponent` rather than `btoa` — `btoa` is the most likely thing to
+  have thrown on the path that reaches this fallback, so the fallback must not
+  depend on it. The empty file is gone.
+
+### Changed
+
+- Icons consolidated under `icons/`; the manifest now also declares the 32px
+  size (`icon32.png` already existed but was never referenced).
+- Removed `favicon.ico` — a 16×16 leftover nothing referenced. (The remaining
+  `favicon.ico` strings in the source resolve *remote* origins, not this file.)
+
 ## [1.1] — 2026-07-16
 
 A stability and hardening release. No new features; everything below is a fix to
