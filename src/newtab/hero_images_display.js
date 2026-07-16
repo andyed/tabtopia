@@ -2,7 +2,7 @@
 import { showSessionModal, extractTitleFromSession } from "./sessions_modal.js";
 
 import { formatTimeAgo } from "./timeago.js";
-import { getLocalFaviconUrl } from "./utility.js";
+import { getLocalFaviconUrl, escapeHtml } from "./utility.js";
 
 // Global registry of seen image URLs to prevent duplicates across pages/sessions
 const globalSeenImageUrls = new Set();
@@ -264,23 +264,23 @@ export async function createSessionCard(session, options = {}) {
             const domain = extractDomainFromUrl(img.pageUrl || "");
             const faviconUrl = getFaviconUrl(domain);
             return `<div class="mosaic-item-wrapper mosaic-item-${heroImages.length}-${i + 1}">
-                  <img src="${img.src}" alt="${img.alt || img.pageTitle || "Session image"}" 
-                       class="mosaic-item hero-image-element" 
-                       title="${img.pageTitle || ""}" 
-                       data-page-url="${img.pageUrl || ""}">
-                  <img src="${faviconUrl}" alt="Favicon for ${domain}" 
-                       class="mosaic-favicon" 
-                       title="${domain}">  
+                  <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || img.pageTitle || "Session image")}"
+                       class="mosaic-item hero-image-element"
+                       title="${escapeHtml(img.pageTitle || "")}"
+                       data-page-url="${escapeHtml(img.pageUrl || "")}">
+                  <img src="${escapeHtml(faviconUrl)}" alt="Favicon for ${escapeHtml(domain)}"
+                       class="mosaic-favicon"
+                       title="${escapeHtml(domain)}">
                 </div>`;
           }).join("")}
             </div>
-            <div class="image-source">${pageTitle ? `From: ${pageTitle.substring(0, 40)}${pageTitle.length > 40 ? "..." : ""}` : ""}</div>` :
-          `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || "Session image"}" class="card-image hero-image-element">
-             <div class="image-source">${pageTitle ? `From: ${pageTitle.substring(0, 40)}${pageTitle.length > 40 ? "..." : ""}` : ""}</div>`
+            <div class="image-source">${pageTitle ? `From: ${escapeHtml(pageTitle.substring(0, 40))}${pageTitle.length > 40 ? "..." : ""}` : ""}</div>` :
+          `<img src="${escapeHtml(heroImage.src)}" alt="${escapeHtml(heroImage.alt || pageTitle || "Session image")}" class="card-image hero-image-element">
+             <div class="image-source">${pageTitle ? `From: ${escapeHtml(pageTitle.substring(0, 40))}${pageTitle.length > 40 ? "..." : ""}` : ""}</div>`
         }
         </div>
         <div class="card-content-section"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ""}>
-          <h3 class="card-title">${session.name || extractTitleFromSession(session) || "Browsing Session"}</h3>
+          <h3 class="card-title">${escapeHtml(session.name || extractTitleFromSession(session) || "Browsing Session")}</h3>
           
           <div class="card-stats">
             <!-- Combined page count and favicon stack -->
@@ -288,10 +288,10 @@ export async function createSessionCard(session, options = {}) {
               <span class="page-count">${displaySession.pages.length}</span>
               <div class="favicon-stack">
                 ${topDomains.slice(0, 5).map((domain, index) =>
-          `<img src="${getLocalFaviconUrl(domain, 16)}" 
-                   class="stacked-favicon" 
-                   style="z-index:${10 - index}; margin-left:${index * -6}px" 
-                   title="${domain}" />`).join("")}
+          `<img src="${escapeHtml(getLocalFaviconUrl(domain, 16))}"
+                   class="stacked-favicon"
+                   style="z-index:${10 - index}; margin-left:${index * -6}px"
+                   title="${escapeHtml(domain)}" />`).join("")}
               </div>
             </div>
             <!-- Timeline visualization for duration and start time -->
@@ -309,15 +309,15 @@ export async function createSessionCard(session, options = {}) {
           </div>
           
           <div class="card-domains">
-            ${topDomains.map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace("www.", "")}</span>`).join("")}
+            ${topDomains.map(domain => `<span class="domain-tag"><img src="${escapeHtml(getLocalFaviconUrl(domain, 16))}" class="domain-favicon" alt="" />${escapeHtml(domain.replace("www.", ""))}</span>`).join("")}
           </div>
           
           <div class="card-summary">
-            <div class="journey-summary">From "${firstPageTitle.substring(0, 30)}${firstPageTitle.length > 30 ? "..." : ""}" to "${lastPageTitle.substring(0, 30)}${lastPageTitle.length > 30 ? "..." : ""}"</div>
+            <div class="journey-summary">From "${escapeHtml(firstPageTitle.substring(0, 30))}${firstPageTitle.length > 30 ? "..." : ""}" to "${escapeHtml(lastPageTitle.substring(0, 30))}${lastPageTitle.length > 30 ? "..." : ""}"</div>
             ${session.summary ? `
             <div class="session-page-summary">
               <h4>Session Summary</h4>
-              <div class="summary-content">${session.summary.substring(0, 200)}${session.summary.length > 200 ? "..." : ""}</div>
+              <div class="summary-content">${escapeHtml(session.summary.substring(0, 200))}${session.summary.length > 200 ? "..." : ""}</div>
             </div>` : ""}
           </div>
         </div>
@@ -332,21 +332,21 @@ export async function createSessionCard(session, options = {}) {
             const domain = extractDomainFromUrl(img.pageUrl || "");
             const faviconUrl = getFaviconUrl(domain);
             return `<div class="mosaic-item-wrapper mosaic-item-${heroImages.length}-${i + 1}">
-                  <img src="${img.src}" alt="${img.alt || img.pageTitle || "Session image"}" 
-                       class="mosaic-item hero-image-element" 
-                       title="${img.pageTitle || ""}" 
-                       data-page-url="${img.pageUrl || ""}">
-                  <img src="${faviconUrl}" alt="Favicon for ${domain}" 
-                       class="mosaic-favicon" 
-                       title="${domain}">  
+                  <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || img.pageTitle || "Session image")}"
+                       class="mosaic-item hero-image-element"
+                       title="${escapeHtml(img.pageTitle || "")}"
+                       data-page-url="${escapeHtml(img.pageUrl || "")}">
+                  <img src="${escapeHtml(faviconUrl)}" alt="Favicon for ${escapeHtml(domain)}"
+                       class="mosaic-favicon"
+                       title="${escapeHtml(domain)}">
                 </div>`;
           }).join("")}
             </div>` :
-          `<img src="${heroImage.src}" alt="${heroImage.alt || pageTitle || "Session image"}" class="card-image hero-image-element">`
+          `<img src="${escapeHtml(heroImage.src)}" alt="${escapeHtml(heroImage.alt || pageTitle || "Session image")}" class="card-image hero-image-element">`
         }
         </div>
         <div class="card-content-section compact"${card.dataset.ageHue ? ` style="background-color: hsla(${card.dataset.ageHue}, 70%, ${card.dataset.ageLightness}%, 0.9)"` : ""}>
-          <h3 class="card-title compact">${session.name || extractTitleFromSession(session) || "Browsing Session"}</h3>
+          <h3 class="card-title compact">${escapeHtml(session.name || extractTitleFromSession(session) || "Browsing Session")}</h3>
           
           <div class="card-stats compact">
             <!-- Combined page count and favicon stack (compact version) -->
@@ -354,10 +354,10 @@ export async function createSessionCard(session, options = {}) {
               <span class="page-count">${displaySession.pages.length}</span>
               <div class="favicon-stack">
                 ${topDomains.slice(0, 5).map((domain, index) =>
-          `<img src="${getLocalFaviconUrl(domain, 16)}" 
-                   class="stacked-favicon" 
-                   style="z-index:${10 - index}; margin-left:${index * -6}px" 
-                   title="${domain}" />`).join("")}
+          `<img src="${escapeHtml(getLocalFaviconUrl(domain, 16))}"
+                   class="stacked-favicon"
+                   style="z-index:${10 - index}; margin-left:${index * -6}px"
+                   title="${escapeHtml(domain)}" />`).join("")}
               </div>
             </div>
             <!-- Timeline visualization (compact version) -->
@@ -374,12 +374,12 @@ export async function createSessionCard(session, options = {}) {
           </div>
           
           <div class="card-domains compact">
-            ${topDomains.slice(0, 2).map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace("www.", "")}</span>`).join("")}
+            ${topDomains.slice(0, 2).map(domain => `<span class="domain-tag"><img src="${escapeHtml(getLocalFaviconUrl(domain, 16))}" class="domain-favicon" alt="" />${escapeHtml(domain.replace("www.", ""))}</span>`).join("")}
           </div>
           
           ${session.summary ? `
           <div class="session-page-summary compact">
-            <div class="summary-content">${session.summary.substring(0, 100)}${session.summary.length > 100 ? "..." : ""}</div>
+            <div class="summary-content">${escapeHtml(session.summary.substring(0, 100))}${session.summary.length > 100 ? "..." : ""}</div>
           </div>` : ""}
         </div>
       `;
@@ -388,7 +388,7 @@ export async function createSessionCard(session, options = {}) {
     // Fallback layout for cards without images
     card.innerHTML = `
       <div class="card-content-section full-width">
-        <h3 class="card-title">${session.name || extractTitleFromSession(session) || "Browsing Session"}</h3>
+        <h3 class="card-title">${escapeHtml(session.name || extractTitleFromSession(session) || "Browsing Session")}</h3>
         
         <div class="card-stats">
           <!-- Combined page count and favicon stack -->
@@ -396,10 +396,10 @@ export async function createSessionCard(session, options = {}) {
             <span class="page-count">${displaySession.pages.length}</span>
             <div class="favicon-stack">
               ${topDomains.slice(0, 5).map((domain, index) =>
-      `<img src="${getLocalFaviconUrl(domain, 16)}" 
-                 class="stacked-favicon" 
-                 style="z-index:${10 - index}; margin-left:${index * -6}px" 
-                 title="${domain}" />`).join("")}
+      `<img src="${escapeHtml(getLocalFaviconUrl(domain, 16))}"
+                 class="stacked-favicon"
+                 style="z-index:${10 - index}; margin-left:${index * -6}px"
+                 title="${escapeHtml(domain)}" />`).join("")}
             </div>
           </div>
           <!-- Timeline visualization for duration and start time -->
@@ -417,19 +417,19 @@ export async function createSessionCard(session, options = {}) {
         </div>
         
         <div class="card-domains">
-          ${topDomains.map(domain => `<span class="domain-tag"><img src="${getLocalFaviconUrl(domain, 16)}" class="domain-favicon" alt="" />${domain.replace("www.", "")}</span>`).join("")}
+          ${topDomains.map(domain => `<span class="domain-tag"><img src="${escapeHtml(getLocalFaviconUrl(domain, 16))}" class="domain-favicon" alt="" />${escapeHtml(domain.replace("www.", ""))}</span>`).join("")}
         </div>
         
         <div class="card-journey">
-          <span class="first-page" title="${firstPageTitle}">${firstPageTitle.substring(0, 20)}${firstPageTitle.length > 20 ? "..." : ""}</span>
+          <span class="first-page" title="${escapeHtml(firstPageTitle)}">${escapeHtml(firstPageTitle.substring(0, 20))}${firstPageTitle.length > 20 ? "..." : ""}</span>
           <span class="journey-arrow">→</span>
-          <span class="last-page" title="${lastPageTitle}">${lastPageTitle.substring(0, 20)}${lastPageTitle.length > 20 ? "..." : ""}</span>
+          <span class="last-page" title="${escapeHtml(lastPageTitle)}">${escapeHtml(lastPageTitle.substring(0, 20))}${lastPageTitle.length > 20 ? "..." : ""}</span>
         </div>
         
         ${session.summary ? `
         <div class="session-page-summary">
           <h4>Session Summary</h4>
-          <div class="summary-content">${session.summary.substring(0, 200)}${session.summary.length > 200 ? "..." : ""}</div>
+          <div class="summary-content">${escapeHtml(session.summary.substring(0, 200))}${session.summary.length > 200 ? "..." : ""}</div>
         </div>` : ""}
       </div>
     `;

@@ -1,4 +1,4 @@
-import { formatDistanceToNow, formatSessionDuration } from "./utility.js";
+import { formatDistanceToNow, formatSessionDuration, escapeHtml, safeUrl } from "./utility.js";
 import { tabSearch } from "./search.js";
 import { fetchRecentBookmarks, fetchRecentHistory } from "./init.js";
 
@@ -1190,17 +1190,6 @@ async function summarizeUrl(url) {
     }
 }
 
-// HTML-escape so summary text containing <, >, &, " or backticks can't break
-// markup, attribute boundaries, or the template literal in the onclick handler.
-function escapeHtml(s) {
-    return String(s)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-}
-
 // Add this helper function for summary display
 export function createTruncatedSummary(summary) {
     if (!summary) return "";
@@ -1316,12 +1305,12 @@ export async function displayReadout(d, event) {
 
     readout.innerHTML = `
         <div class="readout-header ${isBookmark ? "bookmark" : ""}">
-            <div class="readout-title">${title}</div>
-            <div class="readout-url">${displayUrl}</div>
+            <div class="readout-title">${escapeHtml(title)}</div>
+            <div class="readout-url">${escapeHtml(displayUrl)}</div>
             ${searchMatch?.summaryContext ? `
                 <div class="search-match-context">
                     <span class="match-label">Matched in summary:</span>
-                    <span class="match-text">"...${searchMatch.summaryContext}..."</span>
+                    <span class="match-text">"...${escapeHtml(searchMatch.summaryContext)}..."</span>
                 </div>
             ` : ""}
         </div>

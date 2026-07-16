@@ -1,6 +1,6 @@
 
 
-import { getLocalFaviconUrl } from "./utility.js";
+import { getLocalFaviconUrl, escapeHtml } from "./utility.js";
 
 /**
  * Get a synchronous favicon URL for graph rendering.
@@ -277,10 +277,10 @@ export function createForceGraph(container, nodes, links, session, viewMode = "t
                 .style("left", (event.pageX + 10) + "px")
                 .style("top", (event.pageY - 10) + "px")
                 .html(`
-                    <div style="font-weight: 600; margin-bottom: 8px;">${d.title || "Untitled"}</div>
-                    <div style="font-size: 11px; color: #aaa; margin-bottom: 4px; word-break: break-all;">${d.url}</div>
+                    <div style="font-weight: 600; margin-bottom: 8px;">${escapeHtml(d.title || "Untitled")}</div>
+                    <div style="font-size: 11px; color: #aaa; margin-bottom: 4px; word-break: break-all;">${escapeHtml(d.url)}</div>
                     <div style="margin-top: 8px;">
-                        ${d.domain ? `<div>Domain: ${d.domain}</div>` : ""}
+                        ${d.domain ? `<div>Domain: ${escapeHtml(d.domain)}</div>` : ""}
                         ${d.visitCount ? `<div>Visit count: ${d.visitCount}</div>` : ""}
                         ${lastVisitStr ? `<div>Last visit: ${lastVisitStr}</div>` : ""}
                         ${d.isActive ? "<div style=\"color: #64b5f6; font-weight: 600;\">Currently open</div>" : ""}

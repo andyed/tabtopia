@@ -43,6 +43,10 @@ function extensionIdFromPath(absPath) {
 // reads files the manifest references, so loading the whole repo is fine.
 const EXTENSION_PATH = path.resolve(__dirname, "..", "..");
 
+// Injection probe used by the /hostile fixture page. Deliberately contains no
+// quotes so it stays usable inside a CSS [aria-label="..."] selector.
+const HOSTILE_TITLE = "<img src=x>Pwned";
+
 // pathname -> document.title. The title becomes the tab title, which the treemap
 // copies onto each cell's aria-label (treemap.js: .attr('aria-label', d.data.title)).
 const PAGES = {
@@ -51,6 +55,13 @@ const PAGES = {
   "/gamma": "Gamma Page",
   // Used by the pin test to navigate an existing tab and force a treemap redraw.
   "/delta": "Delta Page",
+  // Any site controls its own <title>, and that title flows into innerHTML sinks
+  // on the privileged newtab page. <title> is RCDATA, so this payload does NOT
+  // parse as a tag here — document.title becomes the literal string, which is
+  // precisely the attacker-controlled value the extension must escape. No event
+  // handler on purpose: the assertion is "did an element materialize", so the
+  // payload needs no side effect to prove the point.
+  "/hostile": HOSTILE_TITLE,
 };
 
 // Launch an extension-loaded Chrome. `userDataDir` of "" gives a throwaway
@@ -128,4 +139,4 @@ const test = base.test.extend({
   },
 });
 
-module.exports = { test, expect: base.expect, launchExtensionContext };
+module.exports = { test, expect: base.expect, launchExtensionContext, HOSTILE_TITLE };

@@ -8,8 +8,13 @@
 *~
 
 # Backups & logs
+# *.orig/*.rej live inside src/ after a merge or patch and would otherwise be
+# picked up by a packed zip of the extension source.
 *.bak
+*.orig
+*.rej
 *.log
+*.patch
 
 # Node (if tooling is ever added)
 node_modules/

@@ -3,7 +3,7 @@ console.log("sessions.js loaded");
 
 // Import the summary cache and helper functions from readout.js
 import { summaryCache, getCachedSummary, summaryQueue, processSummaryQueue } from "./readout.js";
-import { getLocalFaviconUrl } from "./utility.js";
+import { getLocalFaviconUrl, escapeHtml, safeUrl } from "./utility.js";
 // Import the debug tools bridge for ES module compatibility
 
 // Import session renderers
@@ -83,11 +83,17 @@ function createTruncatedSummary(summary, searchTerm = "") {
 }
 
 // Helper function to highlight search matches in text
+// Returns HTML (callers assign it to innerHTML), so the caller-supplied text —
+// page titles and URLs, which any visited site controls — must be escaped here.
+// Escape BEFORE inserting the highlight markup, and match against the escaped
+// text with an equally-escaped term so a term containing &, < or " still hits.
 function highlightText(text, searchTerm) {
-    if (!searchTerm || !text) return text;
+    if (!searchTerm || !text) return escapeHtml(text);
 
-    const searchRegex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
-    return text.replace(searchRegex, match => `<span class="search-highlight">${match}</span>`);
+    const escapedText = escapeHtml(text);
+    const escapedTerm = escapeHtml(searchTerm);
+    const searchRegex = new RegExp(escapedTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    return escapedText.replace(searchRegex, match => `<span class="search-highlight">${match}</span>`);
 }
 
 let allSessionsData = []; // To store the original full list of sessions
@@ -1039,7 +1045,7 @@ function renderPageList(session, searchTerm = "") {
     if (session.topDomains && session.topDomains.length > 0) {
         const domainsList = document.createElement("div");
         domainsList.className = "detail";
-        domainsList.innerHTML = `<span class="detail-label">Top domains:</span> ${session.topDomains.slice(0, 3).map(d => d.domain).join(", ")}`;
+        domainsList.innerHTML = `<span class="detail-label">Top domains:</span> ${session.topDomains.slice(0, 3).map(d => escapeHtml(d.domain)).join(", ")}`;
         summaryDetails.appendChild(domainsList);
     }
 
@@ -1047,7 +1053,7 @@ function renderPageList(session, searchTerm = "") {
     if (session.searchQueries && session.searchQueries.length > 0) {
         const queriesList = document.createElement("div");
         queriesList.className = "detail search-queries";
-        queriesList.innerHTML = `<span class="detail-label">Search queries:</span> ${session.searchQueries.slice(0, 3).map(q => `<span class="search-query">${q}</span>`).join(", ")}`;
+        queriesList.innerHTML = `<span class="detail-label">Search queries:</span> ${session.searchQueries.slice(0, 3).map(q => `<span class="search-query">${escapeHtml(q)}</span>`).join(", ")}`;
         summaryDetails.appendChild(queriesList);
     }
 
@@ -1170,7 +1176,7 @@ function renderPageList(session, searchTerm = "") {
 
         // Title with optional highlight - with 4x larger font
         const titleLink = document.createElement("a");
-        titleLink.href = page.url;
+        titleLink.href = safeUrl(page.url);
         const titleText = page.title || page.url;
         if (searchTerm && titleText.toLowerCase().includes(searchTerm)) {
             titleLink.innerHTML = highlightText(titleText, searchTerm);

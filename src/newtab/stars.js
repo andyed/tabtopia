@@ -212,7 +212,7 @@ function groupSessionsByDate(sessions) {
 }
 
 import { formatTimeAgo } from "./timeago.js";
-import { getLocalFaviconUrl } from "./utility.js";
+import { getLocalFaviconUrl, escapeHtml, safeUrl } from "./utility.js";
 
 function createStarCard(session) {
     const card = document.createElement("div");
@@ -235,11 +235,11 @@ function createStarCard(session) {
                 <li class="session-page-item">
                     <div class="favicon-domain-container">
                         <img class="page-favicon-img" src="${faviconUrl}" alt="">
-                        <span class="domain-pill">${new URL(item.url).hostname}</span>
+                        <span class="domain-pill">${escapeHtml(new URL(item.url).hostname)}</span>
                     </div>
                     <div class="page-item-details">
-                        <a class="page-title-link" href="${item.url}" target="_blank">${item.title || item.url}</a>
-                        <span class="page-url-text">${item.url}</span>
+                        <a class="page-title-link" href="${escapeHtml(safeUrl(item.url))}" target="_blank">${escapeHtml(item.title || item.url)}</a>
+                        <span class="page-url-text">${escapeHtml(item.url)}</span>
                     </div>
                 </li>`;
         }
@@ -248,7 +248,7 @@ function createStarCard(session) {
 
     card.innerHTML = `
         <div class="session-card-header">
-            <h3><a href="${bookmark.url}" target="_blank">${bookmark.title || bookmark.url}</a></h3>
+            <h3><a href="${escapeHtml(safeUrl(bookmark.url))}" target="_blank">${escapeHtml(bookmark.title || bookmark.url)}</a></h3>
             <div class="session-card-time">${formatTimeAgo(bookmark.dateAdded)}</div>
         </div>
         <div class="session-card-content">
