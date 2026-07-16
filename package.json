@@ -1,6 +1,6 @@
 {
   "name": "tabtopia",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Tabtopia — Chrome extension that visualizes browsing telemetry. (This package.json exists only for the dev-time E2E test harness; the extension itself ships unbundled.)",
   "scripts": {
