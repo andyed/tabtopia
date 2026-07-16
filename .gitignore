@@ -24,3 +24,15 @@ node_modules/
 /playwright-report/
 /blob-report/
 /.playwright/
+
+# Internal docs — this repo is PUBLIC (github.com/andyed/tabtopia).
+# Strategy and audit docs stay on local disk: they carry positioning, and they
+# enumerate open findings with file:line, which is not something to publish
+# while those findings are open.
+/docs/PRODUCT_CASE.md
+/docs/HEALTHCHECK_*.md
+/docs/AUDIT.md
+
+# Reference papers — third-party copyrighted PDFs. Keep locally, cite by DOI;
+# do not redistribute from a public repo.
+/references/
