@@ -61,6 +61,20 @@ export function debounce(func, wait) {
   };
 }
 
+// Last-resort favicon for when letter generation throws. Encoded with
+// encodeURIComponent rather than btoa: btoa is the most likely thing to have
+// thrown on the path that reaches this, so the fallback must not depend on it.
+const DEFAULT_FAVICON = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+    <circle cx="16" cy="16" r="16" fill="#e8eaed" />
+    <g fill="none" stroke="#202124" stroke-width="1.6">
+      <circle cx="16" cy="16" r="9" />
+      <ellipse cx="16" cy="16" rx="4" ry="9" />
+      <path d="M7 16h18M9.2 10.4h13.6M9.2 21.6h13.6" />
+    </g>
+  </svg>`
+);
+
 // Add this function to generate SVG favicon with domain initial
 export function createLetterFavicon(url) {
   try {
@@ -92,7 +106,7 @@ export function createLetterFavicon(url) {
     return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
   } catch (error) {
     console.warn("Error creating letter favicon:", error);
-    return "/images/default-favicon.png";
+    return DEFAULT_FAVICON;
   }
 }
 
