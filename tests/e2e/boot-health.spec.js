@@ -13,6 +13,10 @@ const VIEWS = [
   "src/newtab/sessions.html",
   "src/newtab/stars.html",
   "src/newtab/popup.html",
+  // debug.js is a classic script, so a duplicate top-level declaration in it
+  // never threw at runtime and eslint could not parse the file to complain —
+  // the page had no coverage at all. It does now.
+  "src/newtab/debug.html",
 ];
 
 test.describe("boot health", () => {

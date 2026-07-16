@@ -23,15 +23,15 @@ window.getSummarizerStatus = function() {
 };
 
 window.resetSummarizerCrashCounter = function() {
-    console.log('Mock resetSummarizerCrashCounter called');
+    console.log("Mock resetSummarizerCrashCounter called");
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('Debug UI initializing...');
+document.addEventListener("DOMContentLoaded", () => {
+    console.log("Debug UI initializing...");
     
     // Check if we're running in the Chrome extension context
-    if (typeof chrome === 'undefined' || !chrome.runtime) {
-        console.error('❌ Debug page opened outside Chrome extension context');
+    if (typeof chrome === "undefined" || !chrome.runtime) {
+        console.error("❌ Debug page opened outside Chrome extension context");
         document.body.innerHTML = `
             <div style="padding: 40px; text-align: center; font-family: Arial, sans-serif;">
                 <h1 style="color: #e74c3c;">⚠️ Chrome Extension Context Required</h1>
@@ -56,12 +56,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Force browserState init check
     setTimeout(async () => {
-        console.log('Checking browserState initialization...');
+        console.log("Checking browserState initialization...");
         if (window.browserState) {
-            console.log('browserState is available, loading initial data');
+            console.log("browserState is available, loading initial data");
             try {
                 const state = await window.browserState.getState();
-                console.log('Initial state loaded:', state ? 'success' : 'empty');
+                console.log("Initial state loaded:", state ? "success" : "empty");
                 if (state) {
                     // Force reload of all data sections
                     loadHistoryData();
@@ -71,28 +71,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadLocalStorageData();
                 }
             } catch (err) {
-                console.error('Failed to get initial state:', err);
+                console.error("Failed to get initial state:", err);
             }
         } else {
-            console.error('browserState not available after initialization');
+            console.error("browserState not available after initialization");
         }
     }, 1000); // Wait 1 second after page load
     
     // Add global refresh button
-    const header = document.querySelector('header');
+    const header = document.querySelector("header");
     if (header) {
-        const refreshButton = document.createElement('button');
-        refreshButton.id = 'global-refresh-button';
-        refreshButton.innerText = '🔄 Refresh All Data';
-        refreshButton.className = 'action-button primary-action';
-        refreshButton.style.marginLeft = 'auto';
-        refreshButton.style.marginRight = '10px';
-        refreshButton.addEventListener('click', async () => {
-            console.log('Manually refreshing all debug data...');
+        const refreshButton = document.createElement("button");
+        refreshButton.id = "global-refresh-button";
+        refreshButton.innerText = "🔄 Refresh All Data";
+        refreshButton.className = "action-button primary-action";
+        refreshButton.style.marginLeft = "auto";
+        refreshButton.style.marginRight = "10px";
+        refreshButton.addEventListener("click", async () => {
+            console.log("Manually refreshing all debug data...");
             if (window.browserState && window.browserState.refreshState) {
                 try {
                     await window.browserState.refreshState();
-                    console.log('State refreshed, reloading all data tabs...');
+                    console.log("State refreshed, reloading all data tabs...");
                     // Reload all data sections
                     loadHistoryData();
                     loadRelationshipData();
@@ -103,23 +103,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateQueueStatus();
                     
                     // Flash animation to show refresh happened
-                    refreshButton.classList.add('refreshing');
+                    refreshButton.classList.add("refreshing");
                     setTimeout(() => {
-                        refreshButton.classList.remove('refreshing');
+                        refreshButton.classList.remove("refreshing");
                     }, 500);
                 } catch (error) {
-                    console.error('Error refreshing data:', error);
-                    alert('Error refreshing data: ' + error.message);
+                    console.error("Error refreshing data:", error);
+                    alert("Error refreshing data: " + error.message);
                 }
             } else {
-                console.error('browserState or refreshState method not available');
-                alert('Cannot refresh: browserState not initialized');
+                console.error("browserState or refreshState method not available");
+                alert("Cannot refresh: browserState not initialized");
             }
         });
         header.appendChild(refreshButton);
         
         // Add CSS for the refresh button
-        const style = document.createElement('style');
+        const style = document.createElement("style");
         style.textContent = `
             #global-refresh-button.refreshing {
                 animation: pulse 0.5s 1;
@@ -141,44 +141,44 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTabData();
     
     // Load data for the active tab
-    const activeTab = document.querySelector('.tab-btn.active');
-    const activeTabId = activeTab ? activeTab.getAttribute('data-tab') : 'history';
+    const activeTab = document.querySelector(".tab-btn.active");
+    const activeTabId = activeTab ? activeTab.getAttribute("data-tab") : "history";
     loadTabData(activeTabId);
     
     // Update summary statistics
     updateAllSummaryStats();
     
     // Initialize event listeners
-    document.getElementById('refresh-storage').addEventListener('click', loadLocalStorageData);
-    document.getElementById('export-json').addEventListener('click', exportLocalStorageAsJson);
+    document.getElementById("refresh-storage").addEventListener("click", loadLocalStorageData);
+    document.getElementById("export-json").addEventListener("click", exportLocalStorageAsJson);
     
     // Nano summaries event listeners
-    document.getElementById('refresh-nano-summaries').addEventListener('click', loadNanoSummariesData);
-    document.getElementById('clear-nano-summaries').addEventListener('click', clearNanoSummariesData);
-    document.getElementById('nano-summaries-filter').addEventListener('input', filterNanoSummariesItems);
-    document.getElementById('clear-summary-queue').addEventListener('click', clearSummaryQueueFromDebug);
-    document.getElementById('process-summary-queue').addEventListener('click', processSummaryQueueFromDebug);
-    document.getElementById('reset-crash-counter').addEventListener('click', resetCrashCounterFromDebug);
-    document.getElementById('clear-all').addEventListener('click', clearAllStorage);
-    document.getElementById('storage-filter').addEventListener('input', filterStorageItems);
+    document.getElementById("refresh-nano-summaries").addEventListener("click", loadNanoSummariesData);
+    document.getElementById("clear-nano-summaries").addEventListener("click", clearNanoSummariesData);
+    document.getElementById("nano-summaries-filter").addEventListener("input", filterNanoSummariesItems);
+    document.getElementById("clear-summary-queue").addEventListener("click", clearSummaryQueueFromDebug);
+    document.getElementById("process-summary-queue").addEventListener("click", processSummaryQueueFromDebug);
+    document.getElementById("reset-crash-counter").addEventListener("click", resetCrashCounterFromDebug);
+    document.getElementById("clear-all").addEventListener("click", clearAllStorage);
+    document.getElementById("storage-filter").addEventListener("input", filterStorageItems);
     
     // Tabtopia-specific listeners
-    document.getElementById('refresh-history')?.addEventListener('click', loadHistoryData);
-    document.getElementById('clear-history')?.addEventListener('click', clearHistoryData);
-    document.getElementById('history-filter')?.addEventListener('input', filterHistoryItems);
+    document.getElementById("refresh-history")?.addEventListener("click", loadHistoryData);
+    document.getElementById("clear-history")?.addEventListener("click", clearHistoryData);
+    document.getElementById("history-filter")?.addEventListener("input", filterHistoryItems);
     
-    document.getElementById('refresh-relationships')?.addEventListener('click', loadRelationshipData);
-    document.getElementById('visualize-relationships')?.addEventListener('click', visualizeRelationships);
-    document.getElementById('relationships-filter')?.addEventListener('input', filterRelationshipItems);
+    document.getElementById("refresh-relationships")?.addEventListener("click", loadRelationshipData);
+    document.getElementById("visualize-relationships")?.addEventListener("click", visualizeRelationships);
+    document.getElementById("relationships-filter")?.addEventListener("input", filterRelationshipItems);
     
-    document.getElementById('refresh-activity')?.addEventListener('click', loadActivityData);
-    document.getElementById('clear-activity')?.addEventListener('click', clearActivityData);
-    document.getElementById('activity-filter')?.addEventListener('input', filterActivityItems);
-    document.getElementById('activity-type-filter')?.addEventListener('change', filterActivityItems);
+    document.getElementById("refresh-activity")?.addEventListener("click", loadActivityData);
+    document.getElementById("clear-activity")?.addEventListener("click", clearActivityData);
+    document.getElementById("activity-filter")?.addEventListener("input", filterActivityItems);
+    document.getElementById("activity-type-filter")?.addEventListener("change", filterActivityItems);
     
-    document.getElementById('refresh-graph-data')?.addEventListener('click', loadGraphData);
-    document.getElementById('export-graph-data')?.addEventListener('click', exportGraphData);
-    document.getElementById('clear-graph-data')?.addEventListener('click', clearGraphData);
+    document.getElementById("refresh-graph-data")?.addEventListener("click", loadGraphData);
+    document.getElementById("export-graph-data")?.addEventListener("click", exportGraphData);
+    document.getElementById("clear-graph-data")?.addEventListener("click", clearGraphData);
     
     // Graph subtabs are initialized in initGraphSubtabs()
 });
@@ -187,12 +187,12 @@ document.addEventListener('DOMContentLoaded', () => {
  * Add this script to all pages to enable keyboard shortcut access to debug page
  * Alt+D will open the debug page
  */
-if (window.location.href.indexOf('debug.html') === -1) {
-    document.addEventListener('keydown', (event) => {
+if (window.location.href.indexOf("debug.html") === -1) {
+    document.addEventListener("keydown", (event) => {
         // Alt+D shortcut to access debug page
-        if (event.altKey && event.key === 'd') {
+        if (event.altKey && event.key === "d") {
             event.preventDefault();
-            window.location.href = 'debug.html';
+            window.location.href = "debug.html";
         }
     });
 }
@@ -201,18 +201,18 @@ if (window.location.href.indexOf('debug.html') === -1) {
  * Initialize tab functionality
  */
 function initTabs() {
-    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabButtons = document.querySelectorAll(".tab-btn");
     
     tabButtons.forEach(button => {
-        button.addEventListener('click', () => {
+        button.addEventListener("click", () => {
             // Remove active class from all buttons and contents
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+            document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
             
             // Add active class to clicked button and corresponding content
-            button.classList.add('active');
-            const tabId = button.getAttribute('data-tab');
-            document.getElementById(tabId).classList.add('active');
+            button.classList.add("active");
+            const tabId = button.getAttribute("data-tab");
+            document.getElementById(tabId).classList.add("active");
             
             // Load data for the selected tab
             loadTabData(tabId);
@@ -224,24 +224,24 @@ function initTabs() {
  * Initialize graph subtabs
  */
 function initGraphSubtabs() {
-    document.querySelectorAll('.graph-subtabs .tab-btn').forEach(button => {
-        button.addEventListener('click', (e) => {
-            document.querySelectorAll('.graph-subtabs .tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.subtab-content').forEach(content => content.classList.remove('active'));
+    document.querySelectorAll(".graph-subtabs .tab-btn").forEach(button => {
+        button.addEventListener("click", (e) => {
+            document.querySelectorAll(".graph-subtabs .tab-btn").forEach(btn => btn.classList.remove("active"));
+            document.querySelectorAll(".subtab-content").forEach(content => content.classList.remove("active"));
             
-            e.target.classList.add('active');
-            const subtabId = e.target.getAttribute('data-subtab');
-            document.getElementById(`${subtabId}-content`).classList.add('active');
+            e.target.classList.add("active");
+            const subtabId = e.target.getAttribute("data-subtab");
+            document.getElementById(`${subtabId}-content`).classList.add("active");
             
             // Reload the appropriate data for the subtab
             switch(subtabId) {
-                case 'graph-summaries':
+                case "graph-summaries":
                     loadGraphSummaries();
                     break;
-                case 'graph-edges':
+                case "graph-edges":
                     loadGraphEdges();
                     break;
-                case 'graph-positions':
+                case "graph-positions":
                     loadGraphPositions();
                     break;
             }
@@ -255,36 +255,36 @@ function initGraphSubtabs() {
  */
 function loadTabData(tabId) {
     // Clear any existing loading indicators
-    const loadingIndicator = document.getElementById('loading-indicator') || createLoadingIndicator();
+    const loadingIndicator = document.getElementById("loading-indicator") || createLoadingIndicator();
     showLoadingIndicator(loadingIndicator, true);
     
     try {
         switch (tabId) {
-            case 'history':
+            case "history":
                 loadHistoryData();
                 break;
-            case 'relationships':
+            case "relationships":
                 loadRelationshipData();
                 break;
-            case 'activity':
+            case "activity":
                 loadActivityData();
                 break;
-            case 'graphs':
+            case "graphs":
                 loadGraphData();
                 break;
-            case 'nanoSummaries':
+            case "nanoSummaries":
                 loadNanoSummariesData();
                 break;
-            case 'localStorage':
+            case "localStorage":
                 loadLocalStorageData();
                 break;
-            case 'sessionStorage':
+            case "sessionStorage":
                 // Not implemented yet
                 break;
-            case 'indexedDB':
+            case "indexedDB":
                 // Not implemented yet
                 break;
-            case 'chrome':
+            case "chrome":
                 // Not implemented yet
                 break;
         }
@@ -301,13 +301,13 @@ function loadTabData(tabId) {
  */
 function createLoadingIndicator() {
     // Check if it already exists
-    let indicator = document.getElementById('loading-indicator');
+    let indicator = document.getElementById("loading-indicator");
     if (indicator) return indicator;
     
     // Create new indicator
-    indicator = document.createElement('div');
-    indicator.id = 'loading-indicator';
-    indicator.textContent = 'Loading data...';
+    indicator = document.createElement("div");
+    indicator.id = "loading-indicator";
+    indicator.textContent = "Loading data...";
     indicator.style.cssText = `
         position: fixed;
         top: 50%;
@@ -334,7 +334,7 @@ function createLoadingIndicator() {
  */
 function showLoadingIndicator(indicator, show) {
     if (indicator) {
-        indicator.style.display = show ? 'block' : 'none';
+        indicator.style.display = show ? "block" : "none";
     }
 }
 
@@ -342,29 +342,29 @@ function showLoadingIndicator(indicator, show) {
  * Load browsing history data from browserState
  */
 async function loadHistoryData() {
-    const historyContainer = document.getElementById('history-entries');
+    const historyContainer = document.getElementById("history-entries");
     if (!historyContainer) return;
     
-    historyContainer.innerHTML = '<div class="loading">Loading browsing history...</div>';
+    historyContainer.innerHTML = "<div class=\"loading\">Loading browsing history...</div>";
     
     try {
         // Get browserState from the window object (it's defined in state.js)
         if (!window.browserState) {
-            historyContainer.innerHTML = '<div class="error">Error: browserState not available</div>';
+            historyContainer.innerHTML = "<div class=\"error\">Error: browserState not available</div>";
             return;
         }
         
         // Get state from browserState
         const state = await window.browserState.getState();
-        console.log('Retrieved state for history:', state);
-        console.log('tabHistory data:', state.tabHistory);
-        console.log('tabHistory type:', typeof state.tabHistory);
-        console.log('tabHistory length/size:', Array.isArray(state.tabHistory) ? state.tabHistory.length : state.tabHistory?.size || 'unknown');
+        console.log("Retrieved state for history:", state);
+        console.log("tabHistory data:", state.tabHistory);
+        console.log("tabHistory type:", typeof state.tabHistory);
+        console.log("tabHistory length/size:", Array.isArray(state.tabHistory) ? state.tabHistory.length : state.tabHistory?.size || "unknown");
         const tabHistory = state.tabHistory;
         
         if (!tabHistory || (Array.isArray(tabHistory) && tabHistory.length === 0) || 
             (tabHistory instanceof Map && tabHistory.size === 0)) {
-            historyContainer.innerHTML = '<div class="info-message">No browsing history found</div>';
+            historyContainer.innerHTML = "<div class=\"info-message\">No browsing history found</div>";
             updateHistoryStats(0);
             return;
         }
@@ -373,11 +373,11 @@ async function loadHistoryData() {
         const historyEntries = [];
         let totalEntries = 0;
         
-        console.log('Processing tabHistory...');
+        console.log("Processing tabHistory...");
         
         // Handle both Map and Array formats
         if (tabHistory instanceof Map) {
-            console.log('Processing as Map format');
+            console.log("Processing as Map format");
             // Process as Map (original format)
             for (const [tabId, entries] of tabHistory.entries()) {
                 totalEntries += entries.length;
@@ -389,20 +389,20 @@ async function loadHistoryData() {
                 });
             }
         } else if (Array.isArray(tabHistory)) {
-            console.log('Processing as Array format');
+            console.log("Processing as Array format");
             // Process as Array (format from background script)
             totalEntries = tabHistory.length;
             tabHistory.forEach(entry => {
                 historyEntries.push(entry);
             });
         } else {
-            console.error('Unknown tabHistory format:', tabHistory);
-            historyContainer.innerHTML = '<div class="error">Error: Unknown tabHistory format</div>';
+            console.error("Unknown tabHistory format:", tabHistory);
+            historyContainer.innerHTML = "<div class=\"error\">Error: Unknown tabHistory format</div>";
             return;
         }
         
-        console.log('Processed history entries:', historyEntries.length);
-        console.log('Sample entry:', historyEntries[0]);
+        console.log("Processed history entries:", historyEntries.length);
+        console.log("Sample entry:", historyEntries[0]);
         
         // Sort by timestamp (descending)
         historyEntries.sort((a, b) => b.timestamp - a.timestamp);
@@ -411,10 +411,10 @@ async function loadHistoryData() {
         updateHistoryStats(historyEntries.length, totalEntries);
         
         // Render history entries
-        console.log('Rendering history entries...');
-        historyContainer.innerHTML = '';
-        console.log('History container element:', historyContainer);
-        console.log('History container innerHTML cleared');
+        console.log("Rendering history entries...");
+        historyContainer.innerHTML = "";
+        console.log("History container element:", historyContainer);
+        console.log("History container innerHTML cleared");
         
         historyEntries.forEach((entry, index) => {
             console.log(`Creating element for entry ${index}:`, entry);
@@ -422,15 +422,15 @@ async function loadHistoryData() {
             historyContainer.appendChild(entryElement);
         });
         
-        console.log('Finished rendering history entries');
-        console.log('Final container innerHTML length:', historyContainer.innerHTML.length);
+        console.log("Finished rendering history entries");
+        console.log("Final container innerHTML length:", historyContainer.innerHTML.length);
         
         // Add filter counts
-        document.getElementById('history-total-count').textContent = historyEntries.length;
-        document.getElementById('history-filtered-count').textContent = historyEntries.length;
+        document.getElementById("history-total-count").textContent = historyEntries.length;
+        document.getElementById("history-filtered-count").textContent = historyEntries.length;
         
     } catch (error) {
-        console.error('Error loading browsing history:', error);
+        console.error("Error loading browsing history:", error);
         historyContainer.innerHTML = `<div class="error">Error loading history: ${error.message}</div>`;
     }
 }
@@ -451,8 +451,8 @@ function updateHistoryStats(visibleEntries, totalEntries = visibleEntries) {
  * @returns {HTMLElement} - The entry element
  */
 function createHistoryEntryElement(entry) {
-    const itemElement = document.createElement('div');
-    itemElement.className = 'storage-item';
+    const itemElement = document.createElement("div");
+    itemElement.className = "storage-item";
     itemElement.dataset.tabId = entry.tabId;
     itemElement.dataset.url = entry.url;
     
@@ -462,7 +462,7 @@ function createHistoryEntryElement(entry) {
     
     // Get favicon if available
     const faviconUrl = getFaviconUrl(entry.url);
-    const faviconImg = faviconUrl ? `<img src="${faviconUrl}" class="favicon" alt="" />` : '';
+    const faviconImg = faviconUrl ? `<img src="${faviconUrl}" class="favicon" alt="" />` : "";
     
     // Create content
     itemElement.innerHTML = `
@@ -473,7 +473,7 @@ function createHistoryEntryElement(entry) {
         <div class="storage-value">
             ${faviconImg} ${escapeHtml(entry.title || entry.url)}
             <br><small>${escapeHtml(entry.url)}</small>
-            ${entry.dwellTimeMs ? `<span class="dwell-time">${formatDuration(entry.dwellTimeMs)}</span>` : ''}
+            ${entry.dwellTimeMs ? `<span class="dwell-time">${formatDuration(entry.dwellTimeMs)}</span>` : ""}
         </div>
         <div class="storage-actions">
             <button class="view-details" title="View details">👁️</button>
@@ -481,17 +481,17 @@ function createHistoryEntryElement(entry) {
     `;
     
     // Add error handling for favicon images
-    const faviconElement = itemElement.querySelector('.favicon');
+    const faviconElement = itemElement.querySelector(".favicon");
     if (faviconElement) {
-        faviconElement.addEventListener('error', function() {
-            this.style.display = 'none';
+        faviconElement.addEventListener("error", function() {
+            this.style.display = "none";
         });
     }
     
     // Add event listeners
-    const viewDetailsButton = itemElement.querySelector('.view-details');
+    const viewDetailsButton = itemElement.querySelector(".view-details");
     if (viewDetailsButton) {
-        viewDetailsButton.addEventListener('click', () => {
+        viewDetailsButton.addEventListener("click", () => {
             showHistoryEntryDetails(entry);
         });
     }
@@ -503,8 +503,8 @@ function createHistoryEntryElement(entry) {
  * Filter history items based on input text
  */
 function filterHistoryItems() {
-    const filterText = document.getElementById('history-filter').value.toLowerCase();
-    const items = document.querySelectorAll('#history-entries .storage-item');
+    const filterText = document.getElementById("history-filter").value.toLowerCase();
+    const items = document.querySelectorAll("#history-entries .storage-item");
     let visibleCount = 0;
     
     items.forEach(item => {
@@ -513,14 +513,14 @@ function filterHistoryItems() {
         const textContent = item.textContent.toLowerCase();
         
         if (url.includes(filterText) || tabId.includes(filterText) || textContent.includes(filterText)) {
-            item.style.display = '';
+            item.style.display = "";
             visibleCount++;
         } else {
-            item.style.display = 'none';
+            item.style.display = "none";
         }
     });
     
-    document.getElementById('history-filtered-count').textContent = visibleCount;
+    document.getElementById("history-filtered-count").textContent = visibleCount;
 }
 
 /**
@@ -529,11 +529,11 @@ function filterHistoryItems() {
  */
 function showHistoryEntryDetails(entry) {
     // Create modal if it doesn't exist
-    let modal = document.getElementById('details-modal');
+    let modal = document.getElementById("details-modal");
     if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'details-modal';
-        modal.className = 'modal';
+        modal = document.createElement("div");
+        modal.id = "details-modal";
+        modal.className = "modal";
         modal.innerHTML = `
             <div class="modal-content">
                 <span class="close-modal">&times;</span>
@@ -544,20 +544,20 @@ function showHistoryEntryDetails(entry) {
         document.body.appendChild(modal);
         
         // Add close button functionality
-        const closeBtn = modal.querySelector('.close-modal');
-        closeBtn.addEventListener('click', () => {
-            modal.style.display = 'none';
+        const closeBtn = modal.querySelector(".close-modal");
+        closeBtn.addEventListener("click", () => {
+            modal.style.display = "none";
         });
         
         // Close on click outside
-        window.addEventListener('click', (event) => {
+        window.addEventListener("click", (event) => {
             if (event.target === modal) {
-                modal.style.display = 'none';
+                modal.style.display = "none";
             }
         });
         
         // Add styles if needed
-        const style = document.createElement('style');
+        const style = document.createElement("style");
         style.textContent = `
             .modal {
                 display: none;
@@ -607,20 +607,20 @@ function showHistoryEntryDetails(entry) {
     }
     
     // Populate modal content
-    const modalContent = modal.querySelector('#modal-content');
-    modalContent.innerHTML = '';
+    const modalContent = modal.querySelector("#modal-content");
+    modalContent.innerHTML = "";
     
     // Append all entry properties
     Object.entries(entry).forEach(([key, value]) => {
-        const row = document.createElement('div');
-        row.className = 'detail-row';
+        const row = document.createElement("div");
+        row.className = "detail-row";
         
         let formattedValue = value;
-        if (key === 'timestamp') {
+        if (key === "timestamp") {
             formattedValue = new Date(value).toLocaleString();
-        } else if (key === 'dwellTimeMs') {
+        } else if (key === "dwellTimeMs") {
             formattedValue = `${value} ms (${formatDuration(value)})`;
-        } else if (typeof value === 'object' && value !== null) {
+        } else if (typeof value === "object" && value !== null) {
             formattedValue = JSON.stringify(value, null, 2);
         }
         
@@ -635,8 +635,8 @@ function showHistoryEntryDetails(entry) {
     // Add additional information if available
     if (window.browserState) {
         // Add a section for looking up related data
-        const actionSection = document.createElement('div');
-        actionSection.className = 'detail-row action-section';
+        const actionSection = document.createElement("div");
+        actionSection.className = "detail-row action-section";
         actionSection.innerHTML = `
             <div class="detail-label">Actions</div>
             <div class="detail-value">
@@ -647,17 +647,17 @@ function showHistoryEntryDetails(entry) {
         modalContent.appendChild(actionSection);
         
         // Add event listeners for actions
-        actionSection.querySelector('#find-related-tabs').addEventListener('click', () => {
+        actionSection.querySelector("#find-related-tabs").addEventListener("click", () => {
             findRelatedTabs(entry.tabId);
         });
         
-        actionSection.querySelector('#find-related-activity').addEventListener('click', () => {
+        actionSection.querySelector("#find-related-activity").addEventListener("click", () => {
             findRelatedActivity(entry.tabId, entry.url);
         });
     }
     
     // Show the modal
-    modal.style.display = 'block';
+    modal.style.display = "block";
 }
 
 /**
@@ -666,12 +666,12 @@ function showHistoryEntryDetails(entry) {
  */
 function findRelatedTabs(tabId) {
     // Switch to relationships tab
-    const relationshipsTab = document.querySelector('.tab-btn[data-tab="relationships"]');
+    const relationshipsTab = document.querySelector(".tab-btn[data-tab=\"relationships\"]");
     if (relationshipsTab) {
         relationshipsTab.click();
         
         // Set the filter to the tab ID
-        const filter = document.getElementById('relationships-filter');
+        const filter = document.getElementById("relationships-filter");
         if (filter) {
             filter.value = tabId;
             filterRelationshipItems();
@@ -686,12 +686,12 @@ function findRelatedTabs(tabId) {
  */
 function findRelatedActivity(tabId, url) {
     // Switch to activity tab
-    const activityTab = document.querySelector('.tab-btn[data-tab="activity"]');
+    const activityTab = document.querySelector(".tab-btn[data-tab=\"activity\"]");
     if (activityTab) {
         activityTab.click();
         
         // Set the filter to the tab ID
-        const filter = document.getElementById('activity-filter');
+        const filter = document.getElementById("activity-filter");
         if (filter) {
             filter.value = tabId;
             filterActivityItems();
@@ -703,16 +703,16 @@ function findRelatedActivity(tabId, url) {
  * Clear browsing history data
  */
 function clearHistoryData() {
-    if (confirm('Are you sure you want to clear browsing history data?')) {
+    if (confirm("Are you sure you want to clear browsing history data?")) {
         // Send message to background script to clear history
         chrome.runtime.sendMessage({ 
-            action: 'clearTabHistory' 
+            action: "clearTabHistory" 
         }, (response) => {
             if (response && response.success) {
                 loadHistoryData(); // Reload the data
-                alert('Browsing history cleared successfully');
+                alert("Browsing history cleared successfully");
             } else {
-                alert('Failed to clear browsing history');
+                alert("Failed to clear browsing history");
             }
         });
     }
@@ -728,7 +728,7 @@ function getFaviconUrl(url) {
         const urlObj = new URL(url);
         return `chrome://favicon/${urlObj.origin}`;
     } catch (e) {
-        return '';
+        return "";
     }
 }
 
@@ -756,25 +756,25 @@ function formatDuration(ms) {
  * Load tab relationship data from browserState
  */
 async function loadRelationshipData() {
-    const relationshipContainer = document.getElementById('relationship-entries');
+    const relationshipContainer = document.getElementById("relationship-entries");
     if (!relationshipContainer) return;
     
-    relationshipContainer.innerHTML = '<div class="loading">Loading tab relationships...</div>';
+    relationshipContainer.innerHTML = "<div class=\"loading\">Loading tab relationships...</div>";
     
     try {
         if (!window.browserState) {
-            relationshipContainer.innerHTML = '<div class="error">Error: browserState not available</div>';
+            relationshipContainer.innerHTML = "<div class=\"error\">Error: browserState not available</div>";
             return;
         }
         
         const state = await window.browserState.getState();
-        console.log('Retrieved state for relationships:', state);
+        console.log("Retrieved state for relationships:", state);
         const tabRelationships = state.tabRelationships;
         
         if (!tabRelationships || 
             (tabRelationships instanceof Map && tabRelationships.size === 0) ||
             (Array.isArray(tabRelationships) && tabRelationships.length === 0)) {
-            relationshipContainer.innerHTML = '<div class="info-message">No tab relationships found</div>';
+            relationshipContainer.innerHTML = "<div class=\"info-message\">No tab relationships found</div>";
             return;
         }
         
@@ -796,8 +796,8 @@ async function loadRelationshipData() {
                 relationshipEntries.push(entry);
             });
         } else {
-            console.error('Unknown tabRelationships format:', tabRelationships);
-            relationshipContainer.innerHTML = '<div class="error">Error: Unknown relationship format</div>';
+            console.error("Unknown tabRelationships format:", tabRelationships);
+            relationshipContainer.innerHTML = "<div class=\"error\">Error: Unknown relationship format</div>";
             return;
         }
         
@@ -810,14 +810,14 @@ async function loadRelationshipData() {
         });
         
         // Render relationships
-        relationshipContainer.innerHTML = '';
+        relationshipContainer.innerHTML = "";
         relationshipEntries.forEach(entry => {
             const entryElement = createRelationshipElement(entry);
             relationshipContainer.appendChild(entryElement);
         });
         
     } catch (error) {
-        console.error('Error loading tab relationships:', error);
+        console.error("Error loading tab relationships:", error);
         relationshipContainer.innerHTML = `<div class="error">Error loading relationships: ${error.message}</div>`;
     }
 }
@@ -828,13 +828,13 @@ async function loadRelationshipData() {
  * @returns {HTMLElement} - The entry element
  */
 function createRelationshipElement(relationship) {
-    const itemElement = document.createElement('div');
-    itemElement.className = 'storage-item relationship-item';
+    const itemElement = document.createElement("div");
+    itemElement.className = "storage-item relationship-item";
     itemElement.dataset.tabId = relationship.tabId;
     if (relationship.referringTabId) itemElement.dataset.referringTabId = relationship.referringTabId;
     
     // Get creation time if available
-    let timeDisplay = '';
+    let timeDisplay = "";
     if (relationship.creationTime) {
         const date = new Date(relationship.creationTime);
         timeDisplay = `<br><small>${date.toLocaleString()}</small>`;
@@ -848,11 +848,11 @@ function createRelationshipElement(relationship) {
         <div class="storage-value">
             ${relationship.referringTabId ? 
                 `Opened from <span class="referring-tab">Tab ${relationship.referringTabId}</span>` : 
-                'Root tab (no referrer)'}
+                "Root tab (no referrer)"}
             ${relationship.referringURL ? 
-                `<br><small>From: ${escapeHtml(relationship.referringURL)}</small>` : ''}
+                `<br><small>From: ${escapeHtml(relationship.referringURL)}</small>` : ""}
             ${relationship.linkText ? 
-                `<br><span class="link-text">${escapeHtml(relationship.linkText)}</span>` : ''}
+                `<br><span class="link-text">${escapeHtml(relationship.linkText)}</span>` : ""}
         </div>
         <div class="storage-actions">
             <button class="view-details" title="View details">👁️</button>
@@ -860,9 +860,9 @@ function createRelationshipElement(relationship) {
     `;
     
     // Add event listeners
-    const viewDetailsButton = itemElement.querySelector('.view-details');
+    const viewDetailsButton = itemElement.querySelector(".view-details");
     if (viewDetailsButton) {
-        viewDetailsButton.addEventListener('click', () => {
+        viewDetailsButton.addEventListener("click", () => {
             showRelationshipDetails(relationship);
         });
     }
@@ -874,20 +874,20 @@ function createRelationshipElement(relationship) {
  * Filter relationship items based on input text
  */
 function filterRelationshipItems() {
-    const filterText = document.getElementById('relationships-filter').value.toLowerCase();
-    const items = document.querySelectorAll('#relationship-entries .storage-item');
+    const filterText = document.getElementById("relationships-filter").value.toLowerCase();
+    const items = document.querySelectorAll("#relationship-entries .storage-item");
     let visibleCount = 0;
     
     items.forEach(item => {
         const tabId = item.dataset.tabId;
-        const referringTabId = item.dataset.referringTabId || '';
+        const referringTabId = item.dataset.referringTabId || "";
         const textContent = item.textContent.toLowerCase();
         
         if (tabId.includes(filterText) || referringTabId.includes(filterText) || textContent.includes(filterText)) {
-            item.style.display = '';
+            item.style.display = "";
             visibleCount++;
         } else {
-            item.style.display = 'none';
+            item.style.display = "none";
         }
     });
 }
@@ -906,11 +906,11 @@ function showRelationshipDetails(relationship) {
  */
 function visualizeRelationships() {
     // Create modal if it doesn't exist
-    let modal = document.getElementById('visualization-modal');
+    let modal = document.getElementById("visualization-modal");
     if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'visualization-modal';
-        modal.className = 'modal';
+        modal = document.createElement("div");
+        modal.id = "visualization-modal";
+        modal.className = "modal";
         modal.innerHTML = `
             <div class="modal-content full-size">
                 <span class="close-modal">&times;</span>
@@ -921,20 +921,20 @@ function visualizeRelationships() {
         document.body.appendChild(modal);
         
         // Add close button functionality
-        const closeBtn = modal.querySelector('.close-modal');
-        closeBtn.addEventListener('click', () => {
-            modal.style.display = 'none';
+        const closeBtn = modal.querySelector(".close-modal");
+        closeBtn.addEventListener("click", () => {
+            modal.style.display = "none";
         });
         
         // Close on click outside
-        window.addEventListener('click', (event) => {
+        window.addEventListener("click", (event) => {
             if (event.target === modal) {
-                modal.style.display = 'none';
+                modal.style.display = "none";
             }
         });
         
         // Add styles
-        const style = document.createElement('style');
+        const style = document.createElement("style");
         style.textContent = `
             .full-size {
                 width: 90%;
@@ -946,7 +946,7 @@ function visualizeRelationships() {
     }
     
     // Show the modal
-    modal.style.display = 'block';
+    modal.style.display = "block";
     
     // Load relationship data for visualization
     loadRelationshipsForGraph();
@@ -956,14 +956,14 @@ function visualizeRelationships() {
  * Load relationship data for graph visualization
  */
 async function loadRelationshipsForGraph() {
-    const graphContainer = document.getElementById('graph-container');
+    const graphContainer = document.getElementById("graph-container");
     if (!graphContainer) return;
     
-    graphContainer.innerHTML = 'Loading graph data...';
+    graphContainer.innerHTML = "Loading graph data...";
     
     try {
         if (!window.browserState) {
-            graphContainer.innerHTML = 'Error: browserState not available';
+            graphContainer.innerHTML = "Error: browserState not available";
             return;
         }
         
@@ -971,7 +971,7 @@ async function loadRelationshipsForGraph() {
         const tabRelationships = state.tabRelationships;
         
         if (!tabRelationships || tabRelationships.size === 0) {
-            graphContainer.innerHTML = 'No tab relationships found';
+            graphContainer.innerHTML = "No tab relationships found";
             return;
         }
         
@@ -979,9 +979,9 @@ async function loadRelationshipsForGraph() {
         if (!window.d3) {
             // Try to load D3 dynamically
             try {
-                await loadScript('/src/lib/d3.min.js');
+                await loadScript("/src/lib/d3.min.js");
             } catch (e) {
-                graphContainer.innerHTML = 'Error: D3.js not available. Unable to visualize relationships.';
+                graphContainer.innerHTML = "Error: D3.js not available. Unable to visualize relationships.";
                 return;
             }
         }
@@ -990,7 +990,7 @@ async function loadRelationshipsForGraph() {
         createRelationshipGraph(graphContainer, tabRelationships);
         
     } catch (error) {
-        console.error('Error loading graph data:', error);
+        console.error("Error loading graph data:", error);
         graphContainer.innerHTML = `Error loading graph data: ${error.message}`;
     }
 }
@@ -1002,7 +1002,7 @@ async function loadRelationshipsForGraph() {
  */
 function createRelationshipGraph(container, tabRelationships) {
     // Clear the container
-    container.innerHTML = '';
+    container.innerHTML = "";
     
     // Set up the data structures for D3
     const nodes = [];
@@ -1032,7 +1032,7 @@ function createRelationshipGraph(container, tabRelationships) {
                 source: relationship.referringTabId,
                 target: tabId,
                 value: 1,
-                linkText: relationship.linkText || ''
+                linkText: relationship.linkText || ""
             });
         }
     }
@@ -1041,59 +1041,59 @@ function createRelationshipGraph(container, tabRelationships) {
     const width = container.clientWidth;
     const height = container.clientHeight || 500;
     
-    const svg = d3.select(container).append('svg')
-        .attr('width', width)
-        .attr('height', height);
+    const svg = d3.select(container).append("svg")
+        .attr("width", width)
+        .attr("height", height);
     
     // Create the simulation
     const simulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(links).id(d => d.id).distance(100))
-        .force('charge', d3.forceManyBody().strength(-300))
-        .force('center', d3.forceCenter(width / 2, height / 2));
+        .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+        .force("charge", d3.forceManyBody().strength(-300))
+        .force("center", d3.forceCenter(width / 2, height / 2));
     
     // Draw the links
-    const link = svg.append('g')
-        .selectAll('line')
+    const link = svg.append("g")
+        .selectAll("line")
         .data(links)
-        .enter().append('line')
-        .attr('stroke', '#999')
-        .attr('stroke-opacity', 0.6)
-        .attr('stroke-width', d => Math.sqrt(d.value));
+        .enter().append("line")
+        .attr("stroke", "#999")
+        .attr("stroke-opacity", 0.6)
+        .attr("stroke-width", d => Math.sqrt(d.value));
     
     // Draw the nodes
-    const node = svg.append('g')
-        .selectAll('circle')
+    const node = svg.append("g")
+        .selectAll("circle")
         .data(nodes)
-        .enter().append('circle')
-        .attr('r', 5)
-        .attr('fill', d => d.group === 1 ? '#3498db' : '#e74c3c')
+        .enter().append("circle")
+        .attr("r", 5)
+        .attr("fill", d => d.group === 1 ? "#3498db" : "#e74c3c")
         .call(drag(simulation));
     
     // Add node labels
-    const label = svg.append('g')
-        .selectAll('text')
+    const label = svg.append("g")
+        .selectAll("text")
         .data(nodes)
-        .enter().append('text')
-        .attr('font-size', 10)
-        .attr('dx', 8)
-        .attr('dy', '.35em')
+        .enter().append("text")
+        .attr("font-size", 10)
+        .attr("dx", 8)
+        .attr("dy", ".35em")
         .text(d => d.id);
     
     // Update positions on tick
-    simulation.on('tick', () => {
+    simulation.on("tick", () => {
         link
-            .attr('x1', d => d.source.x)
-            .attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
         
         node
-            .attr('cx', d => d.x)
-            .attr('cy', d => d.y);
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y);
         
         label
-            .attr('x', d => d.x)
-            .attr('y', d => d.y);
+            .attr("x", d => d.x)
+            .attr("y", d => d.y);
     });
     
     // Drag functionality
@@ -1116,9 +1116,9 @@ function createRelationshipGraph(container, tabRelationships) {
         }
         
         return d3.drag()
-            .on('start', dragstarted)
-            .on('drag', dragged)
-            .on('end', dragended);
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended);
     }
 }
 
@@ -1129,7 +1129,7 @@ function createRelationshipGraph(container, tabRelationships) {
  */
 function loadScript(src) {
     return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
+        const script = document.createElement("script");
         script.src = src;
         script.onload = () => resolve();
         script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
@@ -1141,22 +1141,22 @@ function loadScript(src) {
  * Load graph data from browserState
  */
 async function loadGraphData() {
-    const graphDataContainer = document.getElementById('graph-data');
+    const graphDataContainer = document.getElementById("graph-data");
     if (!graphDataContainer) return;
     
     // Find active subtab
-    const activeSubtab = document.querySelector('.graph-subtabs .tab-btn.active');
-    const activeSubtabId = activeSubtab ? activeSubtab.getAttribute('data-subtab') : 'graph-summaries';
+    const activeSubtab = document.querySelector(".graph-subtabs .tab-btn.active");
+    const activeSubtabId = activeSubtab ? activeSubtab.getAttribute("data-subtab") : "graph-summaries";
     
     // Load data based on active subtab
     switch (activeSubtabId) {
-        case 'graph-summaries':
+        case "graph-summaries":
             loadGraphSummaries();
             break;
-        case 'graph-edges':
+        case "graph-edges":
             loadGraphEdges();
             break;
-        case 'graph-positions':
+        case "graph-positions":
             loadGraphPositions();
             break;
     }
@@ -1166,22 +1166,22 @@ async function loadGraphData() {
  * Load graph summaries data
  */
 async function loadGraphSummaries() {
-    const container = document.getElementById('graph-summaries-content');
+    const container = document.getElementById("graph-summaries-content");
     if (!container) return;
     
-    container.innerHTML = '<div class="loading">Loading graph summaries...</div>';
+    container.innerHTML = "<div class=\"loading\">Loading graph summaries...</div>";
     
     try {
         if (!window.browserState) {
-            container.innerHTML = '<div class="error">Error: browserState not available</div>';
+            container.innerHTML = "<div class=\"error\">Error: browserState not available</div>";
             return;
         }
         
         const state = await window.browserState.getState();
-        console.log('Retrieved state for graph summaries:', state);
-        console.log('graphData object:', state.graphData);
-        console.log('graphData type:', typeof state.graphData);
-        console.log('graphData keys:', state.graphData ? Object.keys(state.graphData) : 'null');
+        console.log("Retrieved state for graph summaries:", state);
+        console.log("graphData object:", state.graphData);
+        console.log("graphData type:", typeof state.graphData);
+        console.log("graphData keys:", state.graphData ? Object.keys(state.graphData) : "null");
         const graphData = state.graphData?.summaries;
         
         if (!graphData || Object.keys(graphData).length === 0) {
@@ -1195,11 +1195,11 @@ async function loadGraphSummaries() {
         }
         
         // Display graph summaries
-        container.innerHTML = '';
+        container.innerHTML = "";
         
         for (const [key, value] of Object.entries(graphData)) {
-            const itemElement = document.createElement('div');
-            itemElement.className = 'storage-item';
+            const itemElement = document.createElement("div");
+            itemElement.className = "storage-item";
             itemElement.dataset.key = key;
             
             itemElement.innerHTML = `
@@ -1211,9 +1211,9 @@ async function loadGraphSummaries() {
             `;
             
             // Add event listeners
-            const viewDetailsButton = itemElement.querySelector('.view-details');
+            const viewDetailsButton = itemElement.querySelector(".view-details");
             if (viewDetailsButton) {
-                viewDetailsButton.addEventListener('click', () => {
+                viewDetailsButton.addEventListener("click", () => {
                     showGraphDataDetails(key, value);
                 });
             }
@@ -1222,7 +1222,7 @@ async function loadGraphSummaries() {
         }
         
     } catch (error) {
-        console.error('Error loading graph summaries:', error);
+        console.error("Error loading graph summaries:", error);
         container.innerHTML = `<div class="error">Error loading graph summaries: ${error.message}</div>`;
     }
 }
@@ -1231,20 +1231,20 @@ async function loadGraphSummaries() {
  * Load graph edges data
  */
 async function loadGraphEdges() {
-    const container = document.getElementById('graph-edges-content');
+    const container = document.getElementById("graph-edges-content");
     if (!container) return;
     
-    container.innerHTML = '<div class="loading">Loading graph edges...</div>';
+    container.innerHTML = "<div class=\"loading\">Loading graph edges...</div>";
     
     try {
         if (!window.browserState) {
-            container.innerHTML = '<div class="error">Error: browserState not available</div>';
+            container.innerHTML = "<div class=\"error\">Error: browserState not available</div>";
             return;
         }
         
         const state = await window.browserState.getState();
-        console.log('Retrieved state for graph edges:', state);
-        console.log('graphData for edges:', state.graphData);
+        console.log("Retrieved state for graph edges:", state);
+        console.log("graphData for edges:", state.graphData);
         const graphData = state.graphData?.customEdges || (state.graphData && Array.isArray(state.graphData.edges) ? state.graphData.edges : []);
         
         if (!graphData || graphData.length === 0) {
@@ -1258,23 +1258,23 @@ async function loadGraphEdges() {
         }
         
         // Display graph edges
-        container.innerHTML = '';
+        container.innerHTML = "";
         
         graphData.forEach((edge, index) => {
-            const itemElement = document.createElement('div');
-            itemElement.className = 'storage-item';
+            const itemElement = document.createElement("div");
+            itemElement.className = "storage-item";
             itemElement.dataset.index = index;
             
             // Format source and target nodes
-            const sourceNode = edge.source ? `${edge.source.id || 'Unknown'}` : 'Unknown';
-            const targetNode = edge.target ? `${edge.target.id || 'Unknown'}` : 'Unknown';
+            const sourceNode = edge.source ? `${edge.source.id || "Unknown"}` : "Unknown";
+            const targetNode = edge.target ? `${edge.target.id || "Unknown"}` : "Unknown";
             
             itemElement.innerHTML = `
                 <div class="storage-key">Edge ${index + 1}</div>
                 <div class="storage-value">
                     <strong>From:</strong> ${escapeHtml(sourceNode)}<br>
                     <strong>To:</strong> ${escapeHtml(targetNode)}<br>
-                    <strong>Type:</strong> ${edge.type || 'standard'}
+                    <strong>Type:</strong> ${edge.type || "standard"}
                 </div>
                 <div class="storage-actions">
                     <button class="view-details" title="View details">👁️</button>
@@ -1282,9 +1282,9 @@ async function loadGraphEdges() {
             `;
             
             // Add event listeners
-            const viewDetailsButton = itemElement.querySelector('.view-details');
+            const viewDetailsButton = itemElement.querySelector(".view-details");
             if (viewDetailsButton) {
-                viewDetailsButton.addEventListener('click', () => {
+                viewDetailsButton.addEventListener("click", () => {
                     showGraphDataDetails(`Edge ${index + 1}`, edge);
                 });
             }
@@ -1293,7 +1293,7 @@ async function loadGraphEdges() {
         });
         
     } catch (error) {
-        console.error('Error loading graph edges:', error);
+        console.error("Error loading graph edges:", error);
         container.innerHTML = `<div class="error">Error loading graph edges: ${error.message}</div>`;
     }
 }
@@ -1302,20 +1302,20 @@ async function loadGraphEdges() {
  * Load graph node positions data
  */
 async function loadGraphPositions() {
-    const container = document.getElementById('graph-positions-content');
+    const container = document.getElementById("graph-positions-content");
     if (!container) return;
     
-    container.innerHTML = '<div class="loading">Loading node positions...</div>';
+    container.innerHTML = "<div class=\"loading\">Loading node positions...</div>";
     
     try {
         if (!window.browserState) {
-            container.innerHTML = '<div class="error">Error: browserState not available</div>';
+            container.innerHTML = "<div class=\"error\">Error: browserState not available</div>";
             return;
         }
         
         const state = await window.browserState.getState();
-        console.log('Retrieved state for graph positions:', state);
-        console.log('graphData for positions:', state.graphData);
+        console.log("Retrieved state for graph positions:", state);
+        console.log("graphData for positions:", state.graphData);
         const graphData = state.graphData?.nodePositions || (state.graphData && state.graphData.positions ? state.graphData.positions : {});
         
         if (!graphData || Object.keys(graphData).length === 0) {
@@ -1329,11 +1329,11 @@ async function loadGraphPositions() {
         }
         
         // Display node positions
-        container.innerHTML = '';
+        container.innerHTML = "";
         
         for (const [nodeId, position] of Object.entries(graphData)) {
-            const itemElement = document.createElement('div');
-            itemElement.className = 'storage-item';
+            const itemElement = document.createElement("div");
+            itemElement.className = "storage-item";
             itemElement.dataset.nodeId = nodeId;
             
             itemElement.innerHTML = `
@@ -1348,9 +1348,9 @@ async function loadGraphPositions() {
             `;
             
             // Add event listeners
-            const viewDetailsButton = itemElement.querySelector('.view-details');
+            const viewDetailsButton = itemElement.querySelector(".view-details");
             if (viewDetailsButton) {
-                viewDetailsButton.addEventListener('click', () => {
+                viewDetailsButton.addEventListener("click", () => {
                     showGraphDataDetails(nodeId, position);
                 });
             }
@@ -1359,7 +1359,7 @@ async function loadGraphPositions() {
         }
         
     } catch (error) {
-        console.error('Error loading node positions:', error);
+        console.error("Error loading node positions:", error);
         container.innerHTML = `<div class="error">Error loading node positions: ${error.message}</div>`;
     }
 }
@@ -1381,20 +1381,20 @@ function exportGraphData() {
     window.browserState.getState().then(state => {
         const graphData = state.graphData || {};
         const jsonContent = JSON.stringify(graphData, null, 2);
-        const blob = new Blob([jsonContent], { type: 'application/json' });
+        const blob = new Blob([jsonContent], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         
         // Create download link
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
-        a.download = 'tabtopia-graph-data.json';
+        a.download = "tabtopia-graph-data.json";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }).catch(error => {
-        console.error('Error exporting graph data:', error);
-        alert('Failed to export graph data: ' + error.message);
+        console.error("Error exporting graph data:", error);
+        alert("Failed to export graph data: " + error.message);
     });
 }
 
@@ -1402,16 +1402,16 @@ function exportGraphData() {
  * Clear graph data
  */
 function clearGraphData() {
-    if (confirm('Are you sure you want to clear graph data? This will remove custom edges, node positions, and summaries.')) {
+    if (confirm("Are you sure you want to clear graph data? This will remove custom edges, node positions, and summaries.")) {
         // Send message to background script to clear graph data
         chrome.runtime.sendMessage({ 
-            action: 'clearGraphData' 
+            action: "clearGraphData" 
         }, (response) => {
             if (response && response.success) {
                 loadGraphData(); // Reload the data
-                alert('Graph data cleared successfully');
+                alert("Graph data cleared successfully");
             } else {
-                alert('Failed to clear graph data');
+                alert("Failed to clear graph data");
             }
         });
     }
@@ -1423,7 +1423,7 @@ function clearGraphData() {
  * @returns {string} - HTML-escaped string
  */
 function escapeHtml(unsafe) {
-    if (unsafe === null || unsafe === undefined) return '';
+    if (unsafe === null || unsafe === undefined) return "";
     return String(unsafe)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -1436,52 +1436,52 @@ function escapeHtml(unsafe) {
  * Load activity log data from browserState
  */
 async function loadActivityData() {
-    const activityContainer = document.getElementById('activity-entries');
+    const activityContainer = document.getElementById("activity-entries");
     if (!activityContainer) return;
     
-    activityContainer.innerHTML = '<div class="loading">Loading activity log...</div>';
+    activityContainer.innerHTML = "<div class=\"loading\">Loading activity log...</div>";
     
     try {
         if (!window.browserState) {
-            activityContainer.innerHTML = '<div class="error">Error: browserState not available</div>';
+            activityContainer.innerHTML = "<div class=\"error\">Error: browserState not available</div>";
             return;
         }
         
         const state = await window.browserState.getState();
-        console.log('Retrieved state for activity:', state);
+        console.log("Retrieved state for activity:", state);
         const tabActivityLog = state.tabActivityLog;
         
         if (!tabActivityLog || 
             (tabActivityLog instanceof Map && tabActivityLog.size === 0) || 
             (Array.isArray(tabActivityLog) && tabActivityLog.length === 0)) {
-            activityContainer.innerHTML = '<div class="info-message">No activity log found</div>';
+            activityContainer.innerHTML = "<div class=\"info-message\">No activity log found</div>";
             return;
         }
         
         // Process activity log into an array
         const activityEntries = [];
         
-        console.log('Processing tabActivityLog:', tabActivityLog);
-        console.log('tabActivityLog type:', typeof tabActivityLog);
-        console.log('tabActivityLog is Array:', Array.isArray(tabActivityLog));
-        console.log('tabActivityLog is Map:', tabActivityLog instanceof Map);
+        console.log("Processing tabActivityLog:", tabActivityLog);
+        console.log("tabActivityLog type:", typeof tabActivityLog);
+        console.log("tabActivityLog is Array:", Array.isArray(tabActivityLog));
+        console.log("tabActivityLog is Map:", tabActivityLog instanceof Map);
         
         // Handle both Map and Array formats
         if (tabActivityLog instanceof Map) {
-            console.log('Processing as Map format');
+            console.log("Processing as Map format");
             // Process as Map (original format)
             for (const [tabId, activities] of tabActivityLog.entries()) {
                 console.log(`Processing tab ${tabId}:`, activities);
                 if (Array.isArray(activities)) {
                     activities.forEach(activity => {
-                        console.log('Activity from array:', activity);
+                        console.log("Activity from array:", activity);
                         activityEntries.push({
                             tabId,
                             ...activity
                         });
                     });
-                } else if (typeof activities === 'object' && activities !== null) {
-                    console.log('Activity from object:', activities);
+                } else if (typeof activities === "object" && activities !== null) {
+                    console.log("Activity from object:", activities);
                     activityEntries.push({
                         tabId,
                         ...activities
@@ -1489,27 +1489,27 @@ async function loadActivityData() {
                 }
             }
         } else if (Array.isArray(tabActivityLog)) {
-            console.log('Processing as Array format');
+            console.log("Processing as Array format");
             // Process as Array (format from background script)
             tabActivityLog.forEach((entry, index) => {
                 console.log(`Activity entry ${index}:`, entry);
                 activityEntries.push(entry);
             });
         } else {
-            console.error('Unknown tabActivityLog format:', tabActivityLog);
-            activityContainer.innerHTML = '<div class="error">Error: Unknown activity log format</div>';
+            console.error("Unknown tabActivityLog format:", tabActivityLog);
+            activityContainer.innerHTML = "<div class=\"error\">Error: Unknown activity log format</div>";
             return;
         }
         
-        console.log('Processed activity entries:', activityEntries);
-        console.log('Sample activity entry:', activityEntries[0]);
+        console.log("Processed activity entries:", activityEntries);
+        console.log("Sample activity entry:", activityEntries[0]);
         
         // Sort by timestamp (descending)
         activityEntries.sort((a, b) => b.timestamp - a.timestamp);
         
         // Render activity entries
-        console.log('Rendering activity entries...');
-        activityContainer.innerHTML = '';
+        console.log("Rendering activity entries...");
+        activityContainer.innerHTML = "";
         activityEntries.forEach((entry, index) => {
             console.log(`Creating element for activity ${index}:`, entry);
             const entryElement = createActivityElement(entry);
@@ -1517,7 +1517,7 @@ async function loadActivityData() {
         });
         
     } catch (error) {
-        console.error('Error loading activity log:', error);
+        console.error("Error loading activity log:", error);
         activityContainer.innerHTML = `<div class="error">Error loading activity log: ${error.message}</div>`;
     }
 }
@@ -1528,19 +1528,19 @@ async function loadActivityData() {
  * @returns {HTMLElement} - The entry element
  */
 function createActivityElement(activity) {
-    console.log('Creating activity element for:', activity);
-    console.log('Activity properties:', Object.keys(activity));
+    console.log("Creating activity element for:", activity);
+    console.log("Activity properties:", Object.keys(activity));
     
-    const itemElement = document.createElement('div');
-    itemElement.className = 'storage-item';
-    itemElement.dataset.tabId = activity.tabId || 'unknown';
+    const itemElement = document.createElement("div");
+    itemElement.className = "storage-item";
+    itemElement.dataset.tabId = activity.tabId || "unknown";
     
     // Format timestamps
     const firstSeenDate = activity.firstSeen ? new Date(activity.firstSeen) : null;
     const lastTouchDate = activity.lastTouch ? new Date(activity.lastTouch) : null;
     
-    const formattedFirstSeen = firstSeenDate ? firstSeenDate.toLocaleString() : 'Unknown';
-    const formattedLastTouch = lastTouchDate ? lastTouchDate.toLocaleString() : 'Unknown';
+    const formattedFirstSeen = firstSeenDate ? firstSeenDate.toLocaleString() : "Unknown";
+    const formattedLastTouch = lastTouchDate ? lastTouchDate.toLocaleString() : "Unknown";
     
     // Count events and navigations
     const eventCount = activity.events ? activity.events.length : 0;
@@ -1548,13 +1548,13 @@ function createActivityElement(activity) {
     
     // Format total time spent
     const totalTimeFormatted = activity.totalTimeSpent ? 
-        Math.round(activity.totalTimeSpent / 1000) + 's' : '0s';
+        Math.round(activity.totalTimeSpent / 1000) + "s" : "0s";
     
     // Get sample event info
-    let sampleEvent = 'No events';
+    let sampleEvent = "No events";
     if (activity.events && activity.events.length > 0) {
         const firstEvent = activity.events[0];
-        sampleEvent = firstEvent.type || 'Unknown event';
+        sampleEvent = firstEvent.type || "Unknown event";
         if (firstEvent.url) {
             sampleEvent += ` - ${firstEvent.url.substring(0, 50)}...`;
         }
@@ -1563,7 +1563,7 @@ function createActivityElement(activity) {
     // Create content
     itemElement.innerHTML = `
         <div class="storage-key">
-            <span class="tab-id">${activity.tabId || 'Unknown'}</span>
+            <span class="tab-id">${activity.tabId || "Unknown"}</span>
             <br><small>First seen: ${formattedFirstSeen}</small>
             <br><small>Last touch: ${formattedLastTouch}</small>
         </div>
@@ -1578,9 +1578,9 @@ function createActivityElement(activity) {
     `;
     
     // Add event listeners
-    const viewDetailsButton = itemElement.querySelector('.view-details');
+    const viewDetailsButton = itemElement.querySelector(".view-details");
     if (viewDetailsButton) {
-        viewDetailsButton.addEventListener('click', () => {
+        viewDetailsButton.addEventListener("click", () => {
             showActivityDetails(activity);
         });
     }
@@ -1592,9 +1592,9 @@ function createActivityElement(activity) {
  * Filter activity items based on input text and type
  */
 function filterActivityItems() {
-    const filterText = document.getElementById('activity-filter').value.toLowerCase();
-    const filterType = document.getElementById('activity-type-filter').value;
-    const items = document.querySelectorAll('#activity-entries .storage-item');
+    const filterText = document.getElementById("activity-filter").value.toLowerCase();
+    const filterType = document.getElementById("activity-type-filter").value;
+    const items = document.querySelectorAll("#activity-entries .storage-item");
     let visibleCount = 0;
     
     items.forEach(item => {
@@ -1603,13 +1603,13 @@ function filterActivityItems() {
         const textContent = item.textContent.toLowerCase();
         
         const matchesText = tabId.includes(filterText) || textContent.includes(filterText);
-        const matchesType = filterType === 'all' || type === filterType;
+        const matchesType = filterType === "all" || type === filterType;
         
         if (matchesText && matchesType) {
-            item.style.display = '';
+            item.style.display = "";
             visibleCount++;
         } else {
-            item.style.display = 'none';
+            item.style.display = "none";
         }
     });
 }
@@ -1621,11 +1621,11 @@ function filterActivityItems() {
 function showActivityDetails(activity) {
     // Create a detailed view of the activity
     let detailsHtml = `
-        <h3>Activity Details for Tab ${activity.tabId || 'Unknown'}</h3>
+        <h3>Activity Details for Tab ${activity.tabId || "Unknown"}</h3>
         <div class="activity-summary">
-            <p><strong>Total Time Spent:</strong> ${activity.totalTimeSpent ? Math.round(activity.totalTimeSpent / 1000) + 's' : '0s'}</p>
-            <p><strong>First Seen:</strong> ${activity.firstSeen ? new Date(activity.firstSeen).toLocaleString() : 'Unknown'}</p>
-            <p><strong>Last Touch:</strong> ${activity.lastTouch ? new Date(activity.lastTouch).toLocaleString() : 'Unknown'}</p>
+            <p><strong>Total Time Spent:</strong> ${activity.totalTimeSpent ? Math.round(activity.totalTimeSpent / 1000) + "s" : "0s"}</p>
+            <p><strong>First Seen:</strong> ${activity.firstSeen ? new Date(activity.firstSeen).toLocaleString() : "Unknown"}</p>
+            <p><strong>Last Touch:</strong> ${activity.lastTouch ? new Date(activity.lastTouch).toLocaleString() : "Unknown"}</p>
             <p><strong>Total Events:</strong> ${activity.events ? activity.events.length : 0}</p>
             <p><strong>Total Navigations:</strong> ${activity.navigations ? activity.navigations.length : 0}</p>
         </div>
@@ -1633,54 +1633,54 @@ function showActivityDetails(activity) {
     
     // Show events if available
     if (activity.events && activity.events.length > 0) {
-        detailsHtml += '<h4>Events:</h4><div class="events-list">';
+        detailsHtml += "<h4>Events:</h4><div class=\"events-list\">";
         activity.events.forEach((event, index) => {
             detailsHtml += `
                 <div class="event-item">
-                    <strong>Event ${index + 1}:</strong> ${event.type || 'Unknown'}<br>
-                    <small>Time: ${event.timestamp ? new Date(event.timestamp).toLocaleString() : 'Unknown'}</small>
-                    ${event.url ? `<br><small>URL: ${escapeHtml(event.url)}</small>` : ''}
-                    ${event.linkText ? `<br><small>Link: ${escapeHtml(event.linkText)}</small>` : ''}
+                    <strong>Event ${index + 1}:</strong> ${event.type || "Unknown"}<br>
+                    <small>Time: ${event.timestamp ? new Date(event.timestamp).toLocaleString() : "Unknown"}</small>
+                    ${event.url ? `<br><small>URL: ${escapeHtml(event.url)}</small>` : ""}
+                    ${event.linkText ? `<br><small>Link: ${escapeHtml(event.linkText)}</small>` : ""}
                 </div>
             `;
         });
-        detailsHtml += '</div>';
+        detailsHtml += "</div>";
     }
     
     // Show navigations if available
     if (activity.navigations && activity.navigations.length > 0) {
-        detailsHtml += '<h4>Navigations:</h4><div class="navigations-list">';
+        detailsHtml += "<h4>Navigations:</h4><div class=\"navigations-list\">";
         activity.navigations.forEach((nav, index) => {
             detailsHtml += `
                 <div class="navigation-item">
                     <strong>Navigation ${index + 1}:</strong><br>
-                    <small>Time: ${nav.timestamp ? new Date(nav.timestamp).toLocaleString() : 'Unknown'}</small>
-                    ${nav.url ? `<br><small>URL: ${escapeHtml(nav.url)}</small>` : ''}
-                    ${nav.title ? `<br><small>Title: ${escapeHtml(nav.title)}</small>` : ''}
+                    <small>Time: ${nav.timestamp ? new Date(nav.timestamp).toLocaleString() : "Unknown"}</small>
+                    ${nav.url ? `<br><small>URL: ${escapeHtml(nav.url)}</small>` : ""}
+                    ${nav.title ? `<br><small>Title: ${escapeHtml(nav.title)}</small>` : ""}
                 </div>
             `;
         });
-        detailsHtml += '</div>';
+        detailsHtml += "</div>";
     }
     
     // Show the details in a modal
-    showModal('Activity Details', detailsHtml);
+    showModal("Activity Details", detailsHtml);
 }
 
 /**
  * Clear activity log data
  */
 function clearActivityData() {
-    if (confirm('Are you sure you want to clear the activity log?')) {
+    if (confirm("Are you sure you want to clear the activity log?")) {
         // Send message to background script to clear activity log
         chrome.runtime.sendMessage({ 
-            action: 'clearTabActivityLog' 
+            action: "clearTabActivityLog" 
         }, (response) => {
             if (response && response.success) {
                 loadActivityData(); // Reload the data
-                alert('Activity log cleared successfully');
+                alert("Activity log cleared successfully");
             } else {
-                alert('Failed to clear activity log');
+                alert("Failed to clear activity log");
             }
         });
     }
@@ -1690,11 +1690,11 @@ function clearActivityData() {
  * Load and display all localStorage data
  */
 function loadLocalStorageData() {
-    const storageItems = document.getElementById('storage-items');
-    storageItems.innerHTML = '';
+    const storageItems = document.getElementById("storage-items");
+    storageItems.innerHTML = "";
     
     let totalSize = 0;
-    let largestKey = '';
+    let largestKey = "";
     let largestSize = 0;
     
     try {
@@ -1702,9 +1702,9 @@ function loadLocalStorageData() {
         const keys = Object.keys(localStorage).sort();
         
         // Update stats
-        document.getElementById('localStorage-count').textContent = keys.length;
-        document.getElementById('total-count').textContent = keys.length;
-        document.getElementById('filtered-count').textContent = keys.length;
+        document.getElementById("localStorage-count").textContent = keys.length;
+        document.getElementById("total-count").textContent = keys.length;
+        document.getElementById("filtered-count").textContent = keys.length;
         
         // Process each key
         keys.forEach(key => {
@@ -1727,20 +1727,20 @@ function loadLocalStorageData() {
         });
         
         // Update size info
-        document.getElementById('localStorage-size').textContent = formatSize(totalSize);
-        document.getElementById('largest-key').textContent = largestKey ? `${largestKey} (${formatSize(largestSize)})` : '-';
+        document.getElementById("localStorage-size").textContent = formatSize(totalSize);
+        document.getElementById("largest-key").textContent = largestKey ? `${largestKey} (${formatSize(largestSize)})` : "-";
         
         // Attempt to find install date
         try {
-            const installDate = localStorage.getItem('installDate') || 'Unknown';
-            document.getElementById('install-date').textContent = installDate !== 'Unknown' ? 
-                new Date(parseInt(installDate)).toLocaleDateString() : 'Unknown';
+            const installDate = localStorage.getItem("installDate") || "Unknown";
+            document.getElementById("install-date").textContent = installDate !== "Unknown" ? 
+                new Date(parseInt(installDate)).toLocaleDateString() : "Unknown";
         } catch (e) {
-            document.getElementById('install-date').textContent = 'Error parsing date';
+            document.getElementById("install-date").textContent = "Error parsing date";
         }
         
     } catch (e) {
-        console.error('Error loading localStorage data', e);
+        console.error("Error loading localStorage data", e);
         storageItems.innerHTML = `<div class="storage-item"><div class="storage-value">Error accessing localStorage: ${e.message}</div></div>`;
     }
 }
@@ -1749,8 +1749,8 @@ function loadLocalStorageData() {
  * Create a DOM element for displaying a localStorage item
  */
 function createStorageItemElement(key, value, size) {
-    const itemElement = document.createElement('div');
-    itemElement.className = 'storage-item';
+    const itemElement = document.createElement("div");
+    itemElement.className = "storage-item";
     itemElement.dataset.key = key;
     
     // Try to parse JSON for pretty display
@@ -1759,7 +1759,7 @@ function createStorageItemElement(key, value, size) {
     
     try {
         const parsed = JSON.parse(value);
-        if (typeof parsed === 'object' && parsed !== null) {
+        if (typeof parsed === "object" && parsed !== null) {
             displayValue = JSON.stringify(parsed, null, 2);
             isJson = true;
         }
@@ -1772,13 +1772,13 @@ function createStorageItemElement(key, value, size) {
         <div class="storage-value">${isJson ? escapeHtml(displayValue) : escapeHtml(value)}</div>
         <div class="storage-actions">
             <button class="delete-item" title="Delete this item">🗑️</button>
-            ${isJson ? '<button class="expand-item" title="Expand/collapse">⤢</button>' : ''}
+            ${isJson ? "<button class=\"expand-item\" title=\"Expand/collapse\">⤢</button>" : ""}
         </div>
     `;
     
     // Add event listeners
-    const deleteButton = itemElement.querySelector('.delete-item');
-    deleteButton.addEventListener('click', () => {
+    const deleteButton = itemElement.querySelector(".delete-item");
+    deleteButton.addEventListener("click", () => {
         if (confirm(`Are you sure you want to delete "${key}" from localStorage?`)) {
             localStorage.removeItem(key);
             itemElement.remove();
@@ -1788,11 +1788,11 @@ function createStorageItemElement(key, value, size) {
     
     // Add expand/collapse functionality for JSON
     if (isJson) {
-        const expandButton = itemElement.querySelector('.expand-item');
-        expandButton.addEventListener('click', () => {
-            const valueElement = itemElement.querySelector('.storage-value');
-            valueElement.classList.toggle('expanded');
-            expandButton.textContent = valueElement.classList.contains('expanded') ? '⤡' : '⤢';
+        const expandButton = itemElement.querySelector(".expand-item");
+        expandButton.addEventListener("click", () => {
+            const valueElement = itemElement.querySelector(".storage-value");
+            valueElement.classList.toggle("expanded");
+            expandButton.textContent = valueElement.classList.contains("expanded") ? "⤡" : "⤢";
         });
     }
     
@@ -1803,21 +1803,21 @@ function createStorageItemElement(key, value, size) {
  * Filter storage items based on input text
  */
 function filterStorageItems() {
-    const filterText = document.getElementById('storage-filter').value.toLowerCase();
-    const items = document.querySelectorAll('.storage-item');
+    const filterText = document.getElementById("storage-filter").value.toLowerCase();
+    const items = document.querySelectorAll(".storage-item");
     let visibleCount = 0;
     
     items.forEach(item => {
         const key = item.dataset.key.toLowerCase();
         if (key.includes(filterText)) {
-            item.style.display = '';
+            item.style.display = "";
             visibleCount++;
         } else {
-            item.style.display = 'none';
+            item.style.display = "none";
         }
     });
     
-    document.getElementById('filtered-count').textContent = visibleCount;
+    document.getElementById("filtered-count").textContent = visibleCount;
 }
 
 /**
@@ -1843,13 +1843,13 @@ function exportLocalStorageAsJson() {
         
         // Create a blob with the data
         const jsonString = JSON.stringify(storageData, null, 2);
-        const blob = new Blob([jsonString], {type: 'application/json'});
+        const blob = new Blob([jsonString], {type: "application/json"});
         const url = URL.createObjectURL(blob);
         
         // Create a link and trigger download
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
-        a.download = `tabtopia-storage-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `tabtopia-storage-${new Date().toISOString().split("T")[0]}.json`;
         document.body.appendChild(a);
         a.click();
         
@@ -1860,7 +1860,7 @@ function exportLocalStorageAsJson() {
         }, 0);
         
     } catch (e) {
-        console.error('Error exporting localStorage data', e);
+        console.error("Error exporting localStorage data", e);
         alert(`Error exporting data: ${e.message}`);
     }
 }
@@ -1869,14 +1869,14 @@ function exportLocalStorageAsJson() {
  * Clear all localStorage data with confirmation
  */
 function clearAllStorage() {
-    if (confirm('Are you sure you want to delete ALL localStorage data? This cannot be undone.')) {
-        if (confirm('LAST WARNING: This will delete ALL your browsing data stored by Tabtopia. Continue?')) {
+    if (confirm("Are you sure you want to delete ALL localStorage data? This cannot be undone.")) {
+        if (confirm("LAST WARNING: This will delete ALL your browsing data stored by Tabtopia. Continue?")) {
             try {
                 localStorage.clear();
                 loadLocalStorageData();
-                alert('All localStorage data has been cleared.');
+                alert("All localStorage data has been cleared.");
             } catch (e) {
-                console.error('Error clearing localStorage', e);
+                console.error("Error clearing localStorage", e);
                 alert(`Error clearing data: ${e.message}`);
             }
         }
@@ -1887,27 +1887,27 @@ function clearAllStorage() {
  * Format byte size to human readable format
  */
 function formatSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return "0 Bytes";
     
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
 /**
  * Load nano summaries data from chrome.storage.local
  */
 async function loadNanoSummariesData() {
-    const container = document.getElementById('nano-summaries-entries');
+    const container = document.getElementById("nano-summaries-entries");
     if (!container) return;
     
-    container.innerHTML = '<div class="loading">Loading nano summaries...</div>';
+    container.innerHTML = "<div class=\"loading\">Loading nano summaries...</div>";
     
     try {
         // Check if Chrome API is available
-        if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+        if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) {
             container.innerHTML = `
                 <div class="info-message">
                     <h4>Chrome API Not Available</h4>
@@ -1917,11 +1917,11 @@ async function loadNanoSummariesData() {
             return;
         }
         
-        const result = await chrome.storage.local.get(['nanoSummaries']);
+        const result = await chrome.storage.local.get(["nanoSummaries"]);
         const summaries = result.nanoSummaries || {};
         
         if (Object.keys(summaries).length === 0) {
-            container.innerHTML = '<div class="info-message">No nano summaries found</div>';
+            container.innerHTML = "<div class=\"info-message\">No nano summaries found</div>";
             updateNanoSummariesStats(0);
             return;
         }
@@ -1936,18 +1936,18 @@ async function loadNanoSummariesData() {
         updateNanoSummariesStats(summaryEntries.length);
         
         // Render summaries
-        container.innerHTML = '';
+        container.innerHTML = "";
         summaryEntries.forEach(entry => {
             const entryElement = createNanoSummaryElement(entry);
             container.appendChild(entryElement);
         });
         
         // Update filter counts
-        document.getElementById('nano-summaries-total-count').textContent = summaryEntries.length;
-        document.getElementById('nano-summaries-filtered-count').textContent = summaryEntries.length;
+        document.getElementById("nano-summaries-total-count").textContent = summaryEntries.length;
+        document.getElementById("nano-summaries-filtered-count").textContent = summaryEntries.length;
         
     } catch (error) {
-        console.error('Error loading nano summaries:', error);
+        console.error("Error loading nano summaries:", error);
         container.innerHTML = `<div class="error">Error loading nano summaries: ${error.message}</div>`;
     }
 }
@@ -1958,8 +1958,8 @@ async function loadNanoSummariesData() {
  * @returns {HTMLElement} - The entry element
  */
 function createNanoSummaryElement(entry) {
-    const itemElement = document.createElement('div');
-    itemElement.className = 'storage-item';
+    const itemElement = document.createElement("div");
+    itemElement.className = "storage-item";
     itemElement.dataset.url = entry.url;
     
     // Format timestamp
@@ -1968,11 +1968,11 @@ function createNanoSummaryElement(entry) {
     
     // Get favicon if available
     const faviconUrl = getFaviconUrl(entry.url);
-    const faviconImg = faviconUrl ? `<img src="${faviconUrl}" class="favicon" alt="" />` : '';
+    const faviconImg = faviconUrl ? `<img src="${faviconUrl}" class="favicon" alt="" />` : "";
     
     // Truncate summary for display
     const truncatedSummary = entry.summary.length > 200 
-        ? entry.summary.substring(0, 200) + '...' 
+        ? entry.summary.substring(0, 200) + "..." 
         : entry.summary;
     
     // Create content
@@ -1980,7 +1980,7 @@ function createNanoSummaryElement(entry) {
         <div class="storage-key">
             ${faviconImg} ${escapeHtml(formatUrlForDisplay(entry.url))}
             <br><small>${formattedDate}</small>
-            <br><small>Source: ${entry.source || 'unknown'}</small>
+            <br><small>Source: ${entry.source || "unknown"}</small>
         </div>
         <div class="storage-value">
             <div class="summary-text">${escapeHtml(truncatedSummary)}</div>
@@ -1992,24 +1992,24 @@ function createNanoSummaryElement(entry) {
     `;
     
     // Add error handling for favicon images
-    const faviconElement = itemElement.querySelector('.favicon');
+    const faviconElement = itemElement.querySelector(".favicon");
     if (faviconElement) {
-        faviconElement.addEventListener('error', function() {
-            this.style.display = 'none';
+        faviconElement.addEventListener("error", function() {
+            this.style.display = "none";
         });
     }
     
     // Add event listeners
-    const viewDetailsButton = itemElement.querySelector('.view-details');
+    const viewDetailsButton = itemElement.querySelector(".view-details");
     if (viewDetailsButton) {
-        viewDetailsButton.addEventListener('click', () => {
+        viewDetailsButton.addEventListener("click", () => {
             showNanoSummaryDetails(entry);
         });
     }
     
-    const deleteButton = itemElement.querySelector('.delete-item');
+    const deleteButton = itemElement.querySelector(".delete-item");
     if (deleteButton) {
-        deleteButton.addEventListener('click', () => {
+        deleteButton.addEventListener("click", () => {
             deleteNanoSummary(entry.url);
         });
     }
@@ -2028,7 +2028,7 @@ function showNanoSummaryDetails(entry) {
         summary: entry.summary,
         timestamp: entry.timestamp,
         source: entry.source,
-        type: 'nano-summary'
+        type: "nano-summary"
     });
 }
 
@@ -2039,7 +2039,7 @@ function showNanoSummaryDetails(entry) {
 async function deleteNanoSummary(url) {
     if (confirm(`Are you sure you want to delete the summary for "${formatUrlForDisplay(url)}"?`)) {
         try {
-            const result = await chrome.storage.local.get(['nanoSummaries']);
+            const result = await chrome.storage.local.get(["nanoSummaries"]);
             const summaries = result.nanoSummaries || {};
             
             delete summaries[url];
@@ -2051,8 +2051,8 @@ async function deleteNanoSummary(url) {
             
             console.log(`Deleted nano summary for ${url}`);
         } catch (error) {
-            console.error('Error deleting nano summary:', error);
-            alert('Error deleting summary: ' + error.message);
+            console.error("Error deleting nano summary:", error);
+            alert("Error deleting summary: " + error.message);
         }
     }
 }
@@ -2061,14 +2061,14 @@ async function deleteNanoSummary(url) {
  * Clear all nano summaries
  */
 async function clearNanoSummariesData() {
-    if (confirm('Are you sure you want to clear all nano summaries? This cannot be undone.')) {
+    if (confirm("Are you sure you want to clear all nano summaries? This cannot be undone.")) {
         try {
-            await chrome.storage.local.remove(['nanoSummaries']);
+            await chrome.storage.local.remove(["nanoSummaries"]);
             loadNanoSummariesData();
-            alert('All nano summaries cleared successfully');
+            alert("All nano summaries cleared successfully");
         } catch (error) {
-            console.error('Error clearing nano summaries:', error);
-            alert('Error clearing summaries: ' + error.message);
+            console.error("Error clearing nano summaries:", error);
+            alert("Error clearing summaries: " + error.message);
         }
     }
 }
@@ -2077,8 +2077,8 @@ async function clearNanoSummariesData() {
  * Filter nano summary items based on input text
  */
 function filterNanoSummariesItems() {
-    const filterText = document.getElementById('nano-summaries-filter').value.toLowerCase();
-    const items = document.querySelectorAll('#nano-summaries-entries .storage-item');
+    const filterText = document.getElementById("nano-summaries-filter").value.toLowerCase();
+    const items = document.querySelectorAll("#nano-summaries-entries .storage-item");
     let visibleCount = 0;
     
     items.forEach(item => {
@@ -2086,14 +2086,14 @@ function filterNanoSummariesItems() {
         const textContent = item.textContent.toLowerCase();
         
         if (url.includes(filterText) || textContent.includes(filterText)) {
-            item.style.display = '';
+            item.style.display = "";
             visibleCount++;
         } else {
-            item.style.display = 'none';
+            item.style.display = "none";
         }
     });
     
-    document.getElementById('nano-summaries-filtered-count').textContent = visibleCount;
+    document.getElementById("nano-summaries-filtered-count").textContent = visibleCount;
 }
 
 /**
@@ -2108,12 +2108,12 @@ function updateNanoSummariesStats(count) {
  * Clear summary queue from debug tools
  */
 function clearSummaryQueueFromDebug() {
-    if (confirm('Are you sure you want to clear the summary queue?')) {
-        if (typeof window.clearSummaryQueue === 'function') {
+    if (confirm("Are you sure you want to clear the summary queue?")) {
+        if (typeof window.clearSummaryQueue === "function") {
             window.clearSummaryQueue();
-            alert('Summary queue cleared successfully');
+            alert("Summary queue cleared successfully");
         } else {
-            alert('Summary queue functions not available');
+            alert("Summary queue functions not available");
         }
     }
 }
@@ -2122,14 +2122,14 @@ function clearSummaryQueueFromDebug() {
  * Manually trigger summary queue processing from debug tools
  */
 function processSummaryQueueFromDebug() {
-    if (typeof window.processSummaryQueue === 'function') {
+    if (typeof window.processSummaryQueue === "function") {
         window.processSummaryQueue().catch(error => {
-            console.error('Error processing queue:', error);
-            alert('Error processing queue: ' + error.message);
+            console.error("Error processing queue:", error);
+            alert("Error processing queue: " + error.message);
         });
-        alert('Queue processing started');
+        alert("Queue processing started");
     } else {
-        alert('Summary queue functions not available');
+        alert("Summary queue functions not available");
     }
 }
 
@@ -2137,11 +2137,11 @@ function processSummaryQueueFromDebug() {
  * Reset summarizer crash counter from debug tools
  */
 function resetCrashCounterFromDebug() {
-    if (typeof window.resetSummarizerCrashCounter === 'function') {
+    if (typeof window.resetSummarizerCrashCounter === "function") {
         window.resetSummarizerCrashCounter();
-        alert('Summarizer crash counter reset successfully');
+        alert("Summarizer crash counter reset successfully");
     } else {
-        alert('Summarizer functions not available');
+        alert("Summarizer functions not available");
     }
 }
 
@@ -2151,11 +2151,11 @@ function resetCrashCounterFromDebug() {
  * @returns {string} - Formatted URL
  */
 function formatUrlForDisplay(url) {
-    if (!url) return '';
+    if (!url) return "";
     
     return url
-        .replace(/^https?:\/\//, '')
-        .replace(/^www\./, '');
+        .replace(/^https?:\/\//, "")
+        .replace(/^www\./, "");
 }
 
 /**
@@ -2164,63 +2164,63 @@ function formatUrlForDisplay(url) {
 function updateQueueStatus() {
     try {
         // Check if we have access to the queue functions
-        if (typeof window.getQueueStats === 'function') {
+        if (typeof window.getQueueStats === "function") {
             const stats = window.getQueueStats();
             
-            const queueStatusElement = document.getElementById('summary-queue-status');
-            const processingStatusElement = document.getElementById('queue-processing-status');
+            const queueStatusElement = document.getElementById("summary-queue-status");
+            const processingStatusElement = document.getElementById("queue-processing-status");
             
             if (queueStatusElement) {
                 queueStatusElement.textContent = `${stats.queueSize} items`;
-                queueStatusElement.style.color = stats.queueSize > 0 ? '#e67e22' : '#27ae60';
+                queueStatusElement.style.color = stats.queueSize > 0 ? "#e67e22" : "#27ae60";
             }
             
             if (processingStatusElement) {
-                processingStatusElement.textContent = stats.isProcessing ? 'Processing...' : 'Idle';
-                processingStatusElement.style.color = stats.isProcessing ? '#e67e22' : '#27ae60';
+                processingStatusElement.textContent = stats.isProcessing ? "Processing..." : "Idle";
+                processingStatusElement.style.color = stats.isProcessing ? "#e67e22" : "#27ae60";
             }
         } else {
             // Fallback if queue functions aren't available
-            const queueStatusElement = document.getElementById('summary-queue-status');
-            const processingStatusElement = document.getElementById('queue-processing-status');
+            const queueStatusElement = document.getElementById("summary-queue-status");
+            const processingStatusElement = document.getElementById("queue-processing-status");
             
             if (queueStatusElement) {
-                queueStatusElement.textContent = 'Unknown';
-                queueStatusElement.style.color = '#7f8c8d';
+                queueStatusElement.textContent = "Unknown";
+                queueStatusElement.style.color = "#7f8c8d";
             }
             
             if (processingStatusElement) {
-                processingStatusElement.textContent = 'Unknown';
-                processingStatusElement.style.color = '#7f8c8d';
+                processingStatusElement.textContent = "Unknown";
+                processingStatusElement.style.color = "#7f8c8d";
             }
         }
         
         // Update summarizer status
-        if (typeof window.getSummarizerStatus === 'function') {
+        if (typeof window.getSummarizerStatus === "function") {
             const summarizerStatus = window.getSummarizerStatus();
-            const summarizerStatusElement = document.getElementById('summarizer-status');
+            const summarizerStatusElement = document.getElementById("summarizer-status");
             
             if (summarizerStatusElement) {
                 if (summarizerStatus.inBackoff) {
                     summarizerStatusElement.textContent = `Backoff (${summarizerStatus.backoffRemainingSeconds}s)`;
-                    summarizerStatusElement.style.color = '#e74c3c';
+                    summarizerStatusElement.style.color = "#e74c3c";
                 } else if (summarizerStatus.crashCount > 0) {
                     summarizerStatusElement.textContent = `Crashes: ${summarizerStatus.crashCount}`;
-                    summarizerStatusElement.style.color = '#f39c12';
+                    summarizerStatusElement.style.color = "#f39c12";
                 } else {
-                    summarizerStatusElement.textContent = 'Ready';
-                    summarizerStatusElement.style.color = '#27ae60';
+                    summarizerStatusElement.textContent = "Ready";
+                    summarizerStatusElement.style.color = "#27ae60";
                 }
             }
         } else {
-            const summarizerStatusElement = document.getElementById('summarizer-status');
+            const summarizerStatusElement = document.getElementById("summarizer-status");
             if (summarizerStatusElement) {
-                summarizerStatusElement.textContent = 'Unknown';
-                summarizerStatusElement.style.color = '#7f8c8d';
+                summarizerStatusElement.textContent = "Unknown";
+                summarizerStatusElement.style.color = "#7f8c8d";
             }
         }
     } catch (error) {
-        console.error('Error updating queue status:', error);
+        console.error("Error updating queue status:", error);
     }
 }
 
@@ -2231,11 +2231,11 @@ function updateAllSummaryStats() {
     // Update localStorage stats
     try {
         const keys = Object.keys(localStorage);
-        document.getElementById('localStorage-count').textContent = keys.length;
+        document.getElementById("localStorage-count").textContent = keys.length;
         
         // Calculate total size
         let totalSize = 0;
-        let largestKey = '';
+        let largestKey = "";
         let largestSize = 0;
         
         keys.forEach(key => {
@@ -2253,19 +2253,19 @@ function updateAllSummaryStats() {
             }
         });
         
-        document.getElementById('localStorage-size').textContent = formatSize(totalSize);
-        document.getElementById('largest-key').textContent = largestKey ? `${largestKey} (${formatSize(largestSize)})` : '-';
+        document.getElementById("localStorage-size").textContent = formatSize(totalSize);
+        document.getElementById("largest-key").textContent = largestKey ? `${largestKey} (${formatSize(largestSize)})` : "-";
         
         // Try to get install date
         try {
-            const installDate = localStorage.getItem('installDate') || 'Unknown';
-            document.getElementById('install-date').textContent = installDate !== 'Unknown' ? 
-                new Date(parseInt(installDate)).toLocaleDateString() : 'Unknown';
+            const installDate = localStorage.getItem("installDate") || "Unknown";
+            document.getElementById("install-date").textContent = installDate !== "Unknown" ? 
+                new Date(parseInt(installDate)).toLocaleDateString() : "Unknown";
         } catch (e) {
-            document.getElementById('install-date').textContent = 'Error parsing date';
+            document.getElementById("install-date").textContent = "Error parsing date";
         }
     } catch (e) {
-        console.error('Error updating localStorage stats:', e);
+        console.error("Error updating localStorage stats:", e);
     }
     
     // Update queue and summarizer status
