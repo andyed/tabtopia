@@ -189,8 +189,3 @@
     // Log page load timing
     console.log("🔍 [DEBUG] Enhanced crash suppression loaded at:", new Date().toISOString());
 })();
-
-// Export for debugging
-if (typeof module !== "undefined" && module.exports) {
-    module.exports = { enhancedCrashSuppression: true };
-}

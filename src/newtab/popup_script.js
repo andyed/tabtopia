@@ -268,54 +268,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     /**
-     * Generate a color palette for a window
-     * @param {number} windowId - Window identifier
-     * @returns {Array} Color palette with gradient colors
-     */
-    function getWindowPalette(windowId) {
-        // Return cached palette if we already generated one for this window
-        if (colorPalettes[windowId]) {
-            return colorPalettes[windowId];
-        }
-        
-        // Generate a base color from window ID
-        // Windows get a distinct hue from the color wheel
-        let baseHue;
-        
-        if (windowColorCache.has(windowId)) {
-            baseHue = windowColorCache.get(windowId);
-        } else {
-            // Generate a unique color based on window ID
-            // Space them evenly around the color wheel
-            baseHue = (windowId * 137.5) % 360; // Golden angle approximation for good distribution
-            windowColorCache.set(windowId, baseHue);
-        }
-        
-        // Generate a palette of colors with varying lightness and saturation
-        const palette = [];
-        const paletteSize = 20; // More than enough colors for tabs in a window
-        
-        // Active tab gets a more saturated version
-        const activeColor = `hsl(${baseHue}, 70%, 45%)`;
-        
-        // Generate gradient from light to dark
-        for (let i = 0; i < paletteSize; i++) {
-            // More recent tabs get brighter colors
-            const lightness = 40 - (i * 1.2); // 40% down to 16%
-            const saturation = 50 - (i * 1.5); // 50% down to 20%
-            palette.push(`hsl(${baseHue}, ${saturation}%, ${lightness}%)`);
-        }
-        
-        // Store active color as the first one (index -1)
-        palette[-1] = activeColor;
-        
-        // Cache the palette
-        colorPalettes[windowId] = palette;
-        
-        return palette;
-    }
-    
-    /**
      * Get color for a tab based on its state and recency
      */
     function getColorForTab(tab) {
