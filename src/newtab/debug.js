@@ -523,12 +523,8 @@ function filterHistoryItems() {
     document.getElementById("history-filtered-count").textContent = visibleCount;
 }
 
-/**
- * Show details popup for a history entry
- * @param {Object} entry - The history entry
- */
-function showHistoryEntryDetails(entry) {
-    // Create modal if it doesn't exist
+// Lazily build the shared #details-modal shell (markup, styles, close handlers).
+function ensureDetailsModal() {
     let modal = document.getElementById("details-modal");
     if (!modal) {
         modal = document.createElement("div");
@@ -605,7 +601,28 @@ function showHistoryEntryDetails(entry) {
         `;
         document.head.appendChild(style);
     }
-    
+    return modal;
+}
+
+// Generic modal for pre-built (already-escaped) HTML. Reuses the same
+// #details-modal shell as showHistoryEntryDetails. This was called by
+// showActivityDetails since the Graph View commit but never existed —
+// clicking an activity entry threw ReferenceError instead of opening.
+function showModal(title, contentHtml) {
+    const modal = ensureDetailsModal();
+    modal.querySelector(".modal-content h3").textContent = title;
+    modal.querySelector("#modal-content").innerHTML = contentHtml;
+    modal.style.display = "block";
+}
+
+/**
+ * Show details popup for a history entry
+ * @param {Object} entry - The history entry
+ */
+function showHistoryEntryDetails(entry) {
+    const modal = ensureDetailsModal();
+    modal.querySelector(".modal-content h3").textContent = "Entry Details";
+
     // Populate modal content
     const modalContent = modal.querySelector("#modal-content");
     modalContent.innerHTML = "";

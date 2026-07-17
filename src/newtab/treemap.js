@@ -1351,21 +1351,27 @@ async function updateBookmarkState(totalTabs) {
             const emptyCells = 4 - totalTabs;
             const bookmarks = await fetchRecentBookmarks();
             const bookmarkWindow = treemapState.data.activeWindows.find(w => w.id === "bookmark");
+            const mapBookmarkTabs = () => bookmarks.slice(0, emptyCells).map(bookmark => ({
+                id: `bookmark${bookmark.id}`,
+                windowId: "bookmark",
+                title: bookmark.title || "Untitled",
+                url: bookmark.url || "",
+                favIconUrl: bookmark.favIconUrl,
+                lastAccessed: Date.now(),
+                timeSpent: 1,
+                isBookmark: true,
+                children: []
+            }));
             if (!bookmarkWindow) {
-                addBookmarkWindow(bookmarks.slice(0, emptyCells));
+                // Reached when the tab count drops below 4 on a state that never
+                // had a bookmark window (boot only adds one when it starts <4).
+                // This used to call an addBookmarkWindow() that never existed —
+                // the ReferenceError was swallowed by the enclosing catch, so
+                // bookmark backfill silently never happened on this path.
+                treemapState.data.activeWindows.push({ id: "bookmark", tabs: mapBookmarkTabs() });
             } else if (bookmarkWindow.tabs.length !== emptyCells) {
                 // Only update if count changed
-                bookmarkWindow.tabs = bookmarks.slice(0, emptyCells).map(bookmark => ({
-                    id: `bookmark${bookmark.id}`,
-                    windowId: "bookmark",
-                    title: bookmark.title || "Untitled",
-                    url: bookmark.url || "",
-                    favIconUrl: bookmark.favIconUrl,
-                    lastAccessed: Date.now(),
-                    timeSpent: 1,
-                    isBookmark: true,
-                    children: []
-                }));
+                bookmarkWindow.tabs = mapBookmarkTabs();
             }
             await drawTreemap(treemapState.data);
         } else {

@@ -1589,8 +1589,8 @@ function processLinkNavigation(tabId, url, baseEdge) {
         type: "link_navigation",
         url: url,
         timestamp: Date.now(),
-        transitionType: details.transitionType,
-        transitionQualifiers: details.transitionQualifiers || []
+        transitionType: baseEdge.transitionType,
+        transitionQualifiers: baseEdge.transitionQualifiers || []
     });
 
     browserState.tabActivityLog.set(tabId, activity);
