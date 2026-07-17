@@ -21,6 +21,7 @@
 
 // Import utility functions
 import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
+import { pushSnapshot } from "./bridge-client.js";
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log("[Tabtopia] installed successfully.");
@@ -3280,7 +3281,63 @@ function saveStateToStorage() {
     pendingSaveTimer = setTimeout(() => {
         pendingSaveTimer = null;
         persistStateNow();
+        // Mirror the debounced save to the local MCP bridge: same trigger, so
+        // the server's live-status snapshot is at most save-debounce stale
+        // while the user is active. Fire-and-forget — the bridge being down
+        // must never affect persistence.
+        buildStatusSnapshot().then(pushSnapshot).catch(() => {});
     }, 2000);
+}
+
+/**
+ * Build the trimmed live-status projection pushed to the MCP bridge.
+ * Live window/tab truth comes from chrome.windows (browserState can lag or
+ * hold dead tabs); enrichment (dwell, audio) comes from browserState. NOT the
+ * full state: no hero images, no per-tab history — status, not corpus.
+ */
+async function buildStatusSnapshot() {
+    const windows = await chrome.windows.getAll({ populate: true });
+
+    let focused = null;
+    const tabs = [];
+    for (const win of windows) {
+        for (const tab of win.tabs || []) {
+            const activity = browserState.tabActivityLog.get(tab.id);
+            const audio = browserState.tabAudioTracking.get(tab.id);
+            const entry = {
+                tabId: tab.id,
+                windowId: win.id,
+                title: tab.title || "",
+                url: tab.url || "",
+                active: tab.active,
+                audible: tab.audible || false,
+                isCurrentlyAudible: audio?.isCurrentlyAudible || false,
+                totalAudioDuration: audio?.totalAudioDuration || 0,
+                timeSpent: activity?.totalTimeSpent || browserState.tabs.get(tab.id)?.timeSpent || 0,
+                lastAccessed: browserState.tabs.get(tab.id)?.lastAccessed || null
+            };
+            tabs.push(entry);
+            if (win.focused && tab.active) focused = entry;
+        }
+    }
+
+    // Recent activity tail: newest navigations across all tabs. Bounded — the
+    // full activity log stays local.
+    const recentActivity = [];
+    for (const [tabId, activity] of browserState.tabActivityLog) {
+        for (const nav of activity.navigations || []) {
+            recentActivity.push({ tabId, type: nav.type, url: nav.url, timestamp: nav.timestamp });
+        }
+    }
+    recentActivity.sort((a, b) => b.timestamp - a.timestamp);
+
+    return {
+        ts: Date.now(),
+        focused,
+        windows: windows.map(w => ({ windowId: w.id, focused: w.focused, tabCount: (w.tabs || []).length })),
+        tabs,
+        recentActivity: recentActivity.slice(0, 50)
+    };
 }
 
 /**
