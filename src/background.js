@@ -24,17 +24,16 @@ import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
 import { pushSnapshot, setRequestHandler } from "./bridge-client.js";
 
 // Let the MCP bridge daemon read an open tab's DOM on demand (get_tab_content).
-// extractTabContentInWorker returns the page text (with a metadata fallback);
-// we add the live tab title so the tool result is self-describing. Read-only —
-// no navigation, no reload.
+// Exact-URL match only: the tool's contract is "fails gracefully if the tab is
+// not open", and extractTabContentInWorker's same-domain fallback would instead
+// silently return ANOTHER tab's content stamped with the requested URL. The
+// throw surfaces to the daemon as { success:false, error:"tab not open" }.
+// Read-only — no navigation, no reload.
 setRequestHandler(async (url) => {
-    const content = await extractTabContentInWorker(url);
-    let title = "";
-    try {
-        const [tab] = await chrome.tabs.query({ url });
-        title = tab?.title || "";
-    } catch (e) { /* title is best-effort */ }
-    return { url, title, content, method: "background-worker" };
+    const [tab] = await chrome.tabs.query({ url });
+    if (!tab) throw new Error("tab not open");
+    const content = await extractTabContentInWorker(url, { exactOnly: true });
+    return { url, title: tab.title || "", content, method: "background-worker" };
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -2902,9 +2901,13 @@ chrome.tabs.onMoved.addListener((tabId, moveInfo) => {
  * Enhanced content extraction in background worker
  * Bypasses many content security restrictions that affect content scripts
  * @param {string} url - URL to extract content from
+ * @param {Object} [opts]
+ * @param {boolean} [opts.exactOnly] - Only read a tab whose URL matches exactly;
+ *   skip the same-domain and history/bookmark fallbacks (which can return a
+ *   DIFFERENT page's content). Used by the MCP get_tab_content path.
  * @returns {Promise<string>} - Extracted content or null
  */
-async function extractTabContentInWorker(url) {
+async function extractTabContentInWorker(url, { exactOnly = false } = {}) {
     try {
         console.log("🔧 Worker extracting content for:", url);
 
@@ -2917,7 +2920,9 @@ async function extractTabContentInWorker(url) {
         let tabs = await chrome.tabs.query({ url });
 
         // Strategy 2: If exact match fails, try domain-based search
-        if (!tabs || tabs.length === 0) {
+        // (skipped for exactOnly callers: a same-domain tab is not the tab
+        // that was asked for)
+        if (!exactOnly && (!tabs || tabs.length === 0)) {
             try {
                 const urlObj = new URL(url);
                 const domain = urlObj.hostname;
@@ -2940,6 +2945,7 @@ async function extractTabContentInWorker(url) {
 
         // Strategy 3: If no tabs found, try to get content from history/bookmarks
         if (!tabs || tabs.length === 0) {
+            if (exactOnly) return null; // the tab closed between caller's check and ours
             console.log("📚 No tabs found, trying metadata extraction in worker");
             return await extractContentFromMetadataInWorker(url);
         }

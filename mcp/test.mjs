@@ -48,10 +48,17 @@ const snapshot = {
   ],
 };
 // The extension answers GET_TAB_CONTENT round-trips with the wrapped shape
-// bridge-client.js sends: content is an object, not a bare string.
+// bridge-client.js sends: content is an object, not a bare string. Like the
+// real background.js handler, it is exact-URL-match only — a URL not in the
+// open-tab set fails with "tab not open" rather than substituting a
+// same-domain tab's content.
 ext.on('message', (raw) => {
   const msg = JSON.parse(raw);
   if (msg.type === 'GET_TAB_CONTENT') {
+    if (!snapshot.tabs.some((t) => t.url === msg.url)) {
+      ext.send(JSON.stringify({ type: 'TAB_CONTENT_RESULT', id: msg.id, success: false, error: 'tab not open' }));
+      return;
+    }
     ext.send(JSON.stringify({
       type: 'TAB_CONTENT_RESULT', id: msg.id, success: true,
       content: { url: msg.url, title: 'MDN', content: `DOM text of ${msg.url}`.repeat(3), method: 'background-worker' },
@@ -116,6 +123,12 @@ ok(tc?.content?.includes('DOM text of'), 'get_tab_content round-trips through th
 
 const tcMiss = await call(9, 'get_tab_content', {});
 ok(tcMiss?.error?.includes('url'), 'get_tab_content without url returns a clean error');
+
+// Closed tab while another tab on the SAME domain is open: must be a clean
+// error, not the other tab's content stamped with the requested URL.
+const tcClosed = await call(10, 'get_tab_content', { url: 'https://developer.mozilla.org/closed-page' });
+ok(tcClosed?.error === 'tab not open' && tcClosed?.content === undefined,
+  'get_tab_content for a closed tab (same-domain tab open) errors instead of substituting content');
 
 mcp.kill(); ext.close(); daemon.kill();
 await wait(200);
