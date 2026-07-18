@@ -1,7 +1,13 @@
+<p align="center">
+  <img src="assets/brand/tabtopia-hero.svg" alt="Tabtopia — your browsing, mapped. Recover the route, not just the page." width="100%">
+</p>
+
 # Tabtopia
 
 ## Overview
-Tabtopia is a Chrome extension that visualizes your browser history and open tabs using interactive D3.js visualizations. There are four core views: a treemap of open tabs, a graph of open tabs, an enhanced history session view, and a bookmark-centric stars view. All views support search using the excellent [lunr.js](https://github.com/olivernn/lunr.js) library. The extension leverages Chrome's built-in AI capabilities to provide smart features like URL summarization.
+Tabtopia turns browsing history into an information landscape. Instead of asking you to remember the title of one page, it preserves the useful context around it: the session, nearby pages, branches, and returns that formed a route.
+
+Four core views reveal that landscape: a treemap of open-tab regions, a graph of navigation routes, an enhanced session view, and bookmark-centric Landmarks. All views support search using [lunr.js](https://github.com/olivernn/lunr.js), while Chrome's built-in AI capabilities add URL summarization.
 
 It also ships an **MCP server** (`mcp/`) that gives a personal agent — Claude
 Code, Codex CLI, Gemini CLI, anything that speaks

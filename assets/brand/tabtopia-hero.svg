@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 720" role="img" aria-labelledby="title desc">
+  <title id="title">Tabtopia — your browsing, mapped</title>
+  <desc id="desc">A dark information landscape of browsing sessions, routes, domains, and remembered pages.</desc>
+  <defs>
+    <linearGradient id="terrain" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0d1b17"/><stop offset="1" stop-color="#09110f"/></linearGradient>
+  </defs>
+  <rect width="1440" height="720" fill="url(#terrain)"/>
+  <g fill="none" stroke="#28453b" stroke-width="2">
+    <path d="M-80 638L859 280L1514 518"/><path d="M-100 568L787 236L1518 444"/><path d="M-80 495L714 194L1510 370"/><path d="M-60 424L638 153L1500 296"/><path d="M-20 350L565 114L1490 222"/><path d="M42 278L492 80L1480 150"/>
+    <path d="M172 720L948 270"/><path d="M420 720L1054 305"/><path d="M670 720L1161 342"/><path d="M920 720L1266 381"/><path d="M1170 720L1372 420"/>
+  </g>
+  <g transform="translate(82 76)">
+    <rect width="72" height="72" fill="#09110f" stroke="#78978a" stroke-width="2"/>
+    <path d="M8 48C20 37 31 41 40 33S56 19 65 22" fill="none" stroke="#46685b" stroke-width="5" stroke-linecap="round"/>
+    <path d="M8 57C21 46 34 49 45 40S59 29 65 31" fill="none" stroke="#f2ebd8" stroke-width="5" stroke-linecap="round"/>
+    <path d="M17 57C23 44 29 35 37 29S52 23 58 10" fill="none" stroke="#9ff7d2" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="58" cy="10" r="5" fill="#ff8a5b"/>
+  </g>
+  <text x="82" y="248" fill="#f2ebd8" font-family="Avenir Next, IBM Plex Sans, sans-serif" font-size="98" font-weight="700" letter-spacing="-4">tabtopia</text>
+  <text x="86" y="304" fill="#b9c9bf" font-family="Avenir Next, IBM Plex Sans, sans-serif" font-size="25" font-weight="600" letter-spacing="1.2">YOUR BROWSING, MAPPED</text>
+  <path d="M86 348H456" stroke="#9ff7d2" stroke-width="4"/>
+  <text x="86" y="400" fill="#f2ebd8" font-family="Avenir Next, IBM Plex Sans, sans-serif" font-size="24" font-weight="600">Recover the route, not just the page.</text>
+  <text x="86" y="438" fill="#b9c9bf" font-family="Avenir Next, IBM Plex Sans, sans-serif" font-size="19" font-weight="600">Sessions become terrain. Domains become regions.</text>
+  <text x="86" y="469" fill="#b9c9bf" font-family="Avenir Next, IBM Plex Sans, sans-serif" font-size="19" font-weight="600">Every return leaves a visible path.</text>
+  <g transform="translate(695 82)">
+    <path d="M0 486C103 406 181 460 277 376S441 180 655 210" fill="none" stroke="#254b3e" stroke-width="48" stroke-linecap="round"/>
+    <path d="M0 520C107 443 194 494 298 411S478 230 655 251" fill="none" stroke="#46685b" stroke-width="35" stroke-linecap="round"/>
+    <path d="M0 553C112 478 207 528 319 446S513 281 655 294" fill="none" stroke="#78978a" stroke-width="22" stroke-linecap="round"/>
+    <path d="M0 587C118 516 224 562 342 483S547 334 655 340" fill="none" stroke="#f2ebd8" stroke-width="9" stroke-linecap="round"/>
+    <path d="M96 532C137 438 169 351 255 301S421 258 506 80" fill="none" stroke="#9ff7d2" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="506" cy="80" r="16" fill="#ff8a5b" stroke="#09110f" stroke-width="7"/><circle cx="255" cy="301" r="8" fill="#f2ebd8" stroke="#09110f" stroke-width="5"/><circle cx="152" cy="408" r="7" fill="#f2ebd8" stroke="#09110f" stroke-width="4"/>
+    <text x="530" y="74" fill="#f2ebd8" font-family="Avenir Next, IBM Plex Sans, sans-serif" font-size="16" font-weight="700">NOW</text>
+    <text x="530" y="96" fill="#b9c9bf" font-family="Avenir Next, IBM Plex Sans, sans-serif" font-size="16" font-weight="600">active route</text>
+    <rect x="270" y="267" width="162" height="38" fill="#09110f" stroke="#46685b" stroke-width="2"/>
+    <text x="284" y="292" fill="#b9c9bf" font-family="Avenir Next, IBM Plex Sans, sans-serif" font-size="16" font-weight="600">research cluster</text>
+  </g>
+</svg>

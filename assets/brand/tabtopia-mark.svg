@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Tabtopia terrain aperture</title>
+  <desc id="desc">Layered information contours crossed by a luminous route and waypoint.</desc>
+  <rect width="128" height="128" fill="#09110f"/>
+  <path d="M12 90C31 73 49 79 65 66S94 36 116 42" fill="none" stroke="#46685b" stroke-width="8" stroke-linecap="round"/>
+  <path d="M12 104C32 87 53 92 72 78S98 53 116 57" fill="none" stroke="#78978a" stroke-width="7" stroke-linecap="round"/>
+  <path d="M12 118C35 101 58 106 80 91S103 71 116 73" fill="none" stroke="#f2ebd8" stroke-width="7" stroke-linecap="round"/>
+  <path d="M25 106C35 88 43 67 59 55S88 42 101 18" fill="none" stroke="#9ff7d2" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="101" cy="18" r="9" fill="#ff8a5b" stroke="#09110f" stroke-width="4"/>
+</svg>

@@ -1,0 +1,89 @@
+:root {
+  --bg-color: #09110f;
+  --bg-secondary: #0d1b17;
+  --border-color: #28453b;
+  --text-color: #f2ebd8;
+  --accent-color: #9ff7d2;
+  --hover-color: #14241f;
+  --tabtopia-muted: #b9c9bf;
+  --tabtopia-waypoint: #ff8a5b;
+}
+
+html { background: var(--bg-color); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body { background: var(--bg-color); font-family: "Avenir Next", sans-serif; font-weight: 500; }
+
+.popup-header {
+  min-height: 58px;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-color);
+  border-bottom-color: var(--border-color);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 0;
+  color: var(--text-color);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.logo::before {
+  content: "";
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  background: url("../../assets/brand/tabtopia-mark.svg") center / contain no-repeat;
+  outline: 1px solid rgba(185, 255, 226, 0.2);
+  outline-offset: -1px;
+}
+
+.logo:hover { color: var(--accent-color); text-decoration: none; }
+.logo:focus-visible { outline: 3px solid #b9ffe2; outline-offset: 3px; }
+.header-controls { min-width: 0; flex: 1; }
+.search-container { min-width: 0; }
+
+.search-input {
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-secondary);
+  box-shadow: inset 0 0 0 1px rgba(185, 255, 226, 0.18);
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.search-input::placeholder { color: var(--tabtopia-muted); }
+.search-input:focus { outline: 3px solid #b9ffe2; outline-offset: -3px; border-color: transparent; }
+
+.status-bar {
+  min-height: 32px;
+  align-items: center;
+  background: var(--bg-secondary);
+  border-bottom-color: var(--border-color);
+  color: var(--tabtopia-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-bar::after { content: "local"; margin-left: auto; color: var(--tabtopia-waypoint); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+
+.popup-treemap {
+  background:
+    repeating-linear-gradient(164deg, transparent 0 44px, rgba(120, 151, 138, 0.1) 45px 46px),
+    var(--bg-color);
+}
+
+.cell { transition-property: filter; transition-duration: 150ms; transition-timing-function: cubic-bezier(0.2, 0, 0.2, 1); }
+.cell:hover { filter: brightness(1.14); }
+.cell:hover rect { stroke: var(--accent-color); }
+.cell-title { fill: var(--text-color); font-weight: 600; }
+.window-label, .empty-state-text, .empty-state-icon { color: var(--tabtopia-muted); fill: var(--tabtopia-muted); }
+.spinner { border-color: rgba(159, 247, 210, 0.14); border-top-color: var(--accent-color); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
