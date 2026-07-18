@@ -2,19 +2,42 @@
 // Starts the daemon, simulates the extension over WS (allowed + rejected
 // origins), drives the stdio MCP server, checks all 4 tools.
 //
+// Isolation: the test runs its own daemon on non-default ports and points
+// captures at a temp file, so it can never talk to (or write through) the
+// real launchd daemon on 8892/8893. If the spawned daemon dies — e.g. the
+// test ports are somehow taken — the test fails fast instead of silently
+// running against whatever else is listening.
+//
 //   cd mcp && node test.mjs
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { WebSocket } from 'ws';
 
 const MCP_DIR = dirname(fileURLToPath(import.meta.url));
-const WS_PORT = Number(process.env.TABTOPIA_WS_PORT || 8892);
+const WS_PORT = Number(process.env.TABTOPIA_WS_PORT || 18892);
+const HTTP_PORT = Number(process.env.TABTOPIA_HTTP_PORT || 18893);
+const TMP_DIR = mkdtempSync(join(tmpdir(), 'tabtopia-test-'));
+const TEST_ENV = {
+  ...process.env,
+  TABTOPIA_WS_PORT: String(WS_PORT),
+  TABTOPIA_HTTP_PORT: String(HTTP_PORT),
+  TABTOPIA_CAPTURES_FILE: join(TMP_DIR, 'context_captures.json'),
+};
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const ok = (c, m) => { (c ? pass++ : fail++); console.log(`${c ? 'PASS' : 'FAIL'}  ${m}`); };
+let tearingDown = false;
 
-const daemon = spawn('node', ['bridge-daemon.js'], { cwd: MCP_DIR, stdio: ['ignore', 'ignore', 'inherit'] });
+const daemon = spawn('node', ['bridge-daemon.js'], { cwd: MCP_DIR, env: TEST_ENV, stdio: ['ignore', 'ignore', 'inherit'] });
+daemon.on('exit', (code) => {
+  if (tearingDown) return;
+  console.error(`FATAL  test daemon exited early (code ${code}) — is something else on ports ${WS_PORT}/${HTTP_PORT}?`);
+  rmSync(TMP_DIR, { recursive: true, force: true });
+  process.exit(1);
+});
 await wait(600);
 
 // 1. Origin rejection
@@ -63,7 +86,7 @@ ext.send(JSON.stringify({ type: 'SNAPSHOT', data: snapshot }));
 await wait(300);
 
 // 3. Drive the stdio MCP server
-const mcp = spawn('node', ['server.js'], { cwd: MCP_DIR, stdio: ['pipe', 'pipe', 'inherit'] });
+const mcp = spawn('node', ['server.js'], { cwd: MCP_DIR, env: TEST_ENV, stdio: ['pipe', 'pipe', 'inherit'] });
 const responses = new Map();
 let buf = '';
 mcp.stdout.on('data', (d) => {
@@ -117,7 +140,9 @@ ok(tc?.content?.includes('DOM text of'), 'get_tab_content round-trips through th
 const tcMiss = await call(9, 'get_tab_content', {});
 ok(tcMiss?.error?.includes('url'), 'get_tab_content without url returns a clean error');
 
+tearingDown = true;
 mcp.kill(); ext.close(); daemon.kill();
 await wait(200);
+rmSync(TMP_DIR, { recursive: true, force: true });
 console.log(`\n${pass}/${pass + fail} checks passed`);
 process.exit(fail ? 1 : 0);
