@@ -23,6 +23,7 @@ let resizeFrame = null;
 let currentZoomTransform = null;
 let activeZoomBehavior = null;
 let activeZoomSvg = null;
+let pendingDetailFocus = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     renderShell();
@@ -280,7 +281,7 @@ function renderMap() {
         .on("keydown", (event, d) => {
             if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
-                selectLandmark(d.data.landmark.id);
+                selectLandmark(d.data.landmark.id, { focusAction: true });
             }
         });
 
@@ -412,8 +413,9 @@ function splitLabel(title, maxCharacters) {
     return lines.map(line => line.length > maxCharacters + 4 ? `${line.slice(0, maxCharacters)}…` : line);
 }
 
-function selectLandmark(id) {
+function selectLandmark(id, { focusAction = false } = {}) {
     selectedLandmarkId = id;
+    pendingDetailFocus = focusAction ? { id, delivered: false } : null;
     renderMap();
     renderSelectedDetail();
 }
@@ -423,8 +425,14 @@ function renderSelectedDetail() {
     const landmark = visibleLandmarks.find(item => item.id === selectedLandmarkId);
     if (!detail) return;
 
+    const actionHadFocus = detail.contains(document.activeElement)
+        && document.activeElement.classList.contains("open-landmark");
+    const shouldFocusAction = pendingDetailFocus?.id === landmark?.id
+        && (!pendingDetailFocus.delivered || actionHadFocus);
+
     detail.replaceChildren();
     if (!landmark) {
+        pendingDetailFocus = null;
         const empty = document.createElement("div");
         empty.className = "landmark-detail-empty";
         const text = document.createElement("p");
@@ -477,6 +485,15 @@ function renderSelectedDetail() {
     trailSection.append(trailHeading, createContextTrail(landmark));
 
     detail.append(header, summary, metrics, action, trailSection);
+
+    if (shouldFocusAction) {
+        action.focus({ preventScroll: true });
+        pendingDetailFocus.delivered = true;
+    }
+
+    if (pendingDetailFocus?.id === landmark.id && landmark.contextLoaded) {
+        pendingDetailFocus = null;
+    }
 
     if (!landmark.contextLoaded && !landmark.contextLoading) {
         enrichSelectedLandmark(landmark);

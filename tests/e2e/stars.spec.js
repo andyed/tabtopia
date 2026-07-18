@@ -34,5 +34,12 @@ test.describe("landmarks view", () => {
     }
     await expect(stars.locator("#landmarks-zoom-scale")).toHaveText("1200%");
     await expect(stars.locator(".landmark-label:not(.is-visible)")).toHaveCount(0);
+
+    const keyboardLandmark = stars.locator(".landmark-node").nth(1);
+    await keyboardLandmark.focus();
+    await keyboardLandmark.press("Enter");
+    await expect(stars.locator(".open-landmark")).toBeFocused();
+    await expect(stars.locator(".context-trail .trail-node")).toHaveCount(3);
+    await expect(stars.locator(".open-landmark")).toBeFocused();
   });
 });
