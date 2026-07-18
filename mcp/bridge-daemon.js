@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // tabtopia bridge daemon — the always-on half of the standalone MCP.
 //
-// Why two processes: Andy runs 3-5 concurrent Claude sessions, so the stdio MCP
+// Why two processes: several agent sessions run concurrently, so the stdio MCP
 // server (server.js) is spawned many times over. A WS listener can only bind
 // its port once. So the bridge — the thing the extension pushes to, and the
 // single owner of the live snapshot — lives HERE, in one long-lived daemon, and

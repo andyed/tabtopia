@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // tabtopia MCP server — stdio half of the standalone MCP.
 //
-// Exposes the user's LIVE browser state to Claude: open tabs ranked by real
+// Exposes the user's LIVE browser state to their agent: open tabs ranked by real
 // engagement (time actually read × recency), the focused tab, what's playing
 // audio, the recent navigation flow, plus named context captures. Read-only
 // except capture_context, which persists an observation and never drives the
 // browser.
 //
-// This process is stateless and safe to spawn per Claude session: it holds no
+// This process is stateless and safe to spawn per agent session: it holds no
 // socket and no snapshot. It reads everything over loopback HTTP from the
 // always-on bridge daemon (bridge-daemon.js). Start the daemon first.
 //
@@ -16,8 +16,10 @@
 // and corrupt the protocol channel — the exact bug the interests2025-hosted
 // version carried.
 //
-// Register with Claude Code:
-//   claude mcp add tabtopia -- node /ABS/PATH/histospire/mcp/server.js
+// Register with any MCP client, e.g.:
+//   claude mcp add tabtopia -- node /ABS/PATH/tabtopia/mcp/server.js   (Claude Code)
+//   codex mcp add tabtopia -- node /ABS/PATH/tabtopia/mcp/server.js    (Codex CLI)
+//   gemini mcp add tabtopia node /ABS/PATH/tabtopia/mcp/server.js      (Gemini CLI)
 
 const HTTP_PORT = Number(process.env.TABTOPIA_HTTP_PORT || 8893);
 const API = `http://127.0.0.1:${HTTP_PORT}`;

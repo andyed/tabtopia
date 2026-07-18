@@ -4,8 +4,9 @@
 Tabtopia is a Chrome extension that visualizes your browser history and open tabs using interactive D3.js visualizations. There are four core views: a treemap of open tabs, a graph of open tabs, an enhanced history session view, and a bookmark-centric stars view. All views support search using the excellent [lunr.js](https://github.com/olivernn/lunr.js) library. The extension leverages Chrome's built-in AI capabilities to provide smart features like URL summarization.
 
 It also ships an **MCP server** (`mcp/`) that gives a personal agent — Claude
-Code, or anything that speaks [MCP](https://modelcontextprotocol.io) — live
-awareness of your browsing context.
+Code, Codex CLI, Gemini CLI, anything that speaks
+[MCP](https://modelcontextprotocol.io) — live awareness of your browsing
+context.
 
 ## The MCP: your agent knows what you're looking at
 
@@ -45,7 +46,9 @@ runtime dependency. Setup and architecture: [`mcp/README.md`](mcp/README.md).
 A ready-made Claude Code skill ships at
 [`.claude/skills/browser-now/`](.claude/skills/browser-now/SKILL.md) so the
 agent knows when to reach for the tools ("what am I looking at", "save my
-research state", "the tab about X").
+research state", "the tab about X"); other agents get the same guidance from
+[`mcp/USAGE-FOR-AGENTS.md`](mcp/USAGE-FOR-AGENTS.md) pasted into their context
+file (`AGENTS.md`, `GEMINI.md`, …).
 
 ## How To Use
 

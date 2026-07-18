@@ -1,7 +1,8 @@
 # tabtopia MCP
 
 Standalone [Model Context Protocol](https://modelcontextprotocol.io) server that
-exposes the **live state of your browser** to Claude — the tabs open right now,
+exposes the **live state of your browser** to your agent — Claude Code, Codex
+CLI, Gemini CLI, or any MCP client — the tabs open right now,
 which one is focused, what's playing audio, the recent navigation flow, and the
 DOM text of a tab you already have open (including logged-in pages a plain fetch
 can't see).
@@ -25,16 +26,16 @@ history use a separate corpus tool.
 ## Architecture — two processes
 
 ```
- tabtopia extension            bridge-daemon.js               server.js (per Claude session)
+ tabtopia extension            bridge-daemon.js               server.js (per agent session)
  ┌──────────────┐   WS :8892   ┌────────────────────┐  HTTP   ┌──────────────────┐   stdio   ┌────────┐
- │ browserState │ ───────────► │ latest snapshot     │ :8893  │ MCP tools read   │ ◄───────► │ Claude │
+ │ browserState │ ───────────► │ latest snapshot     │ :8893  │ MCP tools read   │ ◄───────► │ agent  │
  │ (2s debounce)│  push +      │ (in memory) +       │ ◄────► │ the daemon; no   │           └────────┘
  │              │  GET_TAB_    │ named captures on   │        │ socket, no state │
  └──────────────┘  CONTENT     │ disk (data/)        │        └──────────────────┘
                    round-trip  └────────────────────┘
 ```
 
-Why split: several Claude sessions run at once, so the stdio server is spawned
+Why split: several agent sessions run at once, so the stdio server is spawned
 many times. A WS listener binds its port once — so the socket, and the single
 owner of the live snapshot, live in **one** long-lived daemon. Each stdio server
 is stateless and reads the daemon over loopback HTTP.
@@ -62,9 +63,25 @@ npm install                      # pulls ws
 # 1. Start the always-on daemon (best under launchd — see below)
 node bridge-daemon.js            # WS 127.0.0.1:8892, HTTP 127.0.0.1:8893
 
-# 2. Register the stdio server with Claude Code (once)
-claude mcp add tabtopia -- node "$(pwd)/server.js"
+# 2. Register the stdio server with your MCP client (once)
+claude mcp add tabtopia -- node "$(pwd)/server.js"     # Claude Code
+codex mcp add tabtopia -- node "$(pwd)/server.js"      # Codex CLI
+gemini mcp add tabtopia node "$(pwd)/server.js"        # Gemini CLI
 ```
+
+Anything else (Cursor, Windsurf, Cline, …) takes the generic form in its MCP
+config:
+
+```json
+{ "mcpServers": { "tabtopia": { "command": "node", "args": ["/ABS/PATH/tabtopia/mcp/server.js"] } } }
+```
+
+Claude Code users get tool-routing guidance automatically via the
+[`browser-now` skill](../.claude/skills/browser-now/SKILL.md) that ships in
+this repo. Everyone else: paste [`USAGE-FOR-AGENTS.md`](USAGE-FOR-AGENTS.md)
+into whatever context file your agent reads (`AGENTS.md`, `GEMINI.md`, …) —
+the tools work without it, but the judgment about *when* to reach for them is
+what makes the experience feel ambient.
 
 The **tabtopia extension** must be loaded in Chrome (it pushes the snapshot).
 Health check: `curl -s localhost:8893/health`.
