@@ -26,5 +26,13 @@ test.describe("landmarks view", () => {
     await stars.locator("#starsSearch").fill("Alpha");
     await expect(stars.locator(".landmark-node")).toHaveCount(1);
     await expect(stars.locator("#landmark-detail h2")).toContainText("Alpha");
+
+    await stars.locator("#starsSearch").fill("");
+    await expect(stars.locator(".landmark-node")).toHaveCount(3);
+    for (let step = 0; step < 6; step += 1) {
+      await stars.getByRole("button", { name: "Zoom in" }).click();
+    }
+    await expect(stars.locator("#landmarks-zoom-scale")).toHaveText("1200%");
+    await expect(stars.locator(".landmark-label:not(.is-visible)")).toHaveCount(0);
   });
 });

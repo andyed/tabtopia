@@ -11,6 +11,7 @@ const CONTEXT_WINDOW_MS = 15 * 60 * 1000;
 const HISTORY_HORIZON_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_LANDMARKS = 80;
 const MAX_MAP_LANDMARKS = 60;
+const MAX_ZOOM = 12;
 const TERRAIN_COLORS = ["#17382f", "#1c4035", "#21483b", "#294b41", "#233b35"];
 
 let allLandmarks = [];
@@ -19,6 +20,9 @@ let selectedLandmarkId = null;
 let currentSort = "signal";
 let resizeObserver = null;
 let resizeFrame = null;
+let currentZoomTransform = null;
+let activeZoomBehavior = null;
+let activeZoomSvg = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     renderShell();
@@ -52,6 +56,12 @@ function renderShell() {
             <div id="landmarks-map-frame" class="landmarks-map-frame">
                 <svg id="landmarks-map" role="list" aria-label="Saved landmarks grouped by domain"></svg>
                 <div id="landmarks-loading" class="landmarks-loading">Surveying saved territory…</div>
+                <div class="landmarks-zoom-controls" role="group" aria-label="Map zoom controls">
+                    <button type="button" data-zoom-action="out" aria-label="Zoom out">−</button>
+                    <button type="button" data-zoom-action="reset" id="landmarks-zoom-scale" aria-label="Reset zoom">100%</button>
+                    <button type="button" data-zoom-action="in" aria-label="Zoom in">+</button>
+                </div>
+                <p class="landmarks-zoom-hint">Scroll to zoom · drag to pan</p>
                 <div class="landmarks-legend" aria-hidden="true">
                     <span><i class="legend-size"></i>size = return signal</span>
                     <span><i class="legend-ring"></i>ring = context depth</span>
@@ -92,7 +102,12 @@ function initControls() {
 
     sort.addEventListener("change", (event) => {
         currentSort = event.target.value;
+        currentZoomTransform = d3.zoomIdentity;
         renderMap();
+    });
+
+    document.querySelectorAll("[data-zoom-action]").forEach(button => {
+        button.addEventListener("click", () => changeMapZoom(button.dataset.zoomAction));
     });
 
     const frame = document.getElementById("landmarks-map-frame");
@@ -172,6 +187,7 @@ function updateLandmarkMetrics(landmark) {
 }
 
 function applyFilter(rawQuery) {
+    currentZoomTransform = typeof d3 === "undefined" ? null : d3.zoomIdentity;
     const query = String(rawQuery || "").trim().toLowerCase();
     visibleLandmarks = allLandmarks.filter(landmark => {
         if (!query) return true;
@@ -231,7 +247,8 @@ function renderMap() {
         .sort((a, b) => b.value - a.value);
     d3.pack().size([width - 32, height - 58]).padding(9)(root);
 
-    const map = svg.append("g").attr("transform", "translate(16,16)");
+    const viewport = svg.append("g").attr("class", "map-viewport");
+    const map = viewport.append("g").attr("transform", "translate(16,16)");
 
     map.selectAll("circle.domain-contour")
         .data(root.children || [])
@@ -242,11 +259,12 @@ function renderMap() {
         .attr("r", d => d.r);
 
     map.selectAll("text.domain-label")
-        .data((root.children || []).filter(d => d.r > 62))
+        .data(root.children || [])
         .join("text")
         .attr("class", "domain-label")
-        .attr("x", d => d.x)
-        .attr("y", d => d.y - d.r + 17)
+        .attr("transform", d => `translate(${d.x},${d.y - d.r + 17})`)
+        .attr("x", 0)
+        .attr("y", 0)
         .attr("text-anchor", "middle")
         .text(d => d.data.domain);
 
@@ -268,23 +286,25 @@ function renderMap() {
 
     nodes.append("circle")
         .attr("class", "landmark-halo")
+        .attr("vector-effect", "non-scaling-stroke")
         .attr("r", d => Math.max(0, d.r - 2))
         .style("stroke-width", d => Math.min(7, 1.5 + d.data.landmark.contextCount * 0.35));
 
     nodes.append("circle")
         .attr("class", "landmark-peak")
+        .attr("vector-effect", "non-scaling-stroke")
         .attr("r", d => Math.max(8, d.r - 8))
         .attr("fill", d => terrainColor(d.data.landmark.domain));
 
     nodes.filter(d => d.data.landmark.id === selectedLandmarkId)
         .append("circle")
         .attr("class", "landmark-waypoint")
+        .attr("vector-effect", "non-scaling-stroke")
         .attr("cx", d => Math.max(4, d.r * 0.54))
         .attr("cy", d => -Math.max(4, d.r * 0.54))
         .attr("r", d => Math.max(5, Math.min(9, d.r * 0.12)));
 
     nodes.each(function addLabel(d) {
-        if (d.r < 30) return;
         const landmark = d.data.landmark;
         const lines = splitLabel(landmark.title, d.r > 58 ? 22 : 15);
         const text = d3.select(this).append("text")
@@ -294,16 +314,73 @@ function renderMap() {
         lines.forEach((line, index) => {
             text.append("tspan").attr("x", 0).attr("dy", index === 0 ? 0 : 15).text(line);
         });
-        if (d.r > 48) {
-            d3.select(this).append("text")
-                .attr("class", "landmark-signal-label")
-                .attr("text-anchor", "middle")
-                .attr("y", Math.min(d.r - 14, 34))
-                .text(`${landmark.visitCount} visits · ${landmark.contextCount} nearby`);
-        }
+        d3.select(this).append("text")
+            .attr("class", "landmark-signal-label")
+            .attr("text-anchor", "middle")
+            .text(`${landmark.visitCount} visits · ${landmark.contextCount} nearby`);
     });
 
     nodes.append("title").text(d => `${d.data.landmark.title}\n${d.data.landmark.domain}`);
+
+    const zoomBehavior = d3.zoom()
+        .scaleExtent([1, MAX_ZOOM])
+        .extent([[0, 0], [width, height]])
+        .translateExtent([[0, 0], [width, height]])
+        .on("zoom", event => {
+            currentZoomTransform = event.transform;
+            viewport.attr("transform", event.transform);
+            updateSemanticLabels(map, event.transform.k);
+            updateZoomReadout(event.transform.k);
+        });
+
+    activeZoomBehavior = zoomBehavior;
+    activeZoomSvg = svg;
+    currentZoomTransform ||= d3.zoomIdentity;
+    svg.call(zoomBehavior).call(zoomBehavior.transform, currentZoomTransform);
+}
+
+function updateSemanticLabels(map, zoomScale) {
+    const scale = Math.max(1, Number(zoomScale) || 1);
+
+    map.selectAll(".landmark-node").each(function updateNodeLabel(d) {
+        const screenRadius = d.r * scale;
+        const showTitle = screenRadius >= 30 || scale >= MAX_ZOOM - 0.01;
+        const showSignal = screenRadius >= 52;
+        const label = d3.select(this).select(".landmark-label");
+        const lineCount = label.selectAll("tspan").size();
+
+        label
+            .classed("is-visible", showTitle)
+            .attr("transform", `scale(${1 / scale})`)
+            .attr("y", lineCount === 1 ? 4 : -3);
+
+        d3.select(this).select(".landmark-signal-label")
+            .classed("is-visible", showSignal)
+            .attr("transform", `scale(${1 / scale})`)
+            .attr("y", Math.min(screenRadius - 14, 36));
+    });
+
+    map.selectAll(".domain-label")
+        .classed("is-visible", d => d.r * scale >= 62)
+        .attr("transform", d => `translate(${d.x},${d.y - d.r + 17 / scale}) scale(${1 / scale})`);
+}
+
+function changeMapZoom(action) {
+    if (!activeZoomBehavior || !activeZoomSvg) return;
+    if (action === "reset") {
+        currentZoomTransform = d3.zoomIdentity;
+        activeZoomSvg.call(activeZoomBehavior.transform, currentZoomTransform);
+        return;
+    }
+    activeZoomSvg.call(activeZoomBehavior.scaleBy, action === "in" ? 1.6 : 0.625);
+}
+
+function updateZoomReadout(scale) {
+    const readout = document.getElementById("landmarks-zoom-scale");
+    if (!readout) return;
+    const percentage = Math.round(scale * 100);
+    readout.textContent = `${percentage}%`;
+    readout.title = scale >= MAX_ZOOM - 0.01 ? "Maximum zoom · all nodes labeled" : "Reset zoom";
 }
 
 function metricValue(landmark) {
