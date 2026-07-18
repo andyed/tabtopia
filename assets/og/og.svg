@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<rect width="1200" height="630" fill="#16130f"/>
+<text x="72" y="128" font-family="Avenir Next, Avenir, sans-serif" font-size="58" font-weight="700" fill="#eae6d8">Anything can list tabs.</text>
+<text x="72" y="196" font-family="Avenir Next, Avenir, sans-serif" font-size="58" font-weight="700" fill="#eae6d8">tabtopia ranks them by <tspan fill="#f09a52">attention</tspan>.</text>
+<text x="72" y="248" font-family="Avenir Next, Avenir, sans-serif" font-size="25" font-weight="500" fill="#b8b0a0">A read-only MCP — your agent sees the tab you're actually reading. It never drives.</text>
+<path d="M 74.0 528 L 74.0 299 Q 74.0 290 83.0 290 L 157.0 290 Q 166.0 290 166.0 299 L 166.0 528 Z" fill="#e8873f"/>
+<circle cx="94.0" cy="310" r="7" fill="#eae6d8"/>
+<text x="120.0" y="276" text-anchor="middle" font-family="Menlo, monospace" font-size="18" font-weight="700" fill="#f09a52">14m 12s</text>
+<path d="M 194.0 528 L 194.0 369 Q 194.0 360 203.0 360 L 277.0 360 Q 286.0 360 286.0 369 L 286.0 528 Z" fill="#64b5f6"/>
+<circle cx="214.0" cy="380" r="7" fill="#57534b"/>
+<text x="240.0" y="346" text-anchor="middle" font-family="Menlo, monospace" font-size="18" font-weight="500" fill="#b8b0a0">6m 40s</text>
+<path d="M 314.0 528 L 314.0 409 Q 314.0 400 323.0 400 L 397.0 400 Q 406.0 400 406.0 409 L 406.0 528 Z" fill="#57a3dd"/>
+<circle cx="334.0" cy="420" r="7" fill="#57534b"/>
+<text x="360.0" y="386" text-anchor="middle" font-family="Menlo, monospace" font-size="18" font-weight="500" fill="#b8b0a0">3m 05s</text>
+<path d="M 434.0 528 L 434.0 437 Q 434.0 428 443.0 428 L 517.0 428 Q 526.0 428 526.0 437 L 526.0 528 Z" fill="#4a8fc4"/>
+<circle cx="454.0" cy="448" r="7" fill="#57534b"/>
+<text x="480.0" y="414" text-anchor="middle" font-family="Menlo, monospace" font-size="18" font-weight="500" fill="#b8b0a0">1m 58s</text>
+<path d="M 554.0 528 L 554.0 461 Q 554.0 452 563.0 452 L 637.0 452 Q 646.0 452 646.0 461 L 646.0 528 Z" fill="#3e7cab"/>
+<circle cx="574.0" cy="472" r="7" fill="#57534b"/>
+<text x="600.0" y="438" text-anchor="middle" font-family="Menlo, monospace" font-size="18" font-weight="500" fill="#b8b0a0">47s</text>
+<path d="M 674.0 528 L 674.0 479 Q 674.0 470 683.0 470 L 757.0 470 Q 766.0 470 766.0 479 L 766.0 528 Z" fill="#326992"/>
+<circle cx="694.0" cy="490" r="7" fill="#57534b"/>
+<path d="M 794.0 528 L 794.0 493 Q 794.0 484 803.0 484 L 877.0 484 Q 886.0 484 886.0 493 L 886.0 528 Z" fill="#2a577a"/>
+<circle cx="814.0" cy="504" r="7" fill="#57534b"/>
+<path d="M 914.0 528 L 914.0 504 Q 914.0 495 923.0 495 L 997.0 495 Q 1006.0 495 1006.0 504 L 1006.0 528 Z" fill="#234763"/>
+<circle cx="934.0" cy="515" r="7" fill="#57534b"/>
+<path d="M 1034.0 528 L 1034.0 512 Q 1034.0 503 1043.0 503 L 1117.0 503 Q 1126.0 503 1126.0 512 L 1126.0 528 Z" fill="#1d3a52"/>
+<circle cx="1054.0" cy="523" r="7" fill="#57534b"/>
+<rect x="64" y="528" width="1072" height="2" fill="#57534b"/>
+<text x="72" y="590" font-family="Avenir Next, Avenir, sans-serif" font-size="27" font-weight="700" fill="#eae6d8">tabtopia<tspan font-size="21" font-weight="500" fill="#b8b0a0">   live browser context for your agent</tspan></text>
+<text x="1128" y="590" text-anchor="end" font-family="Menlo, monospace" font-size="19" font-weight="500" fill="#b8b0a0">github.com/andyed/tabtopia</text>
+</svg>
