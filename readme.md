@@ -3,6 +3,50 @@
 ## Overview
 Tabtopia is a Chrome extension that visualizes your browser history and open tabs using interactive D3.js visualizations. There are four core views: a treemap of open tabs, a graph of open tabs, an enhanced history session view, and a bookmark-centric stars view. All views support search using the excellent [lunr.js](https://github.com/olivernn/lunr.js) library. The extension leverages Chrome's built-in AI capabilities to provide smart features like URL summarization.
 
+It also ships an **MCP server** (`mcp/`) that gives a personal agent — Claude
+Code, or anything that speaks [MCP](https://modelcontextprotocol.io) — live
+awareness of your browsing context.
+
+## The MCP: your agent knows what you're looking at
+
+Every browser MCP with traction is an automation tool: the agent drives the
+browser. This is the inverse — **passive, read-only attention awareness**. The
+extension pushes a live snapshot (open tabs, focus, audio, recent navigation
+flow) to a small local daemon; MCP tools read it. It never opens, closes,
+focuses, or navigates a tab.
+
+Tabs are ranked by **real engagement** — seconds actually spent reading, tied
+by recency — not tab order. That ranking is ACT-R's base-level activation
+applied to your browser: a recency-and-use estimate of the probability you'll
+need that chunk next (Anderson & Schooler's rational analysis of memory). Open
+tabs are your extended working memory; `get_context` hands your agent the
+activation landscape.
+
+```
+> get_context
+Focused: "WebGPU compute shaders — best practices" (developer.chrome.com), 14m engaged
+Open tabs by engagement:
+  1. WebGPU compute shaders — 14m, active 2m ago
+  2. wgpu-rs examples (github.com) — 6m, active 11m ago
+  3. Hacker News — 3m, active 1h ago
+  4. …seven more, <30s each
+Audio: none · Snapshot age: 2s
+```
+
+Four tools: `get_context` (the briefing above), `search` (live tabs / recent
+activity / saved snapshots), `capture_context` (persist a named snapshot of
+your working state — the only write), and `get_tab_content` (read the DOM text
+of a tab you already have open, including logged-in pages a plain fetch can't
+see).
+
+Everything binds `127.0.0.1`; the extension↔daemon socket is gated by a
+`chrome-extension://` Origin allowlist; nothing leaves your machine. One
+runtime dependency. Setup and architecture: [`mcp/README.md`](mcp/README.md).
+A ready-made Claude Code skill ships at
+[`.claude/skills/browser-now/`](.claude/skills/browser-now/SKILL.md) so the
+agent knows when to reach for the tools ("what am I looking at", "save my
+research state", "the tab about X").
+
 ## How To Use
 
 ### Treemap Navigation
