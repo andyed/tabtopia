@@ -61,7 +61,7 @@ s.append(f'<text x="{MX}" y="128" font-family="{SANS}" font-size="58" font-weigh
 s.append(f'<text x="{MX}" y="196" font-family="{SANS}" font-size="58" font-weight="700" fill="{CREAM}">tabtopia ranks them by <tspan fill="{ORANGE}">attention</tspan>.</text>')
 
 # --- Sub ---
-s.append(f'<text x="{MX}" y="248" font-family="{SANS}" font-size="25" font-weight="500" fill="{MUTED}">A read-only MCP — your agent sees the tab you\'re actually reading. It never drives.</text>')
+s.append(f'<text x="{MX}" y="248" font-family="{SANS}" font-size="25" font-weight="500" fill="{MUTED}">An MCP for your agent — it sees the tab you\'re actually reading, not just a list of URLs.</text>')
 
 # --- Activation skyline ---
 BASE = 528

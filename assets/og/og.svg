@@ -2,7 +2,7 @@
 <rect width="1200" height="630" fill="#16130f"/>
 <text x="72" y="128" font-family="Avenir Next, Avenir, sans-serif" font-size="58" font-weight="700" fill="#eae6d8">Anything can list tabs.</text>
 <text x="72" y="196" font-family="Avenir Next, Avenir, sans-serif" font-size="58" font-weight="700" fill="#eae6d8">tabtopia ranks them by <tspan fill="#f09a52">attention</tspan>.</text>
-<text x="72" y="248" font-family="Avenir Next, Avenir, sans-serif" font-size="25" font-weight="500" fill="#b8b0a0">A read-only MCP — your agent sees the tab you're actually reading. It never drives.</text>
+<text x="72" y="248" font-family="Avenir Next, Avenir, sans-serif" font-size="25" font-weight="500" fill="#b8b0a0">An MCP for your agent — it sees the tab you're actually reading, not just a list of URLs.</text>
 <path d="M 74.0 528 L 74.0 299 Q 74.0 290 83.0 290 L 157.0 290 Q 166.0 290 166.0 299 L 166.0 528 Z" fill="#e8873f"/>
 <circle cx="94.0" cy="310" r="7" fill="#eae6d8"/>
 <text x="120.0" y="276" text-anchor="middle" font-family="Menlo, monospace" font-size="18" font-weight="700" fill="#f09a52">14m 12s</text>
