@@ -21,7 +21,21 @@
 
 // Import utility functions
 import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
-import { pushSnapshot } from "./bridge-client.js";
+import { pushSnapshot, setRequestHandler } from "./bridge-client.js";
+
+// Let the MCP bridge daemon read an open tab's DOM on demand (get_tab_content).
+// extractTabContentInWorker returns the page text (with a metadata fallback);
+// we add the live tab title so the tool result is self-describing. Read-only —
+// no navigation, no reload.
+setRequestHandler(async (url) => {
+    const content = await extractTabContentInWorker(url);
+    let title = "";
+    try {
+        const [tab] = await chrome.tabs.query({ url });
+        title = tab?.title || "";
+    } catch (e) { /* title is best-effort */ }
+    return { url, title, content, method: "background-worker" };
+});
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log("[Tabtopia] installed successfully.");

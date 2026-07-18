@@ -1,5 +1,7 @@
-// Bridge client: pushes live-status snapshots to the interests2025 WS bridge
-// (ws://127.0.0.1:8891), where the MCP server's status tools read them.
+// Bridge client: pushes live-status snapshots to tabtopia's standalone MCP
+// bridge daemon (ws://127.0.0.1:8892), where the MCP server's status tools read
+// them. This used to point at the interests2025 bridge on :8891; tabtopia now
+// owns its bridge end-to-end with no interests2025 dependency.
 //
 // MV3 service-worker rules shape this design: NO reconnect timers. A backoff
 // loop would keep the SW alive (battery) and fight Chrome's teardown. Instead
@@ -8,16 +10,43 @@
 // connection self-heals whenever the user is actually browsing — and when the
 // SW is torn down, the server just serves a staler snapshot and says so.
 //
-// The server authenticates us by the Origin header Chrome attaches to
+// The daemon authenticates us by the Origin header Chrome attaches to
 // SW-initiated WebSockets (chrome-extension://<id>, unforgeable from page JS);
-// it must have this extension's id in its ALLOWED_EXTENSION_IDS.
+// it must have this extension's id in its allowlist.
+//
+// The socket is also bidirectional: the daemon can send GET_TAB_CONTENT to read
+// an open tab's DOM on demand. background.js registers the actual extractor via
+// setRequestHandler() so this module needs no import back into background.js.
 
-const DEFAULT_BRIDGE_URL = "ws://127.0.0.1:8891";
+const DEFAULT_BRIDGE_URL = "ws://127.0.0.1:8892";
 const CONNECT_THROTTLE_MS = 30_000;
 
 let socket = null;
 let pendingSnapshot = null;
 let lastConnectAttempt = 0;
+
+// GET_TAB_CONTENT handler, injected by background.js. Signature:
+//   (url) => Promise<{ url, title, content, method }>
+// Left null until registered; requests then reply with an error, not a hang.
+let tabContentHandler = null;
+export function setRequestHandler(fn) { tabContentHandler = fn; }
+
+async function handleServerMessage(msg) {
+    if (!msg || msg.type !== "GET_TAB_CONTENT") return;
+    const reply = (payload) => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            try { socket.send(JSON.stringify({ type: "TAB_CONTENT_RESULT", id: msg.id, ...payload })); }
+            catch (e) { /* socket died; daemon times the request out */ }
+        }
+    };
+    if (!tabContentHandler) return reply({ success: false, error: "no tab-content handler registered" });
+    try {
+        const content = await tabContentHandler(msg.url);
+        reply({ success: true, content });
+    } catch (e) {
+        reply({ success: false, error: e?.message || "extraction failed" });
+    }
+}
 
 // Overridable for tests / non-default setups via chrome.storage.local.bridgeUrl.
 async function bridgeUrl() {
@@ -47,11 +76,15 @@ export async function pushSnapshot(snapshot) {
     }
     socket.onopen = () => {
         try {
-            // Role announcement keeps the bridge from routing scrape requests
-            // here (interester remains the scraper client).
+            // Role announcement: this is the live-status client (not a scraper).
             socket.send(JSON.stringify({ type: "HELLO", role: "tabtopia-status" }));
         } catch (e) { /* close handler will clean up */ }
         flush();
+    };
+    socket.onmessage = (event) => {
+        let msg;
+        try { msg = JSON.parse(event.data); } catch { return; }
+        handleServerMessage(msg);
     };
     socket.onclose = () => { socket = null; };
     socket.onerror = () => { /* onclose follows; next push reconnects */ };
