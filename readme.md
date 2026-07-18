@@ -34,6 +34,18 @@ Open tabs by engagement:
 Audio: none · Snapshot age: 2s
 ```
 
+And in practice — a real exchange, with the bakery's menu sitting in an open
+tab and no URL pasted:
+
+```
+> does manresa have quiche
+
+Yes — Manresa Bread's Los Altos menu has a slice of Quiche Lorraine for $10.
+(The live browser snapshot was about 2 seconds old.)
+```
+
+The agent found the tab, read it, answered, and said how fresh its view was.
+
 Four tools: `get_context` (the briefing above), `search` (live tabs / recent
 activity / saved snapshots), `capture_context` (persist a named snapshot of
 your working state — the only write), and `get_tab_content` (read the DOM text
