@@ -19,11 +19,20 @@
 # Node (if tooling is ever added)
 node_modules/
 
+# tabtopia MCP: named context captures are the user's live browser snapshots —
+# personal data, never committed to a public repo. The server code IS public.
+/mcp/data/
+
 # Playwright E2E artifacts
 /test-results/
 /playwright-report/
 /blob-report/
 /.playwright/
+
+# Claude Code local state. The browser-now skill (.claude/skills/) IS public —
+# it ships with the MCP so agents know how to use the tools.
+/.claude/worktrees/
+/.claude/settings.local.json
 
 # Internal docs — this repo is PUBLIC (github.com/andyed/tabtopia).
 # Strategy and audit docs stay on local disk: they carry positioning, and they
@@ -33,6 +42,7 @@ node_modules/
 /docs/HEALTHCHECK_*.md
 /docs/AUDIT.md
 /docs/MCP_ARCHITECTURE.md
+/docs/ANNOUNCEMENT.md
 
 # Reference papers — third-party copyrighted PDFs. Keep locally, cite by DOI;
 # do not redistribute from a public repo.

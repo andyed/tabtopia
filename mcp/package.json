@@ -1,0 +1,17 @@
+{
+  "name": "tabtopia-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone MCP server for tabtopia — live browser status (open tabs ranked by real engagement, focus, audio, recent flow) exposed to Claude. No embeddings, no history corpus, no external deps beyond ws.",
+  "type": "commonjs",
+  "bin": {
+    "tabtopia-mcp": "./server.js"
+  },
+  "scripts": {
+    "daemon": "node bridge-daemon.js",
+    "mcp": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- launchd can't expand ~ or $HOME: edit the three /Users/YOU paths (and the
+     node path — `which node` — if yours isn't Homebrew) before loading. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.andyed.tabtopia-mcp</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>bridge-daemon.js</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/YOU/path/to/tabtopia/mcp</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/YOU/Library/Logs/tabtopia-mcp.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOU/Library/Logs/tabtopia-mcp.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
