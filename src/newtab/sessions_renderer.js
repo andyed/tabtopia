@@ -7,6 +7,17 @@ import { createSessionCard, createSessionMosaic } from "./hero_images_display.js
  * @param {boolean} isRefresh - Whether this is a refresh operation
  */
 export async function renderSessionCards(sessions, container, isRefresh = false) {
+  // One bulk read replaces the old per-page storage.get + background-message
+  // chain in createSessionCard. Missing entries simply render image-free cards,
+  // exactly as they did after an empty lookup.
+  let heroImagesStore = {};
+  try {
+    const stored = await chrome.storage.local.get(["heroImages"]);
+    heroImagesStore = stored.heroImages || {};
+  } catch (error) {
+    console.warn("[Sessions Renderer] hero-image cache unavailable", error);
+  }
+
   // If not refreshing, clear the container
   if (!isRefresh) {
     container.innerHTML = "";
@@ -91,7 +102,7 @@ export async function renderSessionCards(sessions, container, isRefresh = false)
         const relativeAge = timeRange === 0 ? 0 : (newestTime - session.startTime) / timeRange;
 
         // Create session card element with age info
-        const card = await createSessionCard(session, { relativeAge });
+        const card = await createSessionCard(session, { relativeAge, heroImagesStore });
         if (card) {
           cardsRow.appendChild(card);
 

@@ -14,6 +14,7 @@ import { createSessionCard, clearSeenHeroImages } from "./hero_images_display.js
 import { formatTimeAgo } from "./timeago.js";
 // Import URL utilities
 import { extractSearchQuery } from "../lib/url-utils.js";
+import { getRecentHistory } from "../lib/history-cache.js";
 // Cross-view search query hand-off (URL ?q= + chrome.storage.session)
 import {
     readSharedQuery,
@@ -465,18 +466,19 @@ async function processSessionsData(activeTabUrls = [], isRefresh = false) {
     try {
         // Standalone build: Chrome's own history is the sole sessions source.
         const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-        const historyItems = await chrome.history.search({
-            text: "",
-            // Most-recent N items in the window. The removed backend returned a
-            // curated set; pulling 10000 raw history items made the sessions view
-            // slow to fetch, sessionize, and render. 3000 keeps plenty of recent
-            // sessions while cutting load time ~3x. Raise it for deeper history.
-            maxResults: 3000,
-            startTime: thirtyDaysAgo // 30-day window
-        });
+        const [historyItems, allWindows] = await Promise.all([
+            getRecentHistory({
+                text: "",
+                // Most-recent N items in the window. The removed backend returned a
+                // curated set; pulling 10000 raw history items made the sessions view
+                // slow to fetch, sessionize, and render. 3000 keeps plenty of recent
+                // sessions while cutting load time ~3x. Raise it for deeper history.
+                maxResults: 3000,
+                startTime: thirtyDaysAgo // 30-day window
+            }),
+            chrome.windows.getAll({ populate: true })
+        ]);
         console.log(`[Tabtopia] Retrieved ${historyItems.length} items from local Chrome History (30-day window)`);
-
-        const allWindows = await chrome.windows.getAll({ populate: true });
 
         console.log(`Fetched ${historyItems.length} history items and ${allWindows.length} windows`);
 
@@ -558,7 +560,7 @@ async function initSessions(isRefresh = false) {
         sessionsData = sessions;
 
         // Explicitly render the sessions
-        renderSessions(sessions, isRefresh);
+        await renderSessions(sessions, isRefresh);
 
         // If this is a refresh, save and restore scroll position
         if (isRefresh) {
@@ -1393,7 +1395,7 @@ function renderPageList(session, searchTerm = "") {
  * @param {Array} sessions - Array of session objects to render
  * @param {boolean} isRefresh - Whether this is a refresh operation
  */
-function renderSessions(sessions, isRefresh = false) {
+async function renderSessions(sessions, isRefresh = false) {
     const container = document.getElementById("sessions-container");
     if (!container) return;
 
@@ -1412,7 +1414,7 @@ function renderSessions(sessions, isRefresh = false) {
     }
 
     // Always use card grid layout for sessions
-    renderSessionCards(sessions, container, isRefresh);
+    await renderSessionCards(sessions, container, isRefresh);
 }
 
 /**
@@ -1507,7 +1509,7 @@ async function refreshSessionsData(activeTabUrls) {
         allSessionsData = sessions; // Update all sessions data as well
 
         // Render the refreshed sessions
-        renderSessions(sessions, true);
+        await renderSessions(sessions, true);
 
         console.log("Sessions data refreshed successfully");
     } catch (error) {

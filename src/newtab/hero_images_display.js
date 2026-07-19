@@ -132,7 +132,13 @@ export async function createSessionCard(session, options = {}) {
         continue;
       }
 
-      const images = await getHeroImagesForUrl(page.url);
+      // Sessions' first paint supplies the complete persisted hero-image map in
+      // one storage read. Falling back to getHeroImagesForUrl here used to issue
+      // a storage read plus background message for every page, serially.
+      const storedHero = options.heroImagesStore?.[page.url];
+      const images = options.heroImagesStore !== undefined
+        ? (storedHero?.images || null)
+        : await getHeroImagesForUrl(page.url);
       if (images && images.length > 0) {
         // Only add images that haven't been seen globally
         const uniqueImages = images.filter(img => !globalSeenImageUrls.has(img.src));

@@ -6,6 +6,7 @@ import {
 } from "./search-persistence.js";
 import { formatTimeAgo } from "./timeago.js";
 import { getLocalFaviconUrl, safeUrl } from "./utility.js";
+import { getRecentHistory } from "../lib/history-cache.js";
 
 const CONTEXT_WINDOW_MS = 15 * 60 * 1000;
 const HISTORY_HORIZON_MS = 180 * 24 * 60 * 60 * 1000;
@@ -128,9 +129,10 @@ function initControls() {
 
 async function initLandmarks() {
     try {
-        const [bookmarks, summaries] = await Promise.all([
+        const [bookmarks, summaries, recentHistory] = await Promise.all([
             fetchRecentBookmarks(MAX_LANDMARKS),
-            fetchCachedSummaries()
+            fetchCachedSummaries(),
+            fetchRecentHistory()
         ]);
 
         if (!bookmarks.length) {
@@ -138,7 +140,6 @@ async function initLandmarks() {
             return;
         }
 
-        const recentHistory = await fetchRecentHistory();
         allLandmarks = bookmarks.map(bookmark => createLandmark(bookmark, recentHistory, summaries));
         applyFilter(document.getElementById("starsSearch")?.value || "");
         document.getElementById("landmarks-loading")?.remove();
@@ -645,7 +646,7 @@ async function fetchCachedSummaries() {
 }
 
 async function fetchRecentHistory() {
-    const items = await chrome.history.search({
+    const items = await getRecentHistory({
         text: "",
         startTime: Date.now() - HISTORY_HORIZON_MS,
         maxResults: 5000

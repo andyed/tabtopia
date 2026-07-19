@@ -22,6 +22,7 @@
 // Import utility functions
 import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
 import { pushSnapshot, setRequestHandler } from "./bridge-client.js";
+import { refreshRecentHistoryCache } from "./lib/history-cache.js";
 
 // Let the MCP bridge daemon read an open tab's DOM on demand (get_tab_content).
 // Exact-URL match only: the tool's contract is "fails gracefully if the tab is
@@ -49,6 +50,13 @@ chrome.runtime.onInstalled.addListener(() => {
 // Also initialize active tab tracking when the background script starts
 loadStateFromStorage();
 initializeActiveTabTracking();
+
+// Warm the shared Graph/Sessions/Stars history snapshot without delaying the
+// new-tab document. storage.session survives service-worker suspension, so the
+// first visit to each secondary view does not reopen the profile's History DB.
+refreshRecentHistoryCache().catch(error => {
+    console.warn("[HistoryCache] background prewarm failed", error);
+});
 
 // Set up periodic state saving to ensure data persistence
 setInterval(() => {

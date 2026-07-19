@@ -3,6 +3,7 @@ console.log("graph.js loaded");
 import { createForceGraph } from "./graph-renderer.js";
 import { getDomainFromUrl, getFaviconUrl } from "./utility.js";
 import { browserState } from "./state.js";
+import { getRecentHistory } from "../lib/history-cache.js";
 import {
     readSharedQuery,
     publishSharedQuery,
@@ -32,17 +33,15 @@ async function init() {
         "<div class=\"loading\"><div class=\"spinner\"></div>Loading your browsing data...</div>";
 
     try {
-        // Get stored graph data for faster initialization
-        const cachedGraphData = await getGraphData();
-
-        // Fetch data
-        const [historyItems, windows] = await Promise.all([
-            chrome.history.search({ text: "", maxResults: 200, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
-            chrome.windows.getAll({ populate: true })
+        // These sources are independent. Starting them together matters on a
+        // cold extension load: storage, History, windows, and bookmarks should
+        // not form a serial waterfall before the first graph paint.
+        const [cachedGraphData, historyItems, windows, bookmarks] = await Promise.all([
+            getGraphData(),
+            getRecentHistory({ text: "", maxResults: 200, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
+            chrome.windows.getAll({ populate: true }),
+            fetchBookmarks()
         ]);
-
-        // Get bookmarks
-        const bookmarks = await fetchBookmarks();
 
         // Track currently open tabs
         windows.forEach(window => {
