@@ -347,6 +347,10 @@ const MAP_INSET = 16;
 function updateSemanticLabels(map, transform, viewWidth, viewHeight) {
     const t = transform && typeof transform.applyX === "function" ? transform : d3.zoomIdentity;
     const scale = Math.max(1, t.k || 1);
+    // Partial counter-scaling: labels grow as sqrt(zoom), capped, instead of
+    // staying pinned at base size — 16px type on a 12x circle reads as fine
+    // print. sf = 1 at rest, ~2.4 at max zoom.
+    const sf = Math.min(Math.sqrt(scale), 2.4);
 
     // A label earns its pixels only if (a) the node is big enough on screen,
     // (b) the text physically fits where it's drawn, and (c) none of it falls
@@ -362,40 +366,42 @@ function updateSemanticLabels(map, transform, viewWidth, viewHeight) {
         }
         const cx = t.applyX(d.x + MAP_INSET);
         const cy = t.applyY(d.y + MAP_INSET);
-        const half = d.titleWidth / 2;
+        const half = (d.titleWidth * sf) / 2;
         // Only a label that STRADDLES the viewport edge is cropped. Fully
         // offscreen labels stay eligible — they cost nothing visually, and
         // hiding them would break the max-zoom "all nodes labeled" promise.
-        const uncropped = labelUncropped(cx - half, cx + half, cy - 20, cy + 20, viewWidth, viewHeight);
+        const uncropped = labelUncropped(cx - half, cx + half, cy - 20 * sf, cy + 20 * sf, viewWidth, viewHeight);
         const showTitle = (screenRadius >= 30 || scale >= MAX_ZOOM - 0.01) && uncropped;
         const showSignal = screenRadius >= 52 && uncropped;
 
         label
             .classed("is-visible", showTitle)
-            .attr("transform", `scale(${1 / scale})`)
-            .attr("y", lineCount === 1 ? 4 : -3);
+            .attr("transform", `scale(${sf / scale})`)
+            .attr("y", (lineCount === 1 ? 4 : -3));
 
+        // y is in the label's local units, so the rendered offset scales by
+        // sf; divide to keep the signal at the intended screen distance.
         d3.select(this).select(".landmark-signal-label")
             .classed("is-visible", showSignal)
-            .attr("transform", `scale(${1 / scale})`)
-            .attr("y", Math.min(screenRadius - 14, 36));
+            .attr("transform", `scale(${sf / scale})`)
+            .attr("y", Math.min(screenRadius - 14, 36) / sf);
     });
 
     map.selectAll(".domain-label")
-        .attr("transform", d => `translate(${d.x},${d.y - d.r + 17 / scale}) scale(${1 / scale})`)
+        .attr("transform", d => `translate(${d.x},${d.y - d.r + (17 * sf) / scale}) scale(${sf / scale})`)
         .classed("is-visible", function updateDomainLabel(d) {
             if (d.r * scale < 62) return false;
             if (d.labelWidth === undefined) d.labelWidth = this.getComputedTextLength();
             // Chord of the contour at the label's height below the circle top:
             // the widest the text can be without spilling onto neighbors.
-            const inset = 17 / scale;
+            const inset = (17 * sf) / scale;
             const chord = 2 * Math.sqrt(Math.max(0, d.r * d.r - (d.r - inset) * (d.r - inset)));
-            if (d.labelWidth > chord * scale - 6) return false;
+            if (d.labelWidth * sf > chord * scale - 6) return false;
             const sx = t.applyX(d.x + MAP_INSET);
             const sy = t.applyY(d.y - d.r + inset + MAP_INSET);
-            const half = d.labelWidth / 2;
-            // sy is the text baseline; glyphs extend ~11px above it.
-            return labelUncropped(sx - half, sx + half, sy - 11, sy, viewWidth, viewHeight);
+            const half = (d.labelWidth * sf) / 2;
+            // sy is the text baseline; glyphs extend ~11px (base) above it.
+            return labelUncropped(sx - half, sx + half, sy - 11 * sf, sy, viewWidth, viewHeight);
         });
 }
 
