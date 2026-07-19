@@ -330,7 +330,7 @@ function renderMap() {
         .on("zoom", event => {
             currentZoomTransform = event.transform;
             viewport.attr("transform", event.transform);
-            updateSemanticLabels(map, event.transform.k);
+            updateSemanticLabels(map, event.transform, width, height);
             updateZoomReadout(event.transform.k);
         });
 
@@ -340,15 +340,35 @@ function renderMap() {
     svg.call(zoomBehavior).call(zoomBehavior.transform, currentZoomTransform);
 }
 
-function updateSemanticLabels(map, zoomScale) {
-    const scale = Math.max(1, Number(zoomScale) || 1);
+// The map <g> sits at translate(16,16) inside the zoomed viewport (see
+// renderMap); label screen positions must account for it when testing crop.
+const MAP_INSET = 16;
 
+function updateSemanticLabels(map, transform, viewWidth, viewHeight) {
+    const t = transform && typeof transform.applyX === "function" ? transform : d3.zoomIdentity;
+    const scale = Math.max(1, t.k || 1);
+
+    // A label earns its pixels only if (a) the node is big enough on screen,
+    // (b) the text physically fits where it's drawn, and (c) none of it falls
+    // outside the viewport — a cropped or overflowing label is noise, not signal.
     map.selectAll(".landmark-node").each(function updateNodeLabel(d) {
         const screenRadius = d.r * scale;
-        const showTitle = screenRadius >= 30 || scale >= MAX_ZOOM - 0.01;
-        const showSignal = screenRadius >= 52;
         const label = d3.select(this).select(".landmark-label");
         const lineCount = label.selectAll("tspan").size();
+        if (d.titleWidth === undefined) {
+            let widest = 0;
+            label.selectAll("tspan").each(function measure() { widest = Math.max(widest, this.getComputedTextLength()); });
+            d.titleWidth = widest;
+        }
+        const cx = t.applyX(d.x + MAP_INSET);
+        const cy = t.applyY(d.y + MAP_INSET);
+        const half = d.titleWidth / 2;
+        // Only a label that STRADDLES the viewport edge is cropped. Fully
+        // offscreen labels stay eligible — they cost nothing visually, and
+        // hiding them would break the max-zoom "all nodes labeled" promise.
+        const uncropped = labelUncropped(cx - half, cx + half, cy - 20, cy + 20, viewWidth, viewHeight);
+        const showTitle = (screenRadius >= 30 || scale >= MAX_ZOOM - 0.01) && uncropped;
+        const showSignal = screenRadius >= 52 && uncropped;
 
         label
             .classed("is-visible", showTitle)
@@ -362,8 +382,29 @@ function updateSemanticLabels(map, zoomScale) {
     });
 
     map.selectAll(".domain-label")
-        .classed("is-visible", d => d.r * scale >= 62)
-        .attr("transform", d => `translate(${d.x},${d.y - d.r + 17 / scale}) scale(${1 / scale})`);
+        .attr("transform", d => `translate(${d.x},${d.y - d.r + 17 / scale}) scale(${1 / scale})`)
+        .classed("is-visible", function updateDomainLabel(d) {
+            if (d.r * scale < 62) return false;
+            if (d.labelWidth === undefined) d.labelWidth = this.getComputedTextLength();
+            // Chord of the contour at the label's height below the circle top:
+            // the widest the text can be without spilling onto neighbors.
+            const inset = 17 / scale;
+            const chord = 2 * Math.sqrt(Math.max(0, d.r * d.r - (d.r - inset) * (d.r - inset)));
+            if (d.labelWidth > chord * scale - 6) return false;
+            const sx = t.applyX(d.x + MAP_INSET);
+            const sy = t.applyY(d.y - d.r + inset + MAP_INSET);
+            const half = d.labelWidth / 2;
+            // sy is the text baseline; glyphs extend ~11px above it.
+            return labelUncropped(sx - half, sx + half, sy - 11, sy, viewWidth, viewHeight);
+        });
+}
+
+// True when the label rect is fully inside OR fully outside the viewport;
+// false only when it straddles an edge (i.e. would render partially cut).
+function labelUncropped(left, right, top, bottom, viewWidth, viewHeight) {
+    const fullyInside = left >= 2 && right <= viewWidth - 2 && top >= 0 && bottom <= viewHeight - 2;
+    const fullyOutside = right < 0 || left > viewWidth || bottom < 0 || top > viewHeight;
+    return fullyInside || fullyOutside;
 }
 
 function changeMapZoom(action) {
