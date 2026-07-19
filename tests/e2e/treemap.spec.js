@@ -42,6 +42,54 @@ async function openApp(context, server) {
 }
 
 test.describe("treemap ↔ readout", () => {
+  test("parser paints the sidebar shell before treemap layout", async ({ context, server }) => {
+    await context.addInitScript(() => {
+      window.__startupOrder = [];
+      const observer = new MutationObserver(() => {
+        if (!window.__startupOrder.includes("sidebar") && document.querySelector("#readout .readout-intro")) {
+          window.__startupOrder.push("sidebar");
+        }
+        if (!window.__startupOrder.includes("treemap") && document.querySelector("#treemap svg")) {
+          window.__startupOrder.push("treemap");
+        }
+      });
+      observer.observe(document, { childList: true, subtree: true });
+    });
+
+    const { nt } = await openApp(context, server);
+    await expect(nt.locator("#readout .readout-intro")).toBeVisible();
+    expect(await nt.evaluate(() => window.__startupOrder.slice(0, 2))).toEqual(["sidebar", "treemap"]);
+  });
+
+  test("bounds synchronous text measurement and drag setup per render", async ({ context, server }) => {
+    await context.addInitScript(() => {
+      window.__treemapPerfProbe = { getBBox: 0, timeout500: 0 };
+
+      const nativeTimeout = window.setTimeout.bind(window);
+      window.setTimeout = (callback, delay, ...args) => {
+        if (delay === 500) window.__treemapPerfProbe.timeout500 += 1;
+        return nativeTimeout(callback, delay, ...args);
+      };
+
+      const nativeGetBBox = SVGGraphicsElement.prototype.getBBox;
+      SVGGraphicsElement.prototype.getBBox = function (...args) {
+        window.__treemapPerfProbe.getBBox += 1;
+        return nativeGetBBox.apply(this, args);
+      };
+    });
+
+    const { nt } = await openApp(context, server);
+    const cellCount = await nt.locator("#treemap .cell").count();
+    const probe = await nt.evaluate(() => window.__treemapPerfProbe);
+
+    // Binary search needs at most six getBBox calls per title. Leave a small
+    // allowance for non-cell SVG measurements elsewhere in the page.
+    expect(probe.getBBox).toBeLessThanOrEqual(cellCount * 7);
+    // One delayed focus-restoration check remains; drag binding itself is now
+    // synchronous and must never schedule one timer per cell.
+    expect(probe.timeout500).toBeLessThanOrEqual(2);
+  });
+
   test("hover previews a cell and switches between cells", async ({ context, server }) => {
     const { nt } = await openApp(context, server);
     const title = nt.locator("#readout .readout-title");
@@ -59,6 +107,28 @@ test.describe("treemap ↔ readout", () => {
     // ...and back, to prove it isn't a one-way latch (the "n-2 hover" bug).
     await nt.locator(CELL("Alpha Page")).hover();
     await expect(title).toHaveText("Alpha Page");
+  });
+
+  test("hover keeps domain stars visible, including while the pointer rests", async ({ context, server }) => {
+    const { nt } = await openApp(context, server);
+
+    await nt.evaluate(async (baseUrl) => {
+      await chrome.bookmarks.create({
+        title: "Saved Alpha context",
+        url: `${baseUrl}/saved-alpha`,
+      });
+    }, server);
+
+    await nt.locator(CELL("Alpha Page")).hover();
+    const domainStars = nt.locator("#readout .bookmarks-section");
+    await expect(domainStars.getByRole("heading")).toContainText("Stars from 127.0.0.1");
+    await expect(domainStars).toContainText("Saved Alpha context");
+
+    // The idle panel used to replace the domain readout after five seconds,
+    // even though the pointer was still resting on the cell.
+    await nt.waitForTimeout(5500);
+    await expect(domainStars).toContainText("Saved Alpha context");
+    await expect(nt.locator("#readout .recent-stars")).toHaveCount(0);
   });
 
   test("click pins, the pin survives a redraw, a second cell switches it, re-click unpins", async ({

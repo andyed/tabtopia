@@ -73,6 +73,259 @@ body {
 
 #treemap, #graph, .visualization-container { background-color: transparent; }
 
+/* Treemap context rail ----------------------------------------------------
+   The rail is part of the information landscape: quiet at rest, specific on
+   hover, and narrow enough that the map remains the primary surface. */
+.visualization-container {
+  align-items: stretch;
+}
+
+#treemap {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+#readout {
+  box-sizing: border-box;
+  flex: 0 0 clamp(320px, 27vw, 380px);
+  width: auto;
+  min-width: 0;
+  height: calc(100vh - var(--header-height));
+  padding: 0;
+  overflow-y: auto;
+  background: var(--tabtopia-terrain);
+  color: var(--tabtopia-paper);
+  border: 0;
+  border-left: 1px solid #46685b;
+  box-shadow: -16px 0 36px rgba(0, 0, 0, 0.18);
+  font-family: "Avenir Next", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  scrollbar-color: #46685b var(--tabtopia-terrain);
+  transition-property: box-shadow;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+#readout.sticky {
+  border: 0;
+  border-left: 1px solid var(--tabtopia-route);
+  box-shadow: inset 3px 0 0 var(--tabtopia-route), -16px 0 36px rgba(0, 0, 0, 0.2);
+}
+
+.readout-content,
+.readout-header,
+.readout-details,
+.bookmarks-section,
+.history-section,
+.summary-section {
+  box-sizing: border-box;
+}
+
+.readout-intro {
+  padding: 28px 24px 24px;
+  background:
+    linear-gradient(145deg, transparent 0 62%, rgba(159, 247, 210, 0.07) 62.3% 62.8%, transparent 63.1%),
+    var(--tabtopia-terrain-high);
+  border-bottom: 1px solid #46685b;
+}
+
+.readout-kicker {
+  color: var(--tabtopia-route);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+#readout .readout-intro h2 {
+  margin: 9px 0 8px;
+  color: var(--tabtopia-paper);
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.readout-intro p,
+.bookmarks-empty p {
+  margin: 0;
+  color: var(--tabtopia-muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+#readout .readout-header {
+  margin: 0;
+  padding: 24px 24px 18px;
+  border: 0;
+  border-bottom: 1px solid #46685b;
+  background: var(--tabtopia-terrain-high);
+}
+
+#readout .readout-header.bookmark {
+  border-left: 0;
+}
+
+#readout .readout-title {
+  margin: 8px 0 4px;
+  color: var(--tabtopia-paper) !important;
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+#readout .readout-url {
+  color: var(--tabtopia-muted) !important;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#readout .readout-details {
+  padding: 12px 24px 4px;
+  color: var(--tabtopia-muted) !important;
+}
+
+#readout .readout-item .label,
+#readout .readout-item .value,
+#readout .bookmark-info .value {
+  color: var(--tabtopia-muted) !important;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recent-stars,
+#readout .bookmarks-section,
+#readout .history-section,
+#readout .summary-section {
+  margin: 0;
+  padding: 20px 24px;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid #28453b !important;
+  border-radius: 0;
+}
+
+.readout-section-heading,
+#readout .bookmarks-section h3,
+#readout .history-section h3,
+#readout .summary-section h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#readout .recent-stars h3,
+#readout .bookmarks-section h3,
+#readout .history-section h3,
+#readout .summary-section h3 {
+  margin: 0 0 12px;
+  color: var(--tabtopia-paper) !important;
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+#readout .bookmarks-section h3 span,
+#readout .history-section h3 span {
+  color: var(--tabtopia-route);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#readout .readout-section-heading > a {
+  color: var(--tabtopia-accent-ink, #b9ffe2) !important;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+#readout .readout-section-heading > a:hover,
+#readout .readout-section-heading > a:focus-visible {
+  color: var(--tabtopia-paper) !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.star-list,
+.bookmark-list,
+.history-list {
+  display: grid;
+  gap: 0;
+}
+
+#readout .star-item,
+#readout .bookmark-item,
+#readout .history-item {
+  padding: 10px 0;
+  border: 0 !important;
+  border-bottom: 1px solid #28453b !important;
+}
+
+#readout .star-item:last-child,
+#readout .bookmark-item:last-child,
+#readout .history-item:last-child {
+  border-bottom: 0 !important;
+}
+
+#readout .recent-stars a,
+#readout .bookmark-item a,
+#readout .history-item a {
+  color: var(--tabtopia-accent-ink, #b9ffe2) !important;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none;
+  text-wrap: pretty;
+  transition-property: color;
+  transition-duration: 120ms;
+}
+
+#readout .recent-stars a:hover,
+#readout .bookmark-item a:hover,
+#readout .history-item a:hover {
+  color: var(--tabtopia-paper) !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#readout .star-meta,
+#readout .star-empty,
+#readout .bookmark-date,
+#readout .history-date {
+  margin-top: 3px;
+  color: var(--tabtopia-muted) !important;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+#readout a:focus-visible {
+  outline: 3px solid #b9ffe2;
+  outline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  #readout {
+    flex-basis: 320px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }

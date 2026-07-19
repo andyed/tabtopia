@@ -1245,9 +1245,12 @@ export async function displayReadout(d, event) {
         return;
     }
 
-    // Fetch bookmarks and history for the domain
-    const bookmarks = await searchBookmarksForTab(url);
-    const history = await searchHistoryForTab(url);
+    // These are independent Chrome lookups. Resolve them together so the
+    // domain context appears as quickly as the slower of the two, not their sum.
+    const [bookmarks, history] = await Promise.all([
+        searchBookmarksForTab(url),
+        searchHistoryForTab(url)
+    ]);
 
     // Abort if the user hovered over a different cell while we were fetching
     if (lastDisplayedNodeId !== currentNodeId) {
@@ -1305,6 +1308,7 @@ export async function displayReadout(d, event) {
 
     readout.innerHTML = `
         <div class="readout-header ${isBookmark ? "bookmark" : ""}">
+            <div class="readout-kicker">Domain context</div>
             <div class="readout-title">${escapeHtml(title)}</div>
             <div class="readout-url">${escapeHtml(displayUrl)}</div>
             ${searchMatch?.summaryContext ? `
@@ -1333,6 +1337,46 @@ export async function displayReadout(d, event) {
                 </div>
             `}
         </div>
+
+        <!-- Domain stars are the primary hover payoff. Keep them above history
+             and generated summaries so they never disappear below the fold. -->
+        ${bookmarks.length > 0 ? `
+            <div class="bookmarks-section">
+                <h3>Stars from ${escapeHtml(domain)} <span>${bookmarks.length}</span></h3>
+                <ul class="bookmark-list">
+                    ${bookmarks.slice(0, 5).map(bookmark => `
+                        <li class="bookmark-item">
+                            <a href="${escapeHtml(bookmark.url)}" target="_blank" rel="noopener">${escapeHtml(bookmark.title || formatUrlForDisplay(bookmark.url))}</a>
+                            <span class="bookmark-date">
+                                ${formatDistanceToNow(new Date(bookmark.dateAdded))}
+                            </span>
+                        </li>
+                    `).join("")}
+                </ul>
+            </div>
+        ` : `
+            <div class="bookmarks-section bookmarks-empty">
+                <h3>Stars from ${escapeHtml(domain)}</h3>
+                <p>No saved pages from this domain yet.</p>
+            </div>
+        `}
+
+        <!-- History section -->
+        ${sortedHistory.length > 0 ? `
+            <div class="history-section">
+                <h3>Recent visits <span>${sortedHistory.length}</span></h3>
+                <ul class="history-list">
+                    ${sortedHistory.slice(0, 5).map(item => `
+                        <li class="history-item">
+                            <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">${escapeHtml(item.title || formatUrlForDisplay(item.url))}</a>
+                            <span class="history-date">
+                                ${formatDistanceToNow(new Date(item.lastVisitTime))}
+                            </span>
+                        </li>
+                    `).join("")}
+                </ul>
+            </div>
+        ` : ""}
         
         ${showSummarySection ? `
             <div class="summary-section">
@@ -1350,48 +1394,17 @@ export async function displayReadout(d, event) {
             </div>
         ` : ""}
 
-        <!-- History section -->
-        ${sortedHistory.length > 0 ? `
-            <div class="history-section">
-                <h3>History from ${domain} (${sortedHistory.length})</h3>
-                <ul class="history-list">
-                    ${sortedHistory.slice(0, 5).map(item => `
-                        <li class="history-item">
-                            <a href="${item.url}" target="_blank">${item.title || formatUrlForDisplay(item.url)}</a>
-                            <span class="history-date">
-                                ${formatDistanceToNow(new Date(item.lastVisitTime))}
-                            </span>
-                        </li>
-                    `).join("")}
-                </ul>
-            </div>
-        ` : ""}
-        
-        <!-- Bookmarks section -->
-        ${bookmarks.length > 0 ? `
-            <div class="bookmarks-section">
-                <h3>Bookmarks from ${domain} (${bookmarks.length})</h3>
-                <ul class="bookmark-list">
-                    ${bookmarks.slice(0, 5).map(bookmark => `
-                        <li class="bookmark-item">
-                            <a href="${bookmark.url}" target="_blank">${bookmark.title || formatUrlForDisplay(bookmark.url)}</a>
-                            <span class="bookmark-date">
-                                ${formatDistanceToNow(new Date(bookmark.dateAdded))}
-                            </span>
-                        </li>
-                    `).join("")}
-                </ul>
-            </div>
-        ` : ""}
     `;
 
     // Show readout - ensure it's visible
     readout.classList.remove("hidden");
 
-    // Position readout
-    if (event) {
-        positionReadout(event);
-    }
+    // #readout is a docked flex child. Old tooltip code translated it by
+    // -50% when no pointer event was supplied, leaving the rail visibly shifted
+    // after a hover. Always clear those legacy inline offsets.
+    readout.style.removeProperty("left");
+    readout.style.removeProperty("top");
+    readout.style.removeProperty("transform");
 
     // Queue summary generation if needed (even if not showing summary section)
     if (!isChromePage && !url.startsWith("file://") && !cachedSummary) {
@@ -1494,7 +1507,7 @@ export function hideReadout() {
 // scope: the default panel is re-shown constantly (inactivity timer, hover-out),
 // and hitting chrome.bookmarks.getRecent on every reset is pointless — the list
 // only changes on bookmark churn, so those events invalidate the cache.
-const RECENT_STARS_COUNT = 10;
+const RECENT_STARS_COUNT = 6;
 let recentStarsCache = null;
 if (typeof chrome !== "undefined" && chrome.bookmarks) {
     chrome.bookmarks.onCreated.addListener(() => { recentStarsCache = null; });
@@ -1515,6 +1528,7 @@ async function renderRecentStars(listEl) {
     // The user may have hovered a cell while getRecent was in flight, replacing
     // the default panel — don't paint into a detached node.
     if (!listEl.isConnected) return;
+    listEl.removeAttribute("aria-busy");
 
     if (!stars.length) {
         const empty = document.createElement("li");
@@ -1546,34 +1560,40 @@ async function renderRecentStars(listEl) {
 
 function showDefaultReadout(categorizedDataCache) {
     const readoutContainer = document.getElementById("readout");
-    if (!readoutContainer || !categorizedDataCache?.activeWindows) {
-        console.warn("Readout container or data not available");
+    if (!readoutContainer) {
+        console.warn("Readout container not available");
         return;
     }
 
     // Reset so hovering the last cell works again after inactivity timeout
     lastDisplayedNodeId = null;
 
-    // First, clear any existing content. (The search box lives in the header,
-    // not in #readout, so this doesn't touch it.)
-    readoutContainer.innerHTML = "";
-
-    // Get the content container or create it
-    let contentContainer = document.querySelector(".readout-content");
-    if (!contentContainer) {
-        contentContainer = document.createElement("div");
-        contentContainer.className = "readout-content";
-        readoutContainer.appendChild(contentContainer);
-    }
-
-    // Skeleton paints immediately; the list fills in when getRecent resolves
-    // (cached after the first call, so usually same tick).
-    contentContainer.innerHTML = `
-        <div class="recent-stars">
-            <h3>★ Recent stars</h3>
-            <ul class="star-list"></ul>
+    // The default shell lives in newtab.html so it can paint as the document is
+    // parsed, before the treemap module has loaded or measured a single label.
+    // Reuse that shell when it is still present; rebuild it only when returning
+    // from a tab-specific hover or pinned readout.
+    let contentContainer = readoutContainer.querySelector(":scope > .readout-content");
+    if (!contentContainer?.querySelector(".readout-intro")) {
+        readoutContainer.innerHTML = `
+          <div class="readout-content">
+        <div class="readout-intro">
+            <div class="readout-kicker">Browsing memory</div>
+            <h2>Follow a region</h2>
+            <p>Hover a tile to reveal pages and stars from its domain. Click a tile to hold that context here.</p>
         </div>
-    `;
+        <div class="recent-stars">
+            <div class="readout-section-heading">
+                <h3>Recent stars</h3>
+                <a href="stars.html">Open landmarks</a>
+            </div>
+            <ul class="star-list" aria-busy="true">
+              <li class="star-empty">Loading recent stars…</li>
+            </ul>
+        </div>
+          </div>
+        `;
+        contentContainer = readoutContainer.querySelector(":scope > .readout-content");
+    }
     renderRecentStars(contentContainer.querySelector(".star-list"));
 
     // NOTE: no tabSearch.buildIndex() here. This function is always called with

@@ -77,7 +77,24 @@
   </header>
   <div class="visualization-container">
     <div id="treemap"></div>
-    <div id="readout"></div>
+    <aside id="readout" aria-label="Tab context">
+      <div class="readout-content">
+        <div class="readout-intro">
+          <div class="readout-kicker">Browsing memory</div>
+          <h2>Follow a region</h2>
+          <p>Hover a tile to reveal pages and stars from its domain. Click a tile to hold that context here.</p>
+        </div>
+        <div class="recent-stars">
+          <div class="readout-section-heading">
+            <h3>Recent stars</h3>
+            <a href="stars.html">Open landmarks</a>
+          </div>
+          <ul class="star-list" aria-busy="true">
+            <li class="star-empty">Loading recent stars…</li>
+          </ul>
+        </div>
+      </div>
+    </aside>
   </div>
 
 

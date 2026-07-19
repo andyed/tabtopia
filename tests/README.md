@@ -16,6 +16,18 @@ npm run test:headed              # watch it drive a visible browser window
 npm run test:report              # open the HTML report after a run
 ```
 
+## Treemap performance benchmark
+
+```sh
+npm run benchmark:treemap
+```
+
+This launches the real unpacked extension with 40 local fixture pages and emits
+JSON for first paint, hover-readout latency, DOM/layout work, synchronous
+`getBBox()` measurements, delayed drag setup, and one ordinary navigation. Use
+it before and after renderer changes; correctness tests alone do not reveal a
+full-SVG rebuild or per-cell layout work.
+
 The harness uses Playwright's **bundled Chromium**, not branded Google Chrome.
 Recent Google Chrome stable locks down `--load-extension`, so the unpacked
 extension never loads under `channel: 'chrome'`; bundled Chromium loads it

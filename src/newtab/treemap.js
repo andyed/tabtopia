@@ -890,8 +890,10 @@ export async function drawTreemap(data) {
         focusable: interactionState.focusableNodes.length
     });
 
-    // Call initDragDrop after the treemap is initialized
-    setTimeout(initDragDrop, 500); // Initialize drag after treemap is fully rendered
+    // The cells exist synchronously at this point. Bind drag once for the whole
+    // selection; fitTextToCell used to schedule the same global rebind once per
+    // cell, creating N redundant timers and a second wave of work after paint.
+    initDragDrop();
 
     // Add this to the end of the function
     setTimeout(() => {
@@ -942,25 +944,37 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
             .text(line);
     });
 
-    // Adjust font size to fit the available cell space. The grow-until-overflow
-    // loop MUST be bounded: empty text (titleless restored tabs) has a 0-size
-    // bbox at any font size, so without the cap this spins forever and hangs
-    // the newtab page.
-    let fontSize = 12; // Start with a base font size
-    const MAX_FONT_SIZE = 48;
-    textElement.attr("font-size", fontSize + "px");
-
+    // Find the largest fitting size with at most six synchronous SVG measures.
+    // The old 12→48 linear walk called getBBox twice per step, forcing layout
+    // dozens of times for every cell on every full treemap redraw.
+    const MIN_FONT_SIZE = 11;
+    const MAX_FONT_SIZE = 47;
     const hasText = lines.some(l => l && l.trim());
-    while (hasText && fontSize < MAX_FONT_SIZE &&
-           textElement.node().getBBox().width < cellWidth &&
-           textElement.node().getBBox().height < cellHeight) {
-        fontSize += 1;
-        textElement.attr("font-size", fontSize + "px");
+    const textNode = textElement.node();
+    let bestSize = MIN_FONT_SIZE;
+
+    if (hasText && textNode && Number.isFinite(cellWidth) && cellWidth > 0 &&
+        Number.isFinite(cellHeight) && cellHeight > 0) {
+        let low = MIN_FONT_SIZE;
+        let high = MAX_FONT_SIZE;
+
+        while (low <= high) {
+            const candidate = Math.floor((low + high) / 2);
+            textElement.attr("font-size", `${candidate}px`);
+            const bounds = textNode.getBBox();
+            const fits = Number.isFinite(bounds.width) && Number.isFinite(bounds.height) &&
+                bounds.width < cellWidth && bounds.height < cellHeight;
+
+            if (fits) {
+                bestSize = candidate;
+                low = candidate + 1;
+            } else {
+                high = candidate - 1;
+            }
+        }
     }
 
-    // Reduce font size by 1 to fit within the cell
-    textElement.attr("font-size", (fontSize - 1) + "px");
-    setTimeout(initDragDrop, 500);
+    textElement.attr("font-size", `${bestSize}px`);
 }
 
 
@@ -2348,4 +2362,3 @@ function formatAudioDuration(milliseconds) {
         return `${seconds}s`;
     }
 }
-

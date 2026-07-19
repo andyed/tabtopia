@@ -7,7 +7,8 @@
     "test": "playwright test",
     "test:e2e": "playwright test",
     "test:headed": "HEADED=1 playwright test",
-    "test:report": "playwright show-report"
+    "test:report": "playwright show-report",
+    "benchmark:treemap": "node tests/perf/treemap-benchmark.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0"

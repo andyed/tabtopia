@@ -82,6 +82,12 @@ const treemapState = {
 function resetInactivityTimer(categorizedData) {
     clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
+        // A stationary pointer is still an active hover. Do not replace the
+        // domain context with the idle panel just because mousemove stopped.
+        if (document.querySelector("#treemap .node-focused") ||
+            document.getElementById("readout")?.classList.contains("sticky")) {
+            return;
+        }
         showDefaultReadout(categorizedData);
     }, INACTIVITY_TIMEOUT);
 }
@@ -160,6 +166,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         // reapplySearch() at the end of drawTreemap below.
         initializeSearch();
 
+        // Hydrate the parser-painted context rail immediately. Bookmark IO is
+        // asynchronous and independent of the SVG layout, so it should begin
+        // before drawTreemap's synchronous label measurement work.
+        showDefaultReadout(categorizedDataCache);
+
         // Initialize visualizations
         if (categorizedDataCache?.activeWindows) {
             await drawTreemap(categorizedDataCache);
@@ -172,8 +183,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 w => ({ ...w, tabs: (w.tabs || []).map(t => ({ ...t })) })
             );
             lastTreemapSignature = treemapSignature(state.activeWindows);
-
-            showDefaultReadout(categorizedDataCache);
 
             // Start inactivity timer only if we have data
             if (!document.querySelector(".cell-selected")) {
@@ -1113,6 +1122,4 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
         await refreshTreemapState({ activeWindows: state.activeWindows });
     }
 });
-
-
 
