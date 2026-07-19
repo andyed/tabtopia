@@ -5,6 +5,44 @@ All notable changes to tabtopia are recorded here.
 Tabtopia ships **unpacked** — it is not distributed through the Chrome Web Store.
 To run a release, load the repo at that tag via `chrome://extensions` → *Load unpacked*.
 
+## [1.3.0] — 2026-07-19
+
+The information landscape release: a coherent visual identity, richer Landmarks,
+and faster context across every view.
+
+### Added
+
+- **Landscape identity** across the treemap, graph, sessions, Landmarks, and
+  popup, with a new Tabtopia mark, terrain palette, and locally bundled type.
+- **Semantic Landmarks map** for bookmarks. Labels adapt across zoom levels,
+  stay inside their regions, and keyboard focus follows the active detail.
+- **Default context rail** with recent stars and an immediate parser-painted
+  shell, so useful interface pixels appear before treemap label layout finishes.
+- Reproducible treemap performance benchmark covering startup milestones,
+  hover response, SVG measurement, and ordinary tab-navigation redraws.
+
+### Fixed
+
+- **Domain stars disappeared from treemap hover.** They are restored as the
+  first section in the context rail, remain visible while the pointer rests,
+  and no longer lose races with history lookup.
+- The context rail no longer inherits floating-tooltip offsets or crowd the map.
+- Popup logo navigation now focuses an existing Tabtopia view or opens one,
+  with keyboard activation.
+- Session graphs size after modal columns settle, scale with their container,
+  and use more of the available plotting area.
+
+### Performance
+
+- The context rail and bookmark hydration begin independently of treemap SVG
+  work, removing the visibly blank sidebar interval during startup.
+- Treemap label fitting now uses bounded binary search, cutting synchronous SVG
+  measurements by roughly 59% in the 40-tab benchmark and eliminating one
+  delayed drag-setup timer per cell.
+- Graph, Sessions, and Landmarks share a warmed recent-history snapshot instead
+  of repeatedly paying cold History DB reads; independent startup lookups run
+  concurrently, and session hero images load in one bulk storage read.
+
 ## [1.2.0] — 2026-07-18
 
 The MCP release: tabtopia's live browser state, exposed to your agent.

@@ -178,7 +178,7 @@ The underlying synchronization and history trail system can be leveraged for var
 
 ## Installation
 
-**From a release (recommended):** download `tabtopia-v1.0.zip` from the
+**From a release (recommended):** download the latest `tabtopia-v*.zip` from the
 [Releases](https://github.com/andyed/tabtopia/releases) page and unzip it. Then:
 
 1. Open Chrome and navigate to `chrome://extensions/`
