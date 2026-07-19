@@ -5,6 +5,37 @@ All notable changes to tabtopia are recorded here.
 Tabtopia ships **unpacked** — it is not distributed through the Chrome Web Store.
 To run a release, load the repo at that tag via `chrome://extensions` → *Load unpacked*.
 
+## [1.2.0] — 2026-07-18
+
+The MCP release: tabtopia's live browser state, exposed to your agent.
+
+### Added
+
+- **Standalone MCP server** (`mcp/`) — two-process design: an always-on loopback
+  bridge daemon (WS :8892, Origin-allowlisted to the extension; HTTP :8893) and
+  a stateless stdio server spawned per agent session. Four tools:
+  `get_context`, `search`, `capture_context`, `get_tab_content`. Open tabs are
+  ranked by engagement-seconds × recency — ACT-R base-level activation applied
+  to the browser. One runtime dependency (`ws`).
+- **`browser-now` skill** for Claude Code ships in-repo
+  (`.claude/skills/browser-now/`); `mcp/USAGE-FOR-AGENTS.md` carries the same
+  tool-routing guidance for Codex CLI, Gemini CLI, and any other MCP client.
+- **OG social card** (`assets/og/`) — deterministic muriel-pipeline generator,
+  all text roles at ≥8.3:1 contrast.
+- Bidirectional extension bridge: the daemon can request an open tab's DOM
+  text on demand (`GET_TAB_CONTENT` round-trip).
+
+### Fixed
+
+- **`get_tab_content` could silently return another tab's content.** The
+  extractor's same-domain fallback meant asking for a closed tab while any
+  same-site tab was open returned that other tab's text, stamped with the
+  requested URL. The MCP path now requires an exact-URL match and errors with
+  `tab not open`; the newtab summarizer keeps its fuzzy behavior. Covered by a
+  new smoke-test case.
+- MCP smoke test isolated from the production daemon (test-scoped ports and
+  capture file), so `node test.mjs` can't clobber live state.
+
 ## [1.1.1] — 2026-07-16
 
 Icon and asset fixes. Shipped same-day as 1.1, which carried all three of these.
