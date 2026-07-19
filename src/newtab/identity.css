@@ -1,0 +1,78 @@
+:root {
+  --tabtopia-ink: #09110f;
+  --tabtopia-terrain: #0d1b17;
+  --tabtopia-terrain-high: #14241f;
+  --tabtopia-paper: #f2ebd8;
+  --tabtopia-muted: #b9c9bf;
+  --tabtopia-route: #9ff7d2;
+  --tabtopia-waypoint: #ff8a5b;
+}
+
+html { background: var(--tabtopia-ink); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  background:
+    linear-gradient(155deg, transparent 0 58%, rgba(40, 69, 59, 0.22) 58.2% 58.4%, transparent 58.6%),
+    linear-gradient(25deg, transparent 0 72%, rgba(40, 69, 59, 0.16) 72.2% 72.4%, transparent 72.6%),
+    var(--tabtopia-ink);
+  color: var(--tabtopia-paper);
+}
+
+.app-header {
+  min-height: var(--header-height);
+  background: rgba(9, 17, 15, 0.96);
+  box-shadow: 0 1px 0 rgba(185, 255, 226, 0.15);
+}
+
+.logo {
+  gap: 9px;
+  padding-right: 18px;
+  color: var(--tabtopia-paper);
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.logo::before {
+  content: "";
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  background: url("../../assets/brand/tabtopia-mark.svg") center / contain no-repeat;
+  outline: 1px solid rgba(185, 255, 226, 0.2);
+  outline-offset: -1px;
+}
+
+.header-controls, .search-container { background: transparent; }
+
+.view-toggle a {
+  color: var(--tabtopia-muted);
+  transition-property: color, background-color, transform, box-shadow;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.view-toggle a:hover { color: var(--tabtopia-paper); background: var(--tabtopia-terrain-high); transform: none; box-shadow: none; }
+.view-toggle a:active { transform: scale(0.96); }
+.view-toggle a.active { color: var(--tabtopia-ink); background: var(--tabtopia-route); box-shadow: none; }
+.view-toggle a.active::after { background: var(--tabtopia-waypoint); }
+.view-toggle a.active svg { filter: none; }
+
+.search-input {
+  min-height: 36px;
+  border-radius: 0;
+  background: var(--tabtopia-terrain);
+  color: var(--tabtopia-paper);
+  box-shadow: inset 0 0 0 1px rgba(185, 255, 226, 0.18);
+  font-weight: 500;
+}
+
+.search-input::placeholder { color: var(--tabtopia-muted); }
+.search-input:focus, #tabSearch:focus { outline: 3px solid #b9ffe2; outline-offset: -3px; background: var(--tabtopia-terrain-high); }
+
+#treemap, #graph, .visualization-container { background-color: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}

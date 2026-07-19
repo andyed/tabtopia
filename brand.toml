@@ -1,0 +1,60 @@
+[meta]
+name = "Tabtopia"
+slug = "tabtopia"
+version = "1.0.0"
+owner_repo = "tabtopia"
+canonical_source = "assets/brand/tabtopia-mark.svg"
+ownership_rule = "Tabtopia owns and may evolve its identity assets in this repository."
+
+[colors]
+background = "#09110f"
+foreground = "#f2ebd8"
+background_2 = "#0d1b17"
+background_3 = "#14241f"
+foreground_muted = "#b9c9bf"
+accent = "#9ff7d2"
+accent_ink = "#b9ffe2"
+accent_decorative = "#ff8a5b"
+
+[colors.named]
+contour_near = "#78978a"
+contour_mid = "#46685b"
+contour_far = "#28453b"
+waypoint = "#ff8a5b"
+
+[typography]
+display_family = "Barlow Condensed, Avenir Next, sans-serif"
+display_weight = 600
+display_letter_spacing_em = -0.02
+body_family = "Avenir Next, sans-serif"
+mono_family = "SFMono-Regular, Menlo, monospace"
+
+[typography.scale]
+display = { size = 72, weight = 600, line_height = 0.96, tracking_em = -0.02 }
+h1 = { size = 44, weight = 600, line_height = 1.05 }
+body = { size = 16, weight = 500, line_height = 1.55 }
+label = { size = 13, weight = 600, line_height = 1.2, tracking_em = 0.08, upper = true }
+
+[motion]
+duration_fast = 120
+duration_normal = 240
+duration_slow = 480
+easing_default = "cubic-bezier(0.2, 0, 0.2, 1)"
+motion_preference = "respect-prefers-reduced-motion"
+
+[a11y]
+min_contrast_ratio = 8.0
+min_hit_target_px = 40
+focus_ring_color = "accent_ink"
+focus_ring_width_px = 3
+motion_reduce_policy = "collapse-to-zero"
+
+[voice]
+adjectives = ["spatial", "calm", "precise", "exploratory"]
+say_yes = ["Your browsing, mapped.", "Recover the route, not just the page."]
+say_no = ["No productivity guilt.", "No cosmic or AI hype."]
+
+[rules]
+never_modify_sources = false
+never_rebuild_image_generation_elsewhere = false
+brand_owner = "tabtopia"
