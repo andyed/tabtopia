@@ -60,10 +60,15 @@ export function createForceGraph(container, nodes, links, session, viewMode = "t
 
     container.innerHTML = "";
 
+    // viewBox + 100% sizing: if the container is resized after creation
+    // (modal columns settling, window resize) the graph scales instead of
+    // getting clipped by overflow:hidden.
     const svg = d3.select(container).append("svg")
         .attr("id", `session-graph-${session.id}`)
-        .attr("width", width)
-        .attr("height", height);
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("preserveAspectRatio", "xMidYMid meet")
+        .style("width", "100%")
+        .style("height", "100%");
 
     const g = svg.append("g");
 
@@ -76,9 +81,12 @@ export function createForceGraph(container, nodes, links, session, viewMode = "t
     svg.call(zoom);
 
     const timeExtent = d3.extent(nodes, d => d.lastVisitTime);
+    // Proportional margin (capped) so narrow containers still use most of
+    // their width — a fixed 150px pad ate 40% of a modal column.
+    const xPad = Math.min(80, width * 0.08);
     const timeScale = d3.scaleLinear()
         .domain(timeExtent)
-        .range([150, width - 150]);
+        .range([xPad, width - xPad]);
 
     const link = g.append("g")
         .attr("class", "links")
@@ -318,7 +326,9 @@ export function createForceGraph(container, nodes, links, session, viewMode = "t
                     return height * (0.2 + activeHash * 0.2);
                 }
                 const domainHash = hashString(d.domain);
-                return height * 0.35 + domainHash * height * 0.5;
+                // Spread domains across [0.1h, 0.9h] — the previous
+                // [0.35h, 0.85h] band left the top third and bottom empty.
+                return height * 0.1 + domainHash * height * 0.8;
             }).strength(0.2));
     } else {
         simulation

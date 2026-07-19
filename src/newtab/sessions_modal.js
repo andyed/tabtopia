@@ -420,13 +420,16 @@ async function populateModalContent(session, container) {
     graphColumn.className = "session-graph-column";
     flexContainer.appendChild(graphColumn);
 
-    const { nodes, links } = processSessionDataForGraph(session);
-    createForceGraph(graphColumn, nodes, links, session);
-
     // Create a column for the session details
     const detailsColumn = document.createElement("div");
     detailsColumn.className = "session-details-column";
     flexContainer.appendChild(detailsColumn);
+
+    const { nodes, links } = processSessionDataForGraph(session);
+    // Defer one frame: both columns must be laid out before the graph
+    // measures its container, otherwise it sizes to the full modal width
+    // and gets clipped when the details column lands.
+    requestAnimationFrame(() => createForceGraph(graphColumn, nodes, links, session));
 
     // Use detailsColumn as the container for page list
     container = detailsColumn;

@@ -20,6 +20,41 @@ document.addEventListener("DOMContentLoaded", () => {
         searchInput.select();
     }
 
+    // Logo click: jump to an open main view (newtab page), or open one
+    const logo = document.querySelector(".logo");
+    if (logo) {
+        logo.addEventListener("click", openMainView);
+        logo.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openMainView();
+            }
+        });
+    }
+
+    /**
+     * Focus an existing tabtopia main view tab, or create one.
+     * Matches by this extension's own newtab URL (prefix, so hash/query
+     * permalink states still count) — a second loaded copy of the
+     * extension won't be mistaken for ours.
+     */
+    async function openMainView() {
+        const mainViewUrl = chrome.runtime.getURL("src/newtab/newtab.html");
+        const tabs = await chrome.tabs.query({});
+        const existing = tabs.find(tab =>
+            (tab.url || tab.pendingUrl || "").startsWith(mainViewUrl)
+        );
+
+        if (existing) {
+            chrome.tabs.update(existing.id, { active: true });
+            chrome.windows.update(existing.windowId, { focused: true });
+        } else {
+            chrome.tabs.create({ url: mainViewUrl, active: true });
+        }
+
+        window.close();
+    }
+
     
     // Add these variables at the top of your script
     let focusableElements = [];

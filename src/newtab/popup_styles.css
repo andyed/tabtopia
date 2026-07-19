@@ -44,6 +44,11 @@ body {
     text-transform: lowercase;
     letter-spacing: 0.5px;
     margin-right: auto;
+    cursor: pointer;
+}
+
+.logo:hover {
+    text-decoration: underline;
 }
 
 .search-container {
