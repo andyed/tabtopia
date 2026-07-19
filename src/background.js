@@ -30,11 +30,16 @@ import { refreshRecentHistoryCache } from "./lib/history-cache.js";
 // silently return ANOTHER tab's content stamped with the requested URL. The
 // throw surfaces to the daemon as { success:false, error:"tab not open" }.
 // Read-only — no navigation, no reload.
-setRequestHandler(async (url) => {
+setRequestHandler(async (url, { view = "text" } = {}) => {
+    if (!["text", "outline", "interactive"].includes(view)) {
+        throw new Error("view must be text, outline, or interactive");
+    }
     const [tab] = await chrome.tabs.query({ url });
     if (!tab) throw new Error("tab not open");
-    const content = await extractTabContentInWorker(url, { exactOnly: true });
-    return { url, title: tab.title || "", content, method: "background-worker" };
+    const content = view === "text"
+        ? await extractTabContentInWorker(url, { exactOnly: true })
+        : await extractStructuredTabView(tab.id, view);
+    return { url, title: tab.title || "", view, content, method: "background-worker" };
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -3161,6 +3166,131 @@ async function extractTabContentInWorker(url, { exactOnly = false } = {}) {
         // Final fallback
         return await extractContentFromMetadataInWorker(url);
     }
+}
+
+/**
+ * Read a bounded semantic projection of an exact open tab for the MCP bridge.
+ * This deliberately returns labels and structure only: never input values,
+ * selected text, passwords, or hidden DOM. The result is evidence for an agent,
+ * not a selector/control protocol.
+ * @param {number} tabId
+ * @param {"outline"|"interactive"} view
+ * @returns {Promise<Object>}
+ */
+async function extractStructuredTabView(tabId, view) {
+    const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        args: [view],
+        func: (requestedView) => {
+            const clean = (value, max = 240) => String(value || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, max);
+            const visible = (element) => {
+                if (!(element instanceof Element)) return false;
+                const style = getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+                return element.getClientRects().length > 0;
+            };
+            const explicitName = (element) => {
+                const labelledBy = clean(element.getAttribute("aria-labelledby"), 160);
+                if (labelledBy) {
+                    const label = labelledBy.split(/\s+/)
+                        .map(id => document.getElementById(id)?.innerText || document.getElementById(id)?.textContent || "")
+                        .join(" ");
+                    if (clean(label)) return clean(label);
+                }
+                if (element.labels?.length) {
+                    const label = Array.from(element.labels).map(item => item.innerText || item.textContent || "").join(" ");
+                    if (clean(label)) return clean(label);
+                }
+                return clean(
+                    element.getAttribute("aria-label") ||
+                    element.getAttribute("alt") ||
+                    element.getAttribute("title") ||
+                    element.getAttribute("placeholder")
+                );
+            };
+            const accessibleName = (element) => explicitName(element) || clean(element.innerText || element.textContent);
+            const safeHref = (element) => {
+                const raw = element.getAttribute("href");
+                if (!raw) return "";
+                try {
+                    const parsed = new URL(raw, location.href);
+                    return ["http:", "https:"].includes(parsed.protocol) ? parsed.href.slice(0, 500) : "";
+                } catch (_error) {
+                    return "";
+                }
+            };
+
+            if (requestedView === "interactive") {
+                const candidates = Array.from(document.querySelectorAll(
+                    "a[href], button, input, select, textarea, summary, [role=button], [role=link], [role=checkbox], [role=radio], [role=combobox], [role=tab], [role=menuitem]"
+                )).filter(visible);
+                const controls = candidates.slice(0, 150).map((element, index) => ({
+                    index,
+                    tag: element.tagName.toLowerCase(),
+                    role: clean(element.getAttribute("role"), 40) || undefined,
+                    type: clean(element.getAttribute("type"), 40) || undefined,
+                    name: accessibleName(element) || "(unlabelled)",
+                    href: safeHref(element) || undefined,
+                    disabled: element.matches(":disabled") || element.getAttribute("aria-disabled") === "true" || undefined,
+                    checked: ("checked" in element ? !!element.checked : element.getAttribute("aria-checked") === "true") || undefined,
+                    required: ("required" in element ? !!element.required : element.getAttribute("aria-required") === "true") || undefined
+                }));
+                return {
+                    controls,
+                    available: candidates.length,
+                    truncated: candidates.length > controls.length
+                };
+            }
+
+            const headingNodes = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6, [role=heading]"))
+                .filter(visible);
+            const landmarkNodes = Array.from(document.querySelectorAll("main, nav, aside, header, footer, [role=main], [role=navigation], [role=complementary], [role=banner], [role=contentinfo], [role=search]"))
+                .filter(visible);
+            const linkNodes = Array.from(document.querySelectorAll("a[href]")).filter(visible);
+            const tableNodes = Array.from(document.querySelectorAll("table")).filter(visible);
+            const headings = headingNodes.slice(0, 80).map(element => ({
+                level: Number(element.getAttribute("aria-level")) || Number(element.tagName.slice(1)) || 2,
+                text: accessibleName(element)
+            })).filter(item => item.text);
+            const landmarks = landmarkNodes.slice(0, 40).map(element => ({
+                role: clean(element.getAttribute("role"), 40) || ({
+                    MAIN: "main", NAV: "navigation", ASIDE: "complementary",
+                    HEADER: "banner", FOOTER: "contentinfo"
+                }[element.tagName] || element.tagName.toLowerCase()),
+                label: explicitName(element) || undefined
+            }));
+            const links = linkNodes.slice(0, 100).map(element => ({
+                text: accessibleName(element) || "(unlabelled)",
+                href: safeHref(element) || undefined
+            })).filter(item => item.href);
+            const tables = tableNodes.slice(0, 20).map(element => ({
+                caption: clean(element.querySelector("caption")?.innerText || element.getAttribute("aria-label")) || undefined,
+                rows: element.rows?.length || 0,
+                columns: Math.max(0, ...Array.from(element.rows || []).slice(0, 20).map(row => row.cells.length)),
+                headers: Array.from(element.querySelectorAll("th")).slice(0, 20).map(accessibleName).filter(Boolean)
+            }));
+            return {
+                headings,
+                landmarks,
+                tables,
+                links,
+                available: {
+                    headings: headingNodes.length,
+                    landmarks: landmarkNodes.length,
+                    tables: tableNodes.length,
+                    links: linkNodes.length
+                },
+                truncated: headingNodes.length > headings.length || landmarkNodes.length > landmarks.length ||
+                    tableNodes.length > tables.length || linkNodes.length > links.length
+            };
+        }
+    });
+    const content = results?.[0]?.result;
+    if (!content) throw new Error(`unable to extract ${view} view`);
+    return content;
 }
 
 /**

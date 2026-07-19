@@ -100,7 +100,7 @@ wss.on('connection', (ws) => {
 
 // Read DOM text from an already-open tab, by URL, via the extension. Rejects
 // (never hangs) when the extension is gone or slow.
-function getTabContent(url) {
+function getTabContent(url, view = 'text') {
     if (!statusClient || statusClient.readyState !== WebSocket.OPEN) {
         return Promise.reject(new Error('extension not connected'));
     }
@@ -112,7 +112,7 @@ function getTabContent(url) {
         }, TAB_CONTENT_TIMEOUT_MS);
         pendingRequests.set(id, { resolve, reject, timer });
         try {
-            statusClient.send(JSON.stringify({ type: 'GET_TAB_CONTENT', id, url }));
+            statusClient.send(JSON.stringify({ type: 'GET_TAB_CONTENT', id, url, view }));
         } catch (e) {
             clearTimeout(timer);
             pendingRequests.delete(id);
@@ -164,10 +164,10 @@ const httpServer = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/tab-content') {
-        const { url: tabUrl } = await readBody(req);
+        const { url: tabUrl, view = 'text' } = await readBody(req);
         if (!tabUrl) return sendJson(res, 400, { ok: false, error: 'url required' });
         try {
-            const result = await getTabContent(tabUrl);
+            const result = await getTabContent(tabUrl, view);
             return sendJson(res, 200, { ok: true, result });
         } catch (e) {
             return sendJson(res, 200, { ok: false, error: e.message });

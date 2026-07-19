@@ -26,7 +26,7 @@ let pendingSnapshot = null;
 let lastConnectAttempt = 0;
 
 // GET_TAB_CONTENT handler, injected by background.js. Signature:
-//   (url) => Promise<{ url, title, content, method }>
+//   (url, { view }) => Promise<{ url, title, view, content, method }>
 // Left null until registered; requests then reply with an error, not a hang.
 let tabContentHandler = null;
 export function setRequestHandler(fn) { tabContentHandler = fn; }
@@ -41,7 +41,7 @@ async function handleServerMessage(msg) {
     };
     if (!tabContentHandler) return reply({ success: false, error: "no tab-content handler registered" });
     try {
-        const content = await tabContentHandler(msg.url);
+        const content = await tabContentHandler(msg.url, { view: msg.view || "text" });
         reply({ success: true, content });
     } catch (e) {
         reply({ success: false, error: e?.message || "extraction failed" });
