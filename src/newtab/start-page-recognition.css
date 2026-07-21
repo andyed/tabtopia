@@ -1,0 +1,116 @@
+.state-inspector {
+  position: fixed;
+  z-index: 1000;
+  top: calc(var(--header-height) + 14px);
+  right: clamp(334px, calc(27vw + 14px), 394px);
+  width: min(330px, calc(100vw - 32px));
+  color: #f2ebd8;
+  background: #09110f;
+  border: 1px solid #9ff7d2;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48);
+  font-family: "Avenir Next", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.state-inspector summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  color: #09110f;
+  background: #9ff7d2;
+  cursor: pointer;
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 19px;
+  font-weight: 600;
+  list-style-position: inside;
+}
+
+.state-inspector summary:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.state-inspector__confidence {
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.state-inspector__body {
+  padding: 12px;
+}
+
+.state-inspector__eyebrow {
+  margin: 0 0 10px;
+  color: #b9c9bf;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.state-inspector__signals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 12px;
+  background: #46685b;
+  border: 1px solid #46685b;
+}
+
+.state-inspector__signals div {
+  min-width: 0;
+  padding: 7px;
+  background: #14241f;
+}
+
+.state-inspector__signals dt {
+  overflow: hidden;
+  color: #b9c9bf;
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.state-inspector__signals dd {
+  margin: 2px 0 0;
+  color: #ffffff;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.state-inspector__evidence {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: #f2ebd8;
+  text-wrap: pretty;
+}
+
+.state-inspector__evidence li::marker {
+  color: #ff8a5b;
+}
+
+.state-inspector__error {
+  margin: 0;
+  padding: 12px;
+  color: #ffffff;
+  background: #6f241d;
+}
+
+@media (max-width: 900px) {
+  .state-inspector {
+    right: 16px;
+  }
+}
