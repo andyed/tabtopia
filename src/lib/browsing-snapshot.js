@@ -13,6 +13,7 @@ export const DENSITY_REGIMES = Object.freeze({
 
 export function createBrowsingSnapshot({
   now = Date.now(),
+  timezoneOffsetMinutes = new Date(now).getTimezoneOffset(),
   currentWindowId = null,
   windows = [],
   historyItems = [],
@@ -40,6 +41,9 @@ export function createBrowsingSnapshot({
   const interruptionGapMs = latestMeaningfulActivityAt > 0
     ? Math.max(0, now - latestMeaningfulActivityAt)
     : null;
+  const crossedLocalDayBoundary = latestMeaningfulActivityAt > 0
+    ? localDayKey(now, timezoneOffsetMinutes) !== localDayKey(latestMeaningfulActivityAt, timezoneOffsetMinutes)
+    : false;
 
   const neighborhoods = normalizedWindows
     .map(window => {
@@ -85,7 +89,9 @@ export function createBrowsingSnapshot({
     activity: {
       latestLiveAt: latestLiveActivityAt,
       latestMeaningfulAt: latestMeaningfulActivityAt,
-      interruptionGapMs
+      interruptionGapMs,
+      crossedLocalDayBoundary,
+      timezoneOffsetMinutes
     },
     neighborhoods,
     availability: {
@@ -186,6 +192,11 @@ function readVisits(visitsByUrl, url) {
 function maxTimestamp(values) {
   const finite = values.map(Number).filter(value => Number.isFinite(value) && value > 0);
   return finite.length > 0 ? Math.max(...finite) : 0;
+}
+
+function localDayKey(timestamp, timezoneOffsetMinutes) {
+  const offsetMs = Number(timezoneOffsetMinutes || 0) * 60 * 1000;
+  return new Date(Number(timestamp) - offsetMs).toISOString().slice(0, 10);
 }
 
 function emptyWindow(id) {

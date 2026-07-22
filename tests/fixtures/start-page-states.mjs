@@ -1,4 +1,5 @@
 const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 const NOW = Date.UTC(2026, 6, 21, 18, 0, 0);
 
 export const fixtureNow = NOW;
@@ -20,6 +21,13 @@ export const startPageFixtures = Object.freeze({
       windowWithTabs(4, false, tabs(12, 4, NOW - (47 * MINUTE)))
     ],
     historyItems: [history("https://alpha.example/", NOW - (47 * MINUTE))]
+  }),
+  reorientation: fixture({
+    windows: [
+      windowWithTabs(1, true, [tabtopiaTab(100, 1)]),
+      windowWithTabs(4, false, tabs(12, 4, NOW - (8 * HOUR)))
+    ],
+    historyItems: [history("https://alpha.example/", NOW - (8 * HOUR))]
   }),
   continuation: fixture({
     windows: [
@@ -48,6 +56,7 @@ export const startPageFixtures = Object.freeze({
 function fixture(overrides) {
   return {
     now: NOW,
+    timezoneOffsetMinutes: 0,
     currentWindowId: 1,
     windows: [],
     historyItems: [],

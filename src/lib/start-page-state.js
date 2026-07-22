@@ -2,12 +2,15 @@ export const START_PAGE_STATES = Object.freeze({
   LAUNCH: "launch",
   THRESHOLD: "threshold",
   REINSTATEMENT: "reinstatement",
+  REORIENTATION: "reorientation",
   CONTINUATION: "continuation",
   HANDOFF: "handoff"
 });
 
 export const START_PAGE_STATE_DEFAULTS = Object.freeze({
   interruptionMs: 30 * 60 * 1000,
+  reorientationMs: 6 * 60 * 60 * 1000,
+  crossDayReorientationMs: 4 * 60 * 60 * 1000,
   handoffHorizonMs: 6 * 60 * 60 * 1000,
   minimumForeignVisits: 2
 });
@@ -18,6 +21,8 @@ export function recognizeStartPageState(snapshot, config = {}) {
   const otherWindows = snapshot?.otherWindows || [];
   const otherCount = otherWindows.reduce((sum, window) => sum + (window.tabs?.length || 0), 0);
   const gapMs = snapshot?.activity?.interruptionGapMs;
+  const crossedLocalDayBoundary = Boolean(snapshot?.activity?.crossedLocalDayBoundary);
+  const interruptionSignals = { gapMs, crossedLocalDayBoundary };
   const foreignItems = recentForeignItems(snapshot, thresholds.handoffHorizonMs);
   const foreignDomains = new Set(foreignItems.map(item => domainOf(item.url)).filter(Boolean));
   const latestForeignAt = Number(snapshot?.history?.latestForeignAt || 0);
@@ -37,9 +42,31 @@ export function recognizeStartPageState(snapshot, config = {}) {
     ], {
       currentCount,
       otherCount,
-      gapMs,
+      ...interruptionSignals,
       foreignVisitCount: foreignItems.length,
       foreignDomainCount: foreignDomains.size
+    });
+  }
+
+  const isReorientation = Number.isFinite(gapMs) && (
+    gapMs >= thresholds.reorientationMs
+    || (crossedLocalDayBoundary && gapMs >= thresholds.crossDayReorientationMs)
+  );
+
+  if (currentWindowIsClean && otherCount > 0 && isReorientation) {
+    const gapHours = Math.round((gapMs / (60 * 60 * 1000)) * 10) / 10;
+    return result(START_PAGE_STATES.REORIENTATION, clamp(
+      0.82 + Math.min(0.12, Math.max(0, gapMs - thresholds.crossDayReorientationMs) / (24 * 60 * 60 * 1000))
+    ), [
+      "clean-current-window",
+      `${gapHours}-hour-gap`,
+      ...(crossedLocalDayBoundary ? ["crossed-local-day-boundary"] : ["extended-interruption"]),
+      `${otherCount}-live-tabs-in-${nonEmptyWindowCount(otherWindows)}-other-windows`
+    ], {
+      currentCount,
+      otherCount,
+      ...interruptionSignals,
+      foreignVisitCount: foreignItems.length
     });
   }
 
@@ -49,7 +76,7 @@ export function recognizeStartPageState(snapshot, config = {}) {
       "clean-current-window",
       `${gapMinutes}-minute-gap`,
       `${otherCount}-live-tabs-in-${nonEmptyWindowCount(otherWindows)}-other-windows`
-    ], { currentCount, otherCount, gapMs, foreignVisitCount: foreignItems.length });
+    ], { currentCount, otherCount, ...interruptionSignals, foreignVisitCount: foreignItems.length });
   }
 
   if (currentWindowIsClean && otherCount > 0) {
@@ -57,21 +84,21 @@ export function recognizeStartPageState(snapshot, config = {}) {
       "clean-current-window",
       `${otherCount}-live-tabs-nearby`,
       "no-substantial-interruption"
-    ], { currentCount, otherCount, gapMs, foreignVisitCount: foreignItems.length });
+    ], { currentCount, otherCount, ...interruptionSignals, foreignVisitCount: foreignItems.length });
   }
 
   if (currentCount > 0) {
     return result(START_PAGE_STATES.CONTINUATION, clamp(0.72 + Math.min(0.18, currentCount * 0.025)), [
       `${currentCount}-meaningful-tabs-in-current-window`,
       `${snapshot?.currentWindow?.density || "unknown"}-density`
-    ], { currentCount, otherCount, gapMs, foreignVisitCount: foreignItems.length });
+    ], { currentCount, otherCount, ...interruptionSignals, foreignVisitCount: foreignItems.length });
   }
 
   return result(START_PAGE_STATES.LAUNCH, otherCount === 0 ? 0.88 : 0.66, [
     "clean-current-window",
     otherCount === 0 ? "no-live-work-elsewhere" : "weak-live-work-signal",
     foreignItems.length === 0 ? "no-recent-foreign-trail" : "foreign-trail-below-threshold"
-  ], { currentCount, otherCount, gapMs, foreignVisitCount: foreignItems.length });
+  ], { currentCount, otherCount, ...interruptionSignals, foreignVisitCount: foreignItems.length });
 }
 
 export function stateDisplayName(state) {
@@ -79,6 +106,7 @@ export function stateDisplayName(state) {
     [START_PAGE_STATES.LAUNCH]: "Launch",
     [START_PAGE_STATES.THRESHOLD]: "Threshold",
     [START_PAGE_STATES.REINSTATEMENT]: "Reinstatement",
+    [START_PAGE_STATES.REORIENTATION]: "Reorientation",
     [START_PAGE_STATES.CONTINUATION]: "Continuation",
     [START_PAGE_STATES.HANDOFF]: "Handoff"
   })[state] || "Unknown";

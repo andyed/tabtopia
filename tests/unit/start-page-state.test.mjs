@@ -13,6 +13,8 @@ import {
 } from "../../src/lib/start-page-state.js";
 import { startPageFixtures } from "../fixtures/start-page-states.mjs";
 
+const HOUR = 60 * 60 * 1000;
+
 for (const expectedState of Object.values(START_PAGE_STATES)) {
   test(`${expectedState} fixture produces deterministic, explainable recognition`, () => {
     const snapshot = createBrowsingSnapshot(startPageFixtures[expectedState]);
@@ -92,3 +94,52 @@ test("recent local work outranks an older foreign trail", () => {
   assert.equal(recognition.state, START_PAGE_STATES.LAUNCH);
   assert.equal(recognition.signals.foreignVisitCount, 3);
 });
+
+test("a one-hour lunch interruption remains reinstatement", () => {
+  const recognition = recognizeStartPageState(snapshotForGap(HOUR));
+
+  assert.equal(recognition.state, START_PAGE_STATES.REINSTATEMENT);
+  assert.equal(recognition.signals.crossedLocalDayBoundary, false);
+});
+
+test("an eight-hour interruption becomes reorientation", () => {
+  const recognition = recognizeStartPageState(snapshotForGap(8 * HOUR));
+
+  assert.equal(recognition.state, START_PAGE_STATES.REORIENTATION);
+  assert.ok(recognition.evidence.includes("extended-interruption"));
+});
+
+test("a substantial interruption crossing the local day becomes reorientation", () => {
+  const now = Date.UTC(2026, 6, 22, 2, 0, 0);
+  const recognition = recognizeStartPageState(snapshotForGap(5 * HOUR, now));
+
+  assert.equal(recognition.state, START_PAGE_STATES.REORIENTATION);
+  assert.equal(recognition.signals.crossedLocalDayBoundary, true);
+  assert.ok(recognition.evidence.includes("crossed-local-day-boundary"));
+});
+
+test("a short interruption near midnight does not imply reorientation", () => {
+  const now = Date.UTC(2026, 6, 22, 0, 30, 0);
+  const recognition = recognizeStartPageState(snapshotForGap(HOUR, now));
+
+  assert.equal(recognition.state, START_PAGE_STATES.REINSTATEMENT);
+  assert.equal(recognition.signals.crossedLocalDayBoundary, true);
+});
+
+function snapshotForGap(gapMs, now = startPageFixtures.reinstatement.now) {
+  const input = structuredClone(startPageFixtures.reinstatement);
+  input.now = now;
+  input.timezoneOffsetMinutes = 0;
+  input.historyItems = input.historyItems.map(item => ({
+    ...item,
+    lastVisitTime: now - gapMs
+  }));
+  input.windows = input.windows.map(window => ({
+    ...window,
+    tabs: window.tabs.map(tab => tab.url.startsWith("chrome-extension:") ? tab : {
+      ...tab,
+      lastAccessed: now - gapMs
+    })
+  }));
+  return createBrowsingSnapshot(input);
+}

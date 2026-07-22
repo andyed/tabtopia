@@ -27,4 +27,42 @@ test.describe("development start-page recognition", () => {
     expect(debugState.titles).toEqual(expect.arrayContaining(["Alpha Page", "Beta Page"]));
     expect(debugState.titles).not.toContain("tabtopia");
   });
+
+  test("distinguishes an extended return from after-lunch reinstatement", async ({ context, extensionId, server }) => {
+    await context.addInitScript(({ offsetMs }) => {
+      const NativeDate = Date;
+      const shiftedNow = NativeDate.now() + offsetMs;
+      function ShiftedDate(...args) {
+        if (!new.target) return new NativeDate(shiftedNow).toString();
+        return args.length === 0 ? new NativeDate(shiftedNow) : new NativeDate(...args);
+      }
+      ShiftedDate.prototype = NativeDate.prototype;
+      Object.setPrototypeOf(ShiftedDate, NativeDate);
+      ShiftedDate.now = () => shiftedNow;
+      ShiftedDate.parse = NativeDate.parse;
+      ShiftedDate.UTC = NativeDate.UTC;
+      globalThis.Date = ShiftedDate;
+    }, { offsetMs: 8 * 60 * 60 * 1000 });
+
+    const newtab = await context.newPage();
+    await newtab.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html`, {
+      waitUntil: "domcontentloaded"
+    });
+    await newtab.evaluate(url => new Promise((resolve, reject) => {
+      chrome.windows.create({ url, focused: false }, window => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(window?.id);
+      });
+    }), server + "/alpha");
+
+    const inspector = newtab.locator("#startPageStateInspector");
+    await expect(inspector).toHaveAttribute("data-state", "reorientation");
+    await expect(inspector.getByText("Reorientation", { exact: true })).toBeVisible();
+    await expect(inspector.getByText("8h", { exact: true })).toBeVisible();
+
+    const debugState = await newtab.evaluate(() => window.tabtopiaStartPageRecognition?.recognition);
+    expect(debugState.state).toBe("reorientation");
+    expect(debugState.signals.gapMs).toBeGreaterThan(7.9 * 60 * 60 * 1000);
+    expect(debugState.evidence).toContain("extended-interruption");
+  });
 });

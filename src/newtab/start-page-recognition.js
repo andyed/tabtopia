@@ -186,6 +186,12 @@ function humanizeEvidence(value) {
 function formatGap(gapMs) {
   if (!Number.isFinite(gapMs)) return "unknown";
   if (gapMs < 60000) return "<1m";
+  if (gapMs >= 2 * 60 * 60 * 1000) {
+    const totalMinutes = Math.round(gapMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
   return `${Math.round(gapMs / 60000)}m`;
 }
 

@@ -4,7 +4,7 @@
 
 ## Product promise
 
-The start page should help the user recover place and momentum. It should recognize whether the user is beginning, continuing, returning after an interruption, or handing work off from another device, then make the next useful action fast and keyboard-accessible.
+The start page should help the user recover place and momentum. It should recognize whether the user is beginning, continuing, reinstating work after a short interruption, reorienting after an extended return, or handing work off from another device, then make the next useful action fast and keyboard-accessible.
 
 Chrome's Omnibox remains the precise recall path for finding and switching to a known open tab. The start page is for orientation, contextual continuation, habitual navigation, and deliberate exploration of browsing memory.
 
@@ -36,7 +36,6 @@ This order prevents an application-shell rewrite from becoming a prerequisite fo
 
 - Recover the morning's work after lunch or another interruption.
 - Resume a coherent task living in another window.
-- Return after several days with a compact account of active clusters, last positions, unfinished branches, and landmarks.
 
 ### Handoff
 
@@ -52,6 +51,8 @@ This order prevents an application-shell rewrite from becoming a prerequisite fo
 
 ### Reorient
 
+- Return after an overnight or otherwise extended boundary with a compact account of active clusters, last positions, unfinished branches, and landmarks.
+- Prefer a summary and choice of working context over blindly reopening the last endpoint.
 - Understand what a tab-heavy window has become.
 - Resume a comparison among parallel sources.
 - Search by remembered meaning and see a result in its browsing context.
@@ -68,11 +69,12 @@ The classifier produces one primary environment state plus confidence and human-
 |---|---|---|
 | **Launch** | Little meaningful live work here or elsewhere | Offer habitual destinations and promising new beginnings |
 | **Threshold** | Current window is clean; live work exists elsewhere; no substantial interruption | Preserve a fresh center while keeping existing work nearby |
-| **Reinstatement** | Current window is clean; coherent work exists elsewhere; activity gap indicates an interruption | Reconstruct and resume the interrupted working context |
+| **Reinstatement** | Current window is clean; coherent work exists elsewhere; a moderate activity gap indicates an interruption | Reconstruct and resume the interrupted working context |
+| **Reorientation** | Current window is clean; substantial live work exists elsewhere; the interruption is extended or crosses a meaningful local-day boundary | Summarize the prior working landscape and let the user choose where to restart |
 | **Continuation** | Meaningful sibling tabs exist in the current window | Summarize the current undertaking and expose its likely next branches |
 | **Handoff** | Recent non-local visits or synced foreign sessions form a coherent trail | Continue cross-device work locally |
 
-A new window is evidence, not intent. A clean new window after a long gap and a busy morning elsewhere should produce Reinstatement, not automatically Launch.
+A new window is evidence, not intent. A clean new window after lunch and a busy morning elsewhere should produce Reinstatement; an eight-hour return to substantial existing work should produce Reorientation, not automatically Launch or a higher-confidence Reinstatement.
 
 ### Explicit interaction modes
 
@@ -80,9 +82,9 @@ Explicit user intent overrides inference without destroying it:
 
 - **Search**: `/` opens a stable, list-first search workspace from the first character.
 - **Lens selection**: an explicit List, Treemap, or Graph route overrides the adaptive default composition.
-- **Deliberate new start**: the user can dismiss a reinstatement or handoff proposal and keep the clean field.
+- **Deliberate new start**: the user can dismiss a reinstatement, reorientation, or handoff proposal and keep the clean field.
 
-Routine is a universal fast path, not a mutually exclusive environment state. Habitual destinations may be useful during Launch, Threshold, Reinstatement, Continuation, or Handoff.
+Routine is a universal fast path, not a mutually exclusive environment state. Habitual destinations may be useful during Launch, Threshold, Reinstatement, Reorientation, Continuation, or Handoff.
 
 ### Density regimes
 
@@ -106,6 +108,7 @@ Good adaptive uses:
 
 - **Threshold:** preview the live windows surrounding a clean current window.
 - **Reinstatement:** show the still-open working set that existed before the interruption.
+- **Reorientation:** summarize active neighborhoods before asking the user to choose a restart point.
 - **Continuation:** provide a compact overview when the current window is too dense for direct typography but does not yet need a full spatial lens.
 - **Search:** show the open neighborhood surrounding the selected result while the exact results remain list-first.
 - **30+ tabs:** render several compact mosaics by connected component instead of one global hairball.
@@ -143,7 +146,7 @@ Create a single normalized snapshot consumed by both the classifier and candidat
 - Qualified access timestamps, dwell, and transitions.
 - History visits with `isLocal` retained.
 - Bookmarks with `dateAdded` and nearby access/dwell evidence.
-- Interruption gap and recent activity boundary.
+- Interruption gap, current local-time offset, and whether a substantial interruption crossed the local day boundary.
 - Connected components or provisional task clusters.
 - Existing Bayesian History/Context scores and baseline frecency/MRU scores.
 
@@ -167,6 +170,7 @@ Generate candidates by job before ranking them together:
 - **Deferred-intention candidates** from low-dwell, unrevisited stars.
 - **Continuation candidates** from the current component and its active endpoints.
 - **Reinstatement candidates** from coherent external components active before an interruption.
+- **Reorientation candidates** from active clusters, their last meaningful endpoints, and durable landmarks after an extended return.
 - **Handoff candidates** from recent non-local visits and, later, synced-device sessions.
 - **Retrace candidates** from referrers, hubs, branch points, and peripheral endpoints.
 
@@ -197,6 +201,7 @@ Do not force every job through one unexplained weighted score. Use the recognize
 - Launch emphasizes habits and deferred intentions.
 - Threshold emphasizes habits while keeping external neighborhoods available.
 - Reinstatement emphasizes pre-interruption components and their last meaningful endpoints.
+- Reorientation emphasizes a compact working-landscape summary and high-confidence restart points rather than immediate endpoint activation.
 - Continuation emphasizes the current component, its likely next pages, and branch recovery.
 - Handoff emphasizes recent coherent foreign activity.
 
@@ -228,7 +233,7 @@ These events should enter bounded local diagnostics first. After M3 produces eno
 **Goal:** Establish fixtures, schemas, and performance baselines before changing the main page.
 
 - Define `BrowsingSnapshot`, `RecognizedState`, `Neighborhood`, and `ActionCandidate` contracts.
-- Add deterministic fixtures for Launch, Threshold, after-lunch Reinstatement, Continuation, and foreign-device Handoff.
+- Add deterministic fixtures for Launch, Threshold, after-lunch Reinstatement, extended-return Reorientation, Continuation, and foreign-device Handoff.
 - Record `VisitItem.isLocal` in normalized history data.
 - Confirm the existing history snapshot/cache can supply the main page without another cold-start waterfall.
 - Add unit tests for URL identity, interruption boundaries, component density, and state evidence.
@@ -244,7 +249,7 @@ These events should enter bounded local diagnostics first. After M3 produces eno
 - Make recognition asynchronous and non-blocking: the page shell and search path render immediately.
 - Test browser restart, service-worker restart, empty profile, large history, and multiple-window cases.
 
-**Exit gate:** All five primary states are reproducible in tests and inspectable in the development build without destabilizing the current Treemap.
+**Exit gate:** All six primary states are reproducible in tests and inspectable in the development build without destabilizing the current Treemap.
 
 ### M2 — Ranked actions vertical slice
 
@@ -252,10 +257,10 @@ These events should enter bounded local diagnostics first. After M3 produces eno
 
 - Add habitual destination candidates.
 - Add deferred-intention star candidates.
-- Add current-window continuation and external-window reinstatement candidates.
+- Add current-window continuation plus external-window reinstatement and reorientation candidates.
 - Add recent non-local handoff candidates labeled conservatively.
 - Render one keyboard-first ranked action list with a state-specific hero summary.
-- Extract the popup's equal-area treemap as a reusable live-work mosaic and use it for dense Threshold, Reinstatement, and Continuation previews.
+- Extract the popup's equal-area treemap as a reusable live-work mosaic and use it for dense Threshold, Reinstatement, Reorientation, and Continuation previews.
 - Preserve explicit single-tab close as a secondary action, make it keyboard-operable, and provide Undo; do not introduce bulk cleanup controls.
 - Preserve the current Treemap below or behind this vertical slice rather than rewriting it.
 
@@ -334,6 +339,7 @@ These events should enter bounded local diagnostics first. After M3 produces eno
 - State overrides.
 - Time to first meaningful action.
 - Reinstatement success: focus/open within the proposed pre-interruption component.
+- Reorientation success: choose an active cluster or deliberate new start after inspecting the working-landscape summary.
 - Handoff success: local opening of a proposed recent foreign visit.
 
 These are behavioral proxies, not proof of intent. Development tooling should make it easy to inspect incorrect classifications and their evidence.
@@ -391,7 +397,7 @@ The next build should be small enough to review and test independently:
 
 1. Preserve `isLocal` when normalizing `chrome.history.getVisits()` results.
 2. Add pure state-recognition contracts and fixtures.
-3. Recognize Launch, Threshold, Reinstatement, Continuation, and conservative Handoff.
+3. Recognize Launch, Threshold, Reinstatement, Reorientation, Continuation, and conservative Handoff.
 4. Expose the result in a development inspector on the existing main page.
 5. Add a keyboard-first ranked action region fed initially by existing Bayesian, frecency, open-window, bookmark, and foreign-visit signals.
 6. Extend diagnostics by state before adding temporal or connectedness complexity.
