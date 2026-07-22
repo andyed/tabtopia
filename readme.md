@@ -7,7 +7,7 @@
 ## Overview
 Tabtopia turns browsing history into an information landscape. Instead of asking you to remember the title of one page, it preserves the useful context around it: the session, nearby pages, branches, and returns that formed a route.
 
-Four core views reveal that landscape: a treemap of open-tab regions, a graph of navigation routes, an enhanced session view, and bookmark-centric Landmarks. All views support search using [lunr.js](https://github.com/olivernn/lunr.js), while Chrome's built-in AI capabilities add URL summarization.
+Four core views reveal that landscape: a treemap of open-tab regions, a graph of navigation routes, an enhanced session view, and bookmark-centric Landmarks. All views support search using [lunr.js](https://github.com/olivernn/lunr.js), while Chrome's built-in AI capabilities add URL summarization. For keyboard recall, type `tt`, press Space, and search open tabs directly from Chrome's address bar.
 
 It also ships an **MCP server** (`mcp/`) that gives a personal agent — Claude
 Code, Codex CLI, Gemini CLI, anything that speaks
@@ -19,8 +19,9 @@ context.
 Every browser MCP with traction is an automation tool: the agent drives the
 browser. This is the inverse — **passive, read-only attention awareness**. The
 extension pushes a live snapshot (open tabs, focus, audio, recent navigation
-flow) to a small local daemon; MCP tools read it. It never opens, closes,
-focuses, or navigates a tab.
+flow) to a small local daemon; MCP tools read it. The MCP never opens, closes,
+focuses, or navigates a tab. User-facing Tabtopia controls may switch to an
+existing tab only after an explicit user selection.
 
 Tabs are ranked by **real engagement** — seconds actually spent reading, tied
 by recency — not tab order. That ranking is ACT-R's base-level activation
@@ -188,6 +189,10 @@ The underlying synchronization and history trail system can be leveraged for var
 **From source:** clone this repository and "Load Unpacked" the repository folder.
 
 ## Debug Tools and Console Functions
+
+### Ranking diagnostics
+
+Tabtopia can compare Bayesian History/Context ranking with a frecency baseline using bounded, local-only outcome records. Open the extension's **Options** page to view Top-1, Top-3, and mean reciprocal rank. Standard installs default this evaluation off; unpacked development installs default it on. Turning it off deletes the local diagnostics buffer and pending prediction. Raw omnibox queries, titles, and URLs are not stored in this evaluation log.
 
 The extension provides several debug functions accessible via the browser console for troubleshooting and monitoring:
 

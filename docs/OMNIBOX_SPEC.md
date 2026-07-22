@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Proposed |
+| Status | MVP implemented; prediction study pending |
 | Target | Tabtopia browser extension |
 | Keyword | `tt` |
 | Primary job | Recover an open tab from the browser's address bar |
@@ -12,7 +12,7 @@
 
 Tabtopia should add an omnibox recall surface activated with `tt` + Space. It answers one narrow, frequent question: **“Where is the tab I’m thinking of?”**
 
-The first release searches open tabs, ranks them using textual relevance plus Tabtopia frecency, and switches to the selected tab. Here, frecency combines how recently a tab was accessed, how often it has been activated, and how much time the user has invested in it. It does not replace the toolbar popup or turn the new-tab page into another search box.
+The first release searches open tabs, ranks them using textual relevance plus a Bayesian History/Context score, and switches to the selected tab. The behavioral score follows Zemla, Tossell, Kortum, and Byrne's power-law model of revisitation: temporally discounted access history supplies the prior, and transitions from the current browsing context supply additional evidence. Ordinary frecency remains a comparison baseline. The omnibox does not replace the toolbar popup or turn the new-tab page into another search box.
 
 This establishes a clear product contract:
 
@@ -65,7 +65,7 @@ The browser address bar is already the habitual place for expressing “take me 
 - As a user with several windows, selecting a result focuses the correct window and tab.
 - As a user who makes a typo or enters words in a different order, I still get useful approximate results.
 - As a privacy-conscious user, my queries and browsing model stay on my device.
-- As a user who opens the omnibox without a query, I get a small, stable set of likely useful recent tabs rather than an empty surface.
+- As a user who opens the omnibox without a query, I get a small, stable set of historically and contextually relevant tabs rather than an empty surface.
 
 ## Chrome interaction constraint
 
@@ -97,7 +97,7 @@ The default suggestion should immediately establish the mode and action:
 
 > Search open tabs with Tabtopia
 
-An empty query returns up to five eligible tabs ordered by deterministic frecency. It must not be labeled “recommended” or “likely next”: frecency describes past use, not a validated prediction of future use.
+An empty query returns up to five eligible tabs ordered by the deterministic Bayesian History/Context score. It must not be labeled “recommended” or “likely next” until the model passes the shadow-mode exposure gate.
 
 ### Query results
 
@@ -151,7 +151,7 @@ The omnibox is keyboard-native. Tabtopia adds no custom key event layer; it reli
 MVP candidates are all open tabs that Chrome exposes to the extension, whether loaded or discarded, including tabs in other normal windows. Include pinned tabs. Exclude:
 
 - DevTools and other tab records without a usable URL/title.
-- Incognito tabs unless the extension is explicitly enabled for incognito; never mix normal and incognito candidates across profiles.
+- Incognito tabs. The MVP excludes them entirely so no private access history enters persistent model state; a future incognito implementation requires a separate ephemeral store.
 - The currently active tab from query-free suggestions. It may remain eligible for a typed query, but should rank below an otherwise equivalent different tab.
 
 Audible status is metadata and a ranking feature, not an exclusion rule.
@@ -160,7 +160,7 @@ Audible status is metadata and a ranking feature, not an exclusion rule.
 
 ### Principle
 
-A query expresses remembered identity; frecency expresses accumulated relevance from past behavior. Text match should dominate once the query is specific, while frecency and contextual signals break ties and help with short or ambiguous queries.
+A query expresses remembered identity. The Bayesian History/Context model expresses relative posterior odds of revisitation given accumulated access history and the current browsing context. Text match should dominate once the query is specific, while the Bayesian score breaks ties and helps with short, ambiguous, or empty queries.
 
 ### Candidate fields
 
@@ -173,59 +173,83 @@ The first release matches normalized query tokens against:
 
 Normalization should be Unicode-aware, case-insensitive, punctuation-tolerant, and order-independent. Exact prefix and token-prefix matches should receive a bonus. A small edit-distance or subsequence fallback may be added after profiling, but should not make ordering unpredictable.
 
-### Behavioral features
+### Behavioral evidence
 
-The shared ranker consumes existing local metadata:
+The primary model requires:
 
-- Time since last access.
-- Total invested/dwell time.
-- Activation frequency.
-- Current and prior session membership.
-- Transition strength from the currently active tab.
-- Same domain as the current tab.
-- Same window as the current tab.
-- Opener/referrer relationship.
-- Tab age.
-- Pinned and audible state.
+- The timestamp of each qualified prior access to a candidate.
+- The stable page and domain identity of the candidate.
+- The stable page and domain identity of the currently active tab.
+- Counts of transitions from the current identity to the candidate identity and to other identities.
 
-Unavailable features are neutral, not zero-valued evidence against a candidate.
+The current `tabActivityLog.events` focus timestamps are sufficient for an open-tab prototype. They are not sufficient for a durable model because activity is keyed by ephemeral tab ID and deleted when a tab closes. Phase 0 must add bounded, local aggregates keyed by normalized page and domain identity so history and transition evidence survive tab churn without retaining an unbounded clickstream.
 
-### MVP ranking
+Additional signals—dwell time, session membership, window, opener/referrer, time of day, tab age, pinned, and audible state—are experimental likelihood cues. They must earn inclusion through replay or shadow-mode lift rather than enter the primary equation as arbitrary weights. Unavailable evidence is neutral, not evidence against a candidate.
 
-For a typed query:
+### Bayesian History/Context model
+
+For candidate identity `i`, let `Δtᵢⱼ` be the elapsed time since its `j`th qualified access. The History term is the ACT-R/Anderson–Schooler base-level activation used by Zemla et al.:
 
 ```text
-finalScore = 0.75 × textScore + 0.25 × behaviorScore
+historyᵢ = ln Σⱼ (Δtᵢⱼ ^ -d)
 ```
 
-Both component scores are normalized to `[0, 1]` within the eligible candidate set. Text score includes title, domain, path, exact-match, and prefix-match weights. Behavior score begins with frecency—recency, activation frequency, and logarithmic investment—then adds contextual signals:
+Start with `d = 0.5`, matching the paper's initial model. Treat it as a versioned parameter and test sensitivity locally; the published model remained comparatively robust across a range of decay values.
+
+The Context term is the smoothed log likelihood ratio for arriving at candidate `i` from current context `c`:
 
 ```text
-behaviorRaw =
-    α × log(1 + totalDwellSeconds)
-  + β × log(1 + activationCount)
-  - γ × log(1 + secondsSinceAccess)
-  + δ × transitionFromCurrent
-  + ε × sameSession
-  + ζ × sameDomain
+contextᵢ = ln P(c | i, historyᵢ) / P(c | not-i, historyᵢ)
 ```
 
-Initial coefficients should be constants with unit tests, then tuned from local replay data. The specification intentionally defines the feature shape rather than pretending the initial coefficients are learned truth.
+Operationally, Tabtopia estimates this from the transition table between normalized identities and applies the paper's initial `.01` correction whenever an observed count is zero. Treat smoothing as a versioned parameter. The combined behavioral score is:
 
-For an empty query, rank by the frecency portion of the behavior score. The prediction study still evaluates MRU as a separate baseline; neither ordering is presented to the user as a prediction.
+```text
+bayesianScoreᵢ = historyᵢ + contextᵢ
+```
+
+This is a naïve-Bayes combination: history and context contribute equally in log-odds space. Any learned weighting becomes a separately versioned experimental model.
+
+### Identity resolution
+
+The published result predicts the next site/domain, whereas the omnibox must select an exact open tab. Tabtopia must therefore evaluate three resolutions:
+
+1. **Tab/page:** use normalized URL identity directly.
+2. **Domain:** assign the domain posterior to every open tab on that domain, then disambiguate by page history and recency.
+3. **Hierarchical:** rank domains with History/Context, then rank open tabs within each domain using page-level history and text relevance.
+
+The MVP defaults to the domain form because it is closest to the published, validated task. Typed lexical relevance and exact-tab recency disambiguate multiple open pages on the same domain. The hierarchical form is the leading experimental candidate because domain transitions are less sparse while the second stage still returns the precise tab; it is not declared the winner until replay or shadow data confirms it.
+
+### Combining behavior with a typed query
+
+Typed-query recall and query-free prediction are related but different tasks. Do not force lexical relevance into the Bayesian revisitation equation as if it were a calibrated probability.
+
+For typed queries:
+
+1. Filter to candidates with a minimum lexical match.
+2. Rank primarily by normalized text score.
+3. Use normalized `bayesianScore` as the behavioral reranker for ambiguous candidates.
+
+The initial deterministic combination is:
+
+```text
+finalScore = 0.75 × textScore + 0.25 × normalize(bayesianScore)
+```
+
+The `0.75/0.25` split is a product ranking constant, not part of Byrne's model. Test it separately from the behavioral-model comparison. For an empty query, rank directly by `bayesianScore`. Until durable history is available, fall back in order to open-tab History, frecency, then MRU.
 
 ### Deterministic tie-breakers
 
 Apply in order:
 
 1. Higher final score.
-2. More recent `lastAccessed`.
-3. Higher `totalTimeSpent`.
+2. Higher `bayesianScore`.
+3. More recent `lastAccessed`.
 4. Lower stable tab identifier.
 
 ### Ranking explanation
 
-Expose at most one short reason and only when it helps disambiguate: `title match`, `domain match`, `recent`, or `frequently used`. Do not expose synthetic precision such as percentages until the prediction model is calibrated.
+Expose at most one short reason and only when it helps disambiguate: `title match`, `domain match`, `often revisited`, or `often follows this site`. Do not expose synthetic precision such as percentages until the prediction model is calibrated.
 
 ## Shared ranking architecture
 
@@ -238,8 +262,13 @@ src/lib/tab-recall.js
   normalizeQuery(query)
   buildCandidate(tab, activity, context)
   scoreText(query, candidate)
-  scoreBehavior(candidate, context)
   rankTabs(query, candidates, context, options)
+
+src/lib/revisit-model.js
+  normalizeIdentity(url, resolution)
+  scoreHistory(accessTimestamps, now, decay)
+  scoreContext(candidateIdentity, currentIdentity, transitions, smoothing)
+  scoreBayesian(candidate, context, modelConfig)
 
 src/lib/tab-prediction.js
   extractPredictionFeatures(...)
@@ -262,9 +291,11 @@ The background worker owns Chrome API calls and adapts `browserState`, live tabs
 | Path | Phase 1 responsibility |
 | --- | --- |
 | `manifest.json` | Declare the `tt` omnibox keyword. |
-| `src/background.js` | Own input sessions, live tab snapshots, Chrome event listeners, and tab/window activation. |
-| `src/lib/tab-recall.js` | Provide pure normalization, candidate building, scoring, and ranking. |
-| `tests/unit/tab-recall.test.mjs` | Exercise ranking, determinism, malformed data, and privacy helpers with Node. |
+| `src/background.js` | Own input sessions, live tab snapshots, qualified-access logging, transition aggregation, Chrome event listeners, and tab/window activation. |
+| `src/lib/tab-recall.js` | Provide pure lexical normalization, candidate building, and query/behavior combination. |
+| `src/lib/revisit-model.js` | Provide pure identity normalization and History/Context scoring. |
+| `tests/unit/tab-recall.test.mjs` | Exercise lexical ranking, deterministic combination, malformed data, and privacy helpers with Node. |
+| `tests/unit/revisit-model.test.mjs` | Reproduce paper-style model fixtures, smoothing, decay, and identity-resolution comparisons. |
 | `tests/perf/omnibox-benchmark.js` | Enforce warm ranking budgets across realistic candidate counts. |
 | `README.md` | Qualify the read-only promise as an MCP/agent boundary once user-driven switching ships. |
 
@@ -295,7 +326,7 @@ If a default suggestion is entered without a selected tab, activate the top resu
 
 ### Service-worker restart
 
-The feature must work after background suspension. Existing persisted state may enrich results, but live `tabs.query()` data is sufficient to provide a degraded title/domain/recency experience. Missing activity history must not block omnibox suggestions.
+The feature must work after background suspension. Existing persisted aggregates may enrich results, but live `tabs.query()` data is sufficient to provide a degraded title/domain/MRU experience. Missing History/Context data must not block omnibox suggestions.
 
 ## Performance budgets
 
@@ -311,6 +342,16 @@ Performance should be tested with realistic Unicode titles, long URLs, duplicate
 
 All matching, ranking, prediction, and evaluation data remain local by default. No omnibox query or browsing feature is sent to Tabtopia, a model provider, or an analytics service.
 
+Ranking evaluation is opt-in. A standard packaged install persists diagnostics as disabled on first run and performs no shadow-ranking calculations or diagnostic writes while disabled. An unpacked development install, detected with permission-free chrome.management.getSelf(), defaults diagnostics on so Tabtopia's own working installs continuously exercise the study. A persisted user choice always overrides that install-type default.
+
+The settings surface must:
+
+- Name the feature **Ranking diagnostics**, not generic analytics.
+- Explain that records remain on the device.
+- Show whether the install is internal/development or standard.
+- Delete the bounded outcome log and any pending session prediction immediately when disabled.
+- Keep any future network upload behind a separate, explicit consent decision.
+
 Raw queries are particularly sensitive and must not be persisted. Local evaluation may store:
 
 - Query length and token count.
@@ -321,12 +362,44 @@ Raw queries are particularly sensitive and must not be persisted. Local evaluati
 
 Do not store the raw query, full URL, title, or page text in omnibox telemetry. Existing Tabtopia state may already contain titles/URLs for product operation; the evaluation log should not duplicate them.
 
+Durable History/Context aggregates introduce a separate privacy obligation. Key page/domain aggregates with an installation-local HMAC digest rather than storing another plaintext URL history. The MVP retains at most 64 qualified accesses per identity for 180 days, 1,000 identities, 500 transition sources, and 32 targets per source. Incognito activity is excluded. These are versioned initial bounds, not empirically settled values. Delete the aggregates when local browsing state is cleared. A plain unsalted domain hash is not sufficient because it is easily enumerable.
+
 The trust copy also needs a precise distinction:
 
 - **Tabtopia MCP remains observational and does not focus, close, open, or navigate tabs.**
 - **Tabtopia's user-facing omnibox may focus an existing tab only after an explicit user selection.**
 
 Any current copy that says Tabtopia as a whole never focuses a tab should be qualified when this feature ships.
+
+## Research basis
+
+The primary behavioral model comes from:
+
+> Jeffrey C. Zemla, Chad C. Tossell, Philip Kortum, and Michael D. Byrne. “A Bayesian approach to predicting website revisitation on mobile phones.” *International Journal of Human-Computer Studies* 83 (2015), 43–50. [Rice-hosted paper](https://chil.rice.edu/jzemla/ijhcs2015.pdf) · [DOI record](https://doi.org/10.1016/j.ijhcs.2015.06.002)
+
+The study evaluated one year of naturalistic Safari logs from 24 iPhone users. Its principal metric counted a transition as correct when the next site appeared in the model's top four predictions.
+
+| Published model | Mean top-four accuracy |
+| --- | ---: |
+| Context-only transition model | 19.9% |
+| Recency | 38.2% |
+| Frequency | 39.6% |
+| Simplified Firefox Frecency | 42.1% |
+| New Frecency | 42.4% |
+| Power-law History | 44.4% |
+| Bayesian History/Context | **48.9%** |
+
+The History model outperformed the simplified Firefox Frecency model for 22 of 24 participants. Adding current-site context significantly improved History alone. The paper also found that performance was comparatively stable around its initial `d = 0.5` decay setting.
+
+These results establish a strong candidate, not a transferable Tabtopia accuracy claim:
+
+- The paper predicts site/domain revisitation, not exact pages or open tabs.
+- The candidate universe is browsing history rather than the current open-tab set.
+- The data came from mobile Safari and a small student sample.
+- Its Firefox comparison omits access-method bonuses because the source logs did not record typed, bookmark, or link entry.
+- The user interface can alter the behavior being predicted, which is why Tabtopia must re-evaluate after exposure.
+
+Tabtopia should first reproduce the model on synthetic fixtures, then compare domain, page, and hierarchical adaptations on local shadow data. Do not describe the model as outperforming frecency in Tabtopia until that comparison succeeds.
 
 ## Next-tab prediction study
 
@@ -360,9 +433,11 @@ Evaluate at least:
 3. Most recent same-domain tab.
 4. Browser strip neighbor/order.
 5. First-order transition frequency from the current tab.
-6. ACT-R-style activation combining recency and frequency.
+6. Firefox-style frecency.
+7. Power-law History without context.
+8. Bayesian History/Context at page, domain, and hierarchical resolutions.
 
-The candidate feature model adds session, relationship, window, time-of-day, tab age, pinned, and audible signals. Start with an interpretable weighted model; do not require remote or opaque machine learning.
+The Bayesian History/Context adaptation is the primary candidate model. Experimental variants may add dwell, session, relationship, window, time-of-day, tab age, pinned, and audible likelihood cues one at a time. Each variant must report incremental lift and remain interpretable; no remote or opaque machine learning is required.
 
 ### Metrics
 
@@ -373,13 +448,13 @@ The candidate feature model adds session, relationship, window, time-of-day, tab
 - Coverage and censoring rate.
 - Accuracy by open-tab-count band and session age.
 
-Report lift over MRU, not just absolute accuracy. Segment results without storing raw domains in the evaluation output.
+Report lift over MRU, Firefox-style frecency, and power-law History—not just absolute accuracy. Segment results without storing raw domains in the evaluation output. Include top-four accuracy as a paper-comparison metric, while treating top-one, top-three, and MRR as the primary Tabtopia product metrics.
 
 ### Exposure gate
 
 Do not label or present a `Likely next` result until all of the following hold on a meaningful local sample:
 
-- The candidate model beats MRU on top-1 and MRR.
+- The Bayesian model beats both MRU and Firefox-style frecency on top-1 and MRR.
 - The gain persists across more than one evaluation window.
 - Latency remains within the omnibox budget.
 - Calibration is good enough that a confidence threshold has semantic meaning.
@@ -397,7 +472,7 @@ Use bounded, append-style local records or a bounded ring buffer in `chrome.stor
 {
   "event": "omnibox_selection",
   "timestamp": 0,
-  "modelVersion": "recall-v1",
+  "modelVersion": "recall-bayes-v1",
   "queryLength": 0,
   "queryTokenCount": 0,
   "candidateCount": 0,
@@ -413,7 +488,10 @@ Use bounded, append-style local records or a bounded ring buffer in `chrome.stor
   "event": "next_tab_outcome",
   "timestamp": 0,
   "contextId": "local-ephemeral-id",
-  "modelVersion": "next-tab-v1",
+  "modelVersion": "bayes-history-context-v1",
+  "identityResolution": "domain",
+  "decay": 0.5,
+  "smoothing": 0.01,
   "candidateCount": 0,
   "predictedTabIds": [0, 0, 0],
   "actualTabId": 0,
@@ -446,7 +524,8 @@ Chrome renders the omnibox, so Tabtopia controls information architecture rather
 | Restricted or malformed URL | Match title when available; omit unsafe domain/path fields. |
 | Duplicate tab IDs in stale state | Trust the current Chrome tab snapshot. |
 | Incognito boundary | Never return candidates from a different profile context. |
-| Ranking exception | Fall back to recency ordering. |
+| Missing durable history | Fall back from open-tab History to frecency, then MRU. |
+| Ranking exception | Fall back to MRU ordering. |
 | Local telemetry write failure | Continue the user action; evaluation is never on the critical path. |
 
 ## Rollout plan
@@ -454,17 +533,19 @@ Chrome renders the omnibox, so Tabtopia controls information architecture rather
 ### Phase 0 — contracts and fixtures
 
 - Define candidate, context, score, suggestion, and telemetry schemas.
-- Extract representative tab/activity fixtures from synthetic data.
-- Add pure unit tests for normalization, scoring, tie-breaking, and privacy constraints.
+- Define stable page/domain identities, bounded access-history aggregates, and transition tables that survive tab closure.
+- Reproduce the paper's History and History/Context equations on synthetic fixtures.
+- Add pure unit tests for power-law decay, Laplace smoothing, identity resolution, tie-breaking, and privacy constraints.
 - Record current popup, treemap, and MCP ranking behavior before refactoring.
 
-**Exit:** Scoring inputs and outputs are stable, deterministic, and replayable.
+**Exit:** Scoring inputs and outputs are stable, deterministic, replayable, and capable of reproducing known paper-style examples.
 
 ### Phase 1 — open-tab omnibox MVP
 
 - Add the `tt` manifest keyword.
 - Add background omnibox listeners.
-- Implement live candidate snapshot and pure recall ranker with base frecency.
+- Implement live candidate snapshots, lexical recall, and the power-law History score from existing focus events.
+- Add explicit frecency and MRU fallbacks for sparse or missing history.
 - Return top-five results and focus the selected existing tab/window.
 - Add no-result, stale-tab, multi-window, and service-worker restart handling.
 - Update product copy to distinguish MCP observation from explicit user tab switching.
@@ -473,8 +554,9 @@ Chrome renders the omnibox, so Tabtopia controls information architecture rather
 
 ### Phase 2 — behavioral ranking and shared core
 
-- Enrich candidates from activity and relationship state.
-- Add full frecency and transition/context scoring with single-reason explanations.
+- Persist bounded page/domain history and transition aggregates.
+- Add the Bayesian Context term and page, domain, and hierarchical identity strategies.
+- Add single-reason explanations without exposing uncalibrated probability claims.
 - Compare the shared core against current popup, treemap, and MCP behavior.
 - Migrate other surfaces only when equivalence or intentional differences are documented.
 
@@ -483,9 +565,11 @@ Chrome renders the omnibox, so Tabtopia controls information architecture rather
 ### Phase 3 — shadow next-tab study
 
 - Add qualified-activation observation lifecycle.
-- Run all baselines and the interpretable candidate model.
+- Run MRU, investment, frecency, History, and every Bayesian identity-resolution candidate.
+- Report Byrne-paper top-four accuracy alongside Tabtopia's primary top-one, top-three, and MRR metrics.
 - Add bounded local retention and an exportable aggregate report.
 - Verify that raw queries and raw page metadata are absent from evaluation records.
+- Gate all evaluation behind Ranking diagnostics: default off for standard installs, default on for unpacked development installs.
 
 **Exit:** A local report shows baseline-relative accuracy, MRR, calibration, coverage, censoring, and performance.
 
@@ -514,6 +598,10 @@ Chrome renders the omnibox, so Tabtopia controls information architecture rather
 - Unicode, punctuation, case, token order, prefix, and hostname normalization.
 - Title/domain/path weighting.
 - Missing activity fields and malformed URLs.
+- Power-law History from exact access timestamps with `d = 0.5`.
+- Context log-likelihood with zero counts and Laplace correction.
+- Page, domain, and hierarchical identity scoring.
+- Frecency and MRU fallback order.
 - Deterministic ties.
 - Current-tab demotion.
 - Incognito/profile separation.
@@ -527,7 +615,7 @@ Chrome renders the omnibox, so Tabtopia controls information architecture rather
 - A tab closes between suggestion and selection.
 - Background worker suspends and restarts.
 - Pinned, discarded, audible, and duplicate tabs remain selectable.
-- Empty query excludes the current tab and orders by deterministic frecency.
+- Empty query excludes the current tab and orders by deterministic History/Context score when evidence is available.
 - Rapid input never renders an older query's results.
 
 ### Performance tests
@@ -552,7 +640,7 @@ The MVP is ready when:
 - `tt` + Space activates Tabtopia recall.
 - Title and domain queries retrieve correct open tabs across windows.
 - Selecting a result focuses the existing tab and never navigates it elsewhere.
-- Empty input returns frecent tabs without predictive claims.
+- Empty input returns Bayesian-ranked tabs without predictive claims, with tested frecency/MRU fallback.
 - Ordering is deterministic for an unchanged input snapshot.
 - Warm p95 is below 50 ms at 500 tabs and cold p95 is below 200 ms.
 - The feature works with missing persisted activity state.
@@ -564,13 +652,15 @@ The MVP is ready when:
 
 These questions need evidence or a deliberate product choice, but do not block Phase 0:
 
-1. Should an empty query show frecent tabs immediately, or only the instructional default until the first character?
+1. Should an empty query show Bayesian-ranked tabs immediately, or only the instructional default until the first character?
 2. Is `tt` the final keyword after testing discoverability and collision with existing search engines?
 3. What minimum query length should enable approximate matching?
 4. How should user-defined window names be represented when duplicates require disambiguation?
-5. What retention window is sufficient for local prediction evaluation?
-6. What lift over MRU is large enough to justify predictive UI?
-7. Should prediction controls live in extension settings or a future local diagnostics view?
+5. Does page, domain, or hierarchical identity perform best for open-tab prediction?
+6. Do the initial 64-access, 180-day, 1,000-identity bounds preserve useful power-law evidence without accumulating excessive local state?
+7. Should the published `d = 0.5` and `.01` smoothing constants remain global, or be adapted locally after sufficient evidence?
+8. What lift over both MRU and frecency is large enough to justify predictive UI?
+9. Should prediction controls live in extension settings or a future local diagnostics view?
 
 ## Later connection to treemap controls
 

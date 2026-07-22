@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tabtopia settings</title>
+    <link rel="stylesheet" href="../newtab/fonts.css">
+    <link rel="stylesheet" href="options.css">
+</head>
+<body>
+    <main class="settings-shell">
+        <header class="page-header">
+            <p class="eyebrow">Tabtopia</p>
+            <h1>Ranking diagnostics</h1>
+            <p class="lede">Measure whether tab recall and next-tab predictions are improving. Diagnostics stay on this device.</p>
+        </header>
+
+        <section class="setting-panel" aria-labelledby="diagnostics-title">
+            <label class="setting-row" for="diagnosticsEnabled">
+                <span class="setting-copy">
+                    <span class="setting-title" id="diagnostics-title">Help improve tab ranking</span>
+                    <span class="setting-description">Record bounded, metadata-free ranking outcomes locally. Raw queries, titles, and URLs are never added to this log.</span>
+                </span>
+                <span class="switch">
+                    <input id="diagnosticsEnabled" type="checkbox" role="switch">
+                    <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                </span>
+            </label>
+            <div class="install-note">
+                <span id="installBadge" class="install-badge">Checking install…</span>
+                <span id="retentionNote">Turning diagnostics off removes all recorded outcomes.</span>
+            </div>
+        </section>
+
+        <section class="report-panel" aria-labelledby="report-title">
+            <div class="report-heading">
+                <div>
+                    <p class="eyebrow">Local report</p>
+                    <h2 id="report-title">Next-tab accuracy</h2>
+                </div>
+                <button id="refreshReport" class="secondary-button" type="button">Refresh</button>
+            </div>
+            <p id="reportStatus" class="report-status" role="status">Loading local observations…</p>
+            <div id="modelReport" class="model-report"></div>
+            <div class="report-footer">
+                <span id="interactionSummary">No omnibox interactions recorded.</span>
+                <button id="clearDiagnostics" class="text-button" type="button">Clear diagnostics</button>
+            </div>
+        </section>
+    </main>
+    <script type="module" src="options.js"></script>
+</body>
+</html>

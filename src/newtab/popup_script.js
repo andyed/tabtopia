@@ -12,6 +12,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const tabCountEl = document.getElementById("tabCount");
     const windowCountEl = document.getElementById("windowCount");
     const tooltip = document.getElementById("tooltip");
+    const settingsButton = document.getElementById("openSettings");
+
+    settingsButton?.addEventListener("click", async () => {
+        await chrome.runtime.openOptionsPage();
+        window.close();
+    });
 
     // Focus the search input as soon as the popup loads
     if (searchInput) {

@@ -42,7 +42,7 @@ body { background: var(--bg-color); font-family: "Avenir Next", sans-serif; font
 
 .logo:hover { color: var(--accent-color); text-decoration: none; }
 .logo:focus-visible { outline: 3px solid #b9ffe2; outline-offset: 3px; }
-.header-controls { min-width: 0; flex: 1; }
+.header-controls { min-width: 0; flex: 1; display: flex; align-items: center; gap: 6px; }
 .search-container { min-width: 0; }
 
 .search-input {

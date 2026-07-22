@@ -23,6 +23,48 @@
 import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
 import { pushSnapshot, setRequestHandler } from "./bridge-client.js";
 import { refreshRecentHistoryCache } from "./lib/history-cache.js";
+import { RevisitStore } from "./lib/revisit-store.js";
+import {
+    RankingDiagnostics,
+    summarizeRankingDiagnostics
+} from "./lib/ranking-diagnostics.js";
+import {
+    buildRecallCandidate,
+    escapeOmniboxText,
+    formatRelativeAccess,
+    normalizeQuery,
+    rankTabs,
+    rankTabsByFrecency
+} from "./lib/tab-recall.js";
+
+const revisitStore = new RevisitStore(chrome.storage.local);
+const revisitReady = revisitStore.init().catch(error => {
+    console.warn("[RevisitStore] initialization failed; omnibox will use recency fallback", error);
+    return null;
+});
+const rankingDiagnostics = new RankingDiagnostics(chrome.storage.local, chrome.storage.session);
+let rankingDiagnosticsInstallType = "normal";
+const rankingDiagnosticsReady = initializeRankingDiagnostics();
+
+const OMNIBOX_RESULT_LIMIT = 5;
+const REVISIT_QUALIFICATION_MS = 2000;
+let revisitQualificationTimer = null;
+const pendingRevisitOrigins = new Map();
+let omniboxSessionId = 0;
+let omniboxSnapshot = null;
+let omniboxSnapshotDirty = true;
+let omniboxLastResults = [];
+let omniboxLastInteraction = null;
+
+async function initializeRankingDiagnostics() {
+    try {
+        const self = await chrome.management.getSelf();
+        rankingDiagnosticsInstallType = self?.installType || rankingDiagnosticsInstallType;
+    } catch (error) {
+        console.warn("[RankingDiagnostics] install type unavailable; defaulting off", error);
+    }
+    return rankingDiagnostics.init({ installType: rankingDiagnosticsInstallType });
+}
 
 // Let the MCP bridge daemon read an open tab's DOM on demand (get_tab_content).
 // Exact-URL match only: the tool's contract is "fails gracefully if the tab is
@@ -71,6 +113,7 @@ setInterval(() => {
 // Handle browser suspend/resume events
 chrome.runtime.onSuspend.addListener(() => {
     console.log("[DwellTime] Browser suspending, saving last active state");
+    revisitReady.then(store => store?.flush()).catch(() => {});
     // Save the last active state when the browser is closing
     if (browserState.lastActive) {
         // Calculate final dwell time for the currently active tab
@@ -221,6 +264,7 @@ function initializeActiveTabTracking() {
                 windowId: activeTab.windowId,
                 timestamp: Date.now()
             };
+            scheduleQualifiedRevisitAccess(activeTab);
         }
     });
 }
@@ -339,6 +383,256 @@ const TAB_ACTIVITY = {
     IDLE_THRESHOLD: 300000,    // Time without interaction to consider tab idle (5 minutes)
     UPDATE_INTERVAL: 5000      // How often to update active tab time counters
 };
+
+/**
+ * Record an activation only after it remains the focused tab for long enough
+ * to count as an intentional access. Incognito activity is intentionally not
+ * persisted by the MVP.
+ */
+function scheduleQualifiedRevisitAccess(tab, previousUrl = "") {
+    if (revisitQualificationTimer) clearTimeout(revisitQualificationTimer);
+    if (!tab?.id || !tab.url || tab.incognito) return;
+
+    const expectedTabId = tab.id;
+    const expectedUrl = tab.url;
+    revisitQualificationTimer = setTimeout(async () => {
+        revisitQualificationTimer = null;
+        try {
+            const currentTab = await chrome.tabs.get(expectedTabId);
+            if (!currentTab.active || currentTab.url !== expectedUrl) return;
+            const store = await revisitReady;
+            if (!store) return;
+            await store.recordAccess(expectedUrl, previousUrl, Date.now());
+            pendingRevisitOrigins.delete(expectedTabId);
+            omniboxSnapshotDirty = true;
+            if (rankingDiagnostics.isEnabled()) {
+                await recordQualifiedActivationDiagnostics(expectedTabId);
+            }
+        } catch (error) {
+            // Tabs frequently disappear during the qualification window.
+            if (!String(error?.message || error).includes("No tab with id")) {
+                console.warn("[RevisitStore] qualified access failed", error);
+            }
+        }
+    }, REVISIT_QUALIFICATION_MS);
+}
+
+function markOmniboxSnapshotDirty() {
+    omniboxSnapshotDirty = true;
+}
+
+async function refreshOmniboxSnapshot() {
+    const windows = await chrome.windows.getAll({ populate: true });
+    const tabs = [];
+    let currentTab = null;
+
+    for (const window of windows) {
+        for (const tab of window.tabs || []) {
+            if (tab.incognito || !tab.id || !tab.url || !tab.title) continue;
+            tabs.push(tab);
+            if (window.focused && tab.active) currentTab = tab;
+        }
+    }
+
+    let behaviorByTab = new Map();
+    const store = await revisitReady;
+    if (store) {
+        const scores = await store.scoreTabs(tabs, currentTab?.url || "");
+        behaviorByTab = new Map(scores.map(score => [score.tabId, score]));
+    }
+
+    const hasBayesianEvidence = [...behaviorByTab.values()].some(item => Number.isFinite(item.score));
+    const candidates = tabs.map(tab => {
+        const activity = browserState.tabActivityLog.get(tab.id) || {};
+        const behavior = behaviorByTab.get(tab.id);
+        const lastAccessed = tab.lastAccessed || browserState.tabs.get(tab.id)?.lastAccessed || latestFocusTimestamp(activity);
+        const fallback = scoreFallbackFrecency(activity, lastAccessed);
+        return buildRecallCandidate(tab, {
+            totalTimeSpent: activity.totalTimeSpent || 0,
+            lastAccessed,
+            bayesianScore: hasBayesianEvidence ? behavior?.score : fallback,
+            frecencyScore: fallback,
+            historyScore: behavior?.history,
+            source: hasBayesianEvidence ? (behavior?.source || "none") : (Number.isFinite(fallback) ? "frecency" : "none")
+        });
+    });
+
+    omniboxSnapshot = {
+        candidates,
+        currentTabId: currentTab?.id || null,
+        createdAt: Date.now()
+    };
+    omniboxSnapshotDirty = false;
+    return omniboxSnapshot;
+}
+
+function latestFocusTimestamp(activity) {
+    const events = Array.isArray(activity?.events) ? activity.events : [];
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+        if (events[index]?.type === "focus" && Number.isFinite(events[index].timestamp)) {
+            return events[index].timestamp;
+        }
+    }
+    return 0;
+}
+
+function scoreFallbackFrecency(activity, lastAccessed, now = Date.now()) {
+    const accessCount = Array.isArray(activity?.events)
+        ? activity.events.filter(event => event?.type === "focus").length
+        : 0;
+    const dwellSeconds = Math.max(0, Number(activity?.totalTimeSpent || 0) / 1000);
+    if (!lastAccessed && accessCount === 0 && dwellSeconds === 0) return Number.NEGATIVE_INFINITY;
+    const ageMinutes = Math.max(0, (now - Number(lastAccessed || now)) / 60000);
+    return Math.log1p(accessCount) + (0.5 * Math.log1p(dwellSeconds)) - Math.log1p(ageMinutes);
+}
+
+async function beginOmniboxSession() {
+    omniboxSessionId += 1;
+    omniboxLastResults = [];
+    omniboxLastInteraction = null;
+    await setOmniboxDefault("Search open tabs with Tabtopia");
+    try {
+        await refreshOmniboxSnapshot();
+    } catch (error) {
+        console.warn("[Omnibox] failed to snapshot open tabs", error);
+    }
+}
+
+async function handleOmniboxInputChanged(text, suggest) {
+    const requestSession = omniboxSessionId;
+    const startedAt = performance.now();
+    try {
+        const snapshot = omniboxSnapshotDirty || !omniboxSnapshot
+            ? await refreshOmniboxSnapshot()
+            : omniboxSnapshot;
+        if (requestSession !== omniboxSessionId) return;
+
+        const results = rankTabs(text, snapshot.candidates, {
+            limit: OMNIBOX_RESULT_LIMIT,
+            currentTabId: snapshot.currentTabId
+        });
+        omniboxLastResults = results;
+        if (rankingDiagnostics.isEnabled()) {
+            omniboxLastInteraction = {
+                queryLength: String(text || "").length,
+                queryTokenCount: normalizeQuery(text).length,
+                candidateCount: results.length,
+                latencyMs: performance.now() - startedAt
+            };
+        }
+
+        if (results.length === 0) {
+            await setOmniboxDefault("No matching open tab — keep typing to refine");
+            suggest([]);
+            return;
+        }
+
+        await setOmniboxDefault(text ? "Switch to the best matching open tab" : "Switch to a relevant open tab");
+        const nonce = requestSession.toString(36);
+        suggest(results.map(result => ({
+            content: `tabtopia-tab:${result.tabId}:${nonce}`,
+            description: formatOmniboxDescription(result)
+        })));
+    } catch (error) {
+        console.warn("[Omnibox] ranking failed", error);
+        suggest([]);
+    }
+}
+
+function formatOmniboxDescription(result) {
+    const title = escapeOmniboxText(result.title || "Untitled tab");
+    const details = [
+        result.domain,
+        formatRelativeAccess(result.lastAccessed),
+        result.reason
+    ].filter(Boolean).map(escapeOmniboxText).join(" · ");
+    return `<match>Switch</match> · ${title} <dim>${details}</dim>`;
+}
+
+async function setOmniboxDefault(description) {
+    await chrome.omnibox.setDefaultSuggestion({ description: escapeOmniboxText(description) });
+}
+
+async function handleOmniboxInputEntered(text) {
+    const match = /^tabtopia-tab:(\d+):([a-z0-9]+)$/.exec(String(text || ""));
+    const requestedId = match ? Number(match[1]) : omniboxLastResults[0]?.tabId;
+    if (!requestedId) return;
+
+    if (rankingDiagnostics.isEnabled() && omniboxLastInteraction) {
+        const selectedIndex = omniboxLastResults.findIndex(result => result.tabId === requestedId);
+        rankingDiagnostics.record({
+            event: "omnibox_selection",
+            timestamp: Date.now(),
+            modelVersion: "recall-bayes-v1",
+            ...omniboxLastInteraction,
+            selectedRank: selectedIndex >= 0 ? selectedIndex + 1 : 0
+        });
+    }
+    omniboxLastInteraction = null;
+
+    try {
+        const [origin] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const tab = await chrome.tabs.get(requestedId);
+        await chrome.windows.update(tab.windowId, { focused: true });
+        await chrome.tabs.update(requestedId, { active: true });
+        scheduleQualifiedRevisitAccess(tab, origin?.url || "");
+    } catch (error) {
+        console.warn("[Omnibox] selected tab is no longer available", error);
+        markOmniboxSnapshotDirty();
+    }
+}
+
+chrome.omnibox.onInputStarted.addListener(() => {
+    beginOmniboxSession().catch(error => console.warn("[Omnibox] input start failed", error));
+});
+chrome.omnibox.onInputChanged.addListener((text, suggest) => {
+    handleOmniboxInputChanged(text, suggest);
+});
+chrome.omnibox.onInputEntered.addListener(text => {
+    handleOmniboxInputEntered(text);
+});
+chrome.omnibox.onInputCancelled.addListener(() => {
+    if (rankingDiagnostics.isEnabled() && omniboxLastInteraction) {
+        rankingDiagnostics.record({
+            event: "omnibox_abandonment",
+            timestamp: Date.now(),
+            modelVersion: "recall-bayes-v1",
+            ...omniboxLastInteraction
+        });
+    }
+    omniboxSessionId += 1;
+    omniboxLastResults = [];
+    omniboxLastInteraction = null;
+});
+
+async function recordQualifiedActivationDiagnostics(actualTabId) {
+    await rankingDiagnosticsReady;
+    if (!rankingDiagnostics.isEnabled()) return;
+
+    const outcomes = await rankingDiagnostics.takePendingPrediction(
+        actualTabId,
+        REVISIT_QUALIFICATION_MS
+    );
+    for (const outcome of outcomes || []) rankingDiagnostics.record(outcome);
+
+    const snapshot = await refreshOmniboxSnapshot();
+    const limit = Math.min(10, Math.max(0, snapshot.candidates.length - 1));
+    const bayesian = rankTabs("", snapshot.candidates, {
+        limit,
+        currentTabId: snapshot.currentTabId
+    });
+    const frecency = rankTabsByFrecency(snapshot.candidates, {
+        limit,
+        currentTabId: snapshot.currentTabId
+    });
+    await rankingDiagnostics.setPendingPrediction({
+        candidateCount: limit,
+        models: {
+            "bayes-history-context-v1": bayesian.map(result => result.tabId),
+            "frecency-v1": frecency.map(result => result.tabId)
+        }
+    });
+}
 
 /**
  * Navigation sequence tracker
@@ -734,6 +1028,17 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         // Store previous active tab for dwell time tracking
         const previousTabId = browserState.lastActive?.tabId;
         const previousTabTimestamp = browserState.lastActive?.timestamp;
+        const previousUrl = previousTabId
+            ? browserState.tabs.get(previousTabId)?.url || ""
+            : "";
+
+        try {
+            const activatedTab = await chrome.tabs.get(activeInfo.tabId);
+            scheduleQualifiedRevisitAccess(activatedTab, previousUrl);
+        } catch (error) {
+            console.warn("[RevisitStore] could not inspect activated tab", error);
+        }
+        markOmniboxSnapshotDirty();
 
         // If there was a previously active tab, calculate dwell time and update
         if (previousTabId && previousTabTimestamp) {
@@ -1116,6 +1421,7 @@ function handleLinkContext(message, sender) {
  * Links new tabs to their source tabs in the relationship graph
  */
 chrome.tabs.onCreated.addListener((tab) => {
+    markOmniboxSnapshotDirty();
     // Get the last active tab before this creation
     const previousActiveTab = browserState.lastActive?.tabId;
 
@@ -1354,6 +1660,7 @@ chrome.windows.onCreated.addListener(async (window) => {
  * Ensures no memory leaks from removed tabs
  */
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+    markOmniboxSnapshotDirty();
     console.log("Tab being removed:", {
         tabId,
         removeInfo,
@@ -1413,13 +1720,23 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     });
 });
 
-// Track window focus changes for context awareness
+// Track window focus changes for context awareness. Focusing a window whose
+// active tab did not change does not emit tabs.onActivated, so record it here.
 chrome.windows.onFocusChanged.addListener((windowId) => {
+    markOmniboxSnapshotDirty();
     if (windowId !== chrome.windows.WINDOW_ID_NONE) {
-        browserState.lastActive = {
-            windowId,
-            timestamp: Date.now()
-        };
+        const previousUrl = browserState.lastActive?.tabId
+            ? browserState.tabs.get(browserState.lastActive.tabId)?.url || ""
+            : "";
+        chrome.tabs.query({ active: true, windowId }).then(([tab]) => {
+            if (!tab) return;
+            browserState.lastActive = {
+                tabId: tab.id,
+                windowId,
+                timestamp: Date.now()
+            };
+            scheduleQualifiedRevisitAccess(tab, previousUrl);
+        }).catch(error => console.warn("[RevisitStore] window focus lookup failed", error));
     }
 });
 
@@ -1636,6 +1953,16 @@ function cleanProcessedNavigations() {
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") {
+        markOmniboxSnapshotDirty();
+    }
+    if (changeInfo.url && tab.active) {
+        const priorUrl = browserState.tabs.get(tabId)?.url || "";
+        if (priorUrl && priorUrl !== tab.url) pendingRevisitOrigins.set(tabId, priorUrl);
+    }
+    if (tab.active && (changeInfo.url || changeInfo.status === "complete")) {
+        scheduleQualifiedRevisitAccess(tab, pendingRevisitOrigins.get(tabId) || "");
+    }
     // First check if webNavigation already handled this (for URL changes)
     if (changeInfo.url && processedNavigations.has(`${tabId}-${changeInfo.url}-${Date.now() - 1000}`)) {
         console.log("Skipping duplicate URL change already handled by webNavigation");
@@ -1945,6 +2272,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         sendResponse({ received: true });
         return;
+    }
+    if (message.action === "getRankingDiagnostics") {
+        rankingDiagnosticsReady
+            .then(() => rankingDiagnostics.getRecords())
+            .then(records => sendResponse({
+                success: true,
+                enabled: rankingDiagnostics.isEnabled(),
+                installType: rankingDiagnosticsInstallType,
+                summary: summarizeRankingDiagnostics(records)
+            }))
+            .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
+    }
+    if (message.action === "setRankingDiagnostics") {
+        rankingDiagnosticsReady
+            .then(() => rankingDiagnostics.setEnabled(Boolean(message.enabled)))
+            .then(enabled => sendResponse({ success: true, enabled }))
+            .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
+    }
+    if (message.action === "clearRankingDiagnostics") {
+        rankingDiagnosticsReady
+            .then(() => rankingDiagnostics.clear())
+            .then(() => sendResponse({ success: true }))
+            .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
     }
     console.log("🔍 Background script received message:", message);
     console.log("🔍 Message action:", message.action);

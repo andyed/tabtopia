@@ -1,0 +1,343 @@
+:root {
+    color-scheme: dark;
+    --canvas: #161512;
+    --surface: #211f1a;
+    --surface-raised: #29261f;
+    --text: #f3efe3;
+    --muted: #d2cabd;
+    --accent: #a5e6bd;
+    --accent-ink: #102318;
+    --focus: #8dc9ff;
+    --danger: #ffc5ba;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    min-height: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    min-height: 100vh;
+    margin: 0;
+    background: var(--canvas);
+    color: var(--text);
+    font-family: "Barlow Condensed", sans-serif;
+    font-size: 18px;
+    font-weight: 500;
+}
+
+button,
+input {
+    font: inherit;
+}
+
+.settings-shell {
+    width: min(760px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 64px 0 80px;
+}
+
+.page-header {
+    margin-bottom: 28px;
+}
+
+.eyebrow {
+    margin: 0 0 6px;
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+    text-wrap: pretty;
+}
+
+h1,
+h2,
+h3 {
+    text-wrap: balance;
+}
+
+h1 {
+    margin: 0;
+    font-size: clamp(42px, 7vw, 68px);
+    font-weight: 500;
+    line-height: 0.95;
+    letter-spacing: -0.025em;
+}
+
+.lede {
+    max-width: 650px;
+    margin: 18px 0 0;
+    color: var(--muted);
+    font-size: 22px;
+    line-height: 1.35;
+}
+
+.setting-panel,
+.report-panel {
+    background: var(--surface);
+    border-radius: 14px;
+    box-shadow: 0 0 0 1px rgba(243, 239, 227, 0.13), 0 16px 36px rgba(0, 0, 0, 0.22);
+}
+
+.setting-panel {
+    margin-bottom: 18px;
+}
+
+.setting-row {
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 28px;
+    padding: 24px;
+    cursor: pointer;
+}
+
+.setting-copy {
+    display: grid;
+    gap: 7px;
+}
+
+.setting-title {
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.setting-description,
+.install-note,
+.report-status,
+.report-footer {
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+.setting-description {
+    max-width: 540px;
+}
+
+.switch {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+.switch-track {
+    width: 54px;
+    height: 32px;
+    display: block;
+    padding: 4px;
+    border-radius: 16px;
+    background: #5f5a51;
+    box-shadow: inset 0 0 0 1px rgba(243, 239, 227, 0.24);
+    transition-property: background-color;
+    transition-duration: 100ms;
+    transition-timing-function: ease-out;
+}
+
+.switch-thumb {
+    width: 24px;
+    height: 24px;
+    display: block;
+    border-radius: 12px;
+    background: var(--text);
+    transform: translateX(0);
+    transition-property: transform;
+    transition-duration: 100ms;
+    transition-timing-function: ease-out;
+}
+
+.switch input:checked + .switch-track {
+    background: var(--accent);
+}
+
+.switch input:checked + .switch-track .switch-thumb {
+    background: var(--accent-ink);
+    transform: translateX(22px);
+}
+
+.switch input:focus-visible + .switch-track {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+}
+
+.install-note {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 24px;
+    border-top: 1px solid rgba(243, 239, 227, 0.16);
+    font-size: 16px;
+}
+
+.install-badge {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.report-panel {
+    padding: 24px;
+}
+
+.report-heading,
+.report-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+h2 {
+    margin: 0;
+    font-size: 34px;
+    font-weight: 500;
+}
+
+.report-status {
+    min-height: 26px;
+    margin: 18px 0;
+}
+
+.model-report {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.model-card {
+    padding: 18px;
+    background: var(--surface-raised);
+    border-radius: 8px;
+    box-shadow: 0 0 0 1px rgba(243, 239, 227, 0.12);
+}
+
+.model-card h3 {
+    min-height: 48px;
+    margin: 0 0 16px;
+    font-size: 21px;
+    font-weight: 600;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 0;
+}
+
+.metric-grid div {
+    display: grid;
+    gap: 4px;
+}
+
+.metric-grid dt {
+    color: var(--muted);
+    font-size: 16px;
+}
+
+.metric-grid dd {
+    margin: 0;
+    font-size: 28px;
+    font-variant-numeric: tabular-nums;
+}
+
+.report-footer {
+    min-height: 56px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(243, 239, 227, 0.16);
+    font-size: 16px;
+}
+
+.secondary-button,
+.text-button {
+    min-height: 40px;
+    padding: 0 14px;
+    color: var(--text);
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition-property: background-color, scale;
+    transition-duration: 100ms;
+    transition-timing-function: ease-out;
+}
+
+.secondary-button {
+    background: var(--surface-raised);
+    box-shadow: 0 0 0 1px rgba(243, 239, 227, 0.22);
+}
+
+.text-button {
+    color: var(--danger);
+    background: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .secondary-button:hover,
+    .text-button:hover {
+        background: #39352c;
+    }
+}
+
+.secondary-button:focus-visible,
+.text-button:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+}
+
+.secondary-button:active,
+.text-button:active {
+    scale: 0.96;
+}
+
+button:disabled,
+input:disabled + .switch-track {
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
+
+@media (max-width: 620px) {
+    .settings-shell {
+        width: min(100% - 24px, 760px);
+        padding-top: 34px;
+    }
+
+    .setting-row,
+    .install-note,
+    .report-heading,
+    .report-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .setting-row {
+        position: relative;
+        padding-right: 84px;
+    }
+
+    .switch {
+        position: absolute;
+        top: 24px;
+        right: 20px;
+    }
+}
