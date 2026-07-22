@@ -1,0 +1,399 @@
+# tabtopia start page: roadmap and technical plan
+
+> Draft, 2026-07-19. This turns the start-page ideation into an implementation sequence. The immediate product bet is deliberately narrow: recognize the user's browsing state and make useful predictions end to end on the existing main new-tab page before unifying the alternate views.
+
+## Product promise
+
+The start page should help the user recover place and momentum. It should recognize whether the user is beginning, continuing, returning after an interruption, or handing work off from another device, then make the next useful action fast and keyboard-accessible.
+
+Chrome's Omnibox remains the precise recall path for finding and switching to a known open tab. The start page is for orientation, contextual continuation, habitual navigation, and deliberate exploration of browsing memory.
+
+## Sequencing decision
+
+1. Build state recognition and prediction end to end on the existing main new-tab page.
+2. Measure whether the recognized state and ranked actions are useful.
+3. Replace the separate HTML destinations with one application shell that preserves URL addressability.
+4. Bring List, Treemap, Graph, Sessions, and Landmarks into that shell as linked lenses over shared state.
+5. Raise the visual bar with semantic zoom, connected micrographs, hero imagery, and space-filling typography once the interaction model is stable.
+
+This order prevents an application-shell rewrite from becoming a prerequisite for learning whether the core product behavior is right.
+
+## Jobs to support
+
+### Routine
+
+- Go to a frequently used destination with zero query.
+- Use time, weekday, current task, previous page, and learned sequences to distinguish contextual habits from a generic most-visited grid.
+- Keep the top habitual actions immediately keyboard-accessible in every recognized state.
+
+### Begin
+
+- Start deliberately in a clean field.
+- Resume a page starred in passing: starred, low dwell, not meaningfully revisited, and not already active.
+- Offer deferred intentions as possible beginnings rather than as a bookmark dashboard.
+
+### Reinstate
+
+- Recover the morning's work after lunch or another interruption.
+- Resume a coherent task living in another window.
+- Return after several days with a compact account of active clusters, last positions, unfinished branches, and landmarks.
+
+### Handoff
+
+- Continue recent work synchronized from another device.
+- Use `VisitItem.isLocal === false` as evidence of a foreign visit.
+- Say "another device" unless a synced-session match provides a trustworthy device name; never infer "phone" from a non-local history item alone.
+
+### Retrace
+
+- Backtrack from a dead end to a meaningful fork and restart along a different trail.
+- Recover the search result, hub, referrer, or branch through which a useful page was found.
+- Recover a peripheral branch opened during otherwise coherent work.
+
+### Reorient
+
+- Understand what a tab-heavy window has become.
+- Resume a comparison among parallel sources.
+- Search by remembered meaning and see a result in its browsing context.
+
+Cleanup, bulk organization, and automatic tab movement are later jobs. They should not complicate the first prediction and recognition loop. Explicitly closing one selected open tab remains a useful focus action in the core experience; deferring cleanup does not require removing that capability.
+
+## State model
+
+### Recognized environment
+
+The classifier produces one primary environment state plus confidence and human-readable evidence.
+
+| State | Recognition sketch | Page's primary job |
+|---|---|---|
+| **Launch** | Little meaningful live work here or elsewhere | Offer habitual destinations and promising new beginnings |
+| **Threshold** | Current window is clean; live work exists elsewhere; no substantial interruption | Preserve a fresh center while keeping existing work nearby |
+| **Reinstatement** | Current window is clean; coherent work exists elsewhere; activity gap indicates an interruption | Reconstruct and resume the interrupted working context |
+| **Continuation** | Meaningful sibling tabs exist in the current window | Summarize the current undertaking and expose its likely next branches |
+| **Handoff** | Recent non-local visits or synced foreign sessions form a coherent trail | Continue cross-device work locally |
+
+A new window is evidence, not intent. A clean new window after a long gap and a busy morning elsewhere should produce Reinstatement, not automatically Launch.
+
+### Explicit interaction modes
+
+Explicit user intent overrides inference without destroying it:
+
+- **Search**: `/` opens a stable, list-first search workspace from the first character.
+- **Lens selection**: an explicit List, Treemap, or Graph route overrides the adaptive default composition.
+- **Deliberate new start**: the user can dismiss a reinstatement or handoff proposal and keep the clean field.
+
+Routine is a universal fast path, not a mutually exclusive environment state. Habitual destinations may be useful during Launch, Threshold, Reinstatement, Continuation, or Handoff.
+
+### Density regimes
+
+Density controls representation; recognized environment controls editorial stance.
+
+| Meaningful items in a connected component | Default rendering |
+|---|---|
+| **1–2** | Direct typography and actions; do not draw a graph |
+| **3–7** | Fully labeled routes and branches |
+| **8–15** | Grouped micrograph with important titles readable |
+| **16–30** | Cluster-level overview with semantic zoom |
+| **30+** | Several component-level micrographs rather than one hairball |
+
+Apply density per connected component, not to the undifferentiated global tab count. Forty tabs spanning four tasks should become four useful neighborhoods, not a forty-node graph.
+
+### Existing compact treemap
+
+The toolbar popup already contains a tidy equal-area treemap: tabs are grouped by window, every tab receives the same area, and recency affects ordering/color rather than size. Treat this as a reusable **live-work mosaic**, distinct from the main Treemap's investment semantics.
+
+Good adaptive uses:
+
+- **Threshold:** preview the live windows surrounding a clean current window.
+- **Reinstatement:** show the still-open working set that existed before the interruption.
+- **Continuation:** provide a compact overview when the current window is too dense for direct typography but does not yet need a full spatial lens.
+- **Search:** show the open neighborhood surrounding the selected result while the exact results remain list-first.
+- **30+ tabs:** render several compact mosaics by connected component instead of one global hairball.
+
+Do not show it merely to fill space in low-density Launch. Foreign history is not live tab state, so Handoff should use this renderer only when its data contract has been deliberately generalized beyond open tabs.
+
+Extract one renderer that accepts normalized neighborhoods and action callbacks; do not copy the popup's current data fetching and D3 code into the main page. The same module should continue to serve the popup so keyboard, selection, color, and activation behavior cannot drift.
+
+## Interaction contract
+
+The visual composition may adapt; the interaction grammar must remain stable.
+
+- `/`: enter start-page search.
+- `Up` / `Down`: move through ranked actions or search results.
+- `Left` / `Right`: move through parent/child or connected neighbors in a spatial lens.
+- `Enter`: activate or focus the selected destination.
+- `Cmd/Ctrl+Enter`: open or continue without replacing the current context.
+- `Space`: preview or expand context.
+- `S`: star or unstar the selected page when focus is not in a text field.
+- `Delete`: close the selected open tab when focus is not in a text field, with an immediate Undo action.
+- `Escape`: close detail, then clear search, then return to the prior orientation state.
+- `Tab`: traverse real controls in DOM order.
+
+Do not override browser-standard shortcuts. Search, selection, and focus must survive lens changes. The List is the exact, accessible fallback even when a spatial rendering is primary. Visible close controls must be real keyboard-operable controls rather than hover-only SVG targets.
+
+## Ranking and recognition architecture
+
+### 1. Browsing snapshot
+
+Create a single normalized snapshot consumed by both the classifier and candidate generators. It should contain:
+
+- Current window and meaningful sibling tabs, excluding the tabtopia page.
+- Other open windows and their tabs.
+- Last-focused window and tab when available.
+- Qualified access timestamps, dwell, and transitions.
+- History visits with `isLocal` retained.
+- Bookmarks with `dateAdded` and nearby access/dwell evidence.
+- Interruption gap and recent activity boundary.
+- Connected components or provisional task clusters.
+- Existing Bayesian History/Context scores and baseline frecency/MRU scores.
+
+The first version should use transparent deterministic rules. It should return its evidence rather than hiding the decision behind an opaque classifier.
+
+```js
+{
+  state: "reinstatement",
+  confidence: 0.82,
+  evidence: ["clean-current-window", "47-minute-gap", "12-related-tabs-in-window-4"],
+  neighborhoods: [],
+  generatedAt: 0
+}
+```
+
+### 2. Candidate generators
+
+Generate candidates by job before ranking them together:
+
+- **Habit candidates** from page/domain access histories and recurring transitions.
+- **Deferred-intention candidates** from low-dwell, unrevisited stars.
+- **Continuation candidates** from the current component and its active endpoints.
+- **Reinstatement candidates** from coherent external components active before an interruption.
+- **Handoff candidates** from recent non-local visits and, later, synced-device sessions.
+- **Retrace candidates** from referrers, hubs, branch points, and peripheral endpoints.
+
+Each candidate should carry its source, supporting evidence, available actions, and a stable page/session/component identity.
+
+### 3. Bayesian temporal extension
+
+Retain the current History and current-page Context terms, then test temporal likelihood cues independently:
+
+```text
+score(i) = History(i) + PageContext(i) + TimeOfDay(i) + WeekdayClass(i)
+```
+
+- Use a circular time kernel rather than hard morning/afternoon buckets.
+- Begin with workday/weekend to avoid seven-way sparsity.
+- Smooth page evidence toward domain evidence, then toward the user's global baseline.
+- Treat insufficient evidence as neutral.
+- Bound each experimental term and require measured lift before promotion.
+- Preserve local-time offset at capture time for new events.
+- Add timestamped transitions if time-conditioned routines prove useful.
+
+Recency and time of day are distinct: recency measures elapsed time; temporal compatibility measures periodic habit.
+
+### 4. State-aware ranking
+
+Do not force every job through one unexplained weighted score. Use the recognized environment to select candidate sources and an interpretable ranking policy:
+
+- Launch emphasizes habits and deferred intentions.
+- Threshold emphasizes habits while keeping external neighborhoods available.
+- Reinstatement emphasizes pre-interruption components and their last meaningful endpoints.
+- Continuation emphasizes the current component, its likely next pages, and branch recovery.
+- Handoff emphasizes recent coherent foreign activity.
+
+Unavailable evidence is neutral. The UI must not make predictive claims stronger than the evidence or evaluation supports.
+
+## Learning and feedback
+
+The first system is adaptive, but it is not a conventional supervised-ML layer:
+
+- The Bayesian revisit model learns online from qualified accesses and transitions.
+- Temporal-context variants learn compact per-page and per-domain rhythms.
+- State recognition begins as deterministic, explainable rules.
+- Ranking diagnostics compare candidate models but do not silently train production behavior.
+
+An explicit suggestion dismissal is relatively clean negative feedback about that suggestion. Closing a tab is useful evidence but semantically ambiguous: it may mean completed, irrelevant, duplicated, accidentally opened, or merely moved out of the way. Record the surrounding action sequence for evaluation rather than directly decrementing a page's rank:
+
+- Close immediately after a suggested page is opened: possible strong negative outcome.
+- Close without activating: possible clutter or duplicate signal.
+- Close after meaningful dwell: possible completion signal, not disinterest.
+- Several closes in quick succession: cleanup-mode evidence, not a series of independent content judgments.
+- Undo: invalidate the close as negative feedback.
+
+These events should enter bounded local diagnostics first. After M3 produces enough evidence, a later calibrated policy may learn per-user cue weights or state thresholds on-device. That is optional and must outperform the interpretable Bayesian/rule baseline; no opaque learning layer is a prerequisite for the roadmap.
+
+## Milestones
+
+### M0 — Baseline and contracts
+
+**Goal:** Establish fixtures, schemas, and performance baselines before changing the main page.
+
+- Define `BrowsingSnapshot`, `RecognizedState`, `Neighborhood`, and `ActionCandidate` contracts.
+- Add deterministic fixtures for Launch, Threshold, after-lunch Reinstatement, Continuation, and foreign-device Handoff.
+- Record `VisitItem.isLocal` in normalized history data.
+- Confirm the existing history snapshot/cache can supply the main page without another cold-start waterfall.
+- Add unit tests for URL identity, interruption boundaries, component density, and state evidence.
+
+**Exit gate:** Every fixture produces a deterministic state and explainable evidence; no UI change is required.
+
+### M1 — State recognition on the main tab
+
+**Goal:** Make the existing new-tab page recognize its environment end to end.
+
+- Build the deterministic state recognizer.
+- Add a development-only inspector showing state, confidence, evidence, density, and candidate-source counts.
+- Make recognition asynchronous and non-blocking: the page shell and search path render immediately.
+- Test browser restart, service-worker restart, empty profile, large history, and multiple-window cases.
+
+**Exit gate:** All five primary states are reproducible in tests and inspectable in the development build without destabilizing the current Treemap.
+
+### M2 — Ranked actions vertical slice
+
+**Goal:** Deliver useful predictions on the existing main tab without waiting for the application-shell rewrite.
+
+- Add habitual destination candidates.
+- Add deferred-intention star candidates.
+- Add current-window continuation and external-window reinstatement candidates.
+- Add recent non-local handoff candidates labeled conservatively.
+- Render one keyboard-first ranked action list with a state-specific hero summary.
+- Extract the popup's equal-area treemap as a reusable live-work mosaic and use it for dense Threshold, Reinstatement, and Continuation previews.
+- Preserve explicit single-tab close as a secondary action, make it keyboard-operable, and provide Undo; do not introduce bulk cleanup controls.
+- Preserve the current Treemap below or behind this vertical slice rather than rewriting it.
+
+**Exit gate:** From page load to activation, every primary action can be completed with the keyboard; dismissing an inferred state exposes a deliberate clean start.
+
+### M3 — Search and evaluation
+
+**Goal:** Validate recognition and ranking before broadening the visual system.
+
+- Make `/` enter a stable, list-first search state from any recognized environment.
+- Keep Omnibox `tt` responsible for direct open-tab recall; start-page search spans sessions, stars, history, and connected context.
+- Preserve query and selection when returning from previews or changing the temporary lens.
+- Extend the existing local diagnostics to compare MRU, frecency, History/Context, and temporal variants.
+- Keep diagnostics opt-in and default off for ordinary installs, on for unpacked development installs.
+- Report top-1, top-3, MRR, activation/dismissal by recognized state, and latency.
+
+**Exit gate:** The state-aware model demonstrates useful lift or reveals which candidate sources should be removed. Search remains responsive even while recognition and history enrichment are incomplete.
+
+### M4 — One application shell with permalinks
+
+**Goal:** Remove cross-page context loss without changing every visualization at once.
+
+- Introduce one `newtab.html` application shell and a shared selection/search/state store.
+- Use extension-safe hash routes such as `#/list`, `#/treemap`, `#/graph`, `#/sessions/:id`, and `#/search?q=...`.
+- Keep bare `newtab.html` adaptive; explicit routes request an explicit lens.
+- Put semantic state in the URL: lens, scope, stable focus identity, query, filters, grouping, sorting, and meaningful zoom level.
+- Keep hover, transient focus, animation, and ordinary pixel pan out of canonical links.
+- Use `pushState` for meaningful context changes and `replaceState` for lightweight selection.
+- Preserve existing page URLs through compatibility redirects or shims.
+
+**Exit gate:** Back/Forward, reload, and copied links restore meaningful context; query and selection no longer reset when changing lenses.
+
+### M5 — Migrate and link the existing lenses
+
+**Goal:** Bring existing capabilities into the shared shell without erasing their distinct jobs.
+
+- **List:** exact titles, recency, scanning, keyboard actions, and accessible fallback.
+- **Treemap:** investment, relative importance, domain grouping, and cleanup pressure.
+- **Graph:** connectedness, paths, branches, and provenance.
+- **Sessions:** interruption-scale routes and task reconstruction.
+- **Landmarks:** saved anchors and deferred intentions.
+- Synchronize selection, search, scope, and focus across lenses.
+- Apply the density regimes to choose the adaptive default composition while retaining explicit lens controls.
+
+**Exit gate:** The separate destinations are no longer required for normal use, and changing lenses never makes the user rebuild query or context.
+
+### M6 — Connected micrographs and signature typography
+
+**Goal:** Raise the aesthetic and information-design bar after the behavioral spine is proven.
+
+- Group tabs and history by inferred connectedness rather than window or domain alone.
+- Render several small, high-utility browsing graphs instead of global hairballs.
+- Use hero graphics as evidence-bearing orientation, not decoration.
+- Use Pretext or an equivalent substrate for space-filling, semantic-zoom typography.
+- Give negative space semantic meaning, especially in Launch and Threshold.
+- Preserve readable contrast and keyboard focus at every zoom level.
+- Prototype braided route rendering for Sessions and focused context aperture inside Graph.
+
+**Exit gate:** Each density regime remains readable and actionable with real profiles, and the visual system improves task performance rather than merely making the page novel.
+
+## Measurement plan
+
+### Ranking quality
+
+- Top-1 and top-3 activation rate.
+- Mean reciprocal rank.
+- Lift over MRU and frecency.
+- Lift from time-of-day and weekday terms independently.
+- Accuracy segmented by recognized state and candidate source.
+
+### State quality
+
+- Immediate acceptance of the primary action.
+- Dismissal or deliberate-new-start rate.
+- Close outcomes segmented into unactivated close, post-dwell completion, rapid cleanup burst, and Undo.
+- State overrides.
+- Time to first meaningful action.
+- Reinstatement success: focus/open within the proposed pre-interruption component.
+- Handoff success: local opening of a proposed recent foreign visit.
+
+These are behavioral proxies, not proof of intent. Development tooling should make it easy to inspect incorrect classifications and their evidence.
+
+### Performance budgets
+
+- The shell, keyboard focus, and search affordance must become usable before history enrichment completes.
+- Warm prediction should feel immediate and must reuse the shared history snapshot.
+- Cold prediction may progressively enrich, but must not block the first actionable list.
+- Large-profile tests must cover the real failure mode: hundreds of thousands of history rows and several open windows.
+
+Record concrete latency budgets after measuring the current warm and cold paths rather than inventing thresholds without a baseline.
+
+## Privacy and permissions
+
+- All recognition and ranking remain on-device.
+- Ranking diagnostics remain bounded, local, opt-in, and content-free; turning them off deletes their buffer and pending prediction.
+- `history` already exposes `VisitItem.isLocal`; capturing local versus foreign visits requires no new permission.
+- Named synced-device sessions require the `sessions` permission. Treat that as a later, separately reviewed enhancement; non-local History alone is sufficient for the first conservative Handoff state.
+- Never present foreign activity as mobile activity without trustworthy device evidence.
+
+## Suggested module boundaries
+
+These are boundaries, not mandatory filenames:
+
+```text
+src/lib/browsing-snapshot.js     normalized input assembly
+src/lib/start-state.js           deterministic recognition + evidence
+src/lib/start-candidates.js      job-specific candidate generation
+src/lib/temporal-context.js      circular time/day likelihoods
+src/lib/cross-device.js          non-local visit and synced-session logic
+src/lib/start-ranking.js         state-aware ranking policies
+src/lib/ranking-diagnostics.js   bounded local evaluation
+
+src/newtab/start-controller.js   main-page orchestration during M1–M3
+src/newtab/compact-treemap.js    shared popup/main live-work mosaic
+src/newtab/app-router.js         single-shell routes introduced in M4
+src/newtab/app-state.js          shared query, selection, scope, and lens state
+```
+
+Keep pure scoring and recognition modules free of Chrome APIs so they remain fast to replay and easy to test. Chrome-specific data access belongs in the snapshot adapter.
+
+## Explicitly deferred from the first vertical slice
+
+- Rewriting the Treemap, Graph, Sessions, or Landmarks renderers.
+- A framework migration or build-system change.
+- Automatic or bulk tab cleanup, grouping, or movement. Explicit single-tab close remains supported.
+- Exposed "we predict your next tab" product language before evaluation clears the existing gate.
+- Remote analytics or opaque machine learning.
+- Exact mobile-device attribution without synced-session evidence.
+
+## Immediate implementation slice
+
+The next build should be small enough to review and test independently:
+
+1. Preserve `isLocal` when normalizing `chrome.history.getVisits()` results.
+2. Add pure state-recognition contracts and fixtures.
+3. Recognize Launch, Threshold, Reinstatement, Continuation, and conservative Handoff.
+4. Expose the result in a development inspector on the existing main page.
+5. Add a keyboard-first ranked action region fed initially by existing Bayesian, frecency, open-window, bookmark, and foreign-visit signals.
+6. Extend diagnostics by state before adding temporal or connectedness complexity.
+
+That produces the shortest path from the current codebase to a falsifiable product behavior.
