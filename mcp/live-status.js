@@ -32,7 +32,19 @@ let latestSnapshot = null; // { ts, focused, windows, tabs, recentActivity }
 function setSnapshot(snapshot) {
     // Trust but bound: a malformed push must not poison reads.
     if (!snapshot || typeof snapshot.ts !== 'number') return;
-    latestSnapshot = snapshot;
+    latestSnapshot = withBackgroundFocusFallback(snapshot);
+}
+
+// Older extension workers only set `focused` while Chrome itself owns OS
+// focus. Keep the bridge useful while Codex or another app is frontmost when
+// the snapshot contains one unambiguous active Chrome tab. Multi-window cases
+// remain null unless the extension supplies its last-active disambiguation.
+function withBackgroundFocusFallback(snapshot) {
+    if (snapshot.focused) return snapshot;
+    const activeTabs = (snapshot.tabs || []).filter(tab => tab?.active);
+    return activeTabs.length === 1
+        ? { ...snapshot, focused: activeTabs[0] }
+        : snapshot;
 }
 
 // Returns { snapshot, ageMs, stale } — callers report age so the agent knows
@@ -80,4 +92,12 @@ function captureContext(name, note) {
     return { ok: true, id, tabCount: snapshot.tabs?.length || 0 };
 }
 
-module.exports = { setSnapshot, getSnapshot, loadCaptures, captureContext, STALE_MS, CAPTURES_FILE };
+module.exports = {
+    setSnapshot,
+    getSnapshot,
+    loadCaptures,
+    captureContext,
+    withBackgroundFocusFallback,
+    STALE_MS,
+    CAPTURES_FILE
+};

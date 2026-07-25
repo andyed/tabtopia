@@ -1,0 +1,3 @@
+[mcp_servers.tabtopia]
+command = "node"
+args = ["/Users/andyed/Documents/dev/interests/histospire/mcp/server.js"]

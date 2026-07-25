@@ -2,8 +2,10 @@
   position: fixed;
   z-index: 1000;
   top: calc(var(--header-height) + 14px);
-  right: clamp(334px, calc(27vw + 14px), 394px);
-  width: min(330px, calc(100vw - 32px));
+  right: 16px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--header-height) - 30px);
+  overflow: auto;
   color: #f2ebd8;
   background: #09110f;
   border: 1px solid #9ff7d2;
@@ -14,7 +16,7 @@
   line-height: 1.4;
 }
 
-.state-inspector summary {
+.state-inspector > .state-inspector__primary > summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -31,7 +33,7 @@
   list-style-position: inside;
 }
 
-.state-inspector summary:focus-visible {
+.state-inspector > .state-inspector__primary > summary:focus-visible {
   outline: 3px solid #ffffff;
   outline-offset: 2px;
 }
@@ -59,7 +61,7 @@
 
 .state-inspector__signals {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
   gap: 1px;
   margin: 0 0 12px;
   background: #46685b;
@@ -109,8 +111,598 @@
   background: #6f241d;
 }
 
-@media (max-width: 900px) {
-  .state-inspector {
-    right: 16px;
+/* Resumption forecast.
+ *
+ * Contrast against the #14241f card (L 0.0151), 8:1 floor on every readable
+ * value:
+ *   #f2ebd8 target title    13.6:1
+ *   #9ff7d2 score           12.8:1
+ *   #b9ffe2 verb            14.2:1
+ *   #b9c9bf meta + reasons   9.4:1
+ *   #ffab88 foreign marker   8.8:1  (#ff9b73 is only 7.8:1 here — do not reuse
+ *                                    the audit's orange on this background)
+ */
+.resumption-forecast {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #46685b;
+}
+
+.resumption-forecast > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.resumption-forecast h2 {
+  margin: 0;
+  color: #f2ebd8;
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.resumption-forecast > header span,
+.resumption-forecast__empty,
+.resumption-forecast__more {
+  color: #b9c9bf;
+  font-size: 16px;
+  font-weight: 500;
+  text-wrap: pretty;
+}
+
+.resumption-forecast__empty,
+.resumption-forecast__more {
+  margin: 10px 0 0;
+}
+
+.resumption-forecast__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: forecast-rank;
+}
+
+.resumption-forecast__item {
+  min-width: 0;
+  padding: 12px;
+  background: #14241f;
+  border-left: 3px solid #46685b;
+  counter-increment: forecast-rank;
+}
+
+.resumption-forecast__item[data-provenance="foreign"] {
+  border-left-color: #ffab88;
+}
+
+.resumption-forecast__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.resumption-forecast__verb {
+  color: #b9ffe2;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.resumption-forecast__verb::before {
+  content: counter(forecast-rank, decimal-leading-zero) " ";
+  color: #b9c9bf;
+}
+
+.resumption-forecast__item[data-provenance="foreign"] .resumption-forecast__verb {
+  color: #ffab88;
+}
+
+.resumption-forecast__score {
+  color: #9ff7d2;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.resumption-forecast__target {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  color: #f2ebd8;
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-decoration-color: #78978a;
+  text-underline-offset: 4px;
+  text-wrap: balance;
+}
+
+.resumption-forecast__target:focus-visible {
+  outline: 3px solid #b9ffe2;
+  outline-offset: 2px;
+}
+
+.resumption-forecast__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 6px;
+}
+
+.resumption-forecast__domain,
+.resumption-forecast__confidence {
+  overflow: hidden;
+  color: #b9c9bf;
+  font-size: 16px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resumption-forecast__confidence {
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.resumption-forecast__reasons {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+  color: #b9c9bf;
+  font-size: 16px;
+  font-weight: 500;
+  text-wrap: pretty;
+}
+
+.resumption-forecast__reasons li::marker {
+  color: #78978a;
+}
+
+.habit-destinations .resumption-forecast__item {
+  border-left-color: #9ff7d2;
+}
+
+.habit-destinations .resumption-forecast__score {
+  font-size: 16px;
+}
+
+.neighborhood-preview {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #46685b;
+}
+
+.neighborhood-preview > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.neighborhood-preview h2 {
+  margin: 0;
+  color: #f2ebd8;
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.neighborhood-preview > header span,
+.neighborhood-preview__count,
+.neighborhood-preview__domain,
+.neighborhood-preview__more {
+  color: #b9c9bf;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.neighborhood-preview__list,
+.neighborhood-preview__route {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.neighborhood-preview__item {
+  min-width: 0;
+  padding: 12px;
+  background: #14241f;
+  box-shadow:
+    0 0 0 1px rgba(185, 255, 226, 0.14),
+    0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.neighborhood-preview__item a {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  color: #f2ebd8;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-decoration-color: #78978a;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  text-wrap: balance;
+  transition-property: color, scale;
+  transition-duration: 100ms;
+  transition-timing-function: ease-out;
+}
+
+.neighborhood-preview__item a:focus-visible {
+  outline: 3px solid #b9ffe2;
+  outline-offset: 2px;
+}
+
+.neighborhood-preview__item a:active {
+  scale: 0.96;
+}
+
+.neighborhood-preview__item--landmark {
+  min-height: 128px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+  background:
+    linear-gradient(145deg, transparent 0 68%, rgba(159, 247, 210, 0.1) 68.3% 69%, transparent 69.3%),
+    #14241f;
+}
+
+.neighborhood-preview__landmark {
+  align-items: flex-start !important;
+  color: #b9ffe2 !important;
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: clamp(28px, 3.2vw, 40px) !important;
+  line-height: 0.95 !important;
+  text-decoration: none !important;
+}
+
+.neighborhood-preview__domain {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.neighborhood-preview__item--pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.neighborhood-preview__pair-title {
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 22px !important;
+  text-decoration: none !important;
+}
+
+.neighborhood-preview__relation {
+  color: #b9ffe2;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.neighborhood-preview__relation--spawn::before,
+.neighborhood-preview__relation--referrer::before {
+  content: "↳ ";
+}
+
+.neighborhood-preview__relation--temporal::before {
+  content: "≈ ";
+}
+
+.neighborhood-preview__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.neighborhood-preview__route {
+  gap: 1px;
+}
+
+.neighborhood-preview__route li {
+  min-width: 0;
+}
+
+.neighborhood-preview__route a {
+  overflow: hidden;
+  min-height: 40px;
+  padding-left: 12px;
+  border-left: 2px solid #46685b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.neighborhood-preview__more {
+  margin: 10px 0 0;
+  text-wrap: pretty;
+}
+
+.neighborhood-audit {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #46685b;
+}
+
+.neighborhood-audit > summary,
+.neighborhood-audit__component > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 40px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.neighborhood-audit > summary::-webkit-details-marker,
+.neighborhood-audit__component > summary::-webkit-details-marker {
+  display: none;
+}
+
+.neighborhood-audit > summary {
+  padding: 8px 10px;
+  color: #f2ebd8;
+  background: #1b3029;
+  box-shadow: inset 3px 0 0 #9ff7d2;
+}
+
+.neighborhood-audit > summary:focus-visible,
+.neighborhood-audit__component > summary:focus-visible {
+  outline: 3px solid #b9ffe2;
+  outline-offset: 2px;
+}
+
+.neighborhood-audit__title {
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.neighborhood-audit__title::before {
+  content: "+ ";
+  color: #b9ffe2;
+  font-family: "SFMono-Regular", Menlo, monospace;
+}
+
+.neighborhood-audit[open] .neighborhood-audit__title::before {
+  content: "− ";
+}
+
+.neighborhood-audit__health,
+.neighborhood-audit__component-counts {
+  color: #b9c9bf;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.neighborhood-audit__body {
+  padding-top: 10px;
+}
+
+.neighborhood-audit__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: #46685b;
+  border: 1px solid #46685b;
+}
+
+.neighborhood-audit__metrics div {
+  min-width: 0;
+  padding: 9px 10px;
+  background: #14241f;
+}
+
+.neighborhood-audit__metrics dt {
+  color: #b9c9bf;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.neighborhood-audit__metrics dd {
+  margin: 2px 0 0;
+  color: #ffffff;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.neighborhood-audit__breakdown {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.neighborhood-audit__relation-count {
+  padding: 5px 8px;
+  color: #09110f;
+  background: #9ff7d2;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.neighborhood-audit__components,
+.neighborhood-audit__tabs,
+.neighborhood-audit__reasons {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.neighborhood-audit__component {
+  background: #14241f;
+  box-shadow: inset 0 0 0 1px #46685b;
+}
+
+.neighborhood-audit__component > summary {
+  flex-wrap: wrap;
+  padding: 9px 10px;
+  color: #f2ebd8;
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.neighborhood-audit__component-counts {
+  flex-basis: 100%;
+  padding-left: 24px;
+  text-align: left;
+}
+
+.neighborhood-audit__component > summary::before {
+  content: "+";
+  color: #b9ffe2;
+  font-family: "SFMono-Regular", Menlo, monospace;
+}
+
+.neighborhood-audit__component[open] > summary::before {
+  content: "−";
+}
+
+.neighborhood-audit__component-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 10px 10px;
+}
+
+.neighborhood-audit__tabs li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-top: 1px solid #29473d;
+}
+
+.neighborhood-audit__tabs a {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  min-height: 40px;
+  color: #f2ebd8;
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration-color: #78978a;
+  text-underline-offset: 4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.neighborhood-audit__tabs a:focus-visible {
+  outline: 3px solid #b9ffe2;
+  outline-offset: 2px;
+}
+
+.neighborhood-audit__tabs a:active {
+  scale: 0.96;
+}
+
+.neighborhood-audit__tab-domain,
+.neighborhood-audit__provenance {
+  color: #b9c9bf;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.neighborhood-audit__tab-domain {
+  overflow: hidden;
+  max-width: 12ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.neighborhood-audit__reasons {
+  counter-reset: topology-reason;
+}
+
+.neighborhood-audit__reasons li {
+  counter-increment: topology-reason;
+  padding: 10px;
+  background: #0d1915;
+  border-left: 2px solid #ff9b73;
+}
+
+.neighborhood-audit__reason {
+  margin: 0;
+  color: #f2ebd8;
+  font-size: 16px;
+  font-weight: 600;
+  text-wrap: pretty;
+}
+
+.neighborhood-audit__reason::before {
+  content: counter(topology-reason, decimal-leading-zero) " ";
+  color: #ff9b73;
+  font-family: "SFMono-Regular", Menlo, monospace;
+}
+
+.neighborhood-audit__provenance {
+  display: block;
+  margin-top: 4px;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  text-wrap: pretty;
+}
+
+.neighborhood-audit__isolated {
+  margin: 0;
+  padding: 10px;
+  color: #b9c9bf;
+  background: #0d1915;
+  font-size: 16px;
+  font-weight: 500;
+  text-wrap: pretty;
+}
+
+/* Recovered pages are no longer open. Mark them without relying on colour. */
+.neighborhood-preview__item a[data-origin="recovered"],
+.neighborhood-audit__tabs a[data-origin="recovered"],
+.resumption-forecast__target[data-origin="recovered"] {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .neighborhood-preview__item a:hover,
+  .neighborhood-audit__tabs a:hover {
+    color: #b9ffe2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neighborhood-preview__item a {
+    transition-duration: 0.01ms;
   }
 }

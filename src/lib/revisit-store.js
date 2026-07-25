@@ -2,6 +2,7 @@ import {
     REVISIT_MODEL_DEFAULTS,
     normalizeIdentity,
     scoreBayesian,
+    scoreHistory,
     scoreHierarchical
 } from "./revisit-model.js";
 
@@ -111,6 +112,53 @@ export class RevisitStore {
                 source: Number.isFinite(score) ? "bayesian" : "none"
             };
         }));
+    }
+
+    /**
+     * Score a bounded, already-enumerated candidate pool using ACT-R History
+     * only. Candidate enumeration belongs to Chrome History; this store owns the
+     * qualified access timestamps. Keeping Context out of this method prevents
+     * a synchronous or transitional cue from leaking into the durable habit
+     * prior.
+     *
+     * The caller-supplied key is echoed so an extension page can join the
+     * results without receiving persisted HMAC digests or echoed URLs.
+     */
+    async scoreHistoryCandidates(candidates, now = Date.now()) {
+        if (!this.ready) await this.init();
+        const safeCandidates = Array.isArray(candidates) ? candidates : [];
+
+        return Promise.all(safeCandidates.map(async candidate => {
+            const identity = normalizeIdentity(candidate?.url || "");
+            if (!identity) return emptyHistoryCandidate(candidate?.key);
+
+            const pageDigest = await this.digest(identity.page);
+            const domainDigest = await this.digest(identity.domain);
+            return {
+                key: candidate?.key,
+                page: historyEvidence(
+                    this.state.histories.page[pageDigest],
+                    now,
+                    this.config.decay
+                ),
+                domain: historyEvidence(
+                    this.state.histories.domain[domainDigest],
+                    now,
+                    this.config.decay
+                )
+            };
+        }));
+    }
+
+    async clear() {
+        if (!this.ready) await this.init();
+        if (this.persistTimer) {
+            clearTimeout(this.persistTimer);
+            this.persistTimer = null;
+        }
+        this.state = emptyState();
+        this.digestCache.clear();
+        await this.storage.set({ [STATE_KEY]: this.state });
     }
 
     schedulePersist() {
@@ -234,6 +282,30 @@ function trimTransitions(transitions, histories) {
 
 function latest(timestamps) {
     return Array.isArray(timestamps) && timestamps.length > 0 ? timestamps[timestamps.length - 1] : 0;
+}
+
+function historyEvidence(timestamps, now, decay) {
+    const accesses = Array.isArray(timestamps)
+        ? timestamps.filter(timestamp => Number.isFinite(timestamp) && timestamp <= now)
+        : [];
+    return {
+        activation: scoreHistory(accesses, now, decay),
+        accessCount: accesses.length,
+        lastAccessAt: latest(accesses)
+    };
+}
+
+function emptyHistoryCandidate(key) {
+    const empty = {
+        activation: Number.NEGATIVE_INFINITY,
+        accessCount: 0,
+        lastAccessAt: 0
+    };
+    return {
+        key,
+        page: { ...empty },
+        domain: { ...empty }
+    };
 }
 
 function createSecret() {

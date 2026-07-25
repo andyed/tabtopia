@@ -22,7 +22,11 @@
 // Import utility functions
 import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
 import { pushSnapshot, setRequestHandler } from "./bridge-client.js";
-import { refreshRecentHistoryCache } from "./lib/history-cache.js";
+import {
+    clearRecentHistoryCache,
+    refreshRecentHistoryCache
+} from "./lib/history-cache.js";
+import { selectLiveFocusedTab } from "./lib/live-focus.js";
 import { RevisitStore } from "./lib/revisit-store.js";
 import {
     RankingDiagnostics,
@@ -48,6 +52,7 @@ const rankingDiagnosticsReady = initializeRankingDiagnostics();
 
 const OMNIBOX_RESULT_LIMIT = 5;
 const REVISIT_QUALIFICATION_MS = 2000;
+const HABIT_HISTORY_CANDIDATE_LIMIT = 128;
 let revisitQualificationTimer = null;
 const pendingRevisitOrigins = new Map();
 let omniboxSessionId = 0;
@@ -1004,6 +1009,9 @@ function getFaviconUrl(url) {
 
 // Listen for history changes
 chrome.history.onVisited.addListener((result) => {
+    clearRecentHistoryCache().catch(error => {
+        console.warn("[HistoryCache] visit invalidation failed", error);
+    });
     updateHistory();
     // Add favicon information
     const faviconUrl = getFaviconUrl(result.url);
@@ -1017,6 +1025,23 @@ chrome.history.onVisited.addListener((result) => {
             timestamp: new Date().getTime()
         }
     });
+});
+
+chrome.history.onVisitRemoved.addListener((removed) => {
+    clearRecentHistoryCache().catch(error => {
+        console.warn("[HistoryCache] removal invalidation failed", error);
+    });
+    markOmniboxSnapshotDirty();
+
+    // A full History clear is an explicit user deletion boundary. Partial URL
+    // removal already removes those destinations from the enumerable Chrome
+    // History candidate pool without requiring reversible lookup in the
+    // HMAC-backed qualified-access store.
+    if (removed?.allHistory) {
+        revisitReady
+            .then(store => store?.clear())
+            .catch(error => console.warn("[RevisitStore] history clear failed", error));
+    }
 });
 
 /**
@@ -2264,6 +2289,24 @@ function checkAndUpdateFavicon(tabId, url) {
 // Read/cleared by the merged chrome.tabs.onCreated listener above.
 const tabsWithOpener = new Set();
 
+function serializeHabitHistoryScore(score) {
+    return {
+        key: String(score?.key ?? ""),
+        page: serializeHabitHistoryEvidence(score?.page),
+        domain: serializeHabitHistoryEvidence(score?.domain)
+    };
+}
+
+function serializeHabitHistoryEvidence(evidence) {
+    return {
+        // Extension messages serialize finite numbers reliably. `null` keeps
+        // missing evidence distinguishable from a real low activation.
+        activation: Number.isFinite(evidence?.activation) ? Number(evidence.activation) : null,
+        accessCount: Number.isFinite(evidence?.accessCount) ? Number(evidence.accessCount) : 0,
+        lastAccessAt: Number.isFinite(evidence?.lastAccessAt) ? Number(evidence.lastAccessAt) : 0
+    };
+}
+
 // Message handler for various actions
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "hasOpener") {
@@ -2297,6 +2340,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(() => rankingDiagnostics.clear())
             .then(() => sendResponse({ success: true }))
             .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
+    }
+    if (message.action === "scoreHabitHistory") {
+        const senderUrl = String(sender?.url || sender?.tab?.url || "");
+        if (!senderUrl.startsWith(chrome.runtime.getURL(""))) {
+            sendResponse({ success: false, scores: [], error: "extension pages only" });
+            return true;
+        }
+        const candidates = (Array.isArray(message.candidates) ? message.candidates : [])
+            .slice(0, HABIT_HISTORY_CANDIDATE_LIMIT)
+            .flatMap(candidate => {
+                const url = typeof candidate?.url === "string" ? candidate.url : "";
+                const key = candidate?.key;
+                if (!url || url.length > 8192 || !["string", "number"].includes(typeof key)) return [];
+                return [{ key: String(key), url }];
+            });
+
+        Promise.all([rankingDiagnosticsReady, revisitReady])
+            .then(([, store]) => {
+                if (rankingDiagnosticsInstallType !== "development" || !store) {
+                    return { success: false, scores: [], error: "development-only" };
+                }
+                return store.scoreHistoryCandidates(candidates)
+                    .then(scores => ({
+                        success: true,
+                        scores: scores.map(serializeHabitHistoryScore)
+                    }));
+            })
+            .then(sendResponse)
+            .catch(error => sendResponse({
+                success: false,
+                scores: [],
+                error: String(error?.message || error)
+            }));
         return true;
     }
     console.log("🔍 Background script received message:", message);
@@ -3809,7 +3886,6 @@ function saveStateToStorage() {
 async function buildStatusSnapshot() {
     const windows = await chrome.windows.getAll({ populate: true });
 
-    let focused = null;
     const tabs = [];
     for (const win of windows) {
         for (const tab of win.tabs || []) {
@@ -3828,9 +3904,19 @@ async function buildStatusSnapshot() {
                 lastAccessed: browserState.tabs.get(tab.id)?.lastAccessed || null
             };
             tabs.push(entry);
-            if (win.focused && tab.active) focused = entry;
         }
     }
+
+    const windowSummaries = windows.map(win => ({
+        windowId: win.id,
+        focused: win.focused,
+        tabCount: (win.tabs || []).length
+    }));
+    const focused = selectLiveFocusedTab(
+        tabs,
+        windowSummaries,
+        browserState.lastActive?.tabId
+    );
 
     // Recent activity tail: newest navigations across all tabs. Bounded — the
     // full activity log stays local.
@@ -3845,7 +3931,7 @@ async function buildStatusSnapshot() {
     return {
         ts: Date.now(),
         focused,
-        windows: windows.map(w => ({ windowId: w.id, focused: w.focused, tabCount: (w.tabs || []).length })),
+        windows: windowSummaries,
         tabs,
         recentActivity: recentActivity.slice(0, 50)
     };

@@ -27,6 +27,13 @@ function compactHistoryItem(item) {
   };
 }
 
+function sortHistoryItems(items) {
+  return items.slice().sort((left, right) =>
+    Number(right?.lastVisitTime || 0) - Number(left?.lastVisitTime || 0)
+    || String(left?.url || "").localeCompare(String(right?.url || ""))
+  );
+}
+
 function cacheCovers(cache, { text = "", startTime = 0, endTime, maxResults = 100 }) {
   if (text || endTime !== undefined) return false;
   if (!cache || cache.version !== CACHE_VERSION || !Array.isArray(cache.items)) return false;
@@ -36,9 +43,9 @@ function cacheCovers(cache, { text = "", startTime = 0, endTime, maxResults = 10
 }
 
 function selectItems(cache, { startTime = 0, maxResults = 100 }) {
-  return cache.items
+  return sortHistoryItems(cache.items
     .filter(item => (item.lastVisitTime || 0) >= startTime)
-    .slice(0, maxResults);
+  ).slice(0, maxResults);
 }
 
 async function readCache() {
@@ -72,7 +79,7 @@ export async function refreshRecentHistoryCache() {
       startTime,
       maxResults: CACHE_MAX_RESULTS
     });
-    const items = rawItems.map(compactHistoryItem);
+    const items = sortHistoryItems(rawItems.map(compactHistoryItem));
 
     // Do not pin an empty startup snapshot. Fresh profiles and E2E fixtures can
     // receive their first history rows immediately after the worker starts.
@@ -114,7 +121,7 @@ export async function getRecentHistory(options = {}) {
     maxResults: query.maxResults
   };
   if (query.endTime !== undefined) directQuery.endTime = query.endTime;
-  const items = await chrome.history.search(directQuery);
+  const items = sortHistoryItems(await chrome.history.search(directQuery));
   console.debug(`[HistoryCache] direct ${items.length} rows in ${(performance.now() - started).toFixed(1)}ms`);
   return items;
 }

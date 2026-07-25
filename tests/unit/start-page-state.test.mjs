@@ -58,6 +58,28 @@ test("density regimes follow the per-neighborhood rendering contract", () => {
   assert.equal(densityRegimeForCount(31), DENSITY_REGIMES.NEIGHBORHOODS);
 });
 
+test("snapshot neighborhoods are connected components rather than windows", () => {
+  const now = startPageFixtures.continuation.now;
+  const snapshot = createBrowsingSnapshot({
+    now,
+    currentWindowId: 1,
+    windows: [{
+      id: 1,
+      focused: true,
+      tabs: [
+        { id: 1, windowId: 1, title: "Source", url: "https://source.example/", lastAccessed: now - 60000 },
+        { id: 2, windowId: 1, title: "Child", url: "https://child.example/", lastAccessed: now - 50000, openerTabId: 1 },
+        { id: 3, windowId: 1, title: "Separate", url: "https://separate.example/", lastAccessed: now - (20 * 60000) }
+      ]
+    }]
+  });
+
+  assert.equal(snapshot.otherWindows.length, 0);
+  assert.equal(snapshot.neighborhoods.length, 2);
+  assert.deepEqual(snapshot.neighborhoods.map(item => item.itemCount), [2, 1]);
+  assert.equal(snapshot.topology.structuralEdgeCount, 1);
+});
+
 test("handoff evidence stays device-agnostic", () => {
   const snapshot = createBrowsingSnapshot(startPageFixtures.handoff);
   const recognition = recognizeStartPageState(snapshot);
@@ -126,6 +148,20 @@ test("a short interruption near midnight does not imply reorientation", () => {
   assert.equal(recognition.signals.crossedLocalDayBoundary, true);
 });
 
+test("a one-window lunch return is reinstatement rather than continuation", () => {
+  const recognition = recognizeStartPageState(snapshotForSingleWindowGap(HOUR));
+
+  assert.equal(recognition.state, START_PAGE_STATES.REINSTATEMENT);
+  assert.ok(recognition.evidence.includes("5-live-tabs-in-current-window"));
+});
+
+test("a one-window overnight return is reorientation rather than continuation", () => {
+  const recognition = recognizeStartPageState(snapshotForSingleWindowGap(8 * HOUR));
+
+  assert.equal(recognition.state, START_PAGE_STATES.REORIENTATION);
+  assert.ok(recognition.evidence.includes("extended-interruption"));
+});
+
 function snapshotForGap(gapMs, now = startPageFixtures.reinstatement.now) {
   const input = structuredClone(startPageFixtures.reinstatement);
   input.now = now;
@@ -139,6 +175,22 @@ function snapshotForGap(gapMs, now = startPageFixtures.reinstatement.now) {
     tabs: window.tabs.map(tab => tab.url.startsWith("chrome-extension:") ? tab : {
       ...tab,
       lastAccessed: now - gapMs
+    })
+  }));
+  return createBrowsingSnapshot(input);
+}
+
+function snapshotForSingleWindowGap(gapMs) {
+  const input = structuredClone(startPageFixtures.continuation);
+  input.historyItems = input.historyItems.map(item => ({
+    ...item,
+    lastVisitTime: input.now - gapMs
+  }));
+  input.windows = input.windows.map(window => ({
+    ...window,
+    tabs: window.tabs.map(tab => tab.url.startsWith("chrome-extension:") ? tab : {
+      ...tab,
+      lastAccessed: input.now - gapMs
     })
   }));
   return createBrowsingSnapshot(input);

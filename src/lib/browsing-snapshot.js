@@ -1,3 +1,5 @@
+import { buildBrowsingNeighborhoods } from "./browsing-neighborhoods.js";
+
 const SNAPSHOT_VERSION = 1;
 
 const MEANINGFUL_PROTOCOLS = new Set(["http:", "https:", "file:"]);
@@ -18,7 +20,9 @@ export function createBrowsingSnapshot({
   windows = [],
   historyItems = [],
   visitsByUrl = {},
-  activityByTab = {}
+  activityByTab = {},
+  tabHistory = [],
+  tabRelationships = []
 } = {}) {
   const normalizedWindows = windows
     .map(window => normalizeWindow(window, activityByTab))
@@ -45,21 +49,19 @@ export function createBrowsingSnapshot({
     ? localDayKey(now, timezoneOffsetMinutes) !== localDayKey(latestMeaningfulActivityAt, timezoneOffsetMinutes)
     : false;
 
-  const neighborhoods = normalizedWindows
-    .map(window => {
-      const tabs = window.tabs.filter(isMeaningfulTab);
-      return {
-        id: `window:${window.id}`,
-        kind: "window",
-        windowId: window.id,
-        focused: window.id === currentWindow.id,
-        tabs,
-        itemCount: tabs.length,
-        density: densityRegimeForCount(tabs.length),
-        lastActivityAt: maxTimestamp(tabs.map(tab => tab.lastAccessed))
-      };
-    })
-    .filter(neighborhood => neighborhood.itemCount > 0);
+  const neighborhoods = buildBrowsingNeighborhoods({
+    tabs: meaningfulTabs,
+    visits: normalizedHistory.filter(item => isMeaningfulUrl(item.url)),
+    tabHistory,
+    tabRelationships,
+    activityByTab,
+    now
+  }).map(neighborhood => ({
+    ...neighborhood,
+    inCurrentWindow: neighborhood.items.some(item => item.windowId === currentWindow.id),
+    density: densityRegimeForCount(neighborhood.itemCount)
+  }));
+  const neighborhoodEdges = neighborhoods.flatMap(neighborhood => neighborhood.edges);
 
   return {
     version: SNAPSHOT_VERSION,
@@ -94,19 +96,32 @@ export function createBrowsingSnapshot({
       timezoneOffsetMinutes
     },
     neighborhoods,
+    topology: {
+      edgeCount: neighborhoodEdges.length,
+      structuralEdgeCount: neighborhoodEdges.filter(edge =>
+        edge.types.includes("spawn") || edge.types.includes("referrer")).length,
+      temporalEdgeCount: neighborhoodEdges.filter(edge => edge.types.includes("temporal")).length,
+      openItemCount: neighborhoods.reduce((sum, item) => sum + item.openCount, 0),
+      recoveredItemCount: neighborhoods.reduce((sum, item) => sum + item.recoveredCount, 0)
+    },
     availability: {
       liveWindows: normalizedWindows.length > 0,
       recentHistory: normalizedHistory.length > 0,
-      foreignProvenance: normalizedHistory.some(item => typeof item.isLocal === "boolean")
+      foreignProvenance: normalizedHistory.some(item => typeof item.isLocal === "boolean"),
+      relationshipEvidence: neighborhoodEdges.length > 0,
+      recoveredWork: neighborhoods.some(neighborhood => neighborhood.recoveredCount > 0)
     }
   };
 }
 
 export function isMeaningfulTab(tab) {
   if (!tab || tab.incognito || !tab.url) return false;
+  return isMeaningfulUrl(tab.url);
+}
+
+export function isMeaningfulUrl(url) {
   try {
-    const parsed = new URL(tab.url);
-    return MEANINGFUL_PROTOCOLS.has(parsed.protocol);
+    return MEANINGFUL_PROTOCOLS.has(new URL(url).protocol);
   } catch {
     return false;
   }
@@ -142,6 +157,7 @@ function normalizeTab(tab, activityByTab) {
     pinned: Boolean(tab?.pinned),
     audible: Boolean(tab?.audible),
     incognito: Boolean(tab?.incognito),
+    openerTabId: tab?.openerTabId ?? null,
     lastAccessed: latestTabActivity(tab, activity)
   };
 }
@@ -163,9 +179,21 @@ function normalizeHistory(historyItems, visitsByUrl) {
       title: item.title || "Untitled",
       visitTime: Number(visit.visitTime || item.lastVisitTime || 0),
       isLocal: typeof visit.isLocal === "boolean" ? visit.isLocal : undefined,
-      transition: visit.transition || undefined
+      transition: visit.transition || undefined,
+      // Chrome's referral chain is the only structural evidence that outlives
+      // the tab it was created in, so it has to survive normalization.
+      visitId: visit.visitId ?? visit.id ?? undefined,
+      referringVisitId: normalizeVisitId(visit.referringVisitId)
     }));
   }).filter(item => Number.isFinite(item.visitTime) && item.visitTime > 0);
+}
+
+// Chrome reports "0" for a visit that had no referrer. Treat it as absent so it
+// cannot become a node key that every unreferred visit collides on.
+function normalizeVisitId(value) {
+  if (value === undefined || value === null) return undefined;
+  const asString = String(value);
+  return asString === "0" || asString === "" ? undefined : asString;
 }
 
 function latestTabActivity(tab, activity) {

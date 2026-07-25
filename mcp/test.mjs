@@ -184,6 +184,31 @@ const tcClosed = await call(10, 'get_tab_content', { url: 'https://developer.moz
 ok(tcClosed?.error === 'tab not open' && tcClosed?.content === undefined,
   'get_tab_content for a closed tab (same-domain tab open) errors instead of substituting content');
 
+// Chrome clears window.focused when another macOS app is frontmost. An older
+// extension worker therefore sends focused:null even though its sole active tab
+// is still the user's current Chrome context. The bridge repairs that payload.
+ext.send(JSON.stringify({
+  type: 'SNAPSHOT',
+  data: {
+    ts: Date.now(),
+    focused: null,
+    windows: [{ windowId: 9, focused: false, tabCount: 1 }],
+    tabs: [{
+      tabId: 99,
+      windowId: 9,
+      title: 'Local development',
+      url: 'http://localhost:8099/examples/perceptual-ab.html',
+      active: true,
+      timeSpent: 0,
+    }],
+    recentActivity: [],
+  },
+}));
+await wait(100);
+const backgroundCtx = await call(14, 'get_context', {});
+ok(backgroundCtx?.focused_tab?.url === 'http://localhost:8099/examples/perceptual-ab.html',
+  'get_context preserves the sole active Chrome tab while another app is frontmost');
+
 tearingDown = true;
 mcp.kill(); ext.close(); daemon.kill();
 await wait(200);

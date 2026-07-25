@@ -20,6 +20,15 @@ export function recognizeStartPageState(snapshot, config = {}) {
   const currentCount = snapshot?.currentWindow?.tabs?.length || 0;
   const otherWindows = snapshot?.otherWindows || [];
   const otherCount = otherWindows.reduce((sum, window) => sum + (window.tabs?.length || 0), 0);
+  const liveCount = currentCount + otherCount;
+  const neighborhoods = snapshot?.neighborhoods || [];
+  // Neighborhoods now mix live tabs with work recovered from history. Evidence
+  // must say which, or "3 active neighborhoods" would claim live work that a
+  // restart already closed.
+  const neighborhoodCount = neighborhoods.filter(item => (item.openCount || 0) > 0).length;
+  const recoveredNeighborhoodCount = neighborhoods.filter(item =>
+    (item.openCount || 0) === 0 && (item.recoveredCount || 0) > 0).length;
+  const edgeCount = snapshot?.topology?.edgeCount || 0;
   const gapMs = snapshot?.activity?.interruptionGapMs;
   const crossedLocalDayBoundary = Boolean(snapshot?.activity?.crossedLocalDayBoundary);
   const interruptionSignals = { gapMs, crossedLocalDayBoundary };
@@ -38,13 +47,18 @@ export function recognizeStartPageState(snapshot, config = {}) {
       "clean-current-window",
       `${foreignItems.length}-recent-foreign-visits`,
       `${foreignDomains.size}-foreign-domain${foreignDomains.size === 1 ? "" : "s"}`,
-      "foreign-trail-is-latest"
+      "foreign-trail-is-latest",
+      ...(recoveredNeighborhoodCount > 0
+        ? [`${recoveredNeighborhoodCount}-recovered-neighborhood${recoveredNeighborhoodCount === 1 ? "" : "s"}`]
+        : [])
     ], {
       currentCount,
       otherCount,
       ...interruptionSignals,
       foreignVisitCount: foreignItems.length,
-      foreignDomainCount: foreignDomains.size
+      foreignDomainCount: foreignDomains.size,
+      neighborhoodCount,
+      recoveredNeighborhoodCount
     });
   }
 
@@ -53,30 +67,46 @@ export function recognizeStartPageState(snapshot, config = {}) {
     || (crossedLocalDayBoundary && gapMs >= thresholds.crossDayReorientationMs)
   );
 
-  if (currentWindowIsClean && otherCount > 0 && isReorientation) {
+  if (liveCount > 0 && isReorientation) {
     const gapHours = Math.round((gapMs / (60 * 60 * 1000)) * 10) / 10;
     return result(START_PAGE_STATES.REORIENTATION, clamp(
       0.82 + Math.min(0.12, Math.max(0, gapMs - thresholds.crossDayReorientationMs) / (24 * 60 * 60 * 1000))
     ), [
-      "clean-current-window",
+      currentWindowIsClean ? "clean-current-window" : `${currentCount}-live-tabs-in-current-window`,
       `${gapHours}-hour-gap`,
       ...(crossedLocalDayBoundary ? ["crossed-local-day-boundary"] : ["extended-interruption"]),
-      `${otherCount}-live-tabs-in-${nonEmptyWindowCount(otherWindows)}-other-windows`
+      `${neighborhoodCount}-active-neighborhood${neighborhoodCount === 1 ? "" : "s"}`,
+      ...(recoveredNeighborhoodCount > 0
+        ? [`${recoveredNeighborhoodCount}-recovered-neighborhood${recoveredNeighborhoodCount === 1 ? "" : "s"}`]
+        : []),
+      ...(otherCount > 0 ? [`${otherCount}-live-tabs-in-${nonEmptyWindowCount(otherWindows)}-other-windows`] : [])
     ], {
       currentCount,
       otherCount,
       ...interruptionSignals,
-      foreignVisitCount: foreignItems.length
+      foreignVisitCount: foreignItems.length,
+      neighborhoodCount,
+      recoveredNeighborhoodCount,
+      edgeCount
     });
   }
 
-  if (currentWindowIsClean && otherCount > 0 && Number.isFinite(gapMs) && gapMs >= thresholds.interruptionMs) {
+  if (liveCount > 0 && Number.isFinite(gapMs) && gapMs >= thresholds.interruptionMs) {
     const gapMinutes = Math.round(gapMs / 60000);
     return result(START_PAGE_STATES.REINSTATEMENT, clamp(0.76 + Math.min(0.16, gapMs / (6 * 60 * 60 * 1000))), [
-      "clean-current-window",
+      currentWindowIsClean ? "clean-current-window" : `${currentCount}-live-tabs-in-current-window`,
       `${gapMinutes}-minute-gap`,
-      `${otherCount}-live-tabs-in-${nonEmptyWindowCount(otherWindows)}-other-windows`
-    ], { currentCount, otherCount, ...interruptionSignals, foreignVisitCount: foreignItems.length });
+      `${neighborhoodCount}-active-neighborhood${neighborhoodCount === 1 ? "" : "s"}`,
+      ...(otherCount > 0 ? [`${otherCount}-live-tabs-in-${nonEmptyWindowCount(otherWindows)}-other-windows`] : [])
+    ], {
+      currentCount,
+      otherCount,
+      ...interruptionSignals,
+      foreignVisitCount: foreignItems.length,
+      neighborhoodCount,
+      recoveredNeighborhoodCount,
+      edgeCount
+    });
   }
 
   if (currentWindowIsClean && otherCount > 0) {
@@ -88,10 +118,23 @@ export function recognizeStartPageState(snapshot, config = {}) {
   }
 
   if (currentCount > 0) {
-    return result(START_PAGE_STATES.CONTINUATION, clamp(0.72 + Math.min(0.18, currentCount * 0.025)), [
+    return result(START_PAGE_STATES.CONTINUATION, clamp(
+      0.68
+      + Math.min(0.12, currentCount * 0.01)
+      + Math.min(0.08, Math.max(0, neighborhoodCount - 1) * 0.02)
+    ), [
       `${currentCount}-meaningful-tabs-in-current-window`,
-      `${snapshot?.currentWindow?.density || "unknown"}-density`
-    ], { currentCount, otherCount, ...interruptionSignals, foreignVisitCount: foreignItems.length });
+      `${neighborhoodCount}-active-neighborhood${neighborhoodCount === 1 ? "" : "s"}`,
+      `${edgeCount}-relationship-edge${edgeCount === 1 ? "" : "s"}`
+    ], {
+      currentCount,
+      otherCount,
+      ...interruptionSignals,
+      foreignVisitCount: foreignItems.length,
+      neighborhoodCount,
+      recoveredNeighborhoodCount,
+      edgeCount
+    });
   }
 
   return result(START_PAGE_STATES.LAUNCH, otherCount === 0 ? 0.88 : 0.66, [

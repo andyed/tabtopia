@@ -100,6 +100,57 @@ Density controls representation; recognized environment controls editorial stanc
 
 Apply density per connected component, not to the undifferentiated global tab count. Forty tabs spanning four tasks should become four useful neighborhoods, not a forty-node graph.
 
+### Neighborhood evidence and rendering
+
+A neighborhood is a connected browsing task, not a browser window. Seed strong
+edges from referrer/navigation provenance and tab-spawn/opener relationships,
+then add bounded weaker edges from temporal co-activity. Window membership is
+metadata only. Temporal overlap must not use a directional arrow or imply that
+one page caused another.
+
+**Nodes are pages, not tabs** (generalized 2026-07-24). A tab-only node source
+made the graph structurally empty in exactly the states that need it most:
+Handoff and Reorientation are *defined* by the absence of live tabs, so
+"0 components" was guaranteed rather than measured. Recent history visits are
+therefore nodes too, keyed by URL identity, and a visit whose page is already
+open merges into that tab's node rather than duplicating it. Every item carries
+`open: true|false` so no surface can imply a closed page is still live.
+
+Chrome's `VisitItem.referringVisitId` is the load-bearing addition: it is the
+only structural evidence that outlives the tab that produced it, and it turns a
+post-restart pile of URLs back into a directed trail.
+
+Two bounds keep the wider node set from degenerating:
+
+- **Per-node temporal degree** (unchanged) caps how many overlap edges a node may take.
+- **A component activity-span budget** (default 30 minutes) refuses a temporal
+  merge that would stretch a component beyond it. Structural edges are exempt —
+  a followed link is a real join however long ago it happened. The budget cannot
+  bound a *single* page's own span; one URL revisited all afternoon is still one
+  page, and that is correct.
+
+Choose the lightest renderer that preserves the topology:
+
+- **1 page:** space-filling HTML typography and direct actions.
+- **2 pages:** a typographic pair whose connective phrase names the evidence
+  (`opened from`, `followed from`, or `active together`).
+- **3–5 pages:** an HTML/CSS trail, fan, or comparison with real links in DOM
+  reading order.
+- **6–10 pages:** a hybrid with DOM labels and minimal SVG connectors.
+- **Larger components:** compact SVG micrographs or a summarized component.
+
+Keep native HTML as the accessible interaction layer. Pretext may later replace
+the text-measurement and Canvas rendering layer for richer semantic zoom, but it
+must be vendored and pinned for the extension rather than loaded remotely under
+Manifest V3 CSP.
+
+Before ranked actions depend on these components, keep a development-only
+topology audit available behind progressive disclosure. It must expose every
+component, isolate and largest-component counts, structural versus temporal
+edge totals, and the exact directional provenance for each join. Use it to
+reject causal wording errors, temporal mega-components, false merges, and
+obvious false splits against a mixed live session.
+
 ### Existing compact treemap
 
 The toolbar popup already contains a tidy equal-area treemap: tabs are grouped by window, every tab receives the same area, and recency affects ordering/color rather than size. Treat this as a reusable **live-work mosaic**, distinct from the main Treemap's investment semantics.
@@ -113,7 +164,7 @@ Good adaptive uses:
 - **Search:** show the open neighborhood surrounding the selected result while the exact results remain list-first.
 - **30+ tabs:** render several compact mosaics by connected component instead of one global hairball.
 
-Do not show it merely to fill space in low-density Launch. Foreign history is not live tab state, so Handoff should use this renderer only when its data contract has been deliberately generalized beyond open tabs.
+Do not show it merely to fill space in low-density Launch. Foreign history is not live tab state; that generalization has now been made deliberately (see "Nodes are pages, not tabs" above), so Handoff may use this renderer provided each item's open/recovered status stays visible in the rendering itself.
 
 Extract one renderer that accepts normalized neighborhoods and action callbacks; do not copy the popup's current data fetching and D3 code into the main page. The same module should continue to serve the popup so keyboard, selection, color, and activation behavior cannot drift.
 
@@ -206,6 +257,36 @@ Do not force every job through one unexplained weighted score. Use the recognize
 - Handoff emphasizes recent coherent foreign activity.
 
 Unavailable evidence is neutral. The UI must not make predictive claims stronger than the evidence or evaluation supports.
+
+#### Resumption forecast (implemented)
+
+`resumption-forecast.js` ranks whole neighborhoods — activities, not pages — by
+how likely the user is to resume them. Six bounded cues, each reported as
+evidence rather than folded into an opaque number:
+
+| Cue | Reads |
+|---|---|
+| `recency` | 2-hour half-life decay on last activity |
+| `investment` | pages plus repeat visits, log-scaled |
+| `structure` | share of edges that are followed links rather than coincidence |
+| `unfinished` | share of arrivals that came by following something — a trail cut part-way |
+| `habit` | visits per page above one; repeated returns predict another |
+| `provenance` | local versus another device |
+
+Each recognized state supplies its own weight row plus an `open` policy
+(`prefer` / `neutral` / `damp`) and an entry policy. Reorientation targets the
+component's **entry point** — the hub the trail started from — because
+restarting there recovers the abandoned branch that an endpoint cannot;
+Reinstatement targets the endpoint instead. Already-open work is damped and
+labelled a switch, not a resume.
+
+Confidence is computed separately from score and capped at 0.9. A component
+joined only by temporal coincidence loses confidence rather than score, so the
+surface can decline to make a strong claim instead of silently dropping
+candidates. Unavailable cues resolve to 0.5, never 0.
+
+The weights are hand-set policy, not learned. They are the interpretable
+baseline any later calibrated model has to beat.
 
 ## Learning and feedback
 
