@@ -1,7 +1,7 @@
 import { normalizeIdentity } from "./revisit-model.js";
 import { START_PAGE_STATES } from "./start-page-state.js";
 
-const DEFAULT_ACTION_LIMIT = 12;
+const DEFAULT_ACTION_LIMIT = 18;
 const MAX_ACTION_LIMIT = 24;
 const SOURCE_SLOTS = Object.freeze(["habit", "star", "habit", "star", "habit", "star"]);
 const SOURCE_ORDER = Object.freeze(["habit", "star", "activity"]);

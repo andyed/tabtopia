@@ -127,11 +127,11 @@ test("action order and source evidence are deterministic and bounded", () => {
 });
 
 test("the default feed retains enough actions for a below-fold discovery layer", () => {
-  const habits = Array.from({ length: 12 }, (_, index) =>
+  const habits = Array.from({ length: 18 }, (_, index) =>
     pageCandidate("habit", `h${index}`, `https://h-${index}.example/`, -index));
   const feed = buildStartPageFeed({ habitDestinations: habits });
 
-  assert.equal(feed.actions.length, 12);
+  assert.equal(feed.actions.length, 18);
 });
 
 function pageCandidate(source, id, url, score) {

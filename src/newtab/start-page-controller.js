@@ -16,6 +16,10 @@ import {
   readCachedArchive,
   refreshArchive
 } from "../lib/archive-provider.js";
+import {
+  readCachedTechmeme,
+  refreshTechmeme
+} from "../lib/techmeme-provider.js";
 
 const HISTORY_HORIZON_MS = 24 * 60 * 60 * 1000;
 const HISTORY_ITEM_LIMIT = 80;
@@ -39,6 +43,7 @@ export function createStartPageController({
   let refreshTimer = null;
   let refreshInFlight = null;
   let archiveRefreshInFlight = null;
+  let techmemeRefreshInFlight = null;
   let activeArchiveQuery = null;
   let pendingArchiveQuery;
   let started = false;
@@ -87,6 +92,7 @@ export function createStartPageController({
       .then(result => {
         onUpdate(result);
         refreshArchiveInBackground(result);
+        refreshTechmemeInBackground();
         return result;
       })
       .catch(error => {
@@ -121,6 +127,18 @@ export function createStartPageController({
       });
   }
 
+  function refreshTechmemeInBackground() {
+    if (techmemeRefreshInFlight) return;
+    techmemeRefreshInFlight = refreshTechmeme()
+      .then(update => {
+        if (started && update?.changed) scheduleRefresh(0);
+      })
+      .catch(() => {})
+      .finally(() => {
+        techmemeRefreshInFlight = null;
+      });
+  }
+
   function start() {
     if (started) return;
     started = true;
@@ -140,7 +158,15 @@ export function createStartPageController({
 }
 
 export async function collectStartPageState(now = Date.now()) {
-  const [currentWindow, windows, historyPool, backgroundState, bookmarks, archiveSnapshot] = await Promise.all([
+  const [
+    currentWindow,
+    windows,
+    historyPool,
+    backgroundState,
+    bookmarks,
+    archiveSnapshot,
+    techmemeSnapshot
+  ] = await Promise.all([
     getCurrentWindow(),
     getAllWindows(),
     getRecentHistory({
@@ -149,7 +175,8 @@ export async function collectStartPageState(now = Date.now()) {
     }),
     getBackgroundState(),
     getRecentBookmarks(RECENT_BOOKMARK_LIMIT),
-    readCachedArchive({ now })
+    readCachedArchive({ now }),
+    readCachedTechmeme({ now })
   ]);
   const historyItems = historyPool
     .filter(item => Number(item?.lastVisitTime || 0) >= now - HISTORY_HORIZON_MS)
@@ -193,7 +220,8 @@ export async function collectStartPageState(now = Date.now()) {
     forecast,
     habitDestinations,
     archiveSnapshot: currentArchiveSnapshot,
-    archiveQuery
+    archiveQuery,
+    techmemeSnapshot
   };
 }
 

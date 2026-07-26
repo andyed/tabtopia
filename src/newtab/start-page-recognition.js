@@ -2,6 +2,7 @@ import { stateDisplayName } from "../lib/start-page-state.js";
 import { buildArchiveEnrichment } from "../lib/archive-enrichment.js";
 import { buildDeferredIntentions } from "../lib/deferred-intentions.js";
 import { buildStartPageFeed } from "../lib/start-page-feed.js";
+import { buildTechmemeEnrichment } from "../lib/techmeme-enrichment.js";
 import { createStartPageController } from "./start-page-controller.js";
 import { createStartPageActionExecutor } from "./start-page-actions.js";
 import { renderHomeTakeover } from "./home-takeover.js";
@@ -130,12 +131,19 @@ function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinati
     selectedUrls: selectedFeedUrls(baseFeed),
     now: extra.generatedAt
   });
+  const techmemeEnrichment = buildTechmemeEnrichment({
+    feedItems: extra.techmemeSnapshot?.items,
+    interestTopics: archiveEnrichment.interests,
+    contextTitles: techmemeContextTitles(baseFeed, forecast, snapshot)
+  });
   const feed = {
     ...baseFeed,
     archiveItems: archiveEnrichment.items,
     interests: archiveEnrichment.interests,
     archiveSourceCounts: archiveEnrichment.sourceCounts,
-    archiveStatus: extra.archiveSnapshot?.status || "empty"
+    archiveStatus: extra.archiveSnapshot?.status || "empty",
+    techmemeItems: techmemeEnrichment.items,
+    techmemeStatus: extra.techmemeSnapshot?.status || "empty"
   };
   latestHomeModel = homeModelFrom(feed, recognition, forecast, snapshot);
   cacheHomeModel(latestHomeModel);
@@ -144,6 +152,7 @@ function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinati
     ...sourceState,
     deferredIntentions,
     archiveEnrichment,
+    techmemeEnrichment,
     feed,
     homeModel: latestHomeModel,
     refresh: () => controller?.refresh()
@@ -156,8 +165,25 @@ function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinati
     else renderSuggestedHome();
   }
   window.dispatchEvent(new CustomEvent("tabtopia-state-recognized", {
-    detail: { ...sourceState, deferredIntentions, archiveEnrichment, feed, homeModel: latestHomeModel }
+    detail: {
+      ...sourceState,
+      deferredIntentions,
+      archiveEnrichment,
+      techmemeEnrichment,
+      feed,
+      homeModel: latestHomeModel
+    }
   }));
+}
+
+function techmemeContextTitles(feed, forecast, snapshot) {
+  const titles = [
+    ...(feed?.actions || []).map(item => item?.action?.target?.title),
+    feed?.primaryActivity?.action?.target?.title,
+    ...(forecast?.candidates || []).slice(0, 4).map(item => item?.action?.target?.title),
+    ...(snapshot?.history?.foreignItems || []).slice(0, 3).map(item => item?.title)
+  ];
+  return titles.filter(Boolean);
 }
 
 function archiveRowsForEnrichment(snapshot) {
@@ -246,6 +272,7 @@ function renderFreshHome() {
     neighborhoods: [],
     archiveItems: [],
     interests: [],
+    techmemeItems: [],
     freshOverride: true
   });
 }

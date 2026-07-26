@@ -152,6 +152,7 @@
 .home-takeover__engaged-layout,
 .home-takeover__return,
 .home-takeover__discovery,
+.home-takeover__techmeme,
 .home-takeover__fresh-field,
 .home-takeover__system-state,
 .home-takeover__error,
@@ -261,6 +262,53 @@
   line-height: 0.98;
 }
 
+.home-takeover [data-home-title] {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.home-takeover__trail-title[data-home-title] {
+  -webkit-line-clamp: 1;
+}
+
+.home-takeover__title-peek {
+  position: fixed;
+  z-index: 10000;
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+  margin: 0;
+  padding: 12px 14px 13px;
+  overflow-wrap: anywhere;
+  color: var(--tabtopia-ink, #09110f);
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: clamp(20px, 2.2vw, 28px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.08;
+  text-wrap: pretty;
+  pointer-events: none;
+  visibility: hidden;
+  background: var(--tabtopia-paper, #f2ebd8);
+  border: 2px solid var(--tabtopia-route, #9ff7d2);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 42%);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition-property: opacity, transform, visibility;
+  transition-duration: 120ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.home-takeover__title-peek--visible {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .home-takeover__domain {
   color: var(--home-muted);
   font-family: "SFMono-Regular", Menlo, Consolas, monospace;
@@ -349,6 +397,8 @@
 .home-takeover__fast-list,
 .home-takeover__discovery-list,
 .home-takeover__archive-list,
+.home-takeover__interest-list,
+.home-takeover__techmeme-list,
 .home-takeover__landscapes,
 .home-takeover__trail {
   margin: 0;
@@ -566,6 +616,23 @@
   text-wrap: balance;
 }
 
+.home-takeover__routes-panel,
+.home-takeover__interests,
+.home-takeover__archive {
+  min-width: 0;
+}
+
+.home-takeover__panel-label {
+  margin: 0 0 8px;
+  color: var(--home-route);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
 .home-takeover__discovery-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -679,6 +746,138 @@
   color: var(--home-muted);
   font-weight: 600;
   text-wrap: pretty;
+}
+
+.home-takeover__interests {
+  margin-top: clamp(26px, 3vw, 40px);
+  padding-top: 16px;
+  border-top: 1px solid var(--home-line);
+}
+
+.home-takeover__interest-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--home-line);
+}
+
+.home-takeover__interest-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  min-width: 0;
+  min-height: 66px;
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--home-line);
+}
+
+.home-takeover__interest-item:not(:nth-child(4n)) {
+  margin-right: 18px;
+}
+
+.home-takeover__interest-topic {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--home-paper);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.home-takeover__interest-state {
+  grid-column: 1;
+  color: var(--home-muted);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.home-takeover__interest-count {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  min-width: 28px;
+  padding: 2px 5px;
+  color: var(--home-ink);
+  background: var(--home-waypoint);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.home-takeover__techmeme {
+  margin-top: clamp(46px, 6vw, 78px);
+  padding-top: 20px;
+  border-top: 4px solid var(--home-route);
+}
+
+.home-takeover__techmeme-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+
+.home-takeover__techmeme-title {
+  margin: 0;
+  color: var(--home-paper);
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: clamp(26px, 2.7vw, 38px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.home-takeover__techmeme-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--home-line);
+}
+
+.home-takeover__techmeme-item {
+  min-width: 0;
+  border-bottom: 1px solid var(--home-line);
+}
+
+.home-takeover__techmeme-item:nth-child(odd) {
+  padding-right: clamp(18px, 3vw, 44px);
+  border-right: 1px solid var(--home-line);
+}
+
+.home-takeover__techmeme-item:nth-child(even) {
+  padding-left: clamp(18px, 3vw, 44px);
+}
+
+.home-takeover__techmeme-action {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: clamp(14px, 2vw, 26px);
+  min-height: 96px;
+  padding: 14px 4px;
+}
+
+.home-takeover__techmeme-action .home-takeover__verb {
+  min-width: 4.25rem;
+}
+
+.home-takeover__techmeme-action .home-takeover__action-title {
+  font-size: clamp(23px, 2.25vw, 31px);
+  line-height: 1.04;
+}
+
+.home-takeover__techmeme-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+
+.home-takeover__techmeme-topics {
+  color: var(--home-waypoint);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .home-takeover__fast-action .home-takeover__domain {
@@ -916,6 +1115,7 @@
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__source,
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__archive-topics,
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__archive-signal,
+.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__techmeme-topics,
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__action-arrow {
   color: var(--home-muted);
 }
@@ -937,6 +1137,7 @@
   .home-takeover__action:hover .home-takeover__source,
   .home-takeover__action:hover .home-takeover__archive-topics,
   .home-takeover__action:hover .home-takeover__archive-signal,
+  .home-takeover__action:hover .home-takeover__techmeme-topics,
   .home-takeover__action:hover .home-takeover__action-arrow {
     color: var(--home-ink);
   }
@@ -1102,6 +1303,48 @@
     gap: 4px 10px;
   }
 
+  .home-takeover__interest-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-takeover__interest-item:not(:nth-child(4n)) {
+    margin-right: 0;
+  }
+
+  .home-takeover__interest-item:nth-child(odd) {
+    margin-right: 16px;
+  }
+
+  .home-takeover__techmeme-header {
+    display: block;
+  }
+
+  .home-takeover__techmeme-title {
+    margin-top: 8px;
+  }
+
+  .home-takeover__techmeme-list {
+    grid-template-columns: 1fr;
+  }
+
+  .home-takeover__techmeme-item:nth-child(odd),
+  .home-takeover__techmeme-item:nth-child(even) {
+    padding-right: 0;
+    padding-left: 0;
+    border-right: 0;
+  }
+
+  .home-takeover__techmeme-action {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 14px;
+  }
+
+  .home-takeover__techmeme-action .home-takeover__verb {
+    grid-column: 1 / -1;
+    min-width: 0;
+    padding: 0;
+  }
+
   .home-takeover__activity {
     padding: 28px 22px;
   }
@@ -1154,6 +1397,16 @@
   }
 }
 
+@media (max-width: 480px) {
+  .home-takeover__interest-list {
+    grid-template-columns: 1fr;
+  }
+
+  .home-takeover__interest-item:nth-child(odd) {
+    margin-right: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .home-takeover *,
   .home-takeover *::before,
@@ -1167,6 +1420,10 @@
   .home-takeover__loading-route::after {
     width: 100%;
     transform: none;
+  }
+
+  .home-takeover__title-peek {
+    transition-duration: 0.01ms;
   }
 }
 

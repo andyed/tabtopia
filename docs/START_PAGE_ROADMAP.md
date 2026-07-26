@@ -402,6 +402,33 @@ These events should enter bounded local diagnostics first. After M3 produces eno
 
 **Exit gate:** Each density regime remains readable and actionable with real profiles, and the visual system improves task performance rather than merely making the page novel.
 
+## Home density and enrichment execution note — 2026-07-26
+
+The current Home takeover expands content without weakening source boundaries:
+
+- Habit and star generators admit up to 10 candidates each; the composed feed
+  admits up to 18 actions through the existing alternating source slots. Habit,
+  star, and activity scores remain incomparable and are never summed.
+- The first tier keeps one focal route plus up to five nearby routes. Engaged
+  Side routes stay capped at four so they cannot consume the lower Discovery
+  panel. Discovery may render up to 10 otherwise unrepresented actions.
+- Archive enrichment rises from four to six items and exposes up to eight
+  aggregate tag-derived Interest threads as a separate compact panel.
+- Techmeme is an enrichment-only bottom panel. Home reads a 20-minute local
+  cache for first paint, refreshes `https://www.techmeme.com/feed.xml` in the
+  background, retains only plain titles and validated Techmeme permalinks, and
+  filters locally against archive topics and visible Home-title vocabulary.
+  Techmeme relevance never enters prediction evidence.
+- Titles use placement-specific, Unicode-safe grapheme budgets with publication
+  suffix removal and word-boundary ellipses. A single viewport-aware overlay
+  reveals the full title on fine-pointer hover or keyboard focus without
+  reflow; Escape dismisses it while preserving focus.
+
+The proof gate is deterministic unit coverage for caching, RSS validation,
+filtering, title shortening, and source bounds, plus extension-loaded browser
+coverage for non-blocking first paint, panel ordering, action execution,
+keyboard/hover dismissal, narrow-screen containment, and escaping.
+
 ## Measurement plan
 
 ### Ranking quality

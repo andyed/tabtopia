@@ -2,7 +2,7 @@ import { normalizeIdentity } from "./revisit-model.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BOOKMARK_RECENCY_HALF_LIFE_MS = 30 * DAY_MS;
-const DEFAULT_RESULT_LIMIT = 6;
+const DEFAULT_RESULT_LIMIT = 10;
 const MAX_RESULT_LIMIT = 24;
 const SUPPORTED_PROTOCOLS = new Set(["http:", "https:"]);
 

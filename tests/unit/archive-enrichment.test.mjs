@@ -107,14 +107,14 @@ test("duplicate representative selection is deterministic under exact timestamp 
   assert.deepEqual(left.items[0].topics, ["alpha", "beta"]);
 });
 
-test("output defaults to four, is deterministic, and tolerates malformed data", () => {
+test("output defaults to six, is deterministic, and tolerates malformed data", () => {
   const valid = Array.from({ length: 8 }, (_, index) =>
     archive(`https://site-${index}.example/`, [`Tag ${index}`], 2, `Site ${index}`));
   const malformed = [null, {}, { url: "not a url", tags: 42 }, { url: "file:///tmp/private" }];
   const left = buildArchiveEnrichment({ now: NOW, archiveItems: [...valid, ...malformed] });
   const right = buildArchiveEnrichment({ now: NOW, archiveItems: [...malformed, ...valid.slice().reverse()] });
 
-  assert.equal(left.items.length, 4);
+  assert.equal(left.items.length, 6);
   assert.deepEqual(left, right);
   assert.equal(left.items.every(item => item.topics.length <= 2), true);
   assert.equal(left.items.every(item => ["resurfacing", "active-now", "recurring", "archive"].includes(item.interestState)), true);

@@ -21,15 +21,33 @@ async function seedArchiveProvider(page, extensionId, { fetchedAt, rows }) {
   });
 }
 
-async function renderArchiveFixture(page, extensionId, { archiveItems = [], actions = [] } = {}) {
+async function renderArchiveFixture(page, extensionId, {
+  archiveItems = [],
+  actions = [],
+  interests = [],
+  techmemeItems = []
+} = {}) {
   await page.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html#/home`, {
     waitUntil: "domcontentloaded"
   });
   const canonicalHome = page.locator("#startPageHome");
-  await canonicalHome.waitFor({ state: "visible" });
-  await expect(canonicalHome).toHaveAttribute("aria-busy", "false");
-  await page.evaluate(async ({ archiveItems: items, actions: destinations }) => {
+  if (await canonicalHome.count()) {
+    await canonicalHome.waitFor({ state: "visible" });
+    await expect(canonicalHome).toHaveAttribute("aria-busy", "false");
+  }
+  await page.evaluate(async ({
+    archiveItems: items,
+    actions: destinations,
+    interests: interestThreads,
+    techmemeItems: newsItems
+  }) => {
     const { renderHomeTakeover } = await import(chrome.runtime.getURL("src/newtab/home-takeover.js"));
+    const previousFixture = document.getElementById("archiveFixture");
+    previousFixture?.__tabtopiaTitlePeekCleanup?.();
+    previousFixture?.remove();
+    const canonical = document.getElementById("startPageHome");
+    canonical?.__tabtopiaTitlePeekCleanup?.();
+    canonical?.remove();
     const root = document.createElement("main");
     root.id = "archiveFixture";
     document.body.append(root);
@@ -42,13 +60,15 @@ async function renderArchiveFixture(page, extensionId, { archiveItems = [], acti
       state: "launch",
       stateLabel: "Launch",
       actions: destinations,
-      archiveItems: items
+      archiveItems: items,
+      interests: interestThreads,
+      techmemeItems: newsItems
     }, {
       onAction(action) {
         window.__archiveAction = action;
       }
     });
-  }, { archiveItems, actions });
+  }, { archiveItems, actions, interests, techmemeItems });
   return page.locator("#archiveFixture");
 }
 
@@ -236,6 +256,62 @@ test.describe("development home takeover", () => {
     await expect(secondHome.getByText("ACT-R archive proof", { exact: true })).toBeVisible();
   });
 
+  test("adds filtered Techmeme after first paint without blocking Home", async ({ context, extensionId }) => {
+    let releaseFeed;
+    let feedRequests = 0;
+    const feedGate = new Promise(resolve => { releaseFeed = resolve; });
+    await context.route("https://www.techmeme.com/feed.xml", async route => {
+      feedRequests += 1;
+      await feedGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/rss+xml",
+        body: `<?xml version="1.0"?><rss version="2.0"><channel>
+          <item>
+            <title>AI systems bring working memory to browser agents</title>
+            <link>https://www.techmeme.com/260726/p31#a260726p31</link>
+            <description><![CDATA[<p>Ignored feed HTML</p>]]></description>
+            <pubDate>Sun, 26 Jul 2026 15:35:00 -0400</pubDate>
+          </item>
+          <item>
+            <title>Unrelated retail earnings</title>
+            <link>https://www.techmeme.com/260726/p32#a260726p32</link>
+            <pubDate>Sun, 26 Jul 2026 15:30:00 -0400</pubDate>
+          </item>
+        </channel></rss>`
+      });
+    });
+
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/src/options/options.html`, {
+      waitUntil: "domcontentloaded"
+    });
+    await page.evaluate(() => chrome.bookmarks.create({
+      title: "AI browser research",
+      url: "https://research.example/ai-browser"
+    }));
+    await page.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html#/home`, {
+      waitUntil: "domcontentloaded"
+    });
+
+    const home = page.locator("#startPageHome");
+    await expect(home).toHaveAttribute("aria-busy", "false");
+    await expect(home.locator(".home-takeover__techmeme")).toHaveCount(0);
+    await expect.poll(() => feedRequests).toBe(1);
+
+    releaseFeed();
+    const panel = home.locator(".home-takeover__techmeme");
+    await expect(panel.getByRole("button", {
+      name: "Open: AI systems bring working memory to browser agents"
+    })).toBeVisible();
+    await expect(panel.getByText("Unrelated retail earnings", { exact: true })).toHaveCount(0);
+    await expect.poll(() => page.evaluate(async () => {
+      const snapshot = (await chrome.storage.local.get("tabtopiaTechmemeProviderV1"))
+        .tabtopiaTechmemeProviderV1;
+      return snapshot?.items?.length || 0;
+    })).toBe(2);
+  });
+
   test("renders quiet launch and extended-return compositions", async ({ context, extensionId, server }) => {
     const launch = await context.newPage();
     await launch.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html`, {
@@ -400,7 +476,7 @@ test.describe("development home takeover", () => {
 
   test("renders a bounded archive lane and executes its canonical nested action", async ({ context, extensionId }) => {
     const page = await context.newPage();
-    const archiveItems = Array.from({ length: 5 }, (_, index) => ({
+    const archiveItems = Array.from({ length: 7 }, (_, index) => ({
       id: `archive-${index + 1}`,
       topics: index === 0 ? ["Cognitive science", "Memory"] : ["Reference"],
       interestState: index === 0 ? "Frequently revisited" : "Previously useful",
@@ -413,17 +489,26 @@ test.describe("development home takeover", () => {
         }
       }
     }));
-    const home = await renderArchiveFixture(page, extensionId, { archiveItems });
+    const home = await renderArchiveFixture(page, extensionId, {
+      archiveItems,
+      interests: [
+        { topic: "Cognitive science", interestState: "resurfacing", itemCount: 3 },
+        { topic: "Memory", interestState: "recurring", itemCount: 2 }
+      ]
+    });
     const archive = home.locator(".home-takeover__archive");
 
     await expect(home.getByRole("heading", { name: "Beyond this trail" })).toBeVisible();
     await expect(archive.getByRole("heading", { name: "From your archive" })).toBeVisible();
-    await expect(archive.locator(".home-takeover__archive-item")).toHaveCount(4);
-    await expect(archive.getByText("Archive item 5", { exact: true })).toHaveCount(0);
+    await expect(archive.locator(".home-takeover__archive-item")).toHaveCount(6);
+    await expect(archive.getByText("Archive item 6", { exact: true })).toBeVisible();
+    await expect(archive.getByText("Archive item 7", { exact: true })).toHaveCount(0);
     await expect(archive.getByText("ACT-R reference", { exact: true })).toBeVisible();
     await expect(archive.getByText("archive.example", { exact: true }).first()).toBeVisible();
     await expect(archive.getByText("Cognitive science · Memory", { exact: true })).toBeVisible();
     await expect(archive.getByText("Frequently revisited — A familiar morning destination", { exact: true })).toBeVisible();
+    await expect(home.getByText("Interest threads", { exact: true })).toBeVisible();
+    await expect(home.getByText("Cognitive science", { exact: true })).toBeVisible();
 
     const firstAction = archive.locator(".home-takeover__archive-action").first();
     await firstAction.focus();
@@ -447,9 +532,162 @@ test.describe("development home takeover", () => {
     expect(narrowMetrics.height).toBeGreaterThanOrEqual(44);
   });
 
+  test("shortens long titles and reveals the full title on hover or keyboard focus", async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1024, height: 768 });
+    const fullTitle = "How working memory supports browsing predictions across several devices | Cognitive Science Review";
+    const home = await renderArchiveFixture(page, extensionId, {
+      archiveItems: [{
+        id: "long-title",
+        topics: ["memory"],
+        interestState: "resurfacing",
+        reason: "Semantically related.",
+        action: {
+          verb: "open",
+          target: { title: fullTitle, url: "https://archive.example/long-title" }
+        }
+      }]
+    });
+    const action = home.locator(".home-takeover__archive-action");
+    const visibleTitle = action.locator(".home-takeover__action-title");
+    const peeks = page.locator("body > .home-takeover__title-peek");
+
+    await expect(visibleTitle).toHaveText("How working memory supports browsing…");
+    await expect(action).toHaveAttribute("aria-label", `Open: ${fullTitle}`);
+    await expect(action).toHaveAttribute("data-title-peek-ready", "true");
+
+    const initialHeight = (await action.boundingBox()).height;
+    await action.hover();
+    const peek = peeks.filter({ hasText: fullTitle });
+    await expect(peek).toHaveCount(1);
+    await expect(peek).toBeVisible();
+    await expect(peek).toHaveText(fullTitle);
+    expect((await action.boundingBox()).height).toBe(initialHeight);
+    await action.hover();
+    let bounds = await peek.evaluate(node => {
+      const rect = node.getBoundingClientRect();
+      return {
+        hidden: node.hidden,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom
+      };
+    });
+    expect(bounds.hidden).toBe(false);
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(1024);
+    expect(bounds.top).toBeGreaterThanOrEqual(0);
+    expect(bounds.bottom).toBeLessThanOrEqual(768);
+
+    await page.mouse.move(0, 0);
+    await expect(peek).toBeHidden();
+    await action.focus();
+    await expect(peek).toBeVisible();
+    await action.press("Escape");
+    await expect(peek).toBeHidden();
+    await expect(action).toBeFocused();
+
+    await page.setViewportSize({ width: 360, height: 740 });
+    await action.evaluate(button => button.blur());
+    await action.focus();
+    await expect(peek).toBeVisible();
+    bounds = await peek.evaluate(node => {
+      const rect = node.getBoundingClientRect();
+      return {
+        hidden: node.hidden,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom
+      };
+    });
+    expect(bounds.hidden).toBe(false);
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(360);
+    expect(bounds.top).toBeGreaterThanOrEqual(0);
+    expect(bounds.bottom).toBeLessThanOrEqual(740);
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await page.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-title-peek-360x740.png"),
+        animations: "disabled"
+      });
+    }
+  });
+
+  test("renders filtered Techmeme as a bounded bottom panel and executes its canonical action", async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    const techmemeItems = Array.from({ length: 10 }, (_, index) => ({
+      id: `techmeme-${index + 1}`,
+      title: index === 0
+        ? "Browser agents bring working memory to local AI systems"
+        : `Relevant AI headline ${index + 1}`,
+      matchedTopics: index === 0 ? ["working memory", "browser agents"] : ["AI"],
+      publishedAt: Date.now() - (index * 60_000),
+      action: {
+        verb: "open",
+        target: {
+          title: index === 0
+            ? "Browser agents bring working memory to local AI systems"
+            : `Relevant AI headline ${index + 1}`,
+          url: `https://www.techmeme.com/260726/p${index + 1}#a260726p${index + 1}`
+        }
+      }
+    }));
+    const home = await renderArchiveFixture(page, extensionId, {
+      actions: [{
+        id: "route",
+        title: "Current route",
+        verb: "open",
+        target: { url: "https://route.example/" },
+        sources: ["habit"]
+      }],
+      techmemeItems
+    });
+    const panel = home.locator(".home-takeover__techmeme");
+
+    await expect(panel.getByText("Techmeme · filtered", { exact: true })).toBeVisible();
+    await expect(panel.getByRole("heading", { name: "Around your interests" })).toBeVisible();
+    await expect(panel.locator(".home-takeover__techmeme-item")).toHaveCount(8);
+    await expect(panel.getByText("Relevant AI headline 10", { exact: true })).toHaveCount(0);
+    await expect(panel.getByText("working memory · browser agents", { exact: true })).toBeVisible();
+    const positions = await home.locator(".home-takeover__quiet, .home-takeover__techmeme")
+      .evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().top));
+    expect(positions[1]).toBeGreaterThan(positions[0]);
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-techmeme-density-1440x1000.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+    }
+
+    const firstAction = panel.locator(".home-takeover__techmeme-action").first();
+    await page.setViewportSize({ width: 360, height: 740 });
+    await firstAction.scrollIntoViewIfNeeded();
+    const narrowMetrics = await firstAction.evaluate(button => {
+      const bounds = button.getBoundingClientRect();
+      return {
+        left: bounds.left,
+        right: bounds.right,
+        viewportWidth: document.documentElement.clientWidth,
+        height: bounds.height
+      };
+    });
+    expect(narrowMetrics.left).toBeGreaterThanOrEqual(0);
+    expect(narrowMetrics.right).toBeLessThanOrEqual(narrowMetrics.viewportWidth);
+    expect(narrowMetrics.height).toBeGreaterThanOrEqual(44);
+
+    await firstAction.click();
+    await expect.poll(() => page.evaluate(() => window.__archiveAction)).toEqual(techmemeItems[0].action);
+  });
+
   test("keeps discovery useful without archive data and escapes archive metadata", async ({ context, extensionId }) => {
     const page = await context.newPage();
-    const ordinaryActions = Array.from({ length: 5 }, (_, index) => ({
+    const ordinaryActions = Array.from({ length: 7 }, (_, index) => ({
       id: `ordinary-${index + 1}`,
       title: `Ordinary ${index + 1}`,
       verb: "open",
@@ -459,7 +697,7 @@ test.describe("development home takeover", () => {
     let home = await renderArchiveFixture(page, extensionId, { actions: ordinaryActions });
     await expect(home.locator(".home-takeover__archive")).toHaveCount(0);
     await expect(home.locator(".home-takeover__discovery-action")).toHaveCount(1);
-    await expect(home.getByText("Ordinary 5", { exact: true })).toBeVisible();
+    await expect(home.getByText("Ordinary 7", { exact: true })).toBeVisible();
 
     home = await renderArchiveFixture(page, extensionId, {
       archiveItems: [{

@@ -1,6 +1,6 @@
 import { normalizeIdentity } from "./revisit-model.js";
 
-const DEFAULT_LIMIT = 4;
+const DEFAULT_LIMIT = 6;
 const MAX_LIMIT = 12;
 const MAX_TOPICS = 2;
 const SUPPORTED_PROTOCOLS = new Set(["http:", "https:"]);

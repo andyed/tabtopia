@@ -1,3 +1,5 @@
+import { HOME_TITLE_LIMITS, truncateHomeTitle } from "../lib/home-title.js";
+
 const HOME_MODES = new Set(["quiet", "engaged", "return"]);
 const MODE_CLASSES = [
   "home-takeover--quiet",
@@ -5,6 +7,9 @@ const MODE_CLASSES = [
   "home-takeover--return",
   "home-takeover--fresh"
 ];
+const MAX_ARCHIVE_ITEMS = 6;
+const MAX_TECHMEME_ITEMS = 8;
+const MAX_INTEREST_ITEMS = 8;
 
 let renderSequence = 0;
 
@@ -36,6 +41,7 @@ export function createHomeTakeoverRoot(parent = document.body) {
  */
 export function renderHomeTakeover(root, model = {}, handlers = {}) {
   if (!root?.replaceChildren) throw new TypeError("A render root is required");
+  disposeTitlePeek(root);
 
   const safeModel = model && typeof model === "object" ? model : {};
   const mode = resolveMode(safeModel);
@@ -43,8 +49,16 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
     normalizeAction(action, index, mode === "return" ? "restart" : "open")
   );
   const archiveItems = asArray(safeModel.archiveItems)
-    .slice(0, 4)
+    .slice(0, MAX_ARCHIVE_ITEMS)
     .map((item, index) => normalizeArchiveItem(item, index));
+  const interests = asArray(safeModel.interests)
+    .slice(0, MAX_INTEREST_ITEMS)
+    .map(normalizeInterest)
+    .filter(Boolean);
+  const techmemeItems = asArray(safeModel.techmemeItems)
+    .slice(0, MAX_TECHMEME_ITEMS)
+    .map((item, index) => normalizeTechmemeItem(item, index))
+    .filter(Boolean);
   const renderId = ++renderSequence;
   const titleId = `home-takeover-title-${renderId}`;
   const statusId = `home-takeover-status-${renderId}`;
@@ -92,8 +106,18 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
 
   if (!safeModel.freshOverride && !(safeModel.loading && actions.length === 0 && archiveItems.length === 0)) {
     const discoveryActions = chooseDiscoveryActions(safeModel, mode, actions);
-    if (discoveryActions.length > 0 || archiveItems.length > 0) {
-      fragment.append(renderDiscovery(discoveryActions, archiveItems, handlers, status, renderId));
+    if (discoveryActions.length > 0 || archiveItems.length > 0 || interests.length > 0) {
+      fragment.append(renderDiscovery(
+        discoveryActions,
+        archiveItems,
+        interests,
+        handlers,
+        status,
+        renderId
+      ));
+    }
+    if (techmemeItems.length > 0) {
+      fragment.append(renderTechmeme(techmemeItems, handlers, status, renderId));
     }
   }
 
@@ -106,6 +130,7 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
 
   fragment.append(renderUtilities(safeModel, handlers, status), status);
   root.replaceChildren(fragment);
+  installTitlePeek(root);
   return root;
 }
 
@@ -156,12 +181,13 @@ function renderQuiet(actions, handlers, status) {
     createActionButton(focal, handlers, status, {
       className: "home-takeover__focal-action",
       showReason: true,
-      sourceLabel: "Evidence"
+      sourceLabel: "Evidence",
+      titleLimit: HOME_TITLE_LIMITS.focal
     })
   );
   section.append(focalWrap);
 
-  const remaining = actions.slice(1, 4);
+  const remaining = actions.slice(1, 6);
   if (remaining.length > 0) {
     const nav = element("nav", "home-takeover__destinations");
     nav.setAttribute("aria-label", "Other likely destinations");
@@ -170,7 +196,8 @@ function renderQuiet(actions, handlers, status) {
     remaining.forEach(action => {
       const item = element("li", "home-takeover__destination");
       item.append(createActionButton(action, handlers, status, {
-        className: "home-takeover__destination-action"
+        className: "home-takeover__destination-action",
+        titleLimit: HOME_TITLE_LIMITS.standard
       }));
       list.append(item);
     });
@@ -180,7 +207,7 @@ function renderQuiet(actions, handlers, status) {
   return section;
 }
 
-function renderDiscovery(actions, archiveItems, handlers, status, renderId) {
+function renderDiscovery(actions, archiveItems, interests, handlers, status, renderId) {
   const discoveryTitleId = `home-takeover-discovery-title-${renderId}`;
   const section = element("section", "home-takeover__discovery");
   section.setAttribute("aria-labelledby", discoveryTitleId);
@@ -195,22 +222,51 @@ function renderDiscovery(actions, archiveItems, handlers, status, renderId) {
   section.append(header);
 
   if (actions.length > 0) {
+    const routes = element("section", "home-takeover__routes-panel");
+    routes.setAttribute("aria-label", "More suggested routes");
+    routes.append(element("h3", "home-takeover__panel-label", "More routes"));
     const list = element("ol", "home-takeover__discovery-list");
     actions.forEach((action, index) => {
       const item = element("li", "home-takeover__discovery-item");
       item.dataset.rank = String(index + 1).padStart(2, "0");
       item.append(createActionButton(action, handlers, status, {
-        className: "home-takeover__discovery-action"
+        className: "home-takeover__discovery-action",
+        titleLimit: HOME_TITLE_LIMITS.compact
       }));
       list.append(item);
     });
-    section.append(list);
+    routes.append(list);
+    section.append(routes);
+  }
+
+  if (interests.length > 0) {
+    section.append(renderInterests(interests));
   }
 
   if (archiveItems.length > 0) {
     section.append(renderArchive(archiveItems, handlers, status, renderId));
   }
   return section;
+}
+
+function renderInterests(interests) {
+  const panel = element("section", "home-takeover__interests");
+  panel.setAttribute("aria-label", "Interest threads from the archive");
+  panel.append(element("h3", "home-takeover__panel-label", "Interest threads"));
+  const list = element("ul", "home-takeover__interest-list");
+  interests.forEach(interest => {
+    const item = element("li", "home-takeover__interest-item");
+    item.append(
+      element("strong", "home-takeover__interest-topic", interest.topic),
+      element("span", "home-takeover__interest-state", interestStateLabel(interest.interestState))
+    );
+    if (interest.itemCount > 1) {
+      item.append(element("span", "home-takeover__interest-count", String(interest.itemCount)));
+    }
+    list.append(item);
+  });
+  panel.append(list);
+  return panel;
 }
 
 function renderArchive(items, handlers, status, renderId) {
@@ -239,7 +295,12 @@ function createArchiveActionButton(item, handlers, status) {
 
   const verb = element("span", "home-takeover__verb", verbLabel(action.verb));
   const copy = element("span", "home-takeover__action-copy");
-  copy.append(element("strong", "home-takeover__action-title", action.title));
+  copy.append(createHomeTitleElement(
+    "strong",
+    "home-takeover__action-title",
+    action.title,
+    HOME_TITLE_LIMITS.compact
+  ));
 
   const context = element("span", "home-takeover__archive-context");
   if (action.domain) context.append(element("span", "home-takeover__domain", action.domain));
@@ -254,11 +315,73 @@ function createArchiveActionButton(item, handlers, status) {
   const arrow = element("span", "home-takeover__action-arrow", "↗");
   arrow.setAttribute("aria-hidden", "true");
   button.append(verb, copy, arrow);
+  prepareTitleAnchor(button, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
   wireCommand(button, callback, action.raw, status, {
     working: `${verbLabel(action.verb)} ${action.title}…`,
     failed: `Could not ${verbLabel(action.verb).toLowerCase()} ${action.title}. Try again.`,
+    context: action
+  });
+  return button;
+}
+
+function renderTechmeme(items, handlers, status, renderId) {
+  const titleId = `home-takeover-techmeme-title-${renderId}`;
+  const section = element("section", "home-takeover__techmeme");
+  section.setAttribute("aria-labelledby", titleId);
+  const header = element("header", "home-takeover__techmeme-header");
+  header.append(
+    element("p", "home-takeover__section-label", "Techmeme · filtered"),
+    element("h2", "home-takeover__techmeme-title", "Around your interests")
+  );
+  header.lastElementChild.id = titleId;
+  section.append(header);
+
+  const list = element("ol", "home-takeover__techmeme-list");
+  items.forEach(item => {
+    const row = element("li", "home-takeover__techmeme-item");
+    row.append(createTechmemeActionButton(item, handlers, status));
+    list.append(row);
+  });
+  section.append(list);
+  return section;
+}
+
+function createTechmemeActionButton(item, handlers, status) {
+  const { action } = item;
+  const button = element("button", "home-takeover__action home-takeover__techmeme-action");
+  button.type = "button";
+  button.dataset.actionId = action.id;
+  button.dataset.verb = cleanToken(action.verb);
+
+  const copy = element("span", "home-takeover__action-copy");
+  copy.append(createHomeTitleElement(
+    "strong",
+    "home-takeover__action-title",
+    action.title,
+    HOME_TITLE_LIMITS.standard
+  ));
+  const context = element("span", "home-takeover__techmeme-context");
+  context.append(element("span", "home-takeover__domain", "techmeme.com"));
+  if (item.matchedTopics.length > 0) {
+    context.append(element(
+      "span",
+      "home-takeover__techmeme-topics",
+      item.matchedTopics.join(" · ")
+    ));
+  }
+  copy.append(context);
+
+  const arrow = element("span", "home-takeover__action-arrow", "↗");
+  arrow.setAttribute("aria-hidden", "true");
+  button.append(element("span", "home-takeover__verb", "Read"), copy, arrow);
+  prepareTitleAnchor(button, action.title, action.verb);
+
+  const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
+  wireCommand(button, callback, action.raw, status, {
+    working: `Opening ${action.title}…`,
+    failed: `Could not open ${action.title}. Try again.`,
     context: action
   });
   return button;
@@ -278,8 +401,14 @@ function renderEngaged(model, actions, handlers, status) {
   const activityHeader = element("header", "home-takeover__activity-header");
   activityHeader.append(
     element("p", "home-takeover__section-label", "Current activity"),
-    element("h2", "home-takeover__activity-title", activity.action.title)
+    createHomeTitleElement(
+      "h2",
+      "home-takeover__activity-title",
+      activity.action.title,
+      HOME_TITLE_LIMITS.activity
+    )
   );
+  prepareTitleAnchor(activityHeader, activity.action.title);
   if (activity.action.domain) {
     activityHeader.append(element("p", "home-takeover__domain", activity.action.domain));
   }
@@ -291,14 +420,20 @@ function renderEngaged(model, actions, handlers, status) {
   if (activity.trail.length > 0) {
     const trail = element("ol", "home-takeover__trail");
     trail.setAttribute("aria-label", "Pages in this activity");
-    activity.trail.slice(0, 5).forEach((trailItem, index) => {
+    activity.trail.slice(0, 7).forEach((trailItem, index) => {
       const item = element("li", "home-takeover__trail-item");
       const marker = element("span", "home-takeover__trail-marker", String(index + 1).padStart(2, "0"));
       marker.setAttribute("aria-hidden", "true");
       const copy = element("span", "home-takeover__trail-copy");
-      copy.append(element("strong", "home-takeover__trail-title", trailItem.title));
+      copy.append(createHomeTitleElement(
+        "strong",
+        "home-takeover__trail-title",
+        trailItem.title,
+        HOME_TITLE_LIMITS.trail
+      ));
       if (trailItem.domain) copy.append(element("span", "home-takeover__trail-domain", trailItem.domain));
       item.append(marker, copy);
+      prepareTitleAnchor(item, trailItem.title);
       trail.append(item);
     });
     primary.append(trail);
@@ -306,7 +441,8 @@ function renderEngaged(model, actions, handlers, status) {
 
   primary.append(createActionButton(activity.action, handlers, status, {
     className: "home-takeover__activity-action",
-    showReason: false
+    showReason: false,
+    titleLimit: HOME_TITLE_LIMITS.standard
   }));
   region.append(primary);
 
@@ -319,7 +455,8 @@ function renderEngaged(model, actions, handlers, status) {
     fastActions.forEach(action => {
       const item = element("li", "home-takeover__fast-item");
       item.append(createActionButton(action, handlers, status, {
-        className: "home-takeover__fast-action"
+        className: "home-takeover__fast-action",
+        titleLimit: HOME_TITLE_LIMITS.compact
       }));
       list.append(item);
     });
@@ -338,7 +475,7 @@ function renderReturn(model, actions, handlers, status) {
   const choices = (rawNeighborhoods.length > 0
     ? rawNeighborhoods.map((item, index) => normalizeNeighborhood(item, index))
     : actions
-  ).filter(Boolean).slice(0, 4);
+  ).filter(Boolean).slice(0, 6);
 
   if (choices.length === 0) {
     section.append(renderEmpty("No recoverable landscape yet", "Open all tabs or keep the field clear."));
@@ -352,7 +489,8 @@ function renderReturn(model, actions, handlers, status) {
     rank.setAttribute("aria-hidden", "true");
     const button = createActionButton(choice, handlers, status, {
       className: "home-takeover__landscape-action",
-      showReason: true
+      showReason: true,
+      titleLimit: HOME_TITLE_LIMITS.landscape
     });
     item.append(rank, button);
     list.append(item);
@@ -451,7 +589,12 @@ function createActionButton(action, handlers, status, options = {}) {
 
   const verb = element("span", "home-takeover__verb", verbLabel(action.verb));
   const copy = element("span", "home-takeover__action-copy");
-  copy.append(element("strong", "home-takeover__action-title", action.title));
+  copy.append(createHomeTitleElement(
+    "strong",
+    "home-takeover__action-title",
+    action.title,
+    options.titleLimit || HOME_TITLE_LIMITS.standard
+  ));
   if (action.domain) copy.append(element("span", "home-takeover__domain", action.domain));
 
   const sourceList = element("ul", "home-takeover__sources");
@@ -466,6 +609,7 @@ function createActionButton(action, handlers, status, options = {}) {
   const arrow = element("span", "home-takeover__action-arrow", "↗");
   arrow.setAttribute("aria-hidden", "true");
   button.append(verb, copy, arrow);
+  prepareTitleAnchor(button, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
   wireCommand(button, callback, action.raw, status, {
@@ -474,6 +618,170 @@ function createActionButton(action, handlers, status, options = {}) {
     context: action
   });
   return button;
+}
+
+function createHomeTitleElement(tagName, className, title, maxGraphemes) {
+  const formatted = truncateHomeTitle(title, { maxGraphemes });
+  const titleNode = element(tagName, className, formatted.display);
+  titleNode.dataset.homeTitle = "true";
+  titleNode.dataset.fullTitle = formatted.full;
+  titleNode.dataset.titleShortened = String(formatted.truncated);
+  if (formatted.truncated) titleNode.setAttribute("aria-label", formatted.full);
+  return titleNode;
+}
+
+function prepareTitleAnchor(anchor, title, verb = "") {
+  anchor.dataset.homeTitleAnchor = "true";
+  anchor.dataset.fullTitle = truncateHomeTitle(title).full;
+  if (anchor.matches("button")) {
+    anchor.setAttribute("aria-label", `${verbLabel(verb)}: ${anchor.dataset.fullTitle}`);
+  }
+}
+
+function installTitlePeek(root) {
+  const abortController = new AbortController();
+  const { signal } = abortController;
+  const peek = element("div", "home-takeover__title-peek");
+  peek.hidden = true;
+  peek.setAttribute("aria-hidden", "true");
+  document.body.append(peek);
+
+  const finePointer = window.matchMedia?.("(hover: hover) and (pointer: fine)");
+  let activeAnchor = null;
+
+  const refreshAnchors = () => {
+    if (signal.aborted || !root.isConnected) return;
+    root.querySelectorAll("[data-home-title-anchor]").forEach(anchor => {
+      const title = anchor.querySelector("[data-home-title]");
+      if (!title) return;
+      const shortened = title.dataset.titleShortened === "true";
+      const clipped = title.scrollHeight > title.clientHeight + 1
+        || title.scrollWidth > title.clientWidth + 1;
+      anchor.dataset.titlePeekReady = String(shortened || clipped);
+    });
+  };
+
+  const hide = ({ suppress = false } = {}) => {
+    if (suppress && activeAnchor) activeAnchor.dataset.titlePeekSuppressed = "true";
+    activeAnchor = null;
+    peek.classList.remove("home-takeover__title-peek--visible");
+    peek.hidden = true;
+  };
+
+  const show = anchor => {
+    if (!anchor || anchor.dataset.titlePeekReady !== "true") return;
+    if (anchor.dataset.titlePeekSuppressed === "true") return;
+    const fullTitle = readableText(anchor.dataset.fullTitle);
+    if (!fullTitle) return;
+
+    activeAnchor = anchor;
+    peek.textContent = fullTitle;
+    peek.hidden = false;
+    peek.classList.remove("home-takeover__title-peek--visible");
+    positionTitlePeek(peek, anchor);
+    // Force the hidden starting frame so the named opacity/transform transition
+    // remains interruptible without delaying the content itself.
+    peek.getBoundingClientRect();
+    peek.classList.add("home-takeover__title-peek--visible");
+  };
+
+  const anchorFrom = target => {
+    const anchor = typeof target?.closest === "function"
+      ? target.closest("[data-home-title-anchor]")
+      : null;
+    return anchor && root.contains(anchor) ? anchor : null;
+  };
+
+  root.addEventListener("pointerover", event => {
+    if (finePointer && !finePointer.matches) return;
+    const anchor = anchorFrom(event.target);
+    if (!anchor || anchor.contains(event.relatedTarget)) return;
+    delete anchor.dataset.titlePeekSuppressed;
+    show(anchor);
+  }, { signal });
+
+  root.addEventListener("pointerout", event => {
+    const anchor = anchorFrom(event.target);
+    if (!anchor || anchor !== activeAnchor || anchor.contains(event.relatedTarget)) return;
+    if (anchor.contains(document.activeElement)) return;
+    delete anchor.dataset.titlePeekSuppressed;
+    hide();
+  }, { signal });
+
+  root.addEventListener("focusin", event => {
+    const anchor = anchorFrom(event.target);
+    if (!anchor) return;
+    delete anchor.dataset.titlePeekSuppressed;
+    show(anchor);
+  }, { signal });
+
+  root.addEventListener("focusout", event => {
+    const anchor = anchorFrom(event.target);
+    if (!anchor || anchor !== activeAnchor || anchor.contains(event.relatedTarget)) return;
+    if (finePointer?.matches && anchor.matches(":hover")) return;
+    delete anchor.dataset.titlePeekSuppressed;
+    hide();
+  }, { signal });
+
+  root.addEventListener("keydown", event => {
+    if (event.key !== "Escape" || !activeAnchor) return;
+    hide({ suppress: true });
+    event.stopPropagation();
+  }, { signal });
+
+  root.addEventListener("click", () => hide(), { capture: true, signal });
+  window.addEventListener("scroll", () => {
+    if (activeAnchor && (
+      activeAnchor.matches(":hover")
+      || activeAnchor.contains(document.activeElement)
+    )) {
+      positionTitlePeek(peek, activeAnchor);
+      return;
+    }
+    hide();
+  }, { capture: true, passive: true, signal });
+  window.addEventListener("resize", () => hide(), { passive: true, signal });
+  window.addEventListener("hashchange", () => hide(), { signal });
+
+  refreshAnchors();
+  document.fonts?.ready?.then(refreshAnchors).catch(() => {});
+
+  root.__tabtopiaTitlePeekCleanup = () => {
+    abortController.abort();
+    peek.remove();
+    delete root.__tabtopiaTitlePeekCleanup;
+  };
+}
+
+function positionTitlePeek(peek, anchor) {
+  const padding = 16;
+  const gap = 8;
+  const anchorBounds = anchor.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  const width = Math.min(
+    Math.max(anchorBounds.width, 280),
+    560,
+    Math.max(0, viewportWidth - (padding * 2))
+  );
+  peek.style.width = `${width}px`;
+  peek.style.left = "0px";
+  peek.style.top = "0px";
+
+  const peekBounds = peek.getBoundingClientRect();
+  const maximumLeft = Math.max(padding, viewportWidth - width - padding);
+  const left = Math.min(Math.max(padding, anchorBounds.left), maximumLeft);
+  const below = anchorBounds.bottom + gap;
+  const above = anchorBounds.top - peekBounds.height - gap;
+  const top = below + peekBounds.height <= viewportHeight - padding
+    ? below
+    : Math.max(padding, above);
+  peek.style.left = `${Math.round(left)}px`;
+  peek.style.top = `${Math.round(top)}px`;
+}
+
+function disposeTitlePeek(root) {
+  root.__tabtopiaTitlePeekCleanup?.();
 }
 
 function appendCommand(parent, label, callback, payload, status, className) {
@@ -639,6 +947,36 @@ function normalizeArchiveItem(raw, index) {
   };
 }
 
+function normalizeInterest(raw) {
+  const source = raw && typeof raw === "object" ? raw : { topic: raw };
+  const topic = readableText(source.topic);
+  if (!topic) return null;
+  return {
+    topic,
+    interestState: readableText(source.interestState) || "archive",
+    itemCount: Math.max(1, Math.floor(Number(source.itemCount) || 1))
+  };
+}
+
+function normalizeTechmemeItem(raw, index) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const rawAction = source.action && typeof source.action === "object" ? source.action : {};
+  const action = normalizeAction({
+    ...rawAction,
+    id: readableText(source.id) || readableText(rawAction.id) || `techmeme-${index + 1}`,
+    title: readableText(source.title) || readableText(rawAction.title),
+    reasons: [],
+    sources: ["techmeme"]
+  }, index, "open");
+  if (!/^https:\/\/(?:www\.)?techmeme\.com\//iu.test(action.target?.url || "")) return null;
+  action.raw = rawAction;
+  return {
+    action,
+    matchedTopics: unique(asArray(source.matchedTopics).map(readableText).filter(Boolean)).slice(0, 3),
+    publishedAt: Number(source.publishedAt) || 0
+  };
+}
+
 function interestStateLabel(value) {
   const state = readableText(value);
   if (state === "active-now") return "active now";
@@ -654,18 +992,18 @@ function chooseFastActions(actions, primaryId) {
 }
 
 function chooseDiscoveryActions(model, mode, actions) {
-  if (mode === "quiet") return actions.slice(4, 10);
+  if (mode === "quiet") return actions.slice(6, 18);
   if (mode === "return") {
     return asArray(model.neighborhoods).length > 0
-      ? actions.slice(0, 6)
-      : actions.slice(4, 10);
+      ? actions.slice(0, 8)
+      : actions.slice(6, 18);
   }
 
   const activity = normalizeActivity(model.primaryActivity, model.neighborhoods, actions);
   const fastActions = activity ? chooseFastActions(actions, activity.action.id) : [];
   const represented = new Set(fastActions.map(action => action.id));
   if (activity?.action?.id) represented.add(activity.action.id);
-  return actions.filter(action => !represented.has(action.id)).slice(0, 6);
+  return actions.filter(action => !represented.has(action.id)).slice(0, 10);
 }
 
 function uniqueActions(actions) {
@@ -679,7 +1017,11 @@ function uniqueActions(actions) {
 }
 
 function hasRenderableContent(model, actions, archiveItems = []) {
-  return archiveItems.length > 0 || actions.length > 0 || Boolean(model.primaryActivity) || asArray(model.neighborhoods).length > 0;
+  return archiveItems.length > 0
+    || asArray(model.techmemeItems).length > 0
+    || actions.length > 0
+    || Boolean(model.primaryActivity)
+    || asArray(model.neighborhoods).length > 0;
 }
 
 function resolveMode(model) {

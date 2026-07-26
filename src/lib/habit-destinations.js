@@ -1,7 +1,7 @@
 import { normalizeIdentity } from "./revisit-model.js";
 
 const DEFAULT_MAX_SCORED_PAGES = 128;
-const DEFAULT_RESULT_LIMIT = 6;
+const DEFAULT_RESULT_LIMIT = 10;
 const SUPPORTED_PROTOCOLS = new Set(["http:", "https:"]);
 
 export const HABIT_DESTINATION_DEFAULTS = Object.freeze({
