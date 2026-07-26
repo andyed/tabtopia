@@ -13,7 +13,7 @@ test.describe("development start-page recognition", () => {
     }
 
     const newtab = await context.newPage();
-    await newtab.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html`, {
+    await newtab.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html#/treemap`, {
       waitUntil: "domcontentloaded"
     });
 
@@ -93,7 +93,7 @@ test.describe("development start-page recognition", () => {
     }, { offsetMs: 8 * 60 * 60 * 1000 });
 
     const newtab = await context.newPage();
-    await newtab.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html`, {
+    await newtab.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html#/treemap`, {
       waitUntil: "domcontentloaded"
     });
     await newtab.evaluate(url => new Promise((resolve, reject) => {

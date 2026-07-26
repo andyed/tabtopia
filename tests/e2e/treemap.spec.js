@@ -33,6 +33,8 @@ async function openApp(context, server) {
   nt.on("console", msg => { if (msg.type() === "error") console.log("BROWSER ERROR:", msg.text()); });
   nt.on("pageerror", err => console.log("PAGE ERROR:", err.message));
   await nt.goto("chrome://newtab/", { waitUntil: "domcontentloaded" });
+  await nt.evaluate(() => { window.location.hash = "/treemap"; });
+  await expect(nt.locator(".visualization-container")).toBeVisible();
 
   // Treemap is painted from the live tab list; wait for our known cells to exist.
   await expect(nt.locator(CELL("Alpha Page"))).toHaveCount(1);
@@ -67,7 +69,13 @@ test.describe("treemap ↔ readout", () => {
 
       const nativeTimeout = window.setTimeout.bind(window);
       window.setTimeout = (callback, delay, ...args) => {
-        if (delay === 500) window.__treemapPerfProbe.timeout500 += 1;
+        // Scope this drag/render budget to treemap-owned timers. The adaptive
+        // Home controller also debounces at 500 ms and can legitimately fire
+        // during browser startup without saying anything about per-cell work.
+        const stack = new Error().stack || "";
+        if (delay === 500 && stack.includes("/treemap.js")) {
+          window.__treemapPerfProbe.timeout500 += 1;
+        }
         return nativeTimeout(callback, delay, ...args);
       };
 

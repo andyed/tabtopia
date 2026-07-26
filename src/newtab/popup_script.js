@@ -45,14 +45,15 @@ document.addEventListener("DOMContentLoaded", () => {
      * extension won't be mistaken for ours.
      */
     async function openMainView() {
-        const mainViewUrl = chrome.runtime.getURL("src/newtab/newtab.html");
+        const mainViewBaseUrl = chrome.runtime.getURL("src/newtab/newtab.html");
+        const mainViewUrl = `${mainViewBaseUrl}#/home`;
         const tabs = await chrome.tabs.query({});
         const existing = tabs.find(tab =>
-            (tab.url || tab.pendingUrl || "").startsWith(mainViewUrl)
+            (tab.url || tab.pendingUrl || "").startsWith(mainViewBaseUrl)
         );
 
         if (existing) {
-            chrome.tabs.update(existing.id, { active: true });
+            chrome.tabs.update(existing.id, { active: true, url: mainViewUrl });
             chrome.windows.update(existing.windowId, { focused: true });
         } else {
             chrome.tabs.create({ url: mainViewUrl, active: true });

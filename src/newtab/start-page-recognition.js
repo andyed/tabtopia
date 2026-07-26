@@ -1,39 +1,46 @@
-import {
-  clearRecentHistoryCache,
-  getRecentHistory,
-  recentHistoryCacheConfig
-} from "../lib/history-cache.js";
-import { createBrowsingSnapshot } from "../lib/browsing-snapshot.js";
-import {
-  HABIT_DESTINATION_DEFAULTS,
-  prepareHabitCandidatePool,
-  rankHabitDestinations
-} from "../lib/habit-destinations.js";
-import { recognizeStartPageState, stateDisplayName } from "../lib/start-page-state.js";
-import { forecastResumption } from "../lib/resumption-forecast.js";
+import { stateDisplayName } from "../lib/start-page-state.js";
+import { buildArchiveEnrichment } from "../lib/archive-enrichment.js";
+import { buildDeferredIntentions } from "../lib/deferred-intentions.js";
+import { buildStartPageFeed } from "../lib/start-page-feed.js";
+import { createStartPageController } from "./start-page-controller.js";
+import { createStartPageActionExecutor } from "./start-page-actions.js";
+import { renderHomeTakeover } from "./home-takeover.js";
 
-const HISTORY_HORIZON_MS = 24 * 60 * 60 * 1000;
-const HISTORY_ITEM_LIMIT = 80;
-const HABIT_HISTORY_ITEM_LIMIT = recentHistoryCacheConfig.maxResults;
-// Visits are what history-recovered neighborhoods are built from, so the
-// provenance fetch is now load-bearing rather than a sample. It stays bounded:
-// one getVisits call per item, and the builder caps how many become nodes.
-const PROVENANCE_ITEM_LIMIT = 60;
-const VISITS_PER_ITEM_LIMIT = 64;
-const REFRESH_DEBOUNCE_MS = 500;
+const HOME_TAKEOVER_FLAG = "tabtopiaHomeTakeoverV1";
+const HOME_MODEL_CACHE_KEY = "tabtopiaHomeModelV1";
+const HOME_MODEL_CACHE_VERSION = 1;
+const HOME_MODEL_CACHE_TTL_MS = 30 * 60 * 1000;
+let controller = null;
+let installType = "normal";
+let homeEnabled = false;
+let freshOverride = false;
+let latestHomeModel = null;
+const executeHomeAction = createStartPageActionExecutor();
+let cachedHomeRead = null;
 
-let refreshTimer = null;
-let refreshInFlight = null;
+if (window.location.hash === "#/home") {
+  homeEnabled = true;
+  showInitialHome();
+}
 
 startWhenIdle();
 
 async function startWhenIdle() {
-  const installType = await getInstallType();
-  if (installType !== "development") return;
+  installType = await getInstallType();
+  homeEnabled = await shouldUseHomeTakeover(installType);
+  if (homeEnabled) showInitialHome();
 
-  const start = () => {
-    scheduleRefresh(0);
-    installRefreshListeners();
+  const start = async () => {
+    // The hash can change between module evaluation and the idle start (for
+    // example a direct jump to the legacy landscape). Resolve it again here so
+    // an early route never gets lost before the hashchange listener exists.
+    homeEnabled = await shouldUseHomeTakeover(installType);
+    if (homeEnabled) showInitialHome();
+    else deactivateHome();
+    window.addEventListener("hashchange", handleRouteChange);
+    window.addEventListener("pageshow", handlePageShow);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    if (installType === "development" || homeEnabled) ensureControllerStarted();
   };
 
   if (document.readyState === "complete") {
@@ -41,6 +48,52 @@ async function startWhenIdle() {
   } else {
     window.addEventListener("load", () => scheduleIdle(start), { once: true });
   }
+}
+
+function showInitialHome() {
+  activateHome();
+  const root = document.getElementById("startPageHome");
+  if (root && root.childElementCount === 0) {
+    renderHome({ loading: true, mode: "quiet", state: "launch", actions: [] });
+  }
+  restoreCachedHome().catch(() => {});
+}
+
+async function restoreCachedHome() {
+  if (!chrome.storage?.session?.get) return;
+  if (!cachedHomeRead) cachedHomeRead = chrome.storage.session.get(HOME_MODEL_CACHE_KEY);
+  const stored = (await cachedHomeRead)?.[HOME_MODEL_CACHE_KEY];
+  if (!stored || stored.version !== HOME_MODEL_CACHE_VERSION) return;
+  if (Date.now() - Number(stored.cachedAt || 0) > HOME_MODEL_CACHE_TTL_MS) return;
+  if (!homeEnabled || latestHomeModel) return;
+  renderHome({
+    ...stored.model,
+    loading: true,
+    stale: true,
+    error: null,
+    freshOverride: false
+  });
+}
+
+function cacheHomeModel(model) {
+  if (!chrome.storage?.session?.set) return;
+  chrome.storage.session.set({
+    [HOME_MODEL_CACHE_KEY]: {
+      version: HOME_MODEL_CACHE_VERSION,
+      cachedAt: Date.now(),
+      model
+    }
+  }).catch(() => {});
+}
+
+function ensureControllerStarted() {
+  if (controller) return false;
+  controller = createStartPageController({
+    onUpdate: handleStartPageUpdate,
+    onError: renderFailure
+  });
+  controller.start();
+  return true;
 }
 
 function scheduleIdle(callback) {
@@ -51,95 +104,220 @@ function scheduleIdle(callback) {
   }
 }
 
-function installRefreshListeners() {
-  chrome.tabs.onCreated.addListener(() => scheduleRefresh());
-  chrome.tabs.onRemoved.addListener(() => scheduleRefresh());
-  chrome.tabs.onActivated.addListener(() => scheduleRefresh());
-  chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-    if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") scheduleRefresh();
+function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinations, ...extra }) {
+  const sourceState = { snapshot, recognition, forecast, habitDestinations, ...extra };
+  const deferredIntentions = buildDeferredIntentions({
+    bookmarks: extra.bookmarks,
+    historyItems: extra.historyPool,
+    openTabs: (extra.windows || []).flatMap(window => window.tabs || []),
+    now: extra.generatedAt
   });
-  chrome.windows.onCreated.addListener(() => scheduleRefresh());
-  chrome.windows.onRemoved.addListener(() => scheduleRefresh());
-  chrome.windows.onFocusChanged.addListener(() => scheduleRefresh());
-  chrome.history.onVisited.addListener(() => invalidateHistoryAndRefresh());
-  chrome.history.onVisitRemoved.addListener(() => invalidateHistoryAndRefresh());
-}
-
-function invalidateHistoryAndRefresh() {
-  clearRecentHistoryCache()
-    .catch(() => {})
-    .finally(() => scheduleRefresh());
-}
-
-function scheduleRefresh(delay = REFRESH_DEBOUNCE_MS) {
-  clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => {
-    refreshTimer = null;
-    refreshRecognition().catch(error => renderFailure(error));
-  }, delay);
-}
-
-async function refreshRecognition() {
-  if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = collectRecognition().finally(() => {
-    refreshInFlight = null;
+  const baseFeed = buildStartPageFeed({
+    state: recognition.state,
+    habitDestinations,
+    deferredIntentions,
+    resumptionActivities: forecast,
+    neighborhoods: snapshot.neighborhoods,
+    generatedAt: extra.generatedAt
   });
-  return refreshInFlight;
-}
-
-async function collectRecognition() {
-  const now = Date.now();
-  const [currentWindow, windows, historyPool, backgroundState] = await Promise.all([
-    getCurrentWindow(),
-    getAllWindows(),
-    getRecentHistory({
-      startTime: now - recentHistoryCacheConfig.horizonMs,
-      maxResults: HABIT_HISTORY_ITEM_LIMIT
-    }),
-    getBackgroundState()
-  ]);
-  const historyItems = historyPool
-    .filter(item => Number(item?.lastVisitTime || 0) >= now - HISTORY_HORIZON_MS)
-    .slice(0, HISTORY_ITEM_LIMIT);
-  const habitPool = prepareHabitCandidatePool(historyPool, {
-    maxScoredPages: HABIT_DESTINATION_DEFAULTS.maxScoredPages
+  const archiveEnrichment = buildArchiveEnrichment({
+    archiveItems: archiveRowsForEnrichment(extra.archiveSnapshot),
+    semanticItems: semanticRowsForEnrichment(extra.archiveSnapshot),
+    contextItems: [
+      ...(snapshot.history?.items || []),
+      ...(snapshot.tabs || [])
+    ],
+    selectedUrls: selectedFeedUrls(baseFeed),
+    now: extra.generatedAt
   });
-  const [visitsByUrl, historyScores] = await Promise.all([
-    getRecentVisitProvenance(historyItems.slice(0, PROVENANCE_ITEM_LIMIT)),
-    scoreHabitHistory(habitPool.candidates)
-  ]);
-  const snapshot = createBrowsingSnapshot({
-    now,
-    currentWindowId: currentWindow?.id,
-    windows,
-    historyItems,
-    visitsByUrl,
-    activityByTab: Object.fromEntries(backgroundState?.tabActivityLog || []),
-    tabHistory: backgroundState?.tabHistory || [],
-    tabRelationships: backgroundState?.tabRelationships || []
-  });
-  const recognition = recognizeStartPageState(snapshot);
-  const forecast = forecastResumption(snapshot, { state: recognition.state });
-  const habitDestinations = rankHabitDestinations({
-    pool: habitPool,
-    historyScores,
-    openTabs: windows.flatMap(window => window.tabs || []),
-    now,
-    limit: HABIT_DESTINATION_DEFAULTS.resultLimit
-  });
+  const feed = {
+    ...baseFeed,
+    archiveItems: archiveEnrichment.items,
+    interests: archiveEnrichment.interests,
+    archiveSourceCounts: archiveEnrichment.sourceCounts,
+    archiveStatus: extra.archiveSnapshot?.status || "empty"
+  };
+  latestHomeModel = homeModelFrom(feed, recognition, forecast, snapshot);
+  cacheHomeModel(latestHomeModel);
 
   window.tabtopiaStartPageRecognition = {
-    snapshot,
-    recognition,
-    forecast,
-    habitDestinations,
-    refresh: refreshRecognition
+    ...sourceState,
+    deferredIntentions,
+    archiveEnrichment,
+    feed,
+    homeModel: latestHomeModel,
+    refresh: () => controller?.refresh()
   };
-  renderInspector(snapshot, recognition, forecast, habitDestinations);
+  if (installType === "development") {
+    renderInspector(snapshot, recognition, forecast, habitDestinations);
+  }
+  if (homeEnabled) {
+    if (freshOverride) renderFreshHome();
+    else renderSuggestedHome();
+  }
   window.dispatchEvent(new CustomEvent("tabtopia-state-recognized", {
-    detail: { snapshot, recognition, forecast, habitDestinations }
+    detail: { ...sourceState, deferredIntentions, archiveEnrichment, feed, homeModel: latestHomeModel }
   }));
-  return { snapshot, recognition, forecast, habitDestinations };
+}
+
+function archiveRowsForEnrichment(snapshot) {
+  return snapshot?.archive || [];
+}
+
+function semanticRowsForEnrichment(snapshot) {
+  return (snapshot?.related || []).map((item, index) => ({
+    ...item,
+    rank: index + 1
+  }));
+}
+
+function selectedFeedUrls(feed) {
+  return [
+    ...(feed?.actions || []).map(item => item?.action?.target?.url),
+    feed?.primaryActivity?.action?.target?.url
+  ].filter(Boolean);
+}
+
+function homeModelFrom(feed, recognition, forecast, snapshot) {
+  const actions = feed.actions.map(action => ({
+    ...action.action,
+    id: action.id,
+    sources: action.sources,
+    reasons: action.reasons.map(reason => reason.text)
+  }));
+  const resumptionActivities = (forecast?.candidates || []).map(candidate => ({
+    ...candidate,
+    items: snapshot.neighborhoods.find(neighborhood => neighborhood.id === candidate.id)?.items || []
+  }));
+  const leadingActivity = feed.primaryActivity
+    ? {
+        ...feed.primaryActivity,
+        items: snapshot.neighborhoods.find(
+          neighborhood => neighborhood.id === feed.primaryActivity.id
+        )?.items || []
+      }
+    : feed.mode === "engaged" && actions[0]
+      ? {
+          ...actions[0],
+          items: resumptionActivities.find(candidate =>
+            candidate.action?.target?.url === actions[0].target?.url
+          )?.items || []
+        }
+      : null;
+  return {
+    ...feed,
+    actions,
+    primaryActivity: leadingActivity,
+    neighborhoods: feed.mode === "return" ? resumptionActivities : [],
+    stateLabel: stateDisplayName(recognition.state),
+    summary: HOME_STATE_SUMMARIES[recognition.state] || "Choose where to put your attention next.",
+    loading: false,
+    error: null,
+    freshOverride: false
+  };
+}
+
+const HOME_STATE_SUMMARIES = Object.freeze({
+  launch: "A quiet start, shaped by what you return to.",
+  threshold: "Nearby work is available, without demanding the whole screen.",
+  continuation: "",
+  reinstatement: "Your recent trail is still close enough to recover.",
+  reorientation: "Re-enter from a useful starting point.",
+  handoff: "Continue a trail recovered from elsewhere."
+});
+
+function renderSuggestedHome() {
+  if (!latestHomeModel) return;
+  freshOverride = false;
+  renderHome(latestHomeModel);
+}
+
+function renderFreshHome() {
+  if (!latestHomeModel) return;
+  freshOverride = true;
+  renderHome({
+    ...latestHomeModel,
+    mode: "quiet",
+    state: "launch",
+    stateLabel: "Fresh start",
+    summary: "Nothing is being inferred for this tab.",
+    actions: [],
+    primaryActivity: null,
+    neighborhoods: [],
+    archiveItems: [],
+    interests: [],
+    freshOverride: true
+  });
+}
+
+function renderHome(model) {
+  const root = document.getElementById("startPageHome");
+  if (!root) return;
+  activateHome();
+  try {
+    renderHomeTakeover(root, model, {
+      onAction: handleHomeAction,
+      onStartFresh: renderFreshHome,
+      onShowSuggested: renderSuggestedHome,
+      onOpenTreemap: openTreemap
+    });
+    window.tabtopiaStartPageHome = { model, freshOverride };
+  } catch (error) {
+    console.warn("[StartPageHome] rendering failed", error);
+    deactivateHome();
+  }
+}
+
+async function handleHomeAction(action) {
+  const result = await executeHomeAction(action);
+  if (!result.ok && latestHomeModel) {
+    renderHome({
+      ...(freshOverride ? { ...latestHomeModel, mode: "quiet", actions: [], primaryActivity: null } : latestHomeModel),
+      freshOverride,
+      error: result.error?.message || "That destination could not be opened."
+    });
+  }
+  return result;
+}
+
+function openTreemap() {
+  window.location.hash = "/treemap";
+  deactivateHome();
+}
+
+async function handleRouteChange() {
+  homeEnabled = await shouldUseHomeTakeover(installType);
+  if (homeEnabled) {
+    if (freshOverride) renderFreshHome();
+    else if (latestHomeModel) renderSuggestedHome();
+    else renderHome({ loading: true, mode: "quiet", state: "launch", actions: [] });
+    const startedNow = ensureControllerStarted();
+    if (!startedNow) controller.refresh().catch(() => {});
+  } else {
+    deactivateHome();
+  }
+}
+
+function handlePageShow() {
+  handleRouteChange().catch(() => {});
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === "visible" && homeEnabled) {
+    controller?.refresh().catch(() => {});
+  }
+}
+
+function activateHome() {
+  document.body.classList.add("home-takeover-active");
+  const root = document.getElementById("startPageHome");
+  if (root) root.hidden = false;
+}
+
+function deactivateHome() {
+  document.body.classList.remove("home-takeover-active");
+  const root = document.getElementById("startPageHome");
+  if (root) root.hidden = true;
 }
 
 function renderInspector(snapshot, recognition, forecast, habitDestinations) {
@@ -153,7 +331,7 @@ function renderInspector(snapshot, recognition, forecast, habitDestinations) {
 
   const details = document.createElement("details");
   details.className = "state-inspector__primary";
-  details.open = true;
+  details.open = !homeEnabled;
   const summary = document.createElement("summary");
   const state = textElement("span", stateName, "state-inspector__state");
   const score = textElement("span", `${confidence}%`, "state-inspector__confidence");
@@ -638,13 +816,24 @@ function getOrCreateInspector() {
 
 function renderFailure(error) {
   console.warn("[StartPageRecognition] inspector failed", error);
-  const inspector = getOrCreateInspector();
-  inspector.dataset.state = "error";
-  inspector.replaceChildren(textElement(
-    "p",
-    `State recognition unavailable: ${String(error?.message || error)}`,
-    "state-inspector__error"
-  ));
+  const message = `State recognition unavailable: ${String(error?.message || error)}`;
+  if (homeEnabled) {
+    renderHome({
+      loading: false,
+      mode: "quiet",
+      state: "launch",
+      stateLabel: "Unavailable",
+      summary: "The adaptive view could not be prepared.",
+      actions: [],
+      neighborhoods: [],
+      error: message
+    });
+  }
+  if (installType === "development") {
+    const inspector = getOrCreateInspector();
+    inspector.dataset.state = "error";
+    inspector.replaceChildren(textElement("p", message, "state-inspector__error"));
+  }
 }
 
 function textElement(tag, text, className = "") {
@@ -676,74 +865,29 @@ function formatDistance(distanceMs) {
   return `${Math.round(distanceMs / 60000)}m`;
 }
 
-async function getRecentVisitProvenance(historyItems) {
-  const cutoff = Date.now() - HISTORY_HORIZON_MS;
-  const entries = await Promise.all(historyItems.map(async item => [
-    item.url,
-    (await getVisits(item.url))
-      .filter(visit => Number(visit?.visitTime || 0) >= cutoff)
-      .slice(-VISITS_PER_ITEM_LIMIT)
-  ]));
-  return Object.fromEntries(entries);
-}
-
-function getVisits(url) {
-  return new Promise(resolve => {
-    chrome.history.getVisits({ url }, visits => {
-      if (chrome.runtime.lastError) return resolve([]);
-      resolve(Array.isArray(visits) ? visits : []);
-    });
-  });
-}
-
-function getAllWindows() {
-  return new Promise((resolve, reject) => {
-    chrome.windows.getAll({ populate: true }, windows => {
-      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-      resolve(windows || []);
-    });
-  });
-}
-
-function getCurrentWindow() {
-  return new Promise((resolve, reject) => {
-    chrome.windows.getCurrent(window => {
-      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-      resolve(window || null);
-    });
-  });
-}
-
-function getBackgroundState() {
-  return chrome.runtime.sendMessage({ action: "getState" }).catch(() => ({
-    tabActivityLog: [],
-    tabHistory: [],
-    tabRelationships: []
-  }));
-}
-
-async function scoreHabitHistory(candidates) {
-  if (!Array.isArray(candidates) || candidates.length === 0) return [];
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: "scoreHabitHistory",
-      candidates: candidates.map(candidate => ({
-        key: candidate.key,
-        url: candidate.url
-      }))
-    });
-    return response?.success && Array.isArray(response.scores) ? response.scores : [];
-  } catch {
-    return [];
-  }
-}
-
 function getInstallType() {
   return new Promise(resolve => {
     if (!chrome.management?.getSelf) return resolve("normal");
     chrome.management.getSelf(info => {
       if (chrome.runtime.lastError) return resolve("normal");
       resolve(info?.installType || "normal");
+    });
+  });
+}
+
+async function shouldUseHomeTakeover(currentInstallType) {
+  if (window.location.hash === "#/treemap") return false;
+  if (window.location.hash === "#/home") return true;
+  const persisted = await getStoredHomeFlag();
+  return typeof persisted === "boolean" ? persisted : currentInstallType === "development";
+}
+
+function getStoredHomeFlag() {
+  return new Promise(resolve => {
+    if (!chrome.storage?.local?.get) return resolve(undefined);
+    chrome.storage.local.get([HOME_TAKEOVER_FLAG], result => {
+      if (chrome.runtime.lastError) return resolve(undefined);
+      resolve(result?.[HOME_TAKEOVER_FLAG]);
     });
   });
 }

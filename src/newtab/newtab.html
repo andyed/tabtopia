@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="fonts.css">
   <link rel="stylesheet" href="identity.css">
   <link rel="stylesheet" href="start-page-recognition.css">
+  <link rel="stylesheet" href="home-takeover.css">
 </head>
 
 <body>
@@ -24,7 +25,7 @@
     <div class="logo">tabtopia</div>
     <div class="header-controls">
       <button class="view-toggle" title="Toggle view">
-        <a href="newtab.html" class="active">
+        <a href="newtab.html#/home" class="active">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
             class="icon icon-tabler icons-tabler-outline icon-tabler-chart-treemap">
@@ -76,6 +77,7 @@
       </div>
     </div>
   </header>
+  <main id="startPageHome" class="home-takeover" hidden aria-live="polite"></main>
   <div class="visualization-container">
     <div id="treemap"></div>
     <aside id="readout" aria-label="Tab context">

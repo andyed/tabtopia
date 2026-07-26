@@ -27,6 +27,8 @@ async function openApp(context, server) {
 
   const nt = await context.newPage();
   await nt.goto("chrome://newtab/", { waitUntil: "domcontentloaded" });
+  await nt.evaluate(() => { window.location.hash = "/treemap"; });
+  await expect(nt.locator(".visualization-container")).toBeVisible();
   await expect(nt.locator(CELL("Alpha Page"))).toHaveCount(1);
   return nt;
 }

@@ -117,8 +117,12 @@ export function decorateViewLinks(query) {
     document.querySelectorAll(".view-toggle a[href]").forEach(link => {
         const raw = link.getAttribute("href");
         if (!raw || !raw.includes(".html")) return;
-        const path = raw.split("?")[0];
-        link.setAttribute("href", query ? `${path}?q=${encodeURIComponent(query)}` : path);
+        const hashIndex = raw.indexOf("#");
+        const hash = hashIndex >= 0 ? raw.slice(hashIndex) : "";
+        const withoutHash = hashIndex >= 0 ? raw.slice(0, hashIndex) : raw;
+        const path = withoutHash.split("?")[0];
+        const search = query ? `?q=${encodeURIComponent(query)}` : "";
+        link.setAttribute("href", `${path}${search}${hash}`);
     });
 }
 
