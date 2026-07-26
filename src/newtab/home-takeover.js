@@ -129,13 +129,6 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
     }
   }
 
-  if (safeModel.stale) {
-    fragment.querySelectorAll("[data-action-id]").forEach(button => {
-      button.disabled = true;
-      button.setAttribute("aria-disabled", "true");
-    });
-  }
-
   fragment.append(renderUtilities(safeModel, handlers, status), status);
   root.replaceChildren(fragment);
   installTitlePeek(root);
@@ -186,7 +179,7 @@ function renderQuiet(actions, handlers, status) {
   const focalWrap = element("div", "home-takeover__focal");
   focalWrap.append(
     element("p", "home-takeover__section-label", "Most likely next"),
-    createActionButton(focal, handlers, status, {
+    createActionLink(focal, handlers, status, {
       className: "home-takeover__focal-action",
       showReason: true,
       sourceLabel: "Evidence",
@@ -203,7 +196,7 @@ function renderQuiet(actions, handlers, status) {
     const list = element("ol", "home-takeover__destination-list");
     remaining.forEach(action => {
       const item = element("li", "home-takeover__destination");
-      item.append(createActionButton(action, handlers, status, {
+      item.append(createActionLink(action, handlers, status, {
         className: "home-takeover__destination-action",
         titleLimit: HOME_TITLE_LIMITS.standard
       }));
@@ -237,7 +230,7 @@ function renderDiscovery(actions, archiveItems, interests, handlers, status, ren
     actions.forEach((action, index) => {
       const item = element("li", "home-takeover__discovery-item");
       item.dataset.rank = String(index + 1).padStart(2, "0");
-      item.append(createActionButton(action, handlers, status, {
+      item.append(createActionLink(action, handlers, status, {
         className: "home-takeover__discovery-action",
         titleLimit: HOME_TITLE_LIMITS.compact
       }));
@@ -287,19 +280,16 @@ function renderArchive(items, handlers, status, renderId) {
 
   items.forEach(item => {
     const row = element("li", "home-takeover__archive-item");
-    row.append(createArchiveActionButton(item, handlers, status));
+    row.append(createArchiveActionLink(item, handlers, status));
     list.append(row);
   });
   archive.append(label, list);
   return archive;
 }
 
-function createArchiveActionButton(item, handlers, status) {
+function createArchiveActionLink(item, handlers, status) {
   const { action } = item;
-  const button = element("button", "home-takeover__action home-takeover__archive-action");
-  button.type = "button";
-  button.dataset.actionId = action.id;
-  button.dataset.verb = cleanToken(action.verb);
+  const link = createNavigationAnchor(action, "home-takeover__action home-takeover__archive-action");
 
   const verb = element("span", "home-takeover__verb", verbLabel(action.verb));
   const copy = element("span", "home-takeover__action-copy");
@@ -320,18 +310,16 @@ function createArchiveActionButton(item, handlers, status) {
   const signal = [interestStateLabel(item.interestState), item.reason].filter(Boolean).join(" — ");
   if (signal) copy.append(element("span", "home-takeover__archive-signal", signal));
 
-  const arrow = element("span", "home-takeover__action-arrow", "↗");
-  arrow.setAttribute("aria-hidden", "true");
-  button.append(verb, copy, arrow);
-  prepareTitleAnchor(button, action.title, action.verb);
+  link.append(verb, copy);
+  prepareTitleAnchor(link, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
-  wireCommand(button, callback, action.raw, status, {
+  wireNavigation(link, callback, action.raw, status, {
     working: `${verbLabel(action.verb)} ${action.title}…`,
     failed: `Could not ${verbLabel(action.verb).toLowerCase()} ${action.title}. Try again.`,
     context: action
   });
-  return button;
+  return link;
 }
 
 function renderTechmeme(items, handlers, status, renderId) {
@@ -349,19 +337,16 @@ function renderTechmeme(items, handlers, status, renderId) {
   const list = element("ol", "home-takeover__techmeme-list");
   items.forEach(item => {
     const row = element("li", "home-takeover__techmeme-item");
-    row.append(createTechmemeActionButton(item, handlers, status));
+    row.append(createTechmemeActionLink(item, handlers, status));
     list.append(row);
   });
   section.append(list);
   return section;
 }
 
-function createTechmemeActionButton(item, handlers, status) {
+function createTechmemeActionLink(item, handlers, status) {
   const { action } = item;
-  const button = element("button", "home-takeover__action home-takeover__techmeme-action");
-  button.type = "button";
-  button.dataset.actionId = action.id;
-  button.dataset.verb = cleanToken(action.verb);
+  const link = createNavigationAnchor(action, "home-takeover__action home-takeover__techmeme-action");
 
   const copy = element("span", "home-takeover__action-copy");
   copy.append(createHomeTitleElement(
@@ -381,18 +366,16 @@ function createTechmemeActionButton(item, handlers, status) {
   }
   copy.append(context);
 
-  const arrow = element("span", "home-takeover__action-arrow", "↗");
-  arrow.setAttribute("aria-hidden", "true");
-  button.append(element("span", "home-takeover__verb", "Read"), copy, arrow);
-  prepareTitleAnchor(button, action.title, action.verb);
+  link.append(element("span", "home-takeover__verb", "Read"), copy);
+  prepareTitleAnchor(link, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
-  wireCommand(button, callback, action.raw, status, {
+  wireNavigation(link, callback, action.raw, status, {
     working: `Opening ${action.title}…`,
     failed: `Could not open ${action.title}. Try again.`,
     context: action
   });
-  return button;
+  return link;
 }
 
 function renderGithubStars(items, handlers, status, renderId) {
@@ -410,19 +393,16 @@ function renderGithubStars(items, handlers, status, renderId) {
   const list = element("ol", "home-takeover__github-stars-list");
   items.forEach(item => {
     const row = element("li", "home-takeover__github-stars-item");
-    row.append(createGithubStarActionButton(item, handlers, status));
+    row.append(createGithubStarActionLink(item, handlers, status));
     list.append(row);
   });
   section.append(list);
   return section;
 }
 
-function createGithubStarActionButton(item, handlers, status) {
+function createGithubStarActionLink(item, handlers, status) {
   const { action } = item;
-  const button = element("button", "home-takeover__action home-takeover__github-star-action");
-  button.type = "button";
-  button.dataset.actionId = action.id;
-  button.dataset.verb = cleanToken(action.verb);
+  const link = createNavigationAnchor(action, "home-takeover__action home-takeover__github-star-action");
 
   const copy = element("span", "home-takeover__action-copy");
   copy.append(createHomeTitleElement(
@@ -439,18 +419,16 @@ function createGithubStarActionButton(item, handlers, status) {
   }
   copy.append(context);
 
-  const arrow = element("span", "home-takeover__action-arrow", "↗");
-  arrow.setAttribute("aria-hidden", "true");
-  button.append(element("span", "home-takeover__verb", "Repo"), copy, arrow);
-  prepareTitleAnchor(button, action.title, action.verb);
+  link.append(element("span", "home-takeover__verb", "Repo"), copy);
+  prepareTitleAnchor(link, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
-  wireCommand(button, callback, action.raw, status, {
+  wireNavigation(link, callback, action.raw, status, {
     working: `Opening ${action.title}…`,
     failed: `Could not open ${action.title}. Try again.`,
     context: action
   });
-  return button;
+  return link;
 }
 
 function renderEngaged(model, actions, handlers, status) {
@@ -488,6 +466,7 @@ function renderEngaged(model, actions, handlers, status) {
     trail.setAttribute("aria-label", "Pages in this activity");
     activity.trail.slice(0, 7).forEach((trailItem, index) => {
       const item = element("li", "home-takeover__trail-item");
+      const link = createNavigationAnchor(trailItem, "home-takeover__trail-link");
       const marker = element("span", "home-takeover__trail-marker", String(index + 1).padStart(2, "0"));
       marker.setAttribute("aria-hidden", "true");
       const copy = element("span", "home-takeover__trail-copy");
@@ -498,14 +477,21 @@ function renderEngaged(model, actions, handlers, status) {
         HOME_TITLE_LIMITS.trail
       ));
       if (trailItem.domain) copy.append(element("span", "home-takeover__trail-domain", trailItem.domain));
-      item.append(marker, copy);
-      prepareTitleAnchor(item, trailItem.title);
+      link.append(marker, copy);
+      prepareTitleAnchor(link, trailItem.title, trailItem.verb);
+      const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
+      wireNavigation(link, callback, executableAction(trailItem), status, {
+        working: `Opening ${trailItem.title}…`,
+        failed: `Could not open ${trailItem.title}. Try again.`,
+        context: trailItem
+      });
+      item.append(link);
       trail.append(item);
     });
     primary.append(trail);
   }
 
-  primary.append(createActionButton(activity.action, handlers, status, {
+  primary.append(createActionLink(activity.action, handlers, status, {
     className: "home-takeover__activity-action",
     showReason: false,
     titleLimit: HOME_TITLE_LIMITS.standard
@@ -520,7 +506,7 @@ function renderEngaged(model, actions, handlers, status) {
     const list = element("ul", "home-takeover__fast-list");
     fastActions.forEach(action => {
       const item = element("li", "home-takeover__fast-item");
-      item.append(createActionButton(action, handlers, status, {
+      item.append(createActionLink(action, handlers, status, {
         className: "home-takeover__fast-action",
         titleLimit: HOME_TITLE_LIMITS.compact
       }));
@@ -553,12 +539,12 @@ function renderReturn(model, actions, handlers, status) {
     const item = element("li", "home-takeover__landscape");
     const rank = element("span", "home-takeover__landscape-rank", String(index + 1).padStart(2, "0"));
     rank.setAttribute("aria-hidden", "true");
-    const button = createActionButton(choice, handlers, status, {
+    const link = createActionLink(choice, handlers, status, {
       className: "home-takeover__landscape-action",
       showReason: true,
       titleLimit: HOME_TITLE_LIMITS.landscape
     });
-    item.append(rank, button);
+    item.append(rank, link);
     list.append(item);
   });
   section.append(list);
@@ -647,11 +633,11 @@ function renderError(message) {
   return alert;
 }
 
-function createActionButton(action, handlers, status, options = {}) {
-  const button = element("button", `home-takeover__action ${options.className || ""}`.trim());
-  button.type = "button";
-  button.dataset.actionId = action.id;
-  button.dataset.verb = cleanToken(action.verb);
+function createActionLink(action, handlers, status, options = {}) {
+  const link = createNavigationAnchor(
+    action,
+    `home-takeover__action ${options.className || ""}`.trim()
+  );
 
   const verb = element("span", "home-takeover__verb", verbLabel(action.verb));
   const copy = element("span", "home-takeover__action-copy");
@@ -672,18 +658,42 @@ function createActionButton(action, handlers, status, options = {}) {
     copy.append(element("span", "home-takeover__reason", action.reasons[0]));
   }
 
-  const arrow = element("span", "home-takeover__action-arrow", "↗");
-  arrow.setAttribute("aria-hidden", "true");
-  button.append(verb, copy, arrow);
-  prepareTitleAnchor(button, action.title, action.verb);
+  link.append(verb, copy);
+  prepareTitleAnchor(link, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
-  wireCommand(button, callback, action.raw, status, {
+  wireNavigation(link, callback, action.raw, status, {
     working: `${verbLabel(action.verb)} ${action.title}…`,
     failed: `Could not ${verbLabel(action.verb).toLowerCase()} ${action.title}. Try again.`,
     context: action
   });
-  return button;
+  return link;
+}
+
+function createNavigationAnchor(action, className) {
+  const link = element("a", className);
+  const href = actionHref(action);
+  if (href) link.href = href;
+  else {
+    link.setAttribute("aria-disabled", "true");
+    link.tabIndex = -1;
+  }
+  link.dataset.actionId = action.id;
+  link.dataset.verb = cleanToken(action.verb);
+  return link;
+}
+
+function executableAction(action) {
+  const source = action?.raw && typeof action.raw === "object" ? action.raw : {};
+  const href = actionHref(action);
+  const target = source.target && typeof source.target === "object"
+    ? source.target
+    : { title: action.title, url: href, open: false };
+  return {
+    ...source,
+    verb: readableText(source.verb) || readableText(action?.verb) || "open",
+    target
+  };
 }
 
 function createHomeTitleElement(tagName, className, title, maxGraphemes) {
@@ -699,7 +709,7 @@ function createHomeTitleElement(tagName, className, title, maxGraphemes) {
 function prepareTitleAnchor(anchor, title, verb = "") {
   anchor.dataset.homeTitleAnchor = "true";
   anchor.dataset.fullTitle = truncateHomeTitle(title).full;
-  if (anchor.matches("button")) {
+  if (anchor.matches("a, button")) {
     anchor.setAttribute("aria-label", `${verbLabel(verb)}: ${anchor.dataset.fullTitle}`);
   }
 }
@@ -869,40 +879,69 @@ function wireCommand(button, callback, payload, status, messages) {
   }
 
   button.addEventListener("click", event => {
-    if (button.dataset.pending === "true") return;
-    let result;
-    try {
-      result = callback(payload, event, messages.context);
-    } catch (_error) {
-      reportFailure(button, status, messages.failed);
-      return;
-    }
-
-    if (!result || typeof result.then !== "function") return;
-    setCommandPending(button, true);
-    setStatus(status, messages.working, false);
-
-    Promise.resolve(result).then(() => {
-      if (!button.isConnected) return;
-      setCommandPending(button, false);
-      setStatus(status, "", false);
-    }).catch(() => {
-      if (!button.isConnected) return;
-      reportFailure(button, status, messages.failed);
-    });
+    runCommand(button, callback, payload, event, status, messages);
   });
 }
 
-function reportFailure(button, status, message) {
-  setCommandPending(button, false);
+function wireNavigation(link, callback, payload, status, messages) {
+  if (!link.hasAttribute("href")) return;
+  if (typeof callback !== "function") return;
+
+  link.addEventListener("click", event => {
+    if (usesNativeLinkNavigation(event)) return;
+    event.preventDefault();
+    runCommand(link, callback, payload, event, status, messages);
+  });
+}
+
+function usesNativeLinkNavigation(event) {
+  return event.defaultPrevented
+    || event.button !== 0
+    || event.metaKey
+    || event.ctrlKey
+    || event.shiftKey
+    || event.altKey;
+}
+
+function runCommand(control, callback, payload, event, status, messages) {
+  if (control.dataset.pending === "true") return;
+  let result;
+  try {
+    result = callback(payload, event, messages.context);
+  } catch (_error) {
+    reportFailure(control, status, messages.failed);
+    return;
+  }
+
+  if (!result || typeof result.then !== "function") return;
+  setCommandPending(control, true);
+  setStatus(status, messages.working, false);
+
+  Promise.resolve(result).then(() => {
+    if (!control.isConnected) return;
+    setCommandPending(control, false);
+    setStatus(status, "", false);
+  }).catch(() => {
+    if (!control.isConnected) return;
+    reportFailure(control, status, messages.failed);
+  });
+}
+
+function reportFailure(control, status, message) {
+  setCommandPending(control, false);
   setStatus(status, message, true);
 }
 
-function setCommandPending(button, pending) {
-  button.dataset.pending = String(pending);
-  button.disabled = pending;
-  if (pending) button.setAttribute("aria-busy", "true");
-  else button.removeAttribute("aria-busy");
+function setCommandPending(control, pending) {
+  control.dataset.pending = String(pending);
+  if (control.matches("button")) control.disabled = pending;
+  if (pending) {
+    control.setAttribute("aria-busy", "true");
+    control.setAttribute("aria-disabled", "true");
+  } else {
+    control.removeAttribute("aria-busy");
+    control.removeAttribute("aria-disabled");
+  }
 }
 
 function setStatus(status, message, isError) {
@@ -1192,6 +1231,17 @@ function domainFromUrl(url) {
   try {
     const hostname = new URL(url).hostname.replace(/^www\./, "");
     return hostname || "";
+  } catch {
+    return "";
+  }
+}
+
+function actionHref(action) {
+  const target = action?.target;
+  const raw = typeof target === "string" ? target : target?.url;
+  try {
+    const url = new URL(String(raw || ""));
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
   } catch {
     return "";
   }

@@ -32,7 +32,7 @@
   width: 100%;
   min-width: 0;
   min-height: calc(100vh - var(--header-height, 64px));
-  padding: clamp(24px, 3vw, 42px) clamp(24px, 7vw, 112px) 36px;
+  padding: clamp(24px, 3vw, 42px) clamp(24px, 4.5vw, 88px) 36px;
   overflow: hidden;
   color: var(--home-paper);
   background: var(--home-ink);
@@ -50,7 +50,8 @@
   box-sizing: border-box;
 }
 
-.home-takeover button {
+.home-takeover button,
+.home-takeover a {
   font: inherit;
 }
 
@@ -62,7 +63,7 @@
     "title summary";
   gap: 12px clamp(36px, 7vw, 120px);
   align-items: end;
-  max-width: 1440px;
+  max-width: 1680px;
   margin: 0 auto clamp(24px, 3vw, 38px);
   padding-bottom: 18px;
   border-bottom: 1px solid var(--home-line);
@@ -159,12 +160,12 @@
 .home-takeover__error,
 .home-takeover__utilities,
 .home-takeover__status {
-  width: min(100%, 1440px);
+  width: min(100%, 1680px);
   margin-inline: auto;
 }
 
 .home-takeover__cache-note {
-  width: min(100%, 1440px);
+  width: min(100%, 1680px);
   margin: 0 auto 10px;
   color: var(--home-waypoint);
   font-family: "SFMono-Regular", Menlo, Consolas, monospace;
@@ -191,7 +192,7 @@
 .home-takeover__action {
   appearance: none;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: clamp(16px, 2.4vw, 36px);
   align-items: center;
   width: 100%;
@@ -200,6 +201,7 @@
   padding: 14px 0;
   color: var(--home-paper);
   text-align: left;
+  text-decoration: none;
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -210,6 +212,7 @@
 }
 
 .home-takeover__action:focus-visible,
+.home-takeover__trail-link:focus-visible,
 .home-takeover__utility-action:focus-visible {
   outline: 3px solid var(--home-focus);
   outline-offset: 4px;
@@ -258,7 +261,7 @@
 }
 
 .home-takeover__action-title {
-  font-size: clamp(25px, 3.2vw, 46px);
+  font-size: clamp(29px, 3.6vw, 52px);
   letter-spacing: -0.015em;
   line-height: 0.98;
 }
@@ -349,14 +352,6 @@
   text-wrap: pretty;
 }
 
-.home-takeover__action-arrow {
-  align-self: center;
-  color: var(--home-route);
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1;
-}
-
 .home-takeover__focal-action {
   min-height: 168px;
   padding: clamp(24px, 3vw, 40px);
@@ -368,7 +363,6 @@
 .home-takeover__focal-action .home-takeover__verb,
 .home-takeover__focal-action .home-takeover__domain,
 .home-takeover__focal-action .home-takeover__reason,
-.home-takeover__focal-action .home-takeover__action-arrow,
 .home-takeover__focal-action .home-takeover__source {
   color: var(--home-ink);
 }
@@ -378,7 +372,7 @@
 }
 
 .home-takeover__focal-action .home-takeover__action-title {
-  font-size: clamp(40px, 5.4vw, 72px);
+  font-size: clamp(52px, 6.8vw, 92px);
   line-height: 0.88;
 }
 
@@ -429,13 +423,13 @@
 }
 
 .home-takeover__destination-action {
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr);
   min-height: 84px;
   padding: 14px 4px;
 }
 
 .home-takeover__destination-action .home-takeover__action-title {
-  font-size: clamp(26px, 2.8vw, 38px);
+  font-size: clamp(31px, 3.3vw, 46px);
 }
 
 .home-takeover__engaged-layout {
@@ -460,7 +454,7 @@
 
 .home-takeover__activity-title {
   margin: 8px 0 8px;
-  font-size: clamp(42px, 5.3vw, 68px);
+  font-size: clamp(48px, 6vw, 78px);
   letter-spacing: -0.03em;
   line-height: 0.88;
 }
@@ -491,12 +485,18 @@
 
 .home-takeover__trail-item {
   position: relative;
+  min-width: 0;
+  border-bottom: 1px solid var(--home-line);
+}
+
+.home-takeover__trail-link {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
   gap: 16px;
   min-height: 50px;
   padding: 9px 0;
-  border-bottom: 1px solid var(--home-line);
+  color: var(--home-paper);
+  text-decoration: none;
 }
 
 .home-takeover__trail-marker {
@@ -544,8 +544,7 @@
 
 .home-takeover__activity-action .home-takeover__verb,
 .home-takeover__activity-action .home-takeover__domain,
-.home-takeover__activity-action .home-takeover__source,
-.home-takeover__activity-action .home-takeover__action-arrow {
+.home-takeover__activity-action .home-takeover__source {
   color: var(--home-ink);
 }
 
@@ -578,7 +577,7 @@
 }
 
 .home-takeover__fast-action {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 78px;
   padding: 12px 0;
 }
@@ -590,11 +589,11 @@
 }
 
 .home-takeover__fast-action .home-takeover__action-title {
-  font-size: clamp(24px, 2.2vw, 31px);
+  font-size: clamp(28px, 2.7vw, 38px);
 }
 
 .home-takeover__discovery {
-  margin-top: clamp(48px, 6vw, 80px);
+  margin-top: clamp(38px, 5vw, 64px);
   padding-top: 20px;
   border-top: 4px solid var(--home-waypoint);
 }
@@ -672,7 +671,7 @@
 }
 
 .home-takeover__discovery-action {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 88px;
   padding: 14px 0 14px 44px;
 }
@@ -684,7 +683,7 @@
 }
 
 .home-takeover__discovery-action .home-takeover__action-title {
-  font-size: clamp(24px, 2.5vw, 34px);
+  font-size: clamp(28px, 3vw, 42px);
 }
 
 .home-takeover__archive {
@@ -714,14 +713,14 @@
 }
 
 .home-takeover__archive-action {
-  grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
   gap: clamp(14px, 2vw, 28px);
   min-height: 72px;
   padding: 12px 4px;
 }
 
 .home-takeover__archive-action .home-takeover__action-title {
-  font-size: clamp(24px, 2.2vw, 31px);
+  font-size: clamp(29px, 2.7vw, 39px);
   line-height: 1.05;
 }
 
@@ -809,7 +808,7 @@
 }
 
 .home-takeover__github-stars {
-  margin-top: clamp(42px, 5vw, 68px);
+  margin-top: clamp(34px, 4vw, 52px);
   padding-top: 18px;
   border-top: 4px solid var(--home-waypoint);
 }
@@ -853,7 +852,7 @@
 }
 
 .home-takeover__github-star-action {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: clamp(12px, 1.8vw, 22px);
   min-height: 82px;
   padding: 11px 4px;
@@ -864,7 +863,7 @@
 }
 
 .home-takeover__github-star-action .home-takeover__action-title {
-  font-size: clamp(22px, 2vw, 28px);
+  font-size: clamp(28px, 2.5vw, 36px);
   line-height: 1.04;
 }
 
@@ -890,7 +889,7 @@
 }
 
 .home-takeover__techmeme {
-  margin-top: clamp(46px, 6vw, 78px);
+  margin-top: clamp(38px, 4.5vw, 58px);
   padding-top: 20px;
   border-top: 4px solid var(--home-route);
 }
@@ -934,7 +933,7 @@
 }
 
 .home-takeover__techmeme-action {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: clamp(14px, 2vw, 26px);
   min-height: 96px;
   padding: 14px 4px;
@@ -945,7 +944,7 @@
 }
 
 .home-takeover__techmeme-action .home-takeover__action-title {
-  font-size: clamp(23px, 2.25vw, 31px);
+  font-size: clamp(28px, 2.5vw, 36px);
   line-height: 1.04;
 }
 
@@ -1182,32 +1181,6 @@
   padding: 10px 12px;
 }
 
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled {
-  color: var(--home-paper);
-  background: var(--home-terrain-high);
-  box-shadow: inset 0 0 0 1px var(--home-line);
-}
-
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__action-title {
-  color: var(--home-paper);
-}
-
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__verb,
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__domain,
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__reason,
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__source,
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__archive-topics,
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__archive-signal,
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__github-star-topics,
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__techmeme-topics,
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__action-arrow {
-  color: var(--home-muted);
-}
-
-.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__source {
-  border-color: var(--home-line);
-}
-
 @media (hover: hover) and (pointer: fine) {
   .home-takeover__action:hover {
     color: var(--home-ink);
@@ -1222,13 +1195,20 @@
   .home-takeover__action:hover .home-takeover__archive-topics,
   .home-takeover__action:hover .home-takeover__archive-signal,
   .home-takeover__action:hover .home-takeover__github-star-topics,
-  .home-takeover__action:hover .home-takeover__techmeme-topics,
-  .home-takeover__action:hover .home-takeover__action-arrow {
+  .home-takeover__action:hover .home-takeover__techmeme-topics {
     color: var(--home-ink);
   }
 
   .home-takeover__action:hover .home-takeover__source {
     border-color: var(--home-ink);
+  }
+
+  .home-takeover__action:hover .home-takeover__action-title,
+  .home-takeover__trail-link:hover .home-takeover__trail-title {
+    text-decoration: underline;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.12em;
   }
 
   .home-takeover__destination-action:hover::before {
@@ -1239,6 +1219,39 @@
     color: var(--home-ink);
     background: var(--home-route);
     border-color: var(--home-route);
+  }
+}
+
+.home-takeover__action:focus-visible .home-takeover__action-title,
+.home-takeover__trail-link:focus-visible .home-takeover__trail-title {
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.12em;
+}
+
+@media (min-width: 1180px) {
+  .home-takeover__github-stars-list,
+  .home-takeover__techmeme-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-takeover__github-stars-item:nth-child(n),
+  .home-takeover__techmeme-item:nth-child(n) {
+    padding-right: clamp(16px, 2vw, 30px);
+    padding-left: clamp(16px, 2vw, 30px);
+    border-right: 1px solid var(--home-line);
+  }
+
+  .home-takeover__github-stars-item:nth-child(3n + 1),
+  .home-takeover__techmeme-item:nth-child(3n + 1) {
+    padding-left: 0;
+  }
+
+  .home-takeover__github-stars-item:nth-child(3n),
+  .home-takeover__techmeme-item:nth-child(3n) {
+    padding-right: 0;
+    border-right: 0;
   }
 }
 
@@ -1317,7 +1330,7 @@
   .home-takeover__destination-action,
   .home-takeover__activity-action,
   .home-takeover__landscape-action {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     gap: 12px 18px;
   }
 
@@ -1373,7 +1386,7 @@
   .home-takeover__discovery-item:nth-child(even)::before { left: 0; }
 
   .home-takeover__archive-action {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px 14px;
     min-height: 76px;
   }
@@ -1420,7 +1433,7 @@
   }
 
   .home-takeover__github-star-action {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px 14px;
   }
 
@@ -1450,7 +1463,7 @@
   }
 
   .home-takeover__techmeme-action {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px 14px;
   }
 

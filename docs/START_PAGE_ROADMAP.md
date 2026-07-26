@@ -430,12 +430,23 @@ The current Home takeover expands content without weakening source boundaries:
   suffix removal and word-boundary ellipses. A single viewport-aware overlay
   reveals the full title on fine-pointer hover or keyboard focus without
   reflow; Escape dismisses it while preserving focus.
+- Every URL destination is a native anchor with a validated HTTP(S) `href`.
+  Ordinary activation still uses the canonical switch/open executor, while
+  modifier-click, middle-click, context-menu opening, copying, and browser link
+  previews remain native. View-changing commands remain buttons. Decorative
+  outbound arrows are omitted; large linked typography, hover underlines, and
+  a three-pixel focus outline carry the affordance.
+- The Home canvas expands to 1680 px, destination type scales rise across every
+  tier, and repository/news enrichment uses three columns on wide screens. This
+  fills the available field with more legible content rather than whitespace or
+  repeated icon chrome; narrow layouts retain one-column sequential reading.
 
 The proof gate is deterministic unit coverage for cache behavior, source
 validation, relevance-plus-recency ranking, RSS filtering, title shortening,
 and source bounds, plus extension-loaded browser coverage for non-blocking first
 paint, panel ordering, action execution, keyboard/hover dismissal, narrow-screen
-containment, and escaping.
+containment, modifier-click new-tab behavior, sequential Tab/Shift+Tab order,
+Enter activation, visible focus, and escaping.
 
 ## Measurement plan
 

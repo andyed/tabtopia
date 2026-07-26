@@ -55,6 +55,7 @@ async function renderArchiveFixture(page, extensionId, {
     document.body.append(root);
     document.querySelectorAll("body > :not(script)").forEach(node => {
       node.hidden = node !== root;
+      node.inert = node !== root;
     });
     window.__archiveAction = null;
     renderHomeTakeover(root, {
@@ -172,7 +173,9 @@ test.describe("development home takeover", () => {
     await expect(secondHome.getByText("Immediate paint", { exact: true })).toBeVisible();
     await expect(secondHome.getByText("Last view · updating", { exact: true })).toBeVisible();
     await expect(secondHome).toHaveAttribute("aria-busy", "true");
-    await expect(secondHome.locator("[data-action-id]").first()).toBeDisabled();
+    const cachedLink = secondHome.locator("a[data-action-id]").first();
+    await expect(cachedLink).toHaveAttribute("href", "https://example.com/immediate-paint");
+    await expect(cachedLink).toBeEnabled();
 
     if (process.env.TABTOPIA_VISUAL_DIR) {
       await second.setViewportSize({ width: 1024, height: 768 });
@@ -304,7 +307,7 @@ test.describe("development home takeover", () => {
 
     releaseFeed();
     const panel = home.locator(".home-takeover__techmeme");
-    await expect(panel.getByRole("button", {
+    await expect(panel.getByRole("link", {
       name: "Open: AI systems bring working memory to browser agents"
     })).toBeVisible();
     await expect(panel.getByText("Unrelated retail earnings", { exact: true })).toHaveCount(0);
@@ -369,7 +372,7 @@ test.describe("development home takeover", () => {
 
     releaseStars();
     const panel = home.locator(".home-takeover__github-stars");
-    await expect(panel.getByRole("button", { name: "Open: cognition/act-r-tools" })).toBeVisible();
+    await expect(panel.getByRole("link", { name: "Open: cognition/act-r-tools" })).toBeVisible();
     await expect(panel.locator(".home-takeover__github-stars-item").first())
       .toContainText("cognition/act-r-tools");
     await expect(panel.locator(".home-takeover__github-stars-item").nth(1))
@@ -826,6 +829,123 @@ test.describe("development home takeover", () => {
 
     await firstAction.click();
     await expect.poll(() => page.evaluate(() => window.__archiveAction)).toEqual(githubStarItems[0].action);
+  });
+
+  test("uses native hyperlinks with modifier navigation and complete keyboard traversal", async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const actions = [{
+      id: "primary-link",
+      title: "Primary native destination",
+      verb: "open",
+      target: { url: "https://example.com/primary-native" },
+      sources: ["habit"]
+    }, {
+      id: "secondary-link",
+      title: "Secondary native destination",
+      verb: "open",
+      target: { url: "https://example.com/secondary-native" },
+      sources: ["star"]
+    }];
+    const archiveItems = [{
+      id: "archive-native",
+      title: "Archive native destination",
+      topics: ["native links"],
+      action: {
+        verb: "open",
+        target: { title: "Archive native destination", url: "https://example.com/archive-native" }
+      }
+    }];
+    const githubStarItems = [{
+      id: "github-native",
+      title: "owner/native-repository",
+      topics: ["keyboard"],
+      starredAt: Date.UTC(2026, 6, 25),
+      action: {
+        verb: "open",
+        target: { title: "owner/native-repository", url: "https://github.com/owner/native-repository" }
+      }
+    }];
+    const techmemeItems = [{
+      id: "techmeme-native",
+      title: "Native links reach the start page",
+      matchedTopics: ["native links"],
+      action: {
+        verb: "open",
+        target: {
+          title: "Native links reach the start page",
+          url: "https://www.techmeme.com/260726/p40#a260726p40"
+        }
+      }
+    }];
+    const home = await renderArchiveFixture(page, extensionId, {
+      actions,
+      archiveItems,
+      githubStarItems,
+      techmemeItems
+    });
+    const links = home.locator("a[data-action-id]");
+
+    await expect(links).toHaveCount(5);
+    const semantics = await links.evaluateAll(nodes => nodes.map(node => ({
+      tagName: node.tagName,
+      href: node.getAttribute("href"),
+      tabIndex: node.tabIndex
+    })));
+    expect(semantics.every(item => item.tagName === "A")).toBe(true);
+    expect(semantics.every(item => /^https:\/\//u.test(item.href))).toBe(true);
+    expect(semantics.every(item => item.tabIndex === 0)).toBe(true);
+    await expect(home.locator(".home-takeover__action-arrow")).toHaveCount(0);
+    const density = await home.evaluate(root => ({
+      focalFont: Number.parseFloat(getComputedStyle(root.querySelector(".home-takeover__focal-action .home-takeover__action-title")).fontSize),
+      repositoryFont: Number.parseFloat(getComputedStyle(root.querySelector(".home-takeover__github-star-action .home-takeover__action-title")).fontSize),
+      repositoryColumns: getComputedStyle(root.querySelector(".home-takeover__github-stars-list"))
+        .gridTemplateColumns.split(" ").filter(Boolean).length,
+      rootWidth: root.getBoundingClientRect().width,
+      focalWidth: root.querySelector(".home-takeover__focal-action").getBoundingClientRect().width
+    }));
+    expect(density.focalFont).toBeGreaterThanOrEqual(52);
+    expect(density.repositoryFont).toBeGreaterThanOrEqual(28);
+    expect(density.repositoryColumns).toBe(3);
+    expect(density.focalWidth / density.rootWidth).toBeGreaterThan(0.55);
+
+    const primary = home.locator("a[data-action-id='primary-link']");
+    const [opened] = await Promise.all([
+      context.waitForEvent("page"),
+      primary.click({ modifiers: ["ControlOrMeta"] })
+    ]);
+    await opened.waitForURL("https://example.com/primary-native");
+    expect(await page.evaluate(() => window.__archiveAction)).toBeNull();
+    await opened.close();
+
+    await page.bringToFront();
+    await page.evaluate(() => {
+      document.body.tabIndex = -1;
+      document.body.focus();
+    });
+    await page.keyboard.press("Tab");
+    await expect(primary).toBeFocused();
+    const focusStyle = await primary.evaluate(node => ({
+      outlineStyle: getComputedStyle(node).outlineStyle,
+      outlineWidth: getComputedStyle(node).outlineWidth
+    }));
+    expect(focusStyle.outlineStyle).not.toBe("none");
+    expect(Number.parseFloat(focusStyle.outlineWidth)).toBeGreaterThanOrEqual(3);
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await page.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-native-links-focus-1440x1000.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+    }
+
+    await page.keyboard.press("Tab");
+    await expect(home.locator("a[data-action-id='secondary-link']")).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(primary).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.__archiveAction)).toEqual(actions[0]);
   });
 
   test("keeps discovery useful without archive data and escapes archive metadata", async ({ context, extensionId }) => {
