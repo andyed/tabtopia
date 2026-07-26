@@ -152,6 +152,7 @@
 .home-takeover__engaged-layout,
 .home-takeover__return,
 .home-takeover__discovery,
+.home-takeover__github-stars,
 .home-takeover__techmeme,
 .home-takeover__fresh-field,
 .home-takeover__system-state,
@@ -398,6 +399,7 @@
 .home-takeover__discovery-list,
 .home-takeover__archive-list,
 .home-takeover__interest-list,
+.home-takeover__github-stars-list,
 .home-takeover__techmeme-list,
 .home-takeover__landscapes,
 .home-takeover__trail {
@@ -806,6 +808,87 @@
   text-align: center;
 }
 
+.home-takeover__github-stars {
+  margin-top: clamp(42px, 5vw, 68px);
+  padding-top: 18px;
+  border-top: 4px solid var(--home-waypoint);
+}
+
+.home-takeover__github-stars-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 10px;
+}
+
+.home-takeover__github-stars-title {
+  margin: 0;
+  color: var(--home-paper);
+  font-family: "Barlow Condensed", "Avenir Next", sans-serif;
+  font-size: clamp(25px, 2.5vw, 35px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.home-takeover__github-stars-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--home-line);
+}
+
+.home-takeover__github-stars-item {
+  min-width: 0;
+  border-bottom: 1px solid var(--home-line);
+}
+
+.home-takeover__github-stars-item:nth-child(odd) {
+  padding-right: clamp(18px, 3vw, 44px);
+  border-right: 1px solid var(--home-line);
+}
+
+.home-takeover__github-stars-item:nth-child(even) {
+  padding-left: clamp(18px, 3vw, 44px);
+}
+
+.home-takeover__github-star-action {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: clamp(12px, 1.8vw, 22px);
+  min-height: 82px;
+  padding: 11px 4px;
+}
+
+.home-takeover__github-star-action .home-takeover__verb {
+  min-width: 4.25rem;
+}
+
+.home-takeover__github-star-action .home-takeover__action-title {
+  font-size: clamp(22px, 2vw, 28px);
+  line-height: 1.04;
+}
+
+.home-takeover__github-star-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  align-items: baseline;
+}
+
+.home-takeover__github-star-date {
+  color: var(--home-muted);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.home-takeover__github-star-topics {
+  color: var(--home-waypoint);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .home-takeover__techmeme {
   margin-top: clamp(46px, 6vw, 78px);
   padding-top: 20px;
@@ -1115,6 +1198,7 @@
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__source,
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__archive-topics,
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__archive-signal,
+.home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__github-star-topics,
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__techmeme-topics,
 .home-takeover[data-content-state="stale"] .home-takeover__action:disabled .home-takeover__action-arrow {
   color: var(--home-muted);
@@ -1137,6 +1221,7 @@
   .home-takeover__action:hover .home-takeover__source,
   .home-takeover__action:hover .home-takeover__archive-topics,
   .home-takeover__action:hover .home-takeover__archive-signal,
+  .home-takeover__action:hover .home-takeover__github-star-topics,
   .home-takeover__action:hover .home-takeover__techmeme-topics,
   .home-takeover__action:hover .home-takeover__action-arrow {
     color: var(--home-ink);
@@ -1313,6 +1398,36 @@
 
   .home-takeover__interest-item:nth-child(odd) {
     margin-right: 16px;
+  }
+
+  .home-takeover__github-stars-header {
+    display: block;
+  }
+
+  .home-takeover__github-stars-title {
+    margin-top: 8px;
+  }
+
+  .home-takeover__github-stars-list {
+    grid-template-columns: 1fr;
+  }
+
+  .home-takeover__github-stars-item:nth-child(odd),
+  .home-takeover__github-stars-item:nth-child(even) {
+    padding-right: 0;
+    padding-left: 0;
+    border-right: 0;
+  }
+
+  .home-takeover__github-star-action {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 14px;
+  }
+
+  .home-takeover__github-star-action .home-takeover__verb {
+    grid-column: 1 / -1;
+    min-width: 0;
+    padding: 0;
   }
 
   .home-takeover__techmeme-header {

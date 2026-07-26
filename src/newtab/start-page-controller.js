@@ -20,6 +20,10 @@ import {
   readCachedTechmeme,
   refreshTechmeme
 } from "../lib/techmeme-provider.js";
+import {
+  readCachedGithubStars,
+  refreshGithubStars
+} from "../lib/github-stars-provider.js";
 
 const HISTORY_HORIZON_MS = 24 * 60 * 60 * 1000;
 const HISTORY_ITEM_LIMIT = 80;
@@ -44,6 +48,7 @@ export function createStartPageController({
   let refreshInFlight = null;
   let archiveRefreshInFlight = null;
   let techmemeRefreshInFlight = null;
+  let githubStarsRefreshInFlight = null;
   let activeArchiveQuery = null;
   let pendingArchiveQuery;
   let started = false;
@@ -93,6 +98,7 @@ export function createStartPageController({
         onUpdate(result);
         refreshArchiveInBackground(result);
         refreshTechmemeInBackground();
+        refreshGithubStarsInBackground();
         return result;
       })
       .catch(error => {
@@ -139,6 +145,18 @@ export function createStartPageController({
       });
   }
 
+  function refreshGithubStarsInBackground() {
+    if (githubStarsRefreshInFlight) return;
+    githubStarsRefreshInFlight = refreshGithubStars()
+      .then(update => {
+        if (started && update?.changed) scheduleRefresh(0);
+      })
+      .catch(() => {})
+      .finally(() => {
+        githubStarsRefreshInFlight = null;
+      });
+  }
+
   function start() {
     if (started) return;
     started = true;
@@ -165,7 +183,8 @@ export async function collectStartPageState(now = Date.now()) {
     backgroundState,
     bookmarks,
     archiveSnapshot,
-    techmemeSnapshot
+    techmemeSnapshot,
+    githubStarsSnapshot
   ] = await Promise.all([
     getCurrentWindow(),
     getAllWindows(),
@@ -176,7 +195,8 @@ export async function collectStartPageState(now = Date.now()) {
     getBackgroundState(),
     getRecentBookmarks(RECENT_BOOKMARK_LIMIT),
     readCachedArchive({ now }),
-    readCachedTechmeme({ now })
+    readCachedTechmeme({ now }),
+    readCachedGithubStars({ now })
   ]);
   const historyItems = historyPool
     .filter(item => Number(item?.lastVisitTime || 0) >= now - HISTORY_HORIZON_MS)
@@ -221,7 +241,8 @@ export async function collectStartPageState(now = Date.now()) {
     habitDestinations,
     archiveSnapshot: currentArchiveSnapshot,
     archiveQuery,
-    techmemeSnapshot
+    techmemeSnapshot,
+    githubStarsSnapshot
   };
 }
 

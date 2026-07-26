@@ -3,6 +3,7 @@ import { buildArchiveEnrichment } from "../lib/archive-enrichment.js";
 import { buildDeferredIntentions } from "../lib/deferred-intentions.js";
 import { buildStartPageFeed } from "../lib/start-page-feed.js";
 import { buildTechmemeEnrichment } from "../lib/techmeme-enrichment.js";
+import { buildGithubStarsEnrichment } from "../lib/github-stars-enrichment.js";
 import { createStartPageController } from "./start-page-controller.js";
 import { createStartPageActionExecutor } from "./start-page-actions.js";
 import { renderHomeTakeover } from "./home-takeover.js";
@@ -136,12 +137,19 @@ function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinati
     interestTopics: archiveEnrichment.interests,
     contextTitles: techmemeContextTitles(baseFeed, forecast, snapshot)
   });
+  const githubStarsEnrichment = buildGithubStarsEnrichment({
+    starItems: extra.githubStarsSnapshot?.items,
+    interestTopics: archiveEnrichment.interests,
+    contextTitles: techmemeContextTitles(baseFeed, forecast, snapshot)
+  });
   const feed = {
     ...baseFeed,
     archiveItems: archiveEnrichment.items,
     interests: archiveEnrichment.interests,
     archiveSourceCounts: archiveEnrichment.sourceCounts,
     archiveStatus: extra.archiveSnapshot?.status || "empty",
+    githubStarItems: githubStarsEnrichment.items,
+    githubStarsStatus: extra.githubStarsSnapshot?.status || "empty",
     techmemeItems: techmemeEnrichment.items,
     techmemeStatus: extra.techmemeSnapshot?.status || "empty"
   };
@@ -152,6 +160,7 @@ function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinati
     ...sourceState,
     deferredIntentions,
     archiveEnrichment,
+    githubStarsEnrichment,
     techmemeEnrichment,
     feed,
     homeModel: latestHomeModel,
@@ -169,6 +178,7 @@ function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinati
       ...sourceState,
       deferredIntentions,
       archiveEnrichment,
+      githubStarsEnrichment,
       techmemeEnrichment,
       feed,
       homeModel: latestHomeModel
@@ -272,6 +282,7 @@ function renderFreshHome() {
     neighborhoods: [],
     archiveItems: [],
     interests: [],
+    githubStarItems: [],
     techmemeItems: [],
     freshOverride: true
   });

@@ -8,6 +8,7 @@ const MODE_CLASSES = [
   "home-takeover--fresh"
 ];
 const MAX_ARCHIVE_ITEMS = 6;
+const MAX_GITHUB_STAR_ITEMS = 8;
 const MAX_TECHMEME_ITEMS = 8;
 const MAX_INTEREST_ITEMS = 8;
 
@@ -58,6 +59,10 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   const techmemeItems = asArray(safeModel.techmemeItems)
     .slice(0, MAX_TECHMEME_ITEMS)
     .map((item, index) => normalizeTechmemeItem(item, index))
+    .filter(Boolean);
+  const githubStarItems = asArray(safeModel.githubStarItems)
+    .slice(0, MAX_GITHUB_STAR_ITEMS)
+    .map((item, index) => normalizeGithubStarItem(item, index))
     .filter(Boolean);
   const renderId = ++renderSequence;
   const titleId = `home-takeover-title-${renderId}`;
@@ -115,6 +120,9 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
         status,
         renderId
       ));
+    }
+    if (githubStarItems.length > 0) {
+      fragment.append(renderGithubStars(githubStarItems, handlers, status, renderId));
     }
     if (techmemeItems.length > 0) {
       fragment.append(renderTechmeme(techmemeItems, handlers, status, renderId));
@@ -376,6 +384,64 @@ function createTechmemeActionButton(item, handlers, status) {
   const arrow = element("span", "home-takeover__action-arrow", "↗");
   arrow.setAttribute("aria-hidden", "true");
   button.append(element("span", "home-takeover__verb", "Read"), copy, arrow);
+  prepareTitleAnchor(button, action.title, action.verb);
+
+  const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
+  wireCommand(button, callback, action.raw, status, {
+    working: `Opening ${action.title}…`,
+    failed: `Could not open ${action.title}. Try again.`,
+    context: action
+  });
+  return button;
+}
+
+function renderGithubStars(items, handlers, status, renderId) {
+  const titleId = `home-takeover-github-stars-title-${renderId}`;
+  const section = element("section", "home-takeover__github-stars");
+  section.setAttribute("aria-labelledby", titleId);
+  const header = element("header", "home-takeover__github-stars-header");
+  header.append(
+    element("p", "home-takeover__section-label", "GitHub stars"),
+    element("h2", "home-takeover__github-stars-title", "Saved repositories")
+  );
+  header.lastElementChild.id = titleId;
+  section.append(header);
+
+  const list = element("ol", "home-takeover__github-stars-list");
+  items.forEach(item => {
+    const row = element("li", "home-takeover__github-stars-item");
+    row.append(createGithubStarActionButton(item, handlers, status));
+    list.append(row);
+  });
+  section.append(list);
+  return section;
+}
+
+function createGithubStarActionButton(item, handlers, status) {
+  const { action } = item;
+  const button = element("button", "home-takeover__action home-takeover__github-star-action");
+  button.type = "button";
+  button.dataset.actionId = action.id;
+  button.dataset.verb = cleanToken(action.verb);
+
+  const copy = element("span", "home-takeover__action-copy");
+  copy.append(createHomeTitleElement(
+    "strong",
+    "home-takeover__action-title",
+    action.title,
+    HOME_TITLE_LIMITS.compact
+  ));
+  const context = element("span", "home-takeover__github-star-context");
+  context.append(element("span", "home-takeover__github-star-date", formatStarredDate(item.starredAt)));
+  const topics = item.matchedTopics.length > 0 ? item.matchedTopics : item.topics;
+  if (topics.length > 0) {
+    context.append(element("span", "home-takeover__github-star-topics", topics.slice(0, 3).join(" · ")));
+  }
+  copy.append(context);
+
+  const arrow = element("span", "home-takeover__action-arrow", "↗");
+  arrow.setAttribute("aria-hidden", "true");
+  button.append(element("span", "home-takeover__verb", "Repo"), copy, arrow);
   prepareTitleAnchor(button, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
@@ -977,6 +1043,27 @@ function normalizeTechmemeItem(raw, index) {
   };
 }
 
+function normalizeGithubStarItem(raw, index) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const rawAction = source.action && typeof source.action === "object" ? source.action : {};
+  const action = normalizeAction({
+    ...rawAction,
+    id: readableText(source.id) || readableText(rawAction.id) || `github-star-${index + 1}`,
+    title: readableText(source.title) || readableText(rawAction.title),
+    reasons: [],
+    sources: ["github-star"]
+  }, index, "open");
+  if (!/^https:\/\/github\.com\/[^/]+\/[^/]+\/?$/iu.test(action.target?.url || "")) return null;
+  action.raw = rawAction;
+  return {
+    action,
+    topics: unique(asArray(source.topics).map(readableText).filter(Boolean)).slice(0, 4),
+    matchedTopics: unique(asArray(source.matchedTopics).map(readableText).filter(Boolean)).slice(0, 3),
+    starredAt: Number(source.starredAt) || 0,
+    matchKind: readableText(source.matchKind)
+  };
+}
+
 function interestStateLabel(value) {
   const state = readableText(value);
   if (state === "active-now") return "active now";
@@ -1018,10 +1105,21 @@ function uniqueActions(actions) {
 
 function hasRenderableContent(model, actions, archiveItems = []) {
   return archiveItems.length > 0
+    || asArray(model.githubStarItems).length > 0
     || asArray(model.techmemeItems).length > 0
     || actions.length > 0
     || Boolean(model.primaryActivity)
     || asArray(model.neighborhoods).length > 0;
+}
+
+function formatStarredDate(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "starred";
+  const date = new Date(timestamp);
+  const now = new Date();
+  const options = { month: "short", day: "numeric" };
+  if (date.getFullYear() !== now.getFullYear()) options.year = "numeric";
+  return `starred ${new Intl.DateTimeFormat("en-US", options).format(date)}`;
 }
 
 function resolveMode(model) {

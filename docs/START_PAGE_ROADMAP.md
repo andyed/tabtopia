@@ -414,6 +414,13 @@ The current Home takeover expands content without weakening source boundaries:
   panel. Discovery may render up to 10 otherwise unrepresented actions.
 - Archive enrichment rises from four to six items and exposes up to eight
   aggregate tag-derived Interest threads as a separate compact panel.
+- GitHub stars are a separate explicit-interest source, not the Chrome-bookmark
+  Star lane. The Interests service exposes the daily star export through a
+  read-only local endpoint; Home reads its last good six-hour cache for first
+  paint and refreshes in the background. Archive topics and visible Home titles
+  rank related repositories first, then recent stars fill the bounded eight-item
+  panel. Repository topics and starred dates retain provenance, while enrichment
+  relevance never enters habit, bookmark, activity, or session evidence.
 - Techmeme is an enrichment-only bottom panel. Home reads a 20-minute local
   cache for first paint, refreshes `https://www.techmeme.com/feed.xml` in the
   background, retains only plain titles and validated Techmeme permalinks, and
@@ -424,10 +431,11 @@ The current Home takeover expands content without weakening source boundaries:
   reveals the full title on fine-pointer hover or keyboard focus without
   reflow; Escape dismisses it while preserving focus.
 
-The proof gate is deterministic unit coverage for caching, RSS validation,
-filtering, title shortening, and source bounds, plus extension-loaded browser
-coverage for non-blocking first paint, panel ordering, action execution,
-keyboard/hover dismissal, narrow-screen containment, and escaping.
+The proof gate is deterministic unit coverage for cache behavior, source
+validation, relevance-plus-recency ranking, RSS filtering, title shortening,
+and source bounds, plus extension-loaded browser coverage for non-blocking first
+paint, panel ordering, action execution, keyboard/hover dismissal, narrow-screen
+containment, and escaping.
 
 ## Measurement plan
 

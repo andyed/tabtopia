@@ -25,6 +25,7 @@ async function renderArchiveFixture(page, extensionId, {
   archiveItems = [],
   actions = [],
   interests = [],
+  githubStarItems = [],
   techmemeItems = []
 } = {}) {
   await page.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html#/home`, {
@@ -39,6 +40,7 @@ async function renderArchiveFixture(page, extensionId, {
     archiveItems: items,
     actions: destinations,
     interests: interestThreads,
+    githubStarItems: repositoryItems,
     techmemeItems: newsItems
   }) => {
     const { renderHomeTakeover } = await import(chrome.runtime.getURL("src/newtab/home-takeover.js"));
@@ -62,13 +64,14 @@ async function renderArchiveFixture(page, extensionId, {
       actions: destinations,
       archiveItems: items,
       interests: interestThreads,
+      githubStarItems: repositoryItems,
       techmemeItems: newsItems
     }, {
       onAction(action) {
         window.__archiveAction = action;
       }
     });
-  }, { archiveItems, actions, interests, techmemeItems });
+  }, { archiveItems, actions, interests, githubStarItems, techmemeItems });
   return page.locator("#archiveFixture");
 }
 
@@ -308,6 +311,72 @@ test.describe("development home takeover", () => {
     await expect.poll(() => page.evaluate(async () => {
       const snapshot = (await chrome.storage.local.get("tabtopiaTechmemeProviderV1"))
         .tabtopiaTechmemeProviderV1;
+      return snapshot?.items?.length || 0;
+    })).toBe(2);
+  });
+
+  test("adds relevant GitHub stars after first paint and caches the complete source", async ({ context, extensionId }) => {
+    let releaseStars;
+    let starRequests = 0;
+    const starsGate = new Promise(resolve => { releaseStars = resolve; });
+    await context.route("http://127.0.0.1:8889/api/github/stars", async route => {
+      starRequests += 1;
+      await starsGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          updatedAt: Date.now(),
+          items: [{
+            title: "cognition/act-r-tools",
+            url: "https://github.com/cognition/act-r-tools",
+            description: "Working-memory utilities for cognitive architectures",
+            topics: ["cognitive-architecture", "working-memory"],
+            stars: 82,
+            date_added: "2026-07-24T12:00:00Z",
+            source: "GitHub",
+            type: "star"
+          }, {
+            title: "newest/unrelated",
+            url: "https://github.com/newest/unrelated",
+            description: "An unrelated but explicitly saved repository",
+            topics: ["utilities"],
+            stars: 20,
+            date_added: "2026-07-25T12:00:00Z",
+            source: "GitHub",
+            type: "star"
+          }]
+        })
+      });
+    });
+
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/src/options/options.html`, {
+      waitUntil: "domcontentloaded"
+    });
+    await page.evaluate(() => chrome.bookmarks.create({
+      title: "Working memory research",
+      url: "https://research.example/working-memory"
+    }));
+    await page.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html#/home`, {
+      waitUntil: "domcontentloaded"
+    });
+
+    const home = page.locator("#startPageHome");
+    await expect(home).toHaveAttribute("aria-busy", "false");
+    await expect(home.locator(".home-takeover__github-stars")).toHaveCount(0);
+    await expect.poll(() => starRequests).toBe(1);
+
+    releaseStars();
+    const panel = home.locator(".home-takeover__github-stars");
+    await expect(panel.getByRole("button", { name: "Open: cognition/act-r-tools" })).toBeVisible();
+    await expect(panel.locator(".home-takeover__github-stars-item").first())
+      .toContainText("cognition/act-r-tools");
+    await expect(panel.locator(".home-takeover__github-stars-item").nth(1))
+      .toContainText("newest/unrelated");
+    await expect.poll(() => page.evaluate(async () => {
+      const snapshot = (await chrome.storage.local.get("tabtopiaGithubStarsProviderV1"))
+        .tabtopiaGithubStarsProviderV1;
       return snapshot?.items?.length || 0;
     })).toBe(2);
   });
@@ -683,6 +752,80 @@ test.describe("development home takeover", () => {
 
     await firstAction.click();
     await expect.poll(() => page.evaluate(() => window.__archiveAction)).toEqual(techmemeItems[0].action);
+  });
+
+  test("renders GitHub stars as a bounded compact panel with provenance and canonical actions", async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    const githubStarItems = Array.from({ length: 10 }, (_, index) => ({
+      id: `github-star-${index + 1}`,
+      title: index === 0
+        ? "cognition/act-r-working-memory-tools-with-a-title-that-needs-a-hover-peek"
+        : `owner/repository-${index + 1}`,
+      topics: index === 0 ? ["cognitive-architecture", "working-memory", "lisp"] : ["tools"],
+      matchedTopics: index === 0 ? ["working memory"] : [],
+      starredAt: Date.UTC(2026, 6, 25 - index, 12, 0, 0),
+      matchKind: index === 0 ? "related" : "recent",
+      action: {
+        verb: "open",
+        target: {
+          title: index === 0
+            ? "cognition/act-r-working-memory-tools-with-a-title-that-needs-a-hover-peek"
+            : `owner/repository-${index + 1}`,
+          url: `https://github.com/owner/repository-${index + 1}`
+        }
+      }
+    }));
+    const home = await renderArchiveFixture(page, extensionId, {
+      actions: [{
+        id: "route",
+        title: "Current route",
+        verb: "open",
+        target: { url: "https://route.example/" },
+        sources: ["habit"]
+      }],
+      githubStarItems
+    });
+    const panel = home.locator(".home-takeover__github-stars");
+
+    await expect(panel.getByText("GitHub stars", { exact: true })).toBeVisible();
+    await expect(panel.getByRole("heading", { name: "Saved repositories" })).toBeVisible();
+    await expect(panel.locator(".home-takeover__github-stars-item")).toHaveCount(8);
+    await expect(panel.getByText("owner/repository-10", { exact: true })).toHaveCount(0);
+    await expect(panel.getByText("working memory", { exact: true })).toBeVisible();
+    await expect(panel.getByText(/starred Jul 25/)).toBeVisible();
+    const fullTitle = panel.locator("[data-home-title]").first();
+    await expect(fullTitle).toHaveAttribute("data-title-shortened", "true");
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await panel.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-github-stars-1440x1000.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+    }
+
+    const firstAction = panel.locator(".home-takeover__github-star-action").first();
+    await page.setViewportSize({ width: 360, height: 740 });
+    await firstAction.scrollIntoViewIfNeeded();
+    const bounds = await firstAction.evaluate(button => {
+      const rect = button.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, width: document.documentElement.clientWidth, height: rect.height };
+    });
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(bounds.width);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await page.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-github-stars-360x740.png"),
+        animations: "disabled"
+      });
+    }
+
+    await firstAction.click();
+    await expect.poll(() => page.evaluate(() => window.__archiveAction)).toEqual(githubStarItems[0].action);
   });
 
   test("keeps discovery useful without archive data and escapes archive metadata", async ({ context, extensionId }) => {
