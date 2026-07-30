@@ -26,7 +26,9 @@ async function renderArchiveFixture(page, extensionId, {
   actions = [],
   interests = [],
   githubStarItems = [],
-  techmemeItems = []
+  techmemeItems = [],
+  mode = "quiet",
+  primaryActivity = null
 } = {}) {
   await page.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html#/home`, {
     waitUntil: "domcontentloaded"
@@ -41,7 +43,9 @@ async function renderArchiveFixture(page, extensionId, {
     actions: destinations,
     interests: interestThreads,
     githubStarItems: repositoryItems,
-    techmemeItems: newsItems
+    techmemeItems: newsItems,
+    mode: fixtureMode,
+    primaryActivity: activity
   }) => {
     const { renderHomeTakeover } = await import(chrome.runtime.getURL("src/newtab/home-takeover.js"));
     const previousFixture = document.getElementById("archiveFixture");
@@ -58,21 +62,33 @@ async function renderArchiveFixture(page, extensionId, {
       node.inert = node !== root;
     });
     window.__archiveAction = null;
-    renderHomeTakeover(root, {
-      mode: "quiet",
-      state: "launch",
-      stateLabel: "Launch",
+    const model = {
+      mode: fixtureMode,
+      state: fixtureMode === "engaged" ? "continuation" : "launch",
+      stateLabel: fixtureMode === "engaged" ? "Continuation" : "Launch",
       actions: destinations,
       archiveItems: items,
       interests: interestThreads,
       githubStarItems: repositoryItems,
-      techmemeItems: newsItems
-    }, {
+      techmemeItems: newsItems,
+      primaryActivity: activity
+    };
+    const handlers = {
       onAction(action) {
         window.__archiveAction = action;
       }
-    });
-  }, { archiveItems, actions, interests, githubStarItems, techmemeItems });
+    };
+    window.__rerenderArchiveFixture = () => renderHomeTakeover(root, model, handlers);
+    window.__rerenderArchiveFixture();
+  }, {
+    archiveItems,
+    actions,
+    interests,
+    githubStarItems,
+    techmemeItems,
+    mode,
+    primaryActivity
+  });
   return page.locator("#archiveFixture");
 }
 
@@ -829,6 +845,143 @@ test.describe("development home takeover", () => {
 
     await firstAction.click();
     await expect.poll(() => page.evaluate(() => window.__archiveAction)).toEqual(githubStarItems[0].action);
+  });
+
+  test("offers an evidenced activity graph with a persistent keyboard link-view toggle", async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const base = Date.UTC(2026, 6, 30, 16, 0, 0);
+    const items = [
+      activityPage("event", "Santa Cruz Psychedelic Society Monthly Gathering", "https://www.meetup.com/santa-cruz-psychedelic-society/events/42/?eventOrigin=group", 0),
+      activityPage("attendees-login", "Attendees | Santa Cruz Psychedelic Society", "https://www.meetup.com/santa-cruz-psychedelic-society/events/42/attendees/?loginProvider=google", 1),
+      activityPage("google-auth", "Sign in with Google", "https://accounts.google.com/o/oauth2/auth", 2),
+      activityPage("attendees-return", "Attendees | Santa Cruz Psychedelic Society", "https://www.meetup.com/santa-cruz-psychedelic-society/events/42/attendees/?return=1", 3),
+      activityPage("checkout-monthly", "Meetup Plus Checkout", "https://www.meetup.com/subscription/checkout/?billing=monthly", 4),
+      activityPage("checkout-return", "Meetup Plus Checkout", "https://www.meetup.com/subscription/checkout/?trigger=attendees", 5),
+      {
+        ...activityPage("groups", "Your groups", "https://www.meetup.com/groups/", 6),
+        open: true,
+        active: true,
+        tabId: 123,
+        windowId: 7
+      }
+    ];
+    const transitions = [
+      ["event", "attendees-login"],
+      ["attendees-login", "google-auth"],
+      ["google-auth", "attendees-return"],
+      ["attendees-return", "checkout-monthly"],
+      ["checkout-monthly", "attendees-return"],
+      ["attendees-return", "checkout-return"],
+      ["checkout-return", "groups"]
+    ];
+    const edges = transitions.map(([sourceKey, targetKey], index) => ({
+      source: sourceKey,
+      target: targetKey,
+      types: ["referrer"],
+      evidence: [{
+        type: "referrer",
+        sourceKey,
+        targetKey,
+        origin: "visit-referral",
+        timestamp: base + ((index + 1) * 1_000)
+      }]
+    }));
+    const primaryActivity = {
+      id: "meetup-activity",
+      title: "Your groups",
+      summary: "7 pages joined by 7 followed links",
+      action: {
+        id: "meetup-primary",
+        title: "Your groups",
+        domain: "meetup.com",
+        verb: "switch",
+        target: { title: "Your groups", url: "https://www.meetup.com/groups/", tabId: 123, windowId: 7 }
+      },
+      items,
+      edges
+    };
+    const home = await renderArchiveFixture(page, extensionId, {
+      mode: "engaged",
+      primaryActivity
+    });
+    const graphButton = home.getByRole("button", { name: "Graph" });
+    const linksButton = home.getByRole("button", { name: "Links" });
+    const graph = home.locator(".home-takeover__journey");
+    const linksPanel = home.locator(".home-takeover__activity-links");
+
+    await expect(graphButton).toHaveAttribute("aria-pressed", "true");
+    await expect(graph).toBeVisible();
+    await expect(linksPanel).toBeHidden();
+    await expect(graph.locator(".home-takeover__journey-node")).toHaveCount(5);
+    await expect(graph.locator(".home-takeover__journey-favicon")).toHaveCount(3);
+    await expect(graph.locator(".home-takeover__journey-edge--repeat")).toHaveCount(1);
+    await expect(graph.getByText("7 recorded · 5 page roles · 7 followed", { exact: true })).toBeVisible();
+    await expect(home.getByText(/goal|detour|escape|recovery/iu)).toHaveCount(0);
+
+    const semantics = await graph.locator(".home-takeover__journey-link").evaluateAll(nodes => nodes.map(node => ({
+      tag: node.tagName,
+      href: node.getAttribute("href"),
+      tabIndex: node.tabIndex
+    })));
+    expect(semantics).toHaveLength(5);
+    expect(semantics.every(item => item.tag === "A" && /^https:\/\//u.test(item.href) && item.tabIndex === 0)).toBe(true);
+
+    await graphButton.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(linksButton).toBeFocused();
+    await expect(linksButton).toHaveAttribute("aria-pressed", "true");
+    await expect(linksPanel).toBeVisible();
+    await expect(linksPanel.locator(".home-takeover__trail-link")).toHaveCount(7);
+    await page.evaluate(() => window.__rerenderArchiveFixture());
+    await expect(linksButton).toHaveAttribute("aria-pressed", "true");
+
+    await linksButton.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(graphButton).toBeFocused();
+    await expect(graph).toBeVisible();
+
+    await page.setViewportSize({ width: 390, height: 780 });
+    await expect(graph.locator(".home-takeover__journey-connectors")).toBeHidden();
+    const mobileGeometry = await graph.evaluate(root => ({
+      clientWidth: root.closest(".home-takeover").clientWidth,
+      scrollWidth: root.closest(".home-takeover").scrollWidth,
+      viewportWidth: document.documentElement.clientWidth,
+      nodes: [...root.querySelectorAll(".home-takeover__journey-node")].map(node => {
+        const bounds = node.getBoundingClientRect();
+        return { left: bounds.left, right: bounds.right };
+      })
+    }));
+    expect(mobileGeometry.scrollWidth).toBeLessThanOrEqual(mobileGeometry.clientWidth);
+    expect(mobileGeometry.nodes.every(node => node.left >= 0 && node.right <= mobileGeometry.viewportWidth)).toBe(true);
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-activity-graph-390x780.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await graph.scrollIntoViewIfNeeded();
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-activity-graph-1440x1000.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+    }
+
+    function activityPage(key, title, url, minute) {
+      return {
+        key,
+        title,
+        url,
+        visitCount: 1,
+        timestamps: [base + (minute * 60_000)],
+        lastActivityAt: base + (minute * 60_000)
+      };
+    }
   });
 
   test("uses native hyperlinks with modifier navigation and complete keyboard traversal", async ({ context, extensionId }) => {

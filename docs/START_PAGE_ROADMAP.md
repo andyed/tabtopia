@@ -448,6 +448,38 @@ paint, panel ordering, action execution, keyboard/hover dismissal, narrow-screen
 containment, modifier-click new-tab behavior, sequential Tab/Shift+Tab order,
 Enter activation, visible focus, and escaping.
 
+## Home activity-graph prototype — 2026-07-30
+
+Engaged Home may default its Current activity panel to a compact graph when the
+canonical neighborhood contains enough reproducible structure. This is an
+explanatory lens over the activity, never new ranking evidence:
+
+- The graph requires 3–10 display roles and at least two evidenced referral or
+  tab-spawn joins. A weak temporal-only component stays in the existing link
+  view. Structural arrows come only from evidence records that name both ends;
+  temporal overlap is undirected and dashed.
+- The display projection groups query variants by origin and pathname into a
+  labeled page role, retains its record count, and links to a real recorded
+  representative. The adjacent **Links** toggle preserves the exact recorded
+  pages and their original DOM order, so grouping never removes access to an
+  individual visit.
+- Labels describe observable structure only: earliest, latest, seen order, and
+  repetition. The renderer does not infer goal, detour, upsell, escape, or
+  recovery semantics from one trace.
+- Favicons come only from Chrome's local cache. They appear at recorded domain
+  run boundaries, not on every card; an OAuth parameter cannot manufacture a
+  Google node, while an actual `accounts.google.com` page can.
+- Four or more roles use a two-row serpentine layout with DOM anchors above
+  minimal SVG connectors. At narrow widths the SVG disappears and the same
+  anchors become a contained sequential list. Graph and Links are real buttons
+  with pressed state, arrow-key switching, visible focus, and preference
+  persistence across Home re-renders.
+
+The prototype gate is deterministic projection coverage plus an
+extension-loaded browser proof of the default graph, real hyperlinks, favicon
+boundaries, repeated transitions, keyboard reversal, retained Links view,
+re-render persistence, and 390-pixel containment.
+
 ## Measurement plan
 
 ### Ranking quality

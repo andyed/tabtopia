@@ -221,24 +221,24 @@ function homeModelFrom(feed, recognition, forecast, snapshot) {
     sources: action.sources,
     reasons: action.reasons.map(reason => reason.text)
   }));
-  const resumptionActivities = (forecast?.candidates || []).map(candidate => ({
-    ...candidate,
-    items: snapshot.neighborhoods.find(neighborhood => neighborhood.id === candidate.id)?.items || []
-  }));
+  const neighborhoodById = new Map(
+    (snapshot.neighborhoods || []).map(neighborhood => [neighborhood.id, neighborhood])
+  );
+  const resumptionActivities = (forecast?.candidates || []).map(candidate =>
+    activityWithTopology(candidate, neighborhoodById.get(candidate.id))
+  );
+  const leadingNeighborhood = feed.primaryActivity
+    ? neighborhoodById.get(feed.primaryActivity.id)
+    : null;
   const leadingActivity = feed.primaryActivity
-    ? {
-        ...feed.primaryActivity,
-        items: snapshot.neighborhoods.find(
-          neighborhood => neighborhood.id === feed.primaryActivity.id
-        )?.items || []
-      }
+    ? activityWithTopology(feed.primaryActivity, leadingNeighborhood)
     : feed.mode === "engaged" && actions[0]
-      ? {
-          ...actions[0],
-          items: resumptionActivities.find(candidate =>
+      ? activityWithTopology(
+          actions[0],
+          resumptionActivities.find(candidate =>
             candidate.action?.target?.url === actions[0].target?.url
-          )?.items || []
-        }
+          )
+        )
       : null;
   return {
     ...feed,
@@ -250,6 +250,17 @@ function homeModelFrom(feed, recognition, forecast, snapshot) {
     loading: false,
     error: null,
     freshOverride: false
+  };
+}
+
+function activityWithTopology(activity, neighborhood) {
+  return {
+    ...activity,
+    items: Array.isArray(neighborhood?.items) ? neighborhood.items : [],
+    edges: Array.isArray(neighborhood?.edges) ? neighborhood.edges : [],
+    relationCounts: neighborhood?.relationCounts && typeof neighborhood.relationCounts === "object"
+      ? { ...neighborhood.relationCounts }
+      : {}
   };
 }
 

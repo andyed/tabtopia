@@ -1,4 +1,6 @@
 import { HOME_TITLE_LIMITS, truncateHomeTitle } from "../lib/home-title.js";
+import { buildActivityJourney } from "../lib/activity-journey.js";
+import { createLetterFavicon, getLocalFaviconUrl } from "./utility.js";
 
 const HOME_MODES = new Set(["quiet", "engaged", "return"]);
 const MODE_CLASSES = [
@@ -101,7 +103,7 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   } else if (errorText && !hasRenderableContent(safeModel, actions, archiveItems)) {
     primaryContent = renderUnavailable();
   } else if (mode === "engaged") {
-    primaryContent = renderEngaged(safeModel, actions, handlers, status);
+    primaryContent = renderEngaged(safeModel, actions, handlers, status, root, renderId);
   } else if (mode === "return") {
     primaryContent = renderReturn(safeModel, actions, handlers, status);
   } else {
@@ -431,7 +433,7 @@ function createGithubStarActionLink(item, handlers, status) {
   return link;
 }
 
-function renderEngaged(model, actions, handlers, status) {
+function renderEngaged(model, actions, handlers, status, root, renderId) {
   const region = element("div", "home-takeover__engaged-layout");
   const activity = normalizeActivity(model.primaryActivity, model.neighborhoods, actions);
 
@@ -461,34 +463,10 @@ function renderEngaged(model, actions, handlers, status) {
   }
   primary.append(activityHeader);
 
-  if (activity.trail.length > 0) {
-    const trail = element("ol", "home-takeover__trail");
-    trail.setAttribute("aria-label", "Pages in this activity");
-    activity.trail.slice(0, 7).forEach((trailItem, index) => {
-      const item = element("li", "home-takeover__trail-item");
-      const link = createNavigationAnchor(trailItem, "home-takeover__trail-link");
-      const marker = element("span", "home-takeover__trail-marker", String(index + 1).padStart(2, "0"));
-      marker.setAttribute("aria-hidden", "true");
-      const copy = element("span", "home-takeover__trail-copy");
-      copy.append(createHomeTitleElement(
-        "strong",
-        "home-takeover__trail-title",
-        trailItem.title,
-        HOME_TITLE_LIMITS.trail
-      ));
-      if (trailItem.domain) copy.append(element("span", "home-takeover__trail-domain", trailItem.domain));
-      link.append(marker, copy);
-      prepareTitleAnchor(link, trailItem.title, trailItem.verb);
-      const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
-      wireNavigation(link, callback, executableAction(trailItem), status, {
-        working: `Opening ${trailItem.title}…`,
-        failed: `Could not open ${trailItem.title}. Try again.`,
-        context: trailItem
-      });
-      item.append(link);
-      trail.append(item);
-    });
-    primary.append(trail);
+  if (activity.journey) {
+    primary.append(renderActivityViews(activity, handlers, status, root, renderId));
+  } else if (activity.trail.length > 0) {
+    primary.append(renderActivityTrail(activity.trail, handlers, status));
   }
 
   primary.append(createActionLink(activity.action, handlers, status, {
@@ -516,6 +494,277 @@ function renderEngaged(model, actions, handlers, status) {
     region.append(fastPath);
   }
   return region;
+}
+
+function renderActivityViews(activity, handlers, status, root, renderId) {
+  const wrapper = element("div", "home-takeover__activity-views");
+  const graphId = `home-takeover-activity-graph-${renderId}`;
+  const linksId = `home-takeover-activity-links-${renderId}`;
+  const controls = element("div", "home-takeover__activity-view-controls");
+  controls.setAttribute("role", "group");
+  controls.setAttribute("aria-label", "Activity view");
+
+  const graphButton = viewButton("Graph", graphId);
+  const linksButton = viewButton("Links", linksId);
+  const graphPanel = renderActivityJourney(activity.journey, handlers, status, renderId);
+  graphPanel.id = graphId;
+  const linksPanel = element("div", "home-takeover__activity-links");
+  linksPanel.id = linksId;
+  linksPanel.append(renderActivityTrail(activity.trail, handlers, status));
+
+  const selectView = view => {
+    const graphSelected = view !== "links";
+    root.dataset.activityView = graphSelected ? "graph" : "links";
+    graphButton.setAttribute("aria-pressed", String(graphSelected));
+    linksButton.setAttribute("aria-pressed", String(!graphSelected));
+    graphPanel.hidden = !graphSelected;
+    linksPanel.hidden = graphSelected;
+  };
+  graphButton.addEventListener("click", () => selectView("graph"));
+  linksButton.addEventListener("click", () => selectView("links"));
+
+  const buttons = [graphButton, linksButton];
+  controls.addEventListener("keydown", event => {
+    const index = buttons.indexOf(document.activeElement);
+    if (index < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? buttons.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[nextIndex].focus();
+    buttons[nextIndex].click();
+  });
+
+  controls.append(graphButton, linksButton);
+  wrapper.append(controls, graphPanel, linksPanel);
+  selectView(root.dataset.activityView === "links" ? "links" : "graph");
+  return wrapper;
+}
+
+function viewButton(label, controlsId) {
+  const button = element("button", "home-takeover__activity-view-button", label);
+  button.type = "button";
+  button.setAttribute("aria-controls", controlsId);
+  return button;
+}
+
+function renderActivityTrail(trailItems, handlers, status) {
+  const trail = element("ol", "home-takeover__trail");
+  trail.setAttribute("aria-label", "Pages in this activity");
+  trailItems.slice(0, 7).forEach((trailItem, index) => {
+    const item = element("li", "home-takeover__trail-item");
+    const link = createNavigationAnchor(trailItem, "home-takeover__trail-link");
+    const marker = element("span", "home-takeover__trail-marker", String(index + 1).padStart(2, "0"));
+    marker.setAttribute("aria-hidden", "true");
+    const copy = element("span", "home-takeover__trail-copy");
+    copy.append(createHomeTitleElement(
+      "strong",
+      "home-takeover__trail-title",
+      trailItem.title,
+      HOME_TITLE_LIMITS.trail
+    ));
+    if (trailItem.domain) copy.append(element("span", "home-takeover__trail-domain", trailItem.domain));
+    link.append(marker, copy);
+    prepareTitleAnchor(link, trailItem.title, trailItem.verb);
+    const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
+    wireNavigation(link, callback, executableAction(trailItem), status, {
+      working: `Opening ${trailItem.title}…`,
+      failed: `Could not open ${trailItem.title}. Try again.`,
+      context: trailItem
+    });
+    item.append(link);
+    trail.append(item);
+  });
+  return trail;
+}
+
+function renderActivityJourney(journey, handlers, status, renderId) {
+  const section = element("section", "home-takeover__journey");
+  section.setAttribute("aria-label", "Activity graph");
+
+  const overview = element("div", "home-takeover__journey-overview");
+  const counts = element(
+    "p",
+    "home-takeover__journey-counts",
+    `${journey.recordedPageCount} recorded · ${journey.roleCount} page roles · ${journey.followedTransitionCount} followed`
+  );
+  const legend = element("div", "home-takeover__journey-legend");
+  legend.setAttribute("aria-label", "Graph legend");
+  legend.append(
+    legendItem("home-takeover__journey-key--followed", "followed"),
+    legendItem("home-takeover__journey-key--temporal", "active together"),
+    legendItem("home-takeover__journey-key--repeat", "repeated")
+  );
+  overview.append(counts, legend);
+
+  const field = element("div", "home-takeover__journey-field");
+  const svg = journeyConnectors(journey, renderId);
+  const nodes = element("ol", "home-takeover__journey-nodes");
+  nodes.setAttribute("aria-label", "Page roles in first-seen order");
+  journey.nodes.forEach(node => nodes.append(renderJourneyNode(node, handlers, status)));
+  field.append(svg, nodes);
+  section.append(overview, field);
+  return section;
+}
+
+function legendItem(className, label) {
+  const item = element("span", "home-takeover__journey-legend-item");
+  const key = element("span", `home-takeover__journey-key ${className}`);
+  key.setAttribute("aria-hidden", "true");
+  item.append(key, document.createTextNode(label));
+  return item;
+}
+
+function renderJourneyNode(node, handlers, status) {
+  const item = element("li", "home-takeover__journey-node");
+  item.classList.toggle("home-takeover__journey-node--repeated", node.repeated);
+  item.classList.toggle("home-takeover__journey-node--first", node.first);
+  item.classList.toggle("home-takeover__journey-node--latest", node.latest);
+  item.style.setProperty("--journey-x", `${node.position.x}%`);
+  item.style.setProperty("--journey-y", `${node.position.y}%`);
+
+  const canSwitch = Boolean(node.target?.open)
+    && Number.isInteger(node.target?.tabId)
+    && Number.isInteger(node.target?.windowId);
+  const rawAction = {
+    id: `journey:${node.id}`,
+    title: node.title,
+    domain: node.domain,
+    verb: canSwitch ? "switch" : "open",
+    target: {
+      ...node.target,
+      title: node.title,
+      url: node.url
+    },
+    sources: ["activity"]
+  };
+  const action = normalizeAction(rawAction, node.index, rawAction.verb);
+  const link = createNavigationAnchor(action, "home-takeover__journey-link");
+
+  const topLine = element("span", "home-takeover__journey-node-topline");
+  if (node.showFavicon) topLine.append(journeyFavicon(node));
+  topLine.append(element("span", "home-takeover__journey-role", journeyRoleLabel(node)));
+  const occurrenceCount = Math.max(node.recordedPages, node.visitCount);
+  if (occurrenceCount > 1) {
+    topLine.append(element("span", "home-takeover__journey-repeat-count", `×${occurrenceCount}`));
+  }
+  link.append(
+    topLine,
+    createHomeTitleElement(
+      "strong",
+      "home-takeover__journey-title",
+      node.title,
+      HOME_TITLE_LIMITS.trail
+    ),
+    element("span", "home-takeover__journey-path", node.path)
+  );
+  prepareTitleAnchor(link, node.title, rawAction.verb);
+  const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
+  wireNavigation(link, callback, rawAction, status, {
+    working: `${canSwitch ? "Switching to" : "Opening"} ${node.title}…`,
+    failed: `Could not ${canSwitch ? "switch to" : "open"} ${node.title}. Try again.`,
+    context: action
+  });
+  item.append(link);
+  return item;
+}
+
+function journeyFavicon(node) {
+  const icon = element("img", "home-takeover__journey-favicon");
+  icon.src = getLocalFaviconUrl(node.url, 32);
+  icon.alt = "";
+  icon.setAttribute("aria-hidden", "true");
+  icon.width = 28;
+  icon.height = 28;
+  icon.addEventListener("error", () => {
+    icon.src = createLetterFavicon(node.url);
+  }, { once: true });
+  return icon;
+}
+
+function journeyRoleLabel(node) {
+  if (node.first && node.latest) return "Earliest + latest";
+  if (node.first) return "Earliest";
+  if (node.latest) return "Latest";
+  if (node.repeated) return "Repeat";
+  return `Seen ${String(node.index + 1).padStart(2, "0")}`;
+}
+
+function journeyConnectors(journey, renderId) {
+  const svg = svgElement("svg");
+  svg.classList.add("home-takeover__journey-connectors");
+  svg.setAttribute("viewBox", "0 0 1000 460");
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  const routeMarkerId = `home-journey-route-${renderId}`;
+  const repeatMarkerId = `home-journey-repeat-${renderId}`;
+  const defs = svgElement("defs");
+  defs.append(
+    arrowMarker(routeMarkerId, "#9ff7d2"),
+    arrowMarker(repeatMarkerId, "#ffab88")
+  );
+  svg.append(defs);
+
+  const nodeById = new Map(journey.nodes.map(node => [node.id, node]));
+  const edgeKeys = new Set(journey.edges.map(edge => `${edge.source}->${edge.target}`));
+  journey.edges.forEach(edge => {
+    const source = nodeById.get(edge.source);
+    const target = nodeById.get(edge.target);
+    if (!source || !target) return;
+    const repeated = edge.count > 1;
+    const reciprocal = edgeKeys.has(`${edge.target}->${edge.source}`);
+    const path = svgElement("path");
+    path.classList.add("home-takeover__journey-edge");
+    path.classList.toggle("home-takeover__journey-edge--temporal", edge.kind === "temporal");
+    path.classList.toggle("home-takeover__journey-edge--repeat", repeated);
+    path.setAttribute("d", connectorPath(source.position, target.position, reciprocal, edge.source < edge.target));
+    if (edge.kind === "structural") {
+      path.setAttribute("marker-end", `url(#${repeated ? repeatMarkerId : routeMarkerId})`);
+    }
+    svg.append(path);
+  });
+  return svg;
+}
+
+function arrowMarker(id, fill) {
+  const marker = svgElement("marker");
+  marker.id = id;
+  marker.setAttribute("viewBox", "0 0 10 10");
+  marker.setAttribute("refX", "9");
+  marker.setAttribute("refY", "5");
+  marker.setAttribute("markerWidth", "9");
+  marker.setAttribute("markerHeight", "9");
+  marker.setAttribute("orient", "auto-start-reverse");
+  const arrow = svgElement("path");
+  arrow.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+  arrow.setAttribute("fill", fill);
+  marker.append(arrow);
+  return marker;
+}
+
+function connectorPath(sourcePosition, targetPosition, reciprocal, positiveCurve) {
+  const source = { x: sourcePosition.x * 10, y: sourcePosition.y * 4.6 };
+  const target = { x: targetPosition.x * 10, y: targetPosition.y * 4.6 };
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const unitX = dx / distance;
+  const unitY = dy / distance;
+  const start = { x: source.x + (unitX * 78), y: source.y + (unitY * 36) };
+  const end = { x: target.x - (unitX * 108), y: target.y - (unitY * 48) };
+  if (!reciprocal) return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  const curve = positiveCurve ? 32 : -32;
+  const middleX = ((start.x + end.x) / 2) - (unitY * curve);
+  const middleY = ((start.y + end.y) / 2) + (unitX * curve);
+  return `M ${start.x} ${start.y} Q ${middleX} ${middleY} ${end.x} ${end.y}`;
+}
+
+function svgElement(tagName) {
+  return document.createElementNS("http://www.w3.org/2000/svg", tagName);
 }
 
 function renderReturn(model, actions, handlers, status) {
@@ -970,10 +1219,15 @@ function normalizeActivity(primaryActivity, neighborhoods, actions) {
       ? asArray(raw.items)
       : asArray(raw.pages);
   const trail = trailRaw.map((item, index) => normalizeAction(item, index, "open"));
+  const journey = buildActivityJourney({
+    items: trailRaw,
+    edges: asArray(raw.edges)
+  });
   return {
     action,
     summary: readableText(raw.summary) || action.reasons[0] || "",
-    trail
+    trail,
+    journey
   };
 }
 
