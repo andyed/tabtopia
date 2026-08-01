@@ -480,6 +480,34 @@ extension-loaded browser proof of the default graph, real hyperlinks, favicon
 boundaries, repeated transitions, keyboard reversal, retained Links view,
 re-render persistence, and 390-pixel containment.
 
+## Query-owned retrieval SERP — 2026-08-01
+
+A non-empty header query now overrides the adaptive Home composition with a
+dedicated, list-first retrieval surface. The previous path only indexed open
+tabs and dimmed treemap cells; because Home hides the treemap, it gave no useful
+visible response and could never refind a closed recent page.
+
+- Open tabs and the 180-day Chrome History horizon are searched together and
+  merged by stable page identity. An open match becomes a Switch action without
+  duplicating its History row; a closed match opens in the launcher tab.
+- Every query token must match title, site, or URL. Text match is the admission
+  gate; recency and repeat visits order only already-matching pages, so a fresh
+  unrelated visit cannot enter the result set.
+- Open and controller-cached matches paint immediately. A bounded direct Chrome
+  History query completes the set; request identity prevents a slow old query
+  from overwriting a newer one.
+- Results are real HTTP(S) anchors. Ordinary activation uses the canonical
+  switch/open executor, while modifier-click, middle-click, copy-link, and the
+  browser context menu remain native.
+- Arrow keys move through result anchors, Enter activates the first result from
+  the query box, Tab enters the result list, and Escape clears the shared query
+  and reveals the prior Home/treemap state. The within-session query carrier and
+  no-restart persistence boundary remain unchanged.
+
+The proof gate includes a visited-then-closed History fixture, open/History URL
+deduplication, native modifier navigation, Enter activation, stale-response
+rejection, query carry/clear/restart behavior, and 390-pixel containment.
+
 ## Measurement plan
 
 ### Ranking quality

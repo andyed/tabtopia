@@ -23,7 +23,7 @@ async function openApp(context, server) {
 }
 
 test.describe("fuzzy search", () => {
-  test("filters treemap cells and supports keyboard navigation", async ({ context, server }) => {
+  test("opens a dedicated SERP and supports keyboard navigation", async ({ context, server }) => {
     const { nt } = await openApp(context, server);
 
     const searchInput = nt.locator("#tabSearch");
@@ -33,6 +33,12 @@ test.describe("fuzzy search", () => {
     // Type into search
     await searchInput.fill("Alpha");
 
+    const serp = nt.locator("#startPageSearch");
+    await expect(serp).toBeVisible();
+    await expect(nt.locator(".visualization-container")).toBeHidden();
+    await expect(serp.locator(".search-serp__result-link")).toHaveCount(1);
+    await expect(serp.locator(".search-serp__result-link")).toHaveAttribute("href", server + "/alpha");
+
     // Wait for the debounce and transition (200ms debounce + some rendering time)
     await expect(alpha).toHaveClass(/cell-search-match/);
     await expect(beta).toHaveClass(/cell-search-nomatch/);
@@ -41,19 +47,131 @@ test.describe("fuzzy search", () => {
     await expect(alpha).toHaveCSS("opacity", "1");
     await expect(beta).toHaveCSS("opacity", "0.3");
 
-    // Press ArrowDown to select the first match
+    // Press ArrowDown to move from the query into the first native result.
     await searchInput.press("ArrowDown");
-    await expect(alpha).toHaveClass(/cell-selected/);
+    await expect(serp.locator(".search-serp__result-link")).toBeFocused();
 
     // Press Escape to clear
     await searchInput.press("Escape");
     await expect(searchInput).toHaveValue("");
+    await expect(serp).toBeHidden();
     
     // Classes should be cleared
     await expect(alpha).not.toHaveClass(/cell-search-match/);
     await expect(beta).not.toHaveClass(/cell-search-nomatch/);
     await expect(alpha).toHaveCSS("opacity", "1");
     await expect(beta).toHaveCSS("opacity", "1");
+  });
+
+  test("keeps result-list arrow navigation out of the hidden treemap", async ({ context, server }) => {
+    const { nt } = await openApp(context, server);
+    const input = nt.locator("#tabSearch");
+    await input.fill("Page");
+
+    const results = nt.locator("#startPageSearch .search-serp__result-link");
+    await expect(results).toHaveCount(3);
+    await input.press("ArrowDown");
+    await expect(results.nth(0)).toBeFocused();
+
+    await results.nth(0).press("ArrowDown");
+    await expect(results.nth(1)).toBeFocused();
+    await results.nth(1).press("ArrowUp");
+    await expect(results.nth(0)).toBeFocused();
+
+    await results.nth(0).press("Escape");
+    await expect(input).toHaveValue("");
+    await expect(nt.locator("#startPageSearch")).toBeHidden();
+  });
+
+  test("refinds a recently closed page through Chrome History", async ({ context, server }) => {
+    const recent = await context.newPage();
+    await recent.goto(server + "/recent-only", { waitUntil: "load" });
+    await recent.close();
+
+    const nt = await context.newPage();
+    await nt.goto("chrome://newtab/", { waitUntil: "domcontentloaded" });
+    const input = nt.locator("#tabSearch");
+    await input.fill("flight review");
+
+    const serp = nt.locator("#startPageSearch");
+    const result = serp.locator(".search-serp__result-link").filter({
+      hasText: "Recently Closed Flight Review"
+    });
+    await expect(serp).toBeVisible();
+    await expect(result).toHaveCount(1);
+    await expect(result).toHaveAttribute("href", server + "/recent-only");
+    await expect(result.getByText("History", { exact: true })).toBeVisible();
+    await expect(result.getByText("Title", { exact: true })).toBeVisible();
+
+    await nt.setViewportSize({ width: 390, height: 780 });
+    const narrow = await serp.evaluate(root => ({
+      viewport: document.documentElement.clientWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      rootWidth: root.scrollWidth,
+      rootClientWidth: root.clientWidth
+    }));
+    expect(narrow.documentWidth).toBeLessThanOrEqual(narrow.viewport);
+    expect(narrow.rootWidth).toBeLessThanOrEqual(narrow.rootClientWidth);
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await nt.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "search-serp-history-390x780.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+      await nt.setViewportSize({ width: 1440, height: 1000 });
+      await nt.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "search-serp-history-1440x1000.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+    } else {
+      await nt.setViewportSize({ width: 1440, height: 1000 });
+    }
+
+    const [opened] = await Promise.all([
+      context.waitForEvent("page"),
+      result.click({ modifiers: ["ControlOrMeta"] })
+    ]);
+    await opened.waitForURL(server + "/recent-only");
+    await opened.close();
+    await nt.bringToFront();
+    await expect(nt).toHaveURL(/newtab\.html/u);
+
+    await input.press("Enter");
+    await nt.waitForURL(server + "/recent-only");
+  });
+
+  test("ignores a slow stale History response after the query changes", async ({ context, server }) => {
+    await context.addInitScript(() => {
+      const originalSearch = chrome.history.search.bind(chrome.history);
+      Object.defineProperty(chrome.history, "search", {
+        configurable: true,
+        value(options, callback) {
+          const delay = options?.text === "Alpha" ? 500 : options?.text === "Beta" ? 10 : 0;
+          if (typeof callback === "function") {
+            setTimeout(() => originalSearch(options, callback), delay);
+            return undefined;
+          }
+          return new Promise((resolve, reject) => {
+            setTimeout(() => Promise.resolve(originalSearch(options)).then(resolve, reject), delay);
+          });
+        }
+      });
+    });
+    const { nt } = await openApp(context, server);
+    const input = nt.locator("#tabSearch");
+    await input.fill("Alpha");
+    await nt.waitForTimeout(240);
+    await input.fill("Beta");
+
+    const serp = nt.locator("#startPageSearch");
+    await expect(serp.locator(".search-serp__query")).toHaveText("“Beta”");
+    await expect(serp.locator(".search-serp__result-link")).toHaveCount(1);
+    await expect(serp.locator(".search-serp__result-link")).toContainText("Beta Page");
+    await nt.waitForTimeout(600);
+    await expect(serp.locator(".search-serp__query")).toHaveText("“Beta”");
+    await expect(serp.locator(".search-serp__result-link")).not.toContainText("Alpha Page");
   });
 
   test("filter survives switching to another tab and back", async ({ context, server }) => {

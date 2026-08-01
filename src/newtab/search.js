@@ -5,6 +5,9 @@ import {
     decorateViewLinks,
     onSharedQueryChange
 } from "./search-persistence.js";
+import { createSearchSerp } from "./search-serp.js";
+
+const searchSerp = createSearchSerp();
 
 export class TabSearch {
     constructor() {
@@ -60,6 +63,10 @@ export class TabSearch {
         this.searchIndex = builder.build();
 
         console.log("Search index built:", { documentsIndexed: documents.length });
+    }
+
+    getDocuments() {
+        return Array.from(this.documentLookup.values());
     }
 
     addSummaryToIndex(url, summary) {
@@ -214,10 +221,12 @@ export const tabSearch = new TabSearch();
 export function applySearch(query) {
     if (!query) {
         clearSearchResults();
+        searchSerp.clear();
         return [];
     }
     const results = tabSearch.search(query);
     handleSearchResults(results);
+    searchSerp.update(query, tabSearch.getDocuments());
     return results;
 }
 
@@ -237,6 +246,10 @@ export function reapplySearch() {
 let matchCycleIndex = -1;
 
 function cycleSearchMatches(direction) {
+    if (document.body.classList.contains("start-page-search-active")) {
+        searchSerp.moveFocus(direction === "next" ? 1 : -1);
+        return;
+    }
     const matches = d3.selectAll(".cell-search-match").nodes();
     if (!matches.length) return;
 
@@ -268,6 +281,13 @@ export function initializeSearch() {
     const initialQuery = readSharedQuery();
     searchInput.value = initialQuery;
     decorateViewLinks(initialQuery.trim());
+    searchSerp.connectSearchInput(searchInput, exitSearchMode);
+    // A query carried from another view should claim the page immediately;
+    // it must not wait for the first treemap layout before History retrieval
+    // becomes visible. reapplySearch() folds in open-tab documents after draw.
+    if (initialQuery.trim()) {
+        searchSerp.update(initialQuery.trim(), tabSearch.getDocuments());
+    }
 
     // Publish synchronously on every keystroke (a debounced publish can lose
     // the query if a view switch or new tab happens inside the debounce
@@ -285,11 +305,11 @@ export function initializeSearch() {
         switch (event.key) {
             case "Enter":
                 event.preventDefault();
-                focusFirstSearchResult();
+                if (!searchSerp.activateFirst()) focusFirstSearchResult();
                 break;
             case "Tab":
                 event.preventDefault();
-                focusFirstSearchResult();
+                if (!searchSerp.focusFirst()) focusFirstSearchResult();
                 break;
             case "ArrowDown":
                 event.preventDefault();
@@ -384,6 +404,7 @@ export function exitSearchMode() {
     publishSharedQuery("");
     matchCycleIndex = -1;
     clearSearchResults();
+    searchSerp.clear();
 }
 
 export function handleSearchResults(results) {

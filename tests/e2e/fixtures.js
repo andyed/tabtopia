@@ -53,6 +53,7 @@ const PAGES = {
   "/alpha": "Alpha Page",
   "/beta": "Beta Page",
   "/gamma": "Gamma Page",
+  "/recent-only": "Recently Closed Flight Review",
   // Used by the pin test to navigate an existing tab and force a treemap redraw.
   "/delta": "Delta Page",
   // Any site controls its own <title>, and that title flows into innerHTML sinks

@@ -151,6 +151,11 @@ test.describe("development home takeover", () => {
     }));
     await graphHomeLink.click();
     await expect(page).toHaveURL(/newtab\.html\?q=mbp#\/home$/);
+    // A carried query owns the page even on the Home route. Clearing it
+    // reveals the already-refreshed Home model instead of reviving stale data.
+    await expect(page.locator("#startPageSearch")).toBeVisible();
+    await expect(home).toBeHidden();
+    await page.locator("#tabSearch").press("Escape");
     await expect(home).toBeVisible();
     await expect(home.getByText("Document revisit proof", { exact: true })).toBeVisible();
   });

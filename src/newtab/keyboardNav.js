@@ -73,6 +73,14 @@ function handleGlobalKeyboardNavigation(event) {
     if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") {
         return;
     }
+
+    // The query-owned SERP has its own list navigation. Once focus enters a
+    // result, leave arrows/Escape to that controller and Enter to the native
+    // anchor instead of activating a hidden treemap cell.
+    if (document.body.classList.contains("start-page-search-active")
+        && event.target.closest?.("#startPageSearch")) {
+        return;
+    }
     
     console.log("Keyboard nav event:", event.key);
     
