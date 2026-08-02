@@ -29,10 +29,12 @@ import {
 import { selectLiveFocusedTab } from "./lib/live-focus.js";
 import { RevisitStore } from "./lib/revisit-store.js";
 import {
+    compactBrowserState,
     compactHeroImageRecord,
     compactHeroImageStore,
     isStorageQuotaError,
-    mergeHeroImageStore
+    mergeHeroImageStore,
+    storageByteLength
 } from "./lib/storage-retention.js";
 import {
     RankingDiagnostics,
@@ -47,14 +49,20 @@ import {
     rankTabsByFrecency
 } from "./lib/tab-recall.js";
 
+// Repair the durable corpus before any initializer gets a chance to write.
+// A profile already at quota cannot even save a tiny setting or active-tab
+// projection until the legacy unbounded browserState value is replaced.
+const storageRepairReady = repairStoragePressure()
+    .catch(error => console.warn("[Storage] startup compaction failed", error));
+
 const revisitStore = new RevisitStore(chrome.storage.local);
-const revisitReady = revisitStore.init().catch(error => {
+const revisitReady = storageRepairReady.then(() => revisitStore.init()).catch(error => {
     console.warn("[RevisitStore] initialization failed; omnibox will use recency fallback", error);
     return null;
 });
 const rankingDiagnostics = new RankingDiagnostics(chrome.storage.local, chrome.storage.session);
 let rankingDiagnosticsInstallType = "normal";
-const rankingDiagnosticsReady = initializeRankingDiagnostics();
+const rankingDiagnosticsReady = storageRepairReady.then(initializeRankingDiagnostics);
 
 const OMNIBOX_RESULT_LIMIT = 5;
 const REVISIT_QUALIFICATION_MS = 2000;
@@ -98,16 +106,11 @@ setRequestHandler(async (url, { view = "text" } = {}) => {
 chrome.runtime.onInstalled.addListener(() => {
     console.log("[Tabtopia] installed successfully.");
     // Initialize current active tab tracking for dwell time calculations
-    initializeActiveTabTracking();
+    storageRepairReady.finally(initializeActiveTabTracking);
 });
 
-// Repair storage before hydrating runtime state. Older builds persisted hero
-// data twice and kept a redundant History snapshot, which can leave an existing
-// profile pinned at the local-storage quota until those legacy copies shrink.
-const storageRepairReady = repairStoragePressure()
-    .catch(error => console.warn("[Storage] startup compaction failed", error));
 storageRepairReady.finally(loadStateFromStorage);
-initializeActiveTabTracking();
+storageRepairReady.finally(initializeActiveTabTracking);
 
 // Warm the shared Graph/Sessions/Stars history snapshot without delaying the
 // new-tab document. storage.session survives service-worker suspension, so the
@@ -305,7 +308,6 @@ self.addEventListener("unhandledrejection", (event) => {
  * These structures maintain lightweight references to browser state
  * that can be quickly serialized and sent to visualization components.
  */
-let activeTabs = [];      // Currently active tabs across all windows
 let lastClickedLink = null; // Tracks the most recently clicked link for relationship mapping
 let tabEdges = new Map(); // Graph edge data connecting related tabs
 let tabActivationTimeout = null; // Timeout for debouncing tab activation events
@@ -393,6 +395,24 @@ const TAB_ACTIVITY = {
     IDLE_THRESHOLD: 300000,    // Time without interaction to consider tab idle (5 minutes)
     UPDATE_INTERVAL: 5000      // How often to update active tab time counters
 };
+const MAX_TAB_HISTORY_ENTRIES = 50;
+const MAX_ACTIVITY_EVENTS = 48;
+const MAX_ACTIVITY_NAVIGATIONS = 48;
+const MAX_RELATIONSHIP_CHILDREN = 24;
+
+function appendBounded(list, value, limit) {
+    if (!Array.isArray(list)) return;
+    list.push(value);
+    const overflow = list.length - Math.max(0, limit);
+    if (overflow > 0) list.splice(0, overflow);
+}
+
+function prependBounded(list, value, limit) {
+    if (!Array.isArray(list)) return;
+    list.unshift(value);
+    const safeLimit = Math.max(0, limit);
+    if (list.length > safeLimit) list.splice(safeLimit);
+}
 
 /**
  * Record an activation only after it remains the focused tab for long enough
@@ -924,12 +944,12 @@ async function updateGraphWithNewEdge(edge) {
             if (!sourceRelationships.childTabs) {
                 sourceRelationships.childTabs = [];
             }
-            sourceRelationships.childTabs.push({
+            appendBounded(sourceRelationships.childTabs, {
                 tabId: targetTab.id,
                 url: targetTab.url,
                 timestamp: Date.now(),
                 transitionType: edge.transitionType
-            });
+            }, MAX_RELATIONSHIP_CHILDREN);
             browserState.tabRelationships.set(sourceTab.id, sourceRelationships);
 
             // Save state to persist relationship data
@@ -972,20 +992,6 @@ function updateTabActivity(tabId, isActive) {
 
     // Save state to persist activity data
     saveStateToStorage();
-}
-
-/**
- * Update active tabs cache
- * Maintains a list of currently active tabs across all windows
- */
-function updateActiveTabs() {
-    chrome.tabs.query({ active: true }, (tabs) => {
-        activeTabs = tabs;
-        chrome.storage.local.set({ activeTabs })
-            .catch(error => {
-                console.error("Error saving active tabs:", error);
-            });
-    });
 }
 
 /**
@@ -1127,7 +1133,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         }
 
         // Add the focus event to the events array
-        activityLog.events.push(focusEvent);
+        appendBounded(activityLog.events, focusEvent, MAX_ACTIVITY_EVENTS);
         browserState.tabActivityLog.set(activeInfo.tabId, activityLog);
 
         // Log for debugging
@@ -1213,11 +1219,11 @@ function handleContentUpdate(data, sender) {
 
         // Update collection
         const history = browserState.tabHistory.get(tabId) || [];
-        history.push({
+        prependBounded(history, {
             url,
             title,
             timestamp: Date.now()
-        });
+        }, MAX_TAB_HISTORY_ENTRIES);
         browserState.tabHistory.set(tabId, history);
 
         // Broadcast updates
@@ -1411,7 +1417,7 @@ function handleLinkContext(message, sender) {
         data: enrichedData
     };
 
-    activityLog.events.push(linkEvent);
+    appendBounded(activityLog.events, linkEvent, MAX_ACTIVITY_EVENTS);
     console.log(`Recorded link interaction in tab ${sender.tab.id}: ${enrichedData.linkText || enrichedData.targetUrl}`);
 
     // Send this data to any listening components
@@ -1457,12 +1463,12 @@ chrome.tabs.onCreated.addListener((tab) => {
                 if (!parentRelationships.childTabs) {
                     parentRelationships.childTabs = [];
                 }
-                parentRelationships.childTabs.push({
+                appendBounded(parentRelationships.childTabs, {
                     tabId: tab.id,
                     url: tab.url || "pending",
                     timestamp: Date.now(),
                     transitionType: "opener"
-                });
+                }, MAX_RELATIONSHIP_CHILDREN);
                 browserState.tabRelationships.set(openerTab.id, parentRelationships);
                 saveStateToStorage();
             }
@@ -1755,10 +1761,6 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
     }
 });
 
-// Initial population of active tabs. History is queried from Chrome through
-// the bounded storage.session cache; it is not duplicated in persistent local storage.
-updateActiveTabs();
-
 // Update message sending functions to handle errors properly
 // eslint-disable-next-line no-unused-vars
 function notifyTreemap(message) {
@@ -1944,13 +1946,13 @@ function processLinkNavigation(tabId, url, baseEdge) {
     const activity = browserState.tabActivityLog.get(tabId) || { navigations: [] };
     if (!activity.navigations) activity.navigations = [];
 
-    activity.navigations.push({
+    appendBounded(activity.navigations, {
         type: "link_navigation",
         url: url,
         timestamp: Date.now(),
         transitionType: baseEdge.transitionType,
         transitionQualifiers: baseEdge.transitionQualifiers || []
-    });
+    }, MAX_ACTIVITY_NAVIGATIONS);
 
     browserState.tabActivityLog.set(tabId, activity);
 }
@@ -2522,7 +2524,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         // Add the event to the events array
-        activityLog.events.push(message.event);
+        appendBounded(activityLog.events, message.event, MAX_ACTIVITY_EVENTS);
         browserState.tabActivityLog.set(message.tabId, activityLog);
         console.log(`Tab ${message.tabId} activity updated from message:`, message.event);
         sendResponse({ success: true });
@@ -3158,13 +3160,13 @@ function processDirectNavigation(tabData, details) {
     const activity = browserState.tabActivityLog.get(details.tabId) || { navigations: [] };
     if (!activity.navigations) activity.navigations = [];
 
-    activity.navigations.push({
+    appendBounded(activity.navigations, {
         type: "direct_navigation",
         url: details.url,
         timestamp: Date.now(),
         transitionType: details.transitionType || "unknown",
         transitionQualifiers: details.transitionQualifiers || []
-    });
+    }, MAX_ACTIVITY_NAVIGATIONS);
 
     browserState.tabActivityLog.set(details.tabId, activity);
 }
@@ -3289,11 +3291,11 @@ function logNavigation(tabId, type, data) {
     const activity = browserState.tabActivityLog.get(tabId) || { navigations: [] };
     if (!activity.navigations) activity.navigations = [];
 
-    activity.navigations.push({
+    appendBounded(activity.navigations, {
         type,
         ...data,
         timestamp: Date.now()
-    });
+    }, MAX_ACTIVITY_NAVIGATIONS);
 
     browserState.tabActivityLog.set(tabId, activity);
 }
@@ -3863,16 +3865,34 @@ async function persistHeroImageRecord(url, record) {
 }
 
 async function repairStoragePressure() {
-    const stored = await chrome.storage.local.get(["browserState", "heroImages", "historyEntries"]);
+    const bytesBefore = await storageBytesInUse();
+    const stored = await chrome.storage.local.get([
+        "activeTabs",
+        "browserState",
+        "heroImages",
+        "historyEntries"
+    ]);
 
-    // This snapshot duplicated Chrome History and has no consumers. Removing it
-    // first creates headroom for the migration write on already-full profiles.
-    if (stored.historyEntries !== undefined) {
-        await chrome.storage.local.remove("historyEntries");
+    let liveTabIds;
+    try {
+        liveTabIds = (await chrome.tabs.query({})).map(tab => tab.id).filter(Number.isFinite);
+    } catch (error) {
+        console.warn("[Storage] live-tab lookup failed during repair; retaining bounded state by recency", error);
+    }
+
+    // Neither key has a consumer. Removing them first creates headroom for the
+    // migration write on already-full profiles.
+    const obsoleteKeys = ["activeTabs", "historyEntries"]
+        .filter(key => stored[key] !== undefined);
+    if (obsoleteKeys.length > 0) {
+        await chrome.storage.local.remove(obsoleteKeys);
     }
 
     const savedState = stored.browserState && typeof stored.browserState === "object"
         ? stored.browserState
+        : null;
+    const compactedState = savedState
+        ? compactBrowserState(savedState, { liveTabIds })
         : null;
     const legacyHeroes = savedState?.heroImages && typeof savedState.heroImages === "object"
         ? savedState.heroImages
@@ -3883,10 +3903,8 @@ async function repairStoragePressure() {
     const compactedHeroes = compactHeroImageStore({ ...legacyHeroes, ...currentHeroes });
     const updates = {};
 
-    if (savedState && Object.prototype.hasOwnProperty.call(savedState, "heroImages")) {
-        const stateWithoutHeroes = { ...savedState };
-        delete stateWithoutHeroes.heroImages;
-        updates.browserState = stateWithoutHeroes;
+    if (compactedState && JSON.stringify(compactedState) !== JSON.stringify(savedState)) {
+        updates.browserState = compactedState;
     }
 
     if (Object.keys(legacyHeroes).length > 0
@@ -3896,7 +3914,21 @@ async function repairStoragePressure() {
 
     if (Object.keys(updates).length > 0) {
         await chrome.storage.local.set(updates);
-        console.info(`[Storage] Reclaimed legacy recall storage; retained ${Object.keys(compactedHeroes).length} hero pages`);
+    }
+
+    const bytesAfter = await storageBytesInUse();
+    const stateBytes = compactedState ? storageByteLength(compactedState) : 0;
+    console.info(
+        `[Storage] Startup retention ${bytesBefore} → ${bytesAfter} bytes; `
+        + `${stateBytes} browserState bytes, ${Object.keys(compactedHeroes).length} hero pages`
+    );
+}
+
+async function storageBytesInUse() {
+    try {
+        return await chrome.storage.local.getBytesInUse(null);
+    } catch {
+        return 0;
     }
 }
 
@@ -3911,7 +3943,9 @@ function saveStateToStorage() {
     if (pendingSaveTimer) return;
     pendingSaveTimer = setTimeout(() => {
         pendingSaveTimer = null;
-        persistStateNow();
+        persistStateNow().catch(error => {
+            console.error("Error saving browserState:", error);
+        });
         // Mirror the debounced save to the local MCP bridge: same trigger, so
         // the server's live-status snapshot is at most save-debounce stale
         // while the user is active. Fire-and-forget — the bridge being down
@@ -3984,68 +4018,79 @@ async function buildStatusSnapshot() {
  * Save browserState to persistent storage (immediate write).
  * This ensures all incremental data (dwell time, relationships, activity) is preserved.
  */
-function persistStateNow() {
+async function persistStateNow() {
+    await storageRepairReady;
+    console.log("Saving bounded browserState to persistent storage...");
+
+    const rawState = serializeBrowserState();
+    let liveTabIds;
     try {
-        console.log("Saving browserState to persistent storage...");
-
-        // Convert Maps to serializable objects for storage
-        const stateToSave = {
-            // Convert tabHistory Map to object
-            tabHistory: {},
-            // Convert tabRelationships Map to object  
-            tabRelationships: {},
-            // Convert tabActivityLog Map to object
-            tabActivityLog: {},
-            // Convert tabAudioTracking Map to object
-            tabAudioTracking: {},
-            // Include other state data
-            lastActive: browserState.lastActive,
-            lastSaved: Date.now()
-        };
-
-        // Convert tabHistory Map
-        if (browserState.tabHistory instanceof Map) {
-            browserState.tabHistory.forEach((entries, tabId) => {
-                stateToSave.tabHistory[tabId] = entries;
-            });
-        }
-
-        // Convert tabRelationships Map
-        if (browserState.tabRelationships instanceof Map) {
-            browserState.tabRelationships.forEach((relationship, tabId) => {
-                stateToSave.tabRelationships[tabId] = relationship;
-            });
-        }
-
-        // Convert tabActivityLog Map
-        if (browserState.tabActivityLog instanceof Map) {
-            browserState.tabActivityLog.forEach((activities, tabId) => {
-                stateToSave.tabActivityLog[tabId] = activities;
-            });
-        }
-
-        // Convert tabAudioTracking Map
-        if (browserState.tabAudioTracking instanceof Map) {
-            browserState.tabAudioTracking.forEach((audioData, tabId) => {
-                stateToSave.tabAudioTracking[tabId] = audioData;
-            });
-        }
-
-        // Save to chrome.storage.local
-        chrome.storage.local.set({
-            "browserState": stateToSave,
-            "lastStateSave": stateToSave.lastSaved
-        }, () => {
-            if (chrome.runtime.lastError) {
-                console.error("Error saving browserState:", chrome.runtime.lastError);
-            } else {
-                console.log("✅ browserState saved successfully");
-            }
-        });
-
+        liveTabIds = (await chrome.tabs.query({})).map(tab => tab.id).filter(Number.isFinite);
     } catch (error) {
-        console.error("Error in saveStateToStorage:", error);
+        console.warn("[Storage] live-tab lookup failed during save; retaining bounded state by recency", error);
     }
+
+    let stateToSave = compactBrowserState(rawState, { liveTabIds });
+    try {
+        await chrome.storage.local.set({
+            browserState: stateToSave,
+            lastStateSave: stateToSave.lastSaved
+        });
+    } catch (error) {
+        if (!isStorageQuotaError(error)) throw error;
+
+        // Only derived caches are sacrificed under emergency pressure. User
+        // bookmarks, summaries, archive tags, and revisit identities remain.
+        await chrome.storage.local.remove(["activeTabs", "historyEntries"]);
+        const stored = await chrome.storage.local.get(["heroImages"]);
+        const emergencyHeroes = compactHeroImageStore(stored.heroImages, { maxEntries: HERO_IMAGE_EMERGENCY_LIMIT });
+        await chrome.storage.local.set({ heroImages: emergencyHeroes });
+
+        stateToSave = compactBrowserState(rawState, {
+            liveTabIds,
+            maxBytes: 512 * 1024,
+            maxTabs: 64,
+            maxHistoryEntries: 16,
+            maxEvents: 16,
+            maxNavigations: 16,
+            maxChildren: 8
+        });
+        await chrome.storage.local.set({
+            browserState: stateToSave,
+            lastStateSave: stateToSave.lastSaved
+        });
+        console.warn(
+            `[Storage] Emergency retention recovered quota; `
+            + `${storageByteLength(stateToSave)} browserState bytes, ${Object.keys(emergencyHeroes).length} hero pages`
+        );
+    }
+
+    console.log(`✅ browserState saved (${storageByteLength(stateToSave)} bytes)`);
+}
+
+function serializeBrowserState() {
+    const state = {
+        tabHistory: {},
+        tabRelationships: {},
+        tabActivityLog: {},
+        tabAudioTracking: {},
+        lastActive: browserState.lastActive,
+        lastSaved: Date.now()
+    };
+
+    for (const [tabId, entries] of browserState.tabHistory) {
+        state.tabHistory[tabId] = entries;
+    }
+    for (const [tabId, relationship] of browserState.tabRelationships) {
+        state.tabRelationships[tabId] = relationship;
+    }
+    for (const [tabId, activity] of browserState.tabActivityLog) {
+        state.tabActivityLog[tabId] = activity;
+    }
+    for (const [tabId, audio] of browserState.tabAudioTracking) {
+        state.tabAudioTracking[tabId] = audio;
+    }
+    return state;
 }
 
 /**

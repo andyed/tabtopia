@@ -189,7 +189,7 @@ test.describe("landmarks view", () => {
   });
 
   test("repairs a legacy quota-heavy profile before Stars recall loads", async ({ server }) => {
-    test.setTimeout(45_000);
+    test.setTimeout(60_000);
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tabtopia-storage-repair-"));
     let first;
     let second;
@@ -199,6 +199,7 @@ test.describe("landmarks view", () => {
       const seedPage = first.pages()[0] || await first.newPage();
       await seedPage.goto("chrome://newtab/", { waitUntil: "domcontentloaded" });
       await seedPage.evaluate(async ({ baseUrl, now }) => {
+        const staleTabId = 999_999_999;
         const legacyHeroes = {};
         for (let index = 0; index < 180; index += 1) {
           const url = `https://legacy.example.com/page-${index}`;
@@ -210,17 +211,36 @@ test.describe("landmarks view", () => {
             ]
           };
         }
+        const staleNavigations = Array.from({ length: 6_500 }, (_, index) => ({
+          tabId: staleTabId,
+          type: "other_navigation",
+          transitionType: "unknown",
+          transitionQualifiers: [],
+          timestamp: now - index,
+          url: `https://legacy.example.com/app/#state=${index}-${"x".repeat(400)}`
+        }));
 
         await chrome.storage.local.set({
+          activeTabs: [{ id: staleTabId, title: "Unused active-tab projection" }],
           historyEntries: Array.from({ length: 100 }, (_, index) => ({
             url: `https://history.example.com/${index}`,
             title: `History ${index}`
           })),
           heroImages: legacyHeroes,
           browserState: {
-            tabHistory: {},
+            tabHistory: {
+              [staleTabId]: staleNavigations.slice(0, 200)
+            },
             tabRelationships: {},
-            tabActivityLog: {},
+            tabActivityLog: {
+              [staleTabId]: {
+                totalTimeSpent: 1234,
+                firstSeen: now - 10_000,
+                lastTouch: now,
+                events: [],
+                navigations: staleNavigations
+              }
+            },
             tabAudioTracking: {},
             heroImages: legacyHeroes,
             lastSaved: now
@@ -251,20 +271,37 @@ test.describe("landmarks view", () => {
       const extensionId = await stars.evaluate(() => chrome.runtime.id);
 
       await expect.poll(async () => stars.evaluate(async () => {
-        const stored = await chrome.storage.local.get(["historyEntries", "heroImages", "browserState"]);
+        const stored = await chrome.storage.local.get(["activeTabs", "historyEntries", "heroImages", "browserState"]);
         return {
+          hasActiveTabs: stored.activeTabs !== undefined,
           hasHistoryEntries: stored.historyEntries !== undefined,
           hasDuplicatedHeroes: Object.prototype.hasOwnProperty.call(stored.browserState || {}, "heroImages"),
+          hasStaleActivity: Object.prototype.hasOwnProperty.call(stored.browserState?.tabActivityLog || {}, "999999999"),
+          browserStateBytes: new TextEncoder().encode(JSON.stringify(stored.browserState || {})).byteLength,
+          totalBytes: await chrome.storage.local.getBytesInUse(null),
           heroCount: Object.keys(stored.heroImages || {}).length,
           hasDataImage: Object.values(stored.heroImages || {}).some(record =>
             (record.images || []).some(image => String(image.src || "").startsWith("data:")))
         };
-      })).toEqual({
+      })).toMatchObject({
+        hasActiveTabs: false,
         hasHistoryEntries: false,
         hasDuplicatedHeroes: false,
+        hasStaleActivity: false,
         heroCount: 160,
         hasDataImage: false
       });
+
+      const pressure = await stars.evaluate(async () => {
+        const stored = await chrome.storage.local.get(["browserState"]);
+        const browserStateBytes = new TextEncoder().encode(JSON.stringify(stored.browserState || {})).byteLength;
+        const totalBytes = await chrome.storage.local.getBytesInUse(null);
+        await chrome.storage.local.set({ quotaRecoveryProbe: { timestamp: Date.now(), ok: true } });
+        await chrome.storage.local.remove("quotaRecoveryProbe");
+        return { browserStateBytes, totalBytes };
+      });
+      expect(pressure.browserStateBytes).toBeLessThanOrEqual(2 * 1024 * 1024);
+      expect(pressure.totalBytes).toBeLessThan(5 * 1024 * 1024);
 
       await stars.goto(
         `chrome-extension://${extensionId}/src/newtab/stars.html?q=webgl`,
