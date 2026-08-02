@@ -37,4 +37,35 @@ test.describe("graph rendering", () => {
     // For now just basic assertions that the graph renders without throwing
     await expect(alphaNode).toBeVisible();
   });
+
+  test("uses the global recall SERP and Escape returns to the graph", async ({ context, server }) => {
+    const { nt } = await openGraphApp(context, server);
+    await nt.evaluate(async baseUrl => {
+      await chrome.bookmarks.create({ title: "Graph saved atlas one", url: `${baseUrl}/graph-atlas-one` });
+      await chrome.bookmarks.create({ title: "Graph saved atlas two", url: `${baseUrl}/graph-atlas-two` });
+    }, server);
+    await nt.reload({ waitUntil: "domcontentloaded" });
+
+    const input = nt.locator("#tabSearch");
+    await input.fill("saved atlas");
+    const results = nt.locator("#startPageSearch .search-serp__result-link");
+    await expect(results).toHaveCount(2);
+    await expect(nt.locator("#graph")).toBeHidden();
+
+    await input.press("ArrowDown");
+    await expect(results.nth(0)).toBeFocused();
+    await results.nth(0).press("ArrowDown");
+    await expect(results.nth(1)).toBeFocused();
+    await input.focus();
+    await input.press("ArrowUp");
+    await expect(results.nth(1)).toBeFocused();
+    await results.nth(1).press("ArrowDown");
+    await expect(results.nth(0)).toBeFocused();
+
+    await results.nth(0).press("Escape");
+    await expect(input).toHaveValue("");
+    await expect(input).toBeFocused();
+    await expect(nt.locator("#startPageSearch")).toBeHidden();
+    await expect(nt.locator("#graph")).toBeVisible();
+  });
 });

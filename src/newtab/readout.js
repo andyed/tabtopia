@@ -12,7 +12,6 @@ const INACTIVITY_TIMEOUT = 600000;
 
 // Add cache for summaries at the top of the file
 export const summaryCache = new Map();
-const SUMMARY_CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
 
 // Add these constants at the top with other constants
 const MAX_SUMMARY_LINES = 5;
@@ -42,6 +41,7 @@ const SUMMARIZER_OPTIONS = {
     type: "headline",      // Use headline for concise summaries
     format: "plain-text",  // Keep it simple
     length: "short",       // Don't make it too verbose
+    expectedInputLanguages: ["en"],
     outputLanguage: "en"   // Current Summarizer API key (per developer.chrome.com/docs/ai/summarizer-api).
                            // Was 'expectedLanguage', which is not a valid option — that's what triggered
                            // Chrome's "No output language was specified" warning. Supported: de, en, es, fr, ja.
@@ -545,16 +545,12 @@ async function getContentFromMetadata(url) {
 
 // Add cache management functions
 export function getCachedSummary(url) {
+    return getCachedSummaryEntry(url)?.summary || null;
+}
+
+export function getCachedSummaryEntry(url) {
     const cached = summaryCache.get(url);
-    if (!cached) return null;
-
-    // Check if cache is still valid
-    if (Date.now() - cached.timestamp > SUMMARY_CACHE_DURATION) {
-        summaryCache.delete(url);
-        return null;
-    }
-
-    return cached.summary;
+    return cached?.summary ? cached : null;
 }
 
 /**
@@ -580,8 +576,13 @@ export function addToSummaryQueue(url) {
         return false;
     }
 
-    // Check if already cached
-    if (getCachedSummary(url)) {
+    // Durable fallback summaries remain useful recall evidence. Upgrade one to
+    // a real Chrome AI summary when a user gesture makes model creation legal.
+    const cached = getCachedSummaryEntry(url);
+    const canUpgradeFallback = cached
+        && cached.source !== "chrome-ai"
+        && Boolean(navigator.userActivation?.isActive);
+    if (cached && !canUpgradeFallback) {
         console.log(`⏭️ URL already cached: ${url}`);
         return false;
     }
@@ -693,10 +694,11 @@ export function flushSummaryCache(notifyState = true) {
     }
 }
 
-function cacheSummary(url, summary) {
+function cacheSummary(url, summary, source = "legacy-unknown") {
     summaryCache.set(url, {
         summary,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        source
     });
 
     // Add summary to search index if the function exists
@@ -705,7 +707,7 @@ function cacheSummary(url, summary) {
     }
 
     // Persist summary to storage for persistence across browser restarts
-    persistSummaryToStorage(url, summary);
+    persistSummaryToStorage(url, summary, source);
 }
 
 /**
@@ -713,7 +715,7 @@ function cacheSummary(url, summary) {
  * @param {string} url - The URL the summary is for
  * @param {string} summary - The summary text
  */
-async function persistSummaryToStorage(url, summary) {
+async function persistSummaryToStorage(url, summary, source) {
     try {
         // Get existing summaries from storage
         const result = await chrome.storage.local.get(["nanoSummaries"]);
@@ -723,7 +725,7 @@ async function persistSummaryToStorage(url, summary) {
         summaries[url] = {
             summary,
             timestamp: Date.now(),
-            source: "chrome-summarizer"
+            source
         };
 
         // Save back to storage
@@ -748,14 +750,18 @@ export async function loadNanoSummariesFromStorage() {
 
         // Add to in-memory cache
         Object.entries(summaries).forEach(([url, data]) => {
+            const record = typeof data === "string"
+                ? { summary: data, timestamp: 0, source: "legacy-unknown" }
+                : data || {};
             summaryCache.set(url, {
-                summary: data.summary,
-                timestamp: data.timestamp
+                summary: record.summary,
+                timestamp: record.timestamp,
+                source: normalizePersistedSummarySource(record.source)
             });
 
             // Add to search index if available
-            if (typeof tabSearch.addSummaryToIndex === "function") {
-                tabSearch.addSummaryToIndex(url, data.summary);
+            if (record.summary && typeof tabSearch.addSummaryToIndex === "function") {
+                tabSearch.addSummaryToIndex(url, record.summary);
             }
         });
 
@@ -764,6 +770,13 @@ export async function loadNanoSummariesFromStorage() {
     } catch (error) {
         console.error("Error loading nano summaries from storage:", error);
     }
+}
+
+function normalizePersistedSummarySource(source) {
+    if (source === "chrome-ai" || source === "visit-fallback" || source === "metadata-fallback") {
+        return source;
+    }
+    return source ? "legacy-unknown" : "";
 }
 
 // Generate a fallback summary based on URL structure and visit metrics
@@ -834,6 +847,13 @@ async function generateVisitMetricFallback(url) {
     }
 }
 
+async function visitFallbackResult(url) {
+    return {
+        summary: await generateVisitMetricFallback(url),
+        source: "visit-fallback"
+    };
+}
+
 // Enhanced queue processing with rate limiting and error recovery
 export async function processSummaryQueue() {
     if (isProcessingQueue) {
@@ -867,8 +887,13 @@ export async function processSummaryQueue() {
                     // Remove from queue immediately to prevent reprocessing
                     summaryQueue.delete(url);
 
-                    // Skip if already cached
-                    if (getCachedSummary(url)) {
+                    // A user gesture may intentionally upgrade a heuristic
+                    // recall summary to real Chrome AI output.
+                    const cached = getCachedSummaryEntry(url);
+                    const canUpgradeFallback = cached
+                        && cached.source !== "chrome-ai"
+                        && Boolean(navigator.userActivation?.isActive);
+                    if (cached && !canUpgradeFallback) {
                         console.log(`⏭️ Skipping ${url} - already cached`);
                         return;
                     }
@@ -880,17 +905,17 @@ export async function processSummaryQueue() {
                     }
 
                     console.log(`📝 Generating summary for: ${url}`);
-                    const summary = await summarizeUrl(url);
+                    const generated = await summarizeUrl(url);
 
-                    if (summary) {
-                        cacheSummary(url, summary);
+                    if (generated?.summary) {
+                        cacheSummary(url, generated.summary, generated.source);
                         queueProcessingStats.totalProcessed++;
                         queueProcessingStats.lastProcessed = Date.now();
 
                         console.log(`✅ Summary generated for: ${url}`);
 
                         // Update current readout if it's showing this URL
-                        updateReadoutIfNeeded(url, summary);
+                        updateReadoutIfNeeded(url, generated.summary);
                     } else {
                         console.log(`⚠️ No summary generated for: ${url}`);
                         queueProcessingStats.totalFailed++;
@@ -971,25 +996,25 @@ async function summarizeUrl(url) {
 
         if (isGloballyDisabled) {
             console.log(`🚫 Summarizer globally disabled due to repeated crashes. Using fallback: ${url}`);
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
         if (summarizerCrashCount >= MAX_CRASHES_BEFORE_BACKOFF &&
             (now - lastCrashTime) < CRASH_BACKOFF_DURATION) {
             console.log(`⚠️ Summarizer in backoff mode due to crashes. Skipping: ${url}`);
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
         // Check if summarizer is globally disabled first
         if (globalSummarizerDisabled) {
             console.log("🚫 Summarizer disabled - using fallback:", url);
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
         // Enhanced API availability check with crash pre-detection
         if (!window.Summarizer) {
             console.log("Chrome Summarizer API not available in this browser");
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
         // Pre-emptively check for crashes before trying to use the API
@@ -1009,23 +1034,24 @@ async function summarizeUrl(url) {
                     globalSummarizerDisabled = false;
                 }, GLOBAL_DISABLE_DURATION);
             }
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
         // Handle all availability states properly
         if (availability === "unavailable") {
             console.log("Summarizer API not usable on this system");
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
-        if (availability === "downloadable") {
-            console.log("Summarizer model needs to be downloaded first");
-            return await generateVisitMetricFallback(url);
+        const needsDownload = availability === "downloadable" || availability === "downloading";
+        if (needsDownload && !navigator.userActivation?.isActive) {
+            console.log("Summarizer model download needs a user gesture; using labeled fallback");
+            return await visitFallbackResult(url);
         }
 
-        if (availability !== "available") {
+        if (availability !== "available" && !needsDownload) {
             console.log("Summarizer not in available state:", availability);
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
         // Get tab content with enhanced validation
@@ -1035,7 +1061,7 @@ async function summarizeUrl(url) {
         if (!content || content.trim().length < 50) { // Lowered back to 50 since we have better extraction
             console.log("Insufficient content available to summarize for URL:", url,
                 `(length: ${content?.length || 0})`);
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
         // Filter and prepare content
@@ -1053,7 +1079,7 @@ async function summarizeUrl(url) {
         // Final content length check - more lenient
         if (filteredContent.length < 50) {
             console.log("Content too short after filtering, using fallback summary");
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         }
 
         // Trim to API limits
@@ -1070,12 +1096,6 @@ async function summarizeUrl(url) {
         // Initialize summarizer with proper error handling and timeout
         let summarizer;
         try {
-            // Check for user activation before creating summarizer
-            if (!navigator.userActivation.isActive) {
-                console.log("No user activation, using fallback summary");
-                return await generateVisitMetricFallback(url);
-            }
-
             // Wrap summarizer creation in timeout to prevent hanging
             summarizer = await Promise.race([
                 window.Summarizer.create({
@@ -1133,10 +1153,10 @@ async function summarizeUrl(url) {
                 summarizerCrashCount = 0;
                 console.log("✅ Summarizer crash count reset - successful summary generated");
                 console.log("📝 AI Summary generated:", summary.substring(0, 100) + "...");
-                return summary;
+                return { summary, source: "chrome-ai" };
             } else {
                 console.warn("Summarizer returned empty result");
-                return await generateVisitMetricFallback(url);
+                return await visitFallbackResult(url);
             }
 
         } catch (error) {
@@ -1173,7 +1193,7 @@ async function summarizeUrl(url) {
                 }
             }
 
-            return await generateVisitMetricFallback(url);
+            return await visitFallbackResult(url);
         } finally {
             // Clean up summarizer instance
             if (summarizer && typeof summarizer.destroy === "function") {
@@ -1186,7 +1206,7 @@ async function summarizeUrl(url) {
         }
     } catch (error) {
         console.error("Error in summarizeUrl function:", error);
-        return await generateVisitMetricFallback(url);
+        return await visitFallbackResult(url);
     }
 }
 
@@ -1495,12 +1515,6 @@ export function hideReadout() {
     // Keep a minimal placeholder to maintain structure
     readoutContainer.innerHTML = "<div class=\"readout-placeholder\"></div>";
 
-    // Cleanup old cache entries
-    for (const [url, cached] of summaryCache.entries()) {
-        if (Date.now() - cached.timestamp > SUMMARY_CACHE_DURATION) {
-            summaryCache.delete(url);
-        }
-    }
 }
 
 // Recent stars (bookmarks) for the default readout panel. Cached at module

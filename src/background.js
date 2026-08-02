@@ -29,6 +29,12 @@ import {
 import { selectLiveFocusedTab } from "./lib/live-focus.js";
 import { RevisitStore } from "./lib/revisit-store.js";
 import {
+    compactHeroImageRecord,
+    compactHeroImageStore,
+    isStorageQuotaError,
+    mergeHeroImageStore
+} from "./lib/storage-retention.js";
+import {
     RankingDiagnostics,
     summarizeRankingDiagnostics
 } from "./lib/ranking-diagnostics.js";
@@ -91,16 +97,16 @@ setRequestHandler(async (url, { view = "text" } = {}) => {
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log("[Tabtopia] installed successfully.");
-
-    // Load any previously saved state
-    loadStateFromStorage();
-
     // Initialize current active tab tracking for dwell time calculations
     initializeActiveTabTracking();
 });
 
-// Also initialize active tab tracking when the background script starts
-loadStateFromStorage();
+// Repair storage before hydrating runtime state. Older builds persisted hero
+// data twice and kept a redundant History snapshot, which can leave an existing
+// profile pinned at the local-storage quota until those legacy copies shrink.
+const storageRepairReady = repairStoragePressure()
+    .catch(error => console.warn("[Storage] startup compaction failed", error));
+storageRepairReady.finally(loadStateFromStorage);
 initializeActiveTabTracking();
 
 // Warm the shared Graph/Sessions/Stars history snapshot without delaying the
@@ -299,7 +305,6 @@ self.addEventListener("unhandledrejection", (event) => {
  * These structures maintain lightweight references to browser state
  * that can be quickly serialized and sent to visualization components.
  */
-let historyEntries = [];  // Recent browsing history entries
 let activeTabs = [];      // Currently active tabs across all windows
 let lastClickedLink = null; // Tracks the most recently clicked link for relationship mapping
 let tabEdges = new Map(); // Graph edge data connecting related tabs
@@ -970,20 +975,6 @@ function updateTabActivity(tabId, isActive) {
 }
 
 /**
- * Update history entries cache
- * Retrieves recent browsing history and stores it for visualization
- */
-function updateHistory() {
-    chrome.history.search({ text: "", maxResults: 100 }, (results) => {
-        historyEntries = results;
-        chrome.storage.local.set({ historyEntries })
-            .catch(error => {
-                console.error("Error saving history entries:", error);
-            });
-    });
-}
-
-/**
  * Update active tabs cache
  * Maintains a list of currently active tabs across all windows
  */
@@ -1012,7 +1003,6 @@ chrome.history.onVisited.addListener((result) => {
     clearRecentHistoryCache().catch(error => {
         console.warn("[HistoryCache] visit invalidation failed", error);
     });
-    updateHistory();
     // Add favicon information
     const faviconUrl = getFaviconUrl(result.url);
     console.log(`New history entry: ${result.url} with favicon: ${faviconUrl}`);
@@ -1765,8 +1755,8 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
     }
 });
 
-// Initial population of history and active tabs
-updateHistory();
+// Initial population of active tabs. History is queried from Chrome through
+// the bounded storage.session cache; it is not duplicated in persistent local storage.
 updateActiveTabs();
 
 // Update message sending functions to handle errors properly
@@ -2942,19 +2932,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
 
                 // Add to browserState (core shared data structure)
-                const heroImageData = {
+                const heroImageData = compactHeroImageRecord({
                     images: message.data.heroImages,
                     title: message.data.title,
                     timestamp: message.data.timestamp,
                     dwellTime: message.data.dwellTime,
                     scrollDepth: message.data.scrollDepth
-                };
+                });
+
+                if (!message.data.url || heroImageData.images.length === 0) {
+                    sendResponse({ success: false, error: "No persistable hero images" });
+                    return true;
+                }
 
                 // Update browserState with hero image data
                 browserState.heroImages.set(message.data.url, heroImageData);
-
-                // Save state to persist hero image data
-                saveStateToStorage();
 
                 // Notify all listeners about new hero image data
                 browserState.notifyChange("heroImage", {
@@ -2963,24 +2955,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     data: heroImageData
                 });
 
-                // Get existing hero images or initialize empty object
-                chrome.storage.local.get("heroImages", (result) => {
-                    const heroImages = result.heroImages || {};
-
-                    // Store new hero images for this URL
-                    heroImages[message.data.url] = heroImageData;
-
-                    // Save back to storage
-                    chrome.storage.local.set({ heroImages }, () => {
-                        if (chrome.runtime.lastError) {
-                            console.error("❌ Error storing hero images:", chrome.runtime.lastError);
-                        } else {
-                            console.log("✅ Successfully stored hero images for", message.data.url);
-                            // Send a response to confirm storage
-                            sendResponse({ success: true });
-                        }
+                persistHeroImageRecord(message.data.url, heroImageData)
+                    .then(() => {
+                        console.log("✅ Successfully stored hero images for", message.data.url);
+                        sendResponse({ success: true });
+                    })
+                    .catch(error => {
+                        console.error("❌ Error storing hero images:", error);
+                        sendResponse({ success: false, error: error.message });
                     });
-                });
                 return true; // Prevent fallback handler
 
             case "getAudioTrackingStats":
@@ -3857,6 +3840,66 @@ async function extractContentFromMetadataInWorker(url) {
     }
 }
 
+const HERO_IMAGE_EMERGENCY_LIMIT = 24;
+
+async function persistHeroImageRecord(url, record) {
+    await storageRepairReady;
+    const stored = await chrome.storage.local.get(["heroImages"]);
+    const nextStore = mergeHeroImageStore(stored.heroImages, url, record);
+    try {
+        await chrome.storage.local.set({ heroImages: nextStore });
+    } catch (error) {
+        if (!isStorageQuotaError(error)) throw error;
+
+        // A legacy profile may already be exactly at quota. Replacing the
+        // entire hero key with a small recent tail frees space without touching
+        // bookmarks, summaries, tagged recall, or other user-authored state.
+        const emergencyStore = mergeHeroImageStore(nextStore, url, record, {
+            maxEntries: HERO_IMAGE_EMERGENCY_LIMIT
+        });
+        await chrome.storage.local.set({ heroImages: emergencyStore });
+        console.warn(`[Storage] Hero recall compacted to ${Object.keys(emergencyStore).length} pages after quota pressure`);
+    }
+}
+
+async function repairStoragePressure() {
+    const stored = await chrome.storage.local.get(["browserState", "heroImages", "historyEntries"]);
+
+    // This snapshot duplicated Chrome History and has no consumers. Removing it
+    // first creates headroom for the migration write on already-full profiles.
+    if (stored.historyEntries !== undefined) {
+        await chrome.storage.local.remove("historyEntries");
+    }
+
+    const savedState = stored.browserState && typeof stored.browserState === "object"
+        ? stored.browserState
+        : null;
+    const legacyHeroes = savedState?.heroImages && typeof savedState.heroImages === "object"
+        ? savedState.heroImages
+        : {};
+    const currentHeroes = stored.heroImages && typeof stored.heroImages === "object"
+        ? stored.heroImages
+        : {};
+    const compactedHeroes = compactHeroImageStore({ ...legacyHeroes, ...currentHeroes });
+    const updates = {};
+
+    if (savedState && Object.prototype.hasOwnProperty.call(savedState, "heroImages")) {
+        const stateWithoutHeroes = { ...savedState };
+        delete stateWithoutHeroes.heroImages;
+        updates.browserState = stateWithoutHeroes;
+    }
+
+    if (Object.keys(legacyHeroes).length > 0
+        || JSON.stringify(compactedHeroes) !== JSON.stringify(currentHeroes)) {
+        updates.heroImages = compactedHeroes;
+    }
+
+    if (Object.keys(updates).length > 0) {
+        await chrome.storage.local.set(updates);
+        console.info(`[Storage] Reclaimed legacy recall storage; retained ${Object.keys(compactedHeroes).length} hero pages`);
+    }
+}
+
 // Coalesce the many per-event persistence calls (audio toggles, tab switches,
 // activations, edge creation, etc.) into at most one disk write per throttle
 // window. Previously every hot-path event did a full Map->object serialize +
@@ -3955,8 +3998,6 @@ function persistStateNow() {
             tabActivityLog: {},
             // Convert tabAudioTracking Map to object
             tabAudioTracking: {},
-            // Convert heroImages Map to object
-            heroImages: {},
             // Include other state data
             lastActive: browserState.lastActive,
             lastSaved: Date.now()
@@ -3990,13 +4031,6 @@ function persistStateNow() {
             });
         }
 
-        // Convert heroImages Map
-        if (browserState.heroImages instanceof Map) {
-            browserState.heroImages.forEach((imageData, url) => {
-                stateToSave.heroImages[url] = imageData;
-            });
-        }
-
         // Save to chrome.storage.local
         chrome.storage.local.set({
             "browserState": stateToSave,
@@ -4022,11 +4056,18 @@ function loadStateFromStorage() {
     try {
         console.log("Loading browserState from persistent storage...");
 
-        chrome.storage.local.get(["browserState"], (result) => {
+        chrome.storage.local.get(["browserState", "heroImages"], (result) => {
             if (chrome.runtime.lastError) {
                 console.error("Error loading browserState:", chrome.runtime.lastError);
                 return;
             }
+
+            // Restore bounded hero recall from its canonical top-level store.
+            browserState.heroImages = new Map();
+            Object.entries(compactHeroImageStore(result.heroImages)).forEach(([url, imageData]) => {
+                browserState.heroImages.set(url, imageData);
+            });
+            console.log(`Restored ${browserState.heroImages.size} hero images`);
 
             const savedState = result.browserState;
             if (!savedState) {
@@ -4100,15 +4141,6 @@ function loadStateFromStorage() {
                     browserState.tabAudioTracking.set(parseInt(tabId), restoredAudioData);
                 });
                 console.log(`Restored ${browserState.tabAudioTracking.size} audio tracking entries`);
-            }
-
-            // Restore heroImages
-            if (savedState.heroImages) {
-                browserState.heroImages = new Map();
-                Object.entries(savedState.heroImages).forEach(([url, imageData]) => {
-                    browserState.heroImages.set(url, imageData);
-                });
-                console.log(`Restored ${browserState.heroImages.size} hero images`);
             }
 
             // Restore lastActive if recent (within last hour)

@@ -78,8 +78,17 @@ test.describe("fuzzy search", () => {
     await results.nth(1).press("ArrowUp");
     await expect(results.nth(0)).toBeFocused();
 
-    await results.nth(0).press("Escape");
+    await input.focus();
+    await input.press("ArrowUp");
+    await expect(results.nth(2)).toBeFocused();
+    await results.nth(2).press("ArrowDown");
+    await expect(results.nth(0)).toBeFocused();
+    await results.nth(0).press("ArrowUp");
+    await expect(results.nth(2)).toBeFocused();
+
+    await results.nth(2).press("Escape");
     await expect(input).toHaveValue("");
+    await expect(input).toBeFocused();
     await expect(nt.locator("#startPageSearch")).toBeHidden();
   });
 
@@ -100,8 +109,8 @@ test.describe("fuzzy search", () => {
     await expect(serp).toBeVisible();
     await expect(result).toHaveCount(1);
     await expect(result).toHaveAttribute("href", server + "/recent-only");
-    await expect(result.getByText("History", { exact: true })).toBeVisible();
-    await expect(result.getByText("Title", { exact: true })).toBeVisible();
+    await expect(result.locator(".search-serp__token--history")).toContainText("Last opened");
+    await expect(result).not.toContainText("Title");
 
     await nt.setViewportSize({ width: 390, height: 780 });
     const narrow = await serp.evaluate(root => ({
@@ -140,6 +149,53 @@ test.describe("fuzzy search", () => {
 
     await input.press("Enter");
     await nt.waitForURL(server + "/recent-only");
+  });
+
+  test("searches every bookmark by saved summary and shows its URL-matched hero", async ({ context, server }) => {
+    const { nt } = await openApp(context, server);
+    const bookmarkUrl = server + "/buried-keepsake";
+    const hero = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='320' height='180' fill='%2323483b'/%3E%3C/svg%3E";
+
+    await nt.evaluate(async ({ bookmarkUrl, hero }) => {
+      await chrome.bookmarks.create({ title: "Buried Keepsake", url: bookmarkUrl });
+      await chrome.storage.local.set({
+        nanoSummaries: {
+          [bookmarkUrl]: {
+            summary: "A quasar notebook for spectral camera experiments",
+            source: "chrome-ai",
+            timestamp: Date.now()
+          }
+        },
+        heroImages: {
+          [bookmarkUrl]: {
+            title: "Buried Keepsake",
+            images: [{ src: hero, alt: "Green spectral field", score: 91 }]
+          }
+        }
+      });
+    }, { bookmarkUrl, hero });
+    await nt.reload({ waitUntil: "domcontentloaded" });
+
+    await nt.locator("#tabSearch").fill("quasar notebook");
+    const result = nt.locator("#startPageSearch .search-serp__result-link").filter({ hasText: "Buried Keepsake" });
+    await expect(result).toHaveCount(1);
+    await expect(result.locator(".search-serp__token--saved")).toContainText("Saved");
+    await expect(result.locator(".search-serp__token--ai")).toHaveText("Matched in Chrome AI summary");
+    await expect(result.locator(".search-serp__hero")).toHaveAttribute("src", hero);
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await nt.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "search-serp-summary-hero-1600x1000.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+      await nt.setViewportSize({ width: 390, height: 780 });
+      await nt.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "search-serp-summary-hero-390x780.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+    }
   });
 
   test("ignores a slow stale History response after the query changes", async ({ context, server }) => {

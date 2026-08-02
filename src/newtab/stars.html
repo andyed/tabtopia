@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="sessions_styles.css">
     <link rel="stylesheet" href="stars_styles.css">
+    <link rel="stylesheet" href="search-serp.css">
     <!-- Self-hosted Barlow Condensed (was render-blocking Google Fonts). -->
     <link rel="stylesheet" href="fonts.css">
     <link rel="stylesheet" href="identity.css">
@@ -32,12 +33,13 @@
             <div class="search-container">
                 <input type="text" 
                     id="starsSearch" 
-                    placeholder="Search landmarks..."
+                    placeholder="Search your browsing..."
                     class="search-input"
                 />
             </div>
         </div>
     </header>
+    <main id="startPageSearch" class="search-serp" hidden aria-live="polite" aria-busy="false"></main>
     <main id="stars-container"></main>
 
     <script src="../lib/d3.min.js"></script>

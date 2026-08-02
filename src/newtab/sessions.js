@@ -2,7 +2,12 @@
 console.log("sessions.js loaded");
 
 // Import the summary cache and helper functions from readout.js
-import { summaryCache, getCachedSummary, summaryQueue, processSummaryQueue } from "./readout.js";
+import {
+    getCachedSummary,
+    getCachedSummaryEntry,
+    addToSummaryQueue,
+    loadNanoSummariesFromStorage
+} from "./readout.js";
 import { getLocalFaviconUrl, escapeHtml, safeUrl } from "./utility.js";
 // Import the debug tools bridge for ES module compatibility
 
@@ -16,12 +21,7 @@ import { formatTimeAgo } from "./timeago.js";
 import { extractSearchQuery } from "../lib/url-utils.js";
 import { getRecentHistory } from "../lib/history-cache.js";
 // Cross-view search query hand-off (URL ?q= + chrome.storage.session)
-import {
-    readSharedQuery,
-    publishSharedQuery,
-    decorateViewLinks,
-    onSharedQueryChange
-} from "./search-persistence.js";
+import { createRecallSearchController } from "./recall-search-controller.js";
 
 /**
  * Format milliseconds into a human-readable duration string
@@ -75,12 +75,15 @@ function createTruncatedSummary(summary, searchTerm = "") {
         ? lines.slice(0, MAX_SUMMARY_LINES).join("\n")
         : summary;
 
-    // Highlight search term if provided
-    if (searchTerm && searchTerm.trim() !== "") {
-        truncatedSummary = highlightText(truncatedSummary, searchTerm);
-    }
+    const renderedSummary = searchTerm && searchTerm.trim() !== ""
+        ? highlightText(truncatedSummary, searchTerm)
+        : escapeHtml(truncatedSummary.trim());
 
-    return `<div class="summary-content"><div class="summary-text">${truncatedSummary.trim()}</div>${isTruncated ? `<div class="summary-expand"><button class="show-more-btn" onclick="this.parentElement.parentElement.innerHTML = \`${summary.replace(/`/g, "\\`").trim()}\`">Show more...</button></div>` : ""}</div>`;
+    return `<div class="summary-content"><div class="summary-text">${renderedSummary}</div></div>`;
+}
+
+function summaryLabelForSource(source) {
+    return source === "chrome-ai" ? "Chrome AI Summary" : "Recall Summary";
 }
 
 // Helper function to highlight search matches in text
@@ -96,10 +99,6 @@ function highlightText(text, searchTerm) {
     const searchRegex = new RegExp(escapedTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
     return escapedText.replace(searchRegex, match => `<span class="search-highlight">${match}</span>`);
 }
-
-let allSessionsData = []; // To store the original full list of sessions
-let currentSearchTerm = ""; // Track current search term for highlighting
-let sessionsData = []; // Store the processed sessions data
 
 /**
  * Get URLs of all currently active tabs
@@ -365,41 +364,18 @@ async function refreshSessionsIfNecessary() {
     }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     console.log("Sessions view DOM fully loaded and parsed");
     addTabGroupStyles();
 
-    // Seed with the query carried from another view (URL ?q= or chrome.storage.session);
-    // the filter itself runs once initSessions has rendered the data.
     const searchInput = document.getElementById("sessionSearch");
-    const initialQuery = readSharedQuery();
-    if (searchInput) {
-        searchInput.value = initialQuery;
-    }
-    decorateViewLinks(initialQuery.trim());
-    currentSearchTerm = initialQuery.toLowerCase();
+    createRecallSearchController({ input: searchInput }).init();
 
-    initSessions().then(() => {
-        if (currentSearchTerm.trim()) {
-            filterAndRenderSessions(currentSearchTerm);
-        }
-    });
-
-    if (searchInput) {
-        searchInput.addEventListener("input", (event) => {
-            publishSharedQuery(event.target.value.trim());
-            currentSearchTerm = event.target.value.toLowerCase();
-            filterAndRenderSessions(currentSearchTerm);
-        });
-
-        // Live-sync with edits made in other open views.
-        onSharedQueryChange((query) => {
-            searchInput.value = query;
-            currentSearchTerm = query.toLowerCase();
-            filterAndRenderSessions(currentSearchTerm);
-            decorateViewLinks(query.trim());
-        });
-    }
+    // Sessions consumes the same durable summaries as Main and Stars. Hydrate
+    // before sessionization so the first query and first modal can use existing
+    // recall instead of regenerating it in this document.
+    await loadNanoSummariesFromStorage();
+    await initSessions();
 
     // Check for updates when the tab becomes visible
     document.addEventListener("visibilitychange", () => {
@@ -412,47 +388,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Also check for updates periodically
     setInterval(refreshSessionsIfNecessary, 15000); // Check every 15 seconds
 });
-
-function filterAndRenderSessions(searchTerm) {
-    if (!allSessionsData) return;
-
-    // Local Filter (Instant) — standalone build searches only the in-memory
-    // session corpus; there is no backend semantic search.
-    let filteredSessions;
-    if (!searchTerm || searchTerm.trim() === "") {
-        filteredSessions = allSessionsData;
-        renderSessions(filteredSessions);
-        return;
-    }
-
-    filteredSessions = allSessionsData.filter(session => {
-        // Check session name
-        if (session.name && session.name.toLowerCase().includes(searchTerm)) {
-            return true;
-        }
-        // Check pages within the session
-        if (session.pages) {
-            for (const page of session.pages) {
-                if (page.title && page.title.toLowerCase().includes(searchTerm)) {
-                    return true;
-                }
-                if (page.url && page.url.toLowerCase().includes(searchTerm)) {
-                    return true;
-                }
-
-                // Check AI summary if available in cache
-                const cachedSummary = getCachedSummary(page.url);
-                if (cachedSummary && cachedSummary.toLowerCase().includes(searchTerm)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    });
-
-    // Render local results immediately
-    renderSessions(filteredSessions);
-}
 
 /**
  * Process sessions data from history and active tabs
@@ -490,54 +425,7 @@ async function processSessionsData(activeTabUrls = [], isRefresh = false) {
         //  Date.toLocaleString() calls + an object log for every session on
         //  every load — pure overhead on the render path.)
 
-        // Apply any current search filter but don't render here
-        let sessionsToReturn = processedSessions;
-
-        if (currentSearchTerm && currentSearchTerm.trim() !== "") {
-            sessionsToReturn = processedSessions.filter(session => {
-                // Check session name
-                if (session.name && session.name.toLowerCase().includes(currentSearchTerm)) {
-                    return true;
-                }
-
-                // Check session-level summary if available
-                if (session.summary && session.summary.toLowerCase().includes(currentSearchTerm)) {
-                    // Mark this session as having a summary match for highlighting
-                    session.hasSummaryMatch = true;
-                    return true;
-                }
-
-                // Check search queries within the session
-                if (session.searchQueries && session.searchQueries.some(query =>
-                    query.toLowerCase().includes(currentSearchTerm))) {
-                    return true;
-                }
-
-                // Check pages within the session
-                if (session.pages) {
-                    for (const page of session.pages) {
-                        if (page.title && page.title.toLowerCase().includes(currentSearchTerm)) {
-                            return true;
-                        }
-                        if (page.url && page.url.toLowerCase().includes(currentSearchTerm)) {
-                            return true;
-                        }
-
-                        // Check AI summary if available in cache
-                        const cachedSummary = getCachedSummary(page.url);
-                        if (cachedSummary && cachedSummary.toLowerCase().includes(currentSearchTerm)) {
-                            // Store which pages have summary matches for highlighting
-                            if (!page.matchTypes) page.matchTypes = {};
-                            page.matchTypes.summary = true;
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            });
-        }
-
-        return { sessions: sessionsToReturn };
+        return { sessions: processedSessions };
     } catch (error) {
         console.error("Error processing sessions data:", error);
         return { sessions: [] };
@@ -554,10 +442,6 @@ async function initSessions(isRefresh = false) {
 
         // Process sessions data (but don't render yet)
         const { sessions } = await processSessionsData(activeTabUrls, isRefresh);
-
-        // Store the full dataset
-        allSessionsData = sessions;
-        sessionsData = sessions;
 
         // Explicitly render the sessions
         await renderSessions(sessions, isRefresh);
@@ -920,18 +804,8 @@ async function processDataIntoSessions(historyItems, allWindows) { // Made async
         // Skip restricted URLs
         if (url.startsWith("chrome://") || url.startsWith("file://")) return;
 
-        // Skip if we already have a summary
-        if (!getCachedSummary(url)) {
-            console.log(`Queueing summary generation for: ${url}`);
-            summaryQueue.add(url);
-        }
+        addToSummaryQueue(url);
     });
-
-    // Process the queue if we added any URLs
-    if (summaryQueue.size > 0) {
-        console.log(`Processing ${summaryQueue.size} URLs for summary generation`);
-        processSummaryQueue().catch(console.error);
-    }
 
     return processedSessions;
 }
@@ -1333,7 +1207,8 @@ function renderPageList(session, searchTerm = "") {
         }
 
         // Handle summary display with loading indicator for non-cached summaries
-        const cachedSummary = getCachedSummary(page.url);
+        const cachedSummaryEntry = getCachedSummaryEntry(page.url);
+        const cachedSummary = cachedSummaryEntry?.summary || null;
         const isInternalUrl = page.url.startsWith("chrome://") || page.url.startsWith("file:///");
 
         // Only show summary section if we have a cached summary or if URL is valid for summarization
@@ -1346,10 +1221,10 @@ function renderPageList(session, searchTerm = "") {
             summaryLabel.className = "summary-label";
 
             if (cachedSummary) {
-                summaryLabel.textContent = "AI Summary";
+                summaryLabel.textContent = summaryLabelForSource(cachedSummaryEntry.source);
             } else {
                 // Use a loading indicator instead of static text
-                summaryLabel.innerHTML = "AI Summary <span class=\"loading-indicator\">...</span>";
+                summaryLabel.innerHTML = "Recall Summary <span class=\"loading-indicator\">...</span>";
 
                 // Set up polling to check for summary availability
                 const checkSummaryInterval = setInterval(() => {
@@ -1357,7 +1232,7 @@ function renderPageList(session, searchTerm = "") {
                     if (updatedSummary) {
                         clearInterval(checkSummaryInterval);
                         // Update the label to remove loading indicator
-                        summaryLabel.textContent = "AI Summary";
+                        summaryLabel.textContent = summaryLabelForSource(getCachedSummaryEntry(page.url)?.source);
                         // Create and add summary content
                         const summaryContent = document.createElement("div");
                         summaryContent.innerHTML = createTruncatedSummary(updatedSummary, searchTerm);
@@ -1505,9 +1380,6 @@ async function refreshSessionsData(activeTabUrls) {
 
         // Get fresh data
         const { sessions } = await processSessionsData(activeTabUrls, true);
-        sessionsData = sessions; // Update global sessions data
-        allSessionsData = sessions; // Update all sessions data as well
-
         // Render the refreshed sessions
         await renderSessions(sessions, true);
 

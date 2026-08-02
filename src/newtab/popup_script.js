@@ -93,18 +93,6 @@ document.addEventListener("DOMContentLoaded", () => {
             
             // Setup event listeners
             setupEventListeners();
-            // Keyboard navigation: allow up/down/enter to select tabs
-            if (searchInput) {
-                searchInput.addEventListener("keydown", (e) => {
-                    if (e.key === "ArrowDown") {
-                        // Move focus to first matching tab cell (after search)
-                        if (focusableElements.length > 0) {
-                            moveFocusToIndex(0);
-                            e.preventDefault();
-                        }
-                    }
-                });
-            }
         })
         .catch(error => {
             console.error("Error fetching browser data:", error);
@@ -254,7 +242,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // After rendering is complete, update the focusable elements list
         setTimeout(() => {
-            focusableElements = Array.from(document.querySelectorAll(".cell"));
+            refreshFocusableElements();
             console.log(`Found ${focusableElements.length} focusable tab elements`);
         }, 100);
     }
@@ -547,6 +535,18 @@ document.addEventListener("DOMContentLoaded", () => {
     function handleKeyNavigation(e) {
         // Only handle if we have focusable elements
         if (focusableElements.length === 0) return;
+
+        // The query owns normal text-editing keys. Up/Down cross the boundary
+        // into the filtered result set, matching the full-page recall SERPs.
+        if (e.target === searchInput) {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                moveFocusToIndex(e.key === "ArrowDown" ? 0 : focusableElements.length - 1);
+            }
+            return;
+        }
+
+        const traversingSearchResults = Boolean(searchInput?.value.trim());
         
         // Handle various key presses
         switch (e.key) {
@@ -562,15 +562,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 
             case "ArrowDown":
                 e.preventDefault();
-                // Estimate number of items per row based on container width
-                const itemsPerRow = Math.max(1, Math.floor(treemapContainer.clientWidth / 50));
-                moveFocus(itemsPerRow);
+                if (traversingSearchResults) {
+                    moveFocus(1);
+                } else {
+                    // Preserve spatial treemap navigation outside search mode.
+                    const itemsPerRow = Math.max(1, Math.floor(treemapContainer.clientWidth / 50));
+                    moveFocus(itemsPerRow);
+                }
                 break;
                 
             case "ArrowUp":
                 e.preventDefault();
-                const itemsPerRowUp = Math.max(1, Math.floor(treemapContainer.clientWidth / 50));
-                moveFocus(-itemsPerRowUp);
+                if (traversingSearchResults) {
+                    moveFocus(-1);
+                } else {
+                    const itemsPerRowUp = Math.max(1, Math.floor(treemapContainer.clientWidth / 50));
+                    moveFocus(-itemsPerRowUp);
+                }
                 break;
                 
             case "Home":
@@ -652,7 +660,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Update focusable elements list when window resizes
         window.addEventListener("resize", () => {
             setTimeout(() => {
-                focusableElements = Array.from(document.querySelectorAll(".cell"));
+                refreshFocusableElements();
             }, 200);
         });
     }
@@ -670,13 +678,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 const matchesUrl = tabData.url.toLowerCase().includes(query);
                 return (matchesTitle || matchesUrl || !query) ? 1 : 0.3;
             });
-        // Update focusableElements to only include matching cells
+        refreshFocusableElements({ resetFocus: true });
+    }
+
+    function refreshFocusableElements({ resetFocus = false } = {}) {
+        const query = searchInput?.value.toLowerCase() || "";
         focusableElements = Array.from(document.querySelectorAll(".cell")).filter(el => {
             const d = d3.select(el).datum();
             const title = d.data.title.toLowerCase();
             const url = d.data.url.toLowerCase();
             return !query || title.includes(query) || url.includes(query);
         });
-        currentFocusIndex = -1; // Reset focus index after search
+        currentFocusIndex = resetFocus
+            ? -1
+            : focusableElements.indexOf(document.activeElement);
     }
 });

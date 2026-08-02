@@ -14,6 +14,7 @@
     <!-- Self-hosted Barlow Condensed (was render-blocking Google Fonts). -->
     <link rel="stylesheet" href="fonts.css">
     <link rel="stylesheet" href="identity.css">
+    <link rel="stylesheet" href="search-serp.css">
 </head>
 <body>
     <header class="app-header">
@@ -34,13 +35,14 @@
             <div class="search-container">
                 <input type="text" 
                     id="sessionSearch" 
-                    placeholder="Search sessions..." 
+                    placeholder="Search your browsing..."
                     class="search-input"
                 />
             </div>
             <!-- View modes specific to graph view have been removed -->
         </div>
     </header>
+    <main id="startPageSearch" class="search-serp" hidden aria-live="polite" aria-busy="false"></main>
     <div id="sessions-container">
         <p>Sessions content will go here. This view will display browsing sessions.</p>
         <!-- Dynamic content will be loaded by sessions.js -->

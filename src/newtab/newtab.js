@@ -164,7 +164,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         // cross-newtab sync) — lives in search.js. The persisted query is
         // restored into the box here; the filter itself is applied by
         // reapplySearch() at the end of drawTreemap below.
-        initializeSearch();
+        initializeSearch({ windows });
 
         // Hydrate the parser-painted context rail immediately. Bookmark IO is
         // asynchronous and independent of the SVG layout, so it should begin
@@ -1122,4 +1122,3 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
         await refreshTreemapState({ activeWindows: state.activeWindows });
     }
 });
-

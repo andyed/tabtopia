@@ -4,12 +4,7 @@ import { createForceGraph } from "./graph-renderer.js";
 import { getDomainFromUrl, getFaviconUrl } from "./utility.js";
 import { browserState } from "./state.js";
 import { getRecentHistory } from "../lib/history-cache.js";
-import {
-    readSharedQuery,
-    publishSharedQuery,
-    decorateViewLinks,
-    onSharedQueryChange
-} from "./search-persistence.js";
+import { createRecallSearchController } from "./recall-search-controller.js";
 
 // Graph visualization data
 let nodes = [];
@@ -357,22 +352,8 @@ console.log("Adding DOMContentLoaded listener");
 document.addEventListener("DOMContentLoaded", () => {
     init();
 
-    // The graph view has no search filter (yet), but it must not DROP the
-    // query while the user passes through: seed the box, keep the header
-    // links carrying it, and publish edits onward.
     const searchInput = document.getElementById("tabSearch");
-    const initialQuery = readSharedQuery();
-    if (searchInput) {
-        searchInput.value = initialQuery;
-        searchInput.addEventListener("input", (event) => {
-            publishSharedQuery(event.target.value.trim());
-        });
-    }
-    decorateViewLinks(initialQuery.trim());
-    onSharedQueryChange((query) => {
-        if (searchInput) searchInput.value = query;
-        decorateViewLinks(query.trim());
-    });
+    createRecallSearchController({ input: searchInput }).init();
 
     // Add view mode toggle listeners
     const timeViewBtn = document.getElementById("timeViewBtn");

@@ -6,8 +6,17 @@ import {
     onSharedQueryChange
 } from "./search-persistence.js";
 import { createSearchSerp } from "./search-serp.js";
+import {
+    loadRecallSearchSources,
+    decorateRecallItems
+} from "./recall-search-sources.js";
 
-const searchSerp = createSearchSerp();
+// Main's search module is also imported by shared summary code used on the
+// Sessions page. Do not claim that page's SERP as an import side effect: each
+// top-level view must create exactly one keyboard controller for its result
+// list.
+let searchSerp = null;
+let recallSources = emptyRecallSources();
 
 export class TabSearch {
     constructor() {
@@ -219,14 +228,19 @@ export const tabSearch = new TabSearch();
 
 // Run a query and paint the match/nomatch classes. Empty query resets cells.
 export function applySearch(query) {
+    const serp = getSearchSerp();
     if (!query) {
         clearSearchResults();
-        searchSerp.clear();
+        serp.clear();
         return [];
     }
     const results = tabSearch.search(query);
     handleSearchResults(results);
-    searchSerp.update(query, tabSearch.getDocuments());
+    serp.update(
+        query,
+        decorateRecallItems(tabSearch.getDocuments(), recallSources),
+        recallSources
+    );
     return results;
 }
 
@@ -242,31 +256,10 @@ export function reapplySearch() {
     }
 }
 
-// Index of the currently arrow-key-selected match, reset whenever the query changes.
-let matchCycleIndex = -1;
-
-function cycleSearchMatches(direction) {
-    if (document.body.classList.contains("start-page-search-active")) {
-        searchSerp.moveFocus(direction === "next" ? 1 : -1);
-        return;
-    }
-    const matches = d3.selectAll(".cell-search-match").nodes();
-    if (!matches.length) return;
-
-    matchCycleIndex = direction === "next"
-        ? (matchCycleIndex + 1) % matches.length
-        : (matchCycleIndex - 1 + matches.length) % matches.length;
-
-    const cell = matches[matchCycleIndex];
-    cell.scrollIntoView({ behavior: "smooth", block: "center" });
-    d3.selectAll(".cell-search-match").classed("cell-selected", false);
-    d3.select(cell).classed("cell-selected", true);
-}
-
 // Single authoritative wiring for the #tabSearch box. newtab.js, readout.js and
 // this module each used to attach their own competing input handlers — all
 // search UI behavior now lives here.
-export function initializeSearch() {
+export function initializeSearch({ windows } = {}) {
     const searchInput = document.getElementById("tabSearch");
 
     if (!searchInput) {
@@ -281,12 +274,22 @@ export function initializeSearch() {
     const initialQuery = readSharedQuery();
     searchInput.value = initialQuery;
     decorateViewLinks(initialQuery.trim());
-    searchSerp.connectSearchInput(searchInput, exitSearchMode);
+    const serp = getSearchSerp();
+    serp.connectSearchInput(searchInput, exitSearchMode);
+    loadRecallSearchSources({ windows }).then(sources => {
+        recallSources = { ...emptyRecallSources(), ...sources, historyFallback: true };
+        const currentQuery = searchInput.value.trim();
+        if (currentQuery) applySearch(currentQuery);
+        return recallSources;
+    }).catch(error => {
+        console.warn("[Recall Search] Main sources unavailable", error);
+        return recallSources;
+    });
     // A query carried from another view should claim the page immediately;
     // it must not wait for the first treemap layout before History retrieval
     // becomes visible. reapplySearch() folds in open-tab documents after draw.
     if (initialQuery.trim()) {
-        searchSerp.update(initialQuery.trim(), tabSearch.getDocuments());
+        serp.update(initialQuery.trim(), tabSearch.getDocuments(), recallSources);
     }
 
     // Publish synchronously on every keystroke (a debounced publish can lose
@@ -297,7 +300,6 @@ export function initializeSearch() {
     });
 
     searchInput.addEventListener("input", debounce((event) => {
-        matchCycleIndex = -1;
         applySearch(event.target.value.trim());
     }, 200));
 
@@ -305,19 +307,11 @@ export function initializeSearch() {
         switch (event.key) {
             case "Enter":
                 event.preventDefault();
-                if (!searchSerp.activateFirst()) focusFirstSearchResult();
+                if (!serp.activateFirst()) focusFirstSearchResult();
                 break;
             case "Tab":
                 event.preventDefault();
-                if (!searchSerp.focusFirst()) focusFirstSearchResult();
-                break;
-            case "ArrowDown":
-                event.preventDefault();
-                cycleSearchMatches("next");
-                break;
-            case "ArrowUp":
-                event.preventDefault();
-                cycleSearchMatches("prev");
+                if (!serp.focusFirst()) focusFirstSearchResult();
                 break;
             case "Escape":
                 event.preventDefault();
@@ -330,12 +324,26 @@ export function initializeSearch() {
     // view updates this one. Fires only in documents that didn't do the write.
     onSharedQueryChange((query) => {
         searchInput.value = query;
-        matchCycleIndex = -1;
         applySearch(query.trim());
         decorateViewLinks(query.trim());
     });
 
     console.log("Search initialization complete");
+}
+
+function emptyRecallSources() {
+    return {
+        bookmarkItems: [],
+        taggedItems: [],
+        summaryRecords: {},
+        heroImageRecords: {},
+        historyFallback: false
+    };
+}
+
+function getSearchSerp() {
+    if (!searchSerp) searchSerp = createSearchSerp();
+    return searchSerp;
 }
 
 function focusFirstSearchResult() {
@@ -402,9 +410,8 @@ export function exitSearchMode() {
         searchInput.blur();
     }
     publishSharedQuery("");
-    matchCycleIndex = -1;
     clearSearchResults();
-    searchSerp.clear();
+    getSearchSerp().clear();
 }
 
 export function handleSearchResults(results) {

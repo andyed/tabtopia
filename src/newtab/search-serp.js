@@ -1,8 +1,8 @@
 import { getRecentHistory, recentHistoryCacheConfig } from "../lib/history-cache.js";
 import { buildStartPageSearchResults } from "../lib/start-page-search.js";
-import { formatRelativeAccess } from "../lib/tab-recall.js";
 import { createStartPageActionExecutor } from "./start-page-actions.js";
 import { createLetterFavicon, getLocalFaviconUrl } from "./utility.js";
+import { buildSearchEvidence } from "./search-evidence.js";
 
 const DIRECT_HISTORY_LIMIT = 200;
 const RESULT_LIMIT = 16;
@@ -17,28 +17,40 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
   let requestId = 0;
   let currentQuery = "";
   let currentOpenItems = [];
+  let currentRetrieval = emptyRetrieval();
   let onClear = null;
+  let connectedSearchInput = null;
 
   root.addEventListener("keydown", event => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      moveFocus(event.key === "ArrowDown" ? 1 : -1);
+      if (moveFocus(event.key === "ArrowDown" ? 1 : -1)) event.preventDefault();
       return;
     }
     if (event.key === "Escape") {
       event.preventDefault();
       onClear?.();
+      connectedSearchInput?.focus();
     }
   });
 
   function connectSearchInput(searchInput, clearHandler) {
     if (!searchInput) return;
     onClear = clearHandler;
+    if (connectedSearchInput === searchInput) return;
+    connectedSearchInput?.removeEventListener("keydown", handleSearchInputNavigation);
+    connectedSearchInput = searchInput;
+    connectedSearchInput.addEventListener("keydown", handleSearchInputNavigation);
   }
 
-  function update(query, openItems = []) {
+  function handleSearchInputNavigation(event) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    if (moveFocus(event.key === "ArrowDown" ? 1 : -1)) event.preventDefault();
+  }
+
+  function update(query, openItems = [], retrieval = {}) {
     const normalized = String(query || "").trim();
     currentOpenItems = array(openItems);
+    currentRetrieval = normalizeRetrieval(retrieval);
     if (!normalized) {
       clear();
       return Promise.resolve([]);
@@ -47,24 +59,33 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
     currentQuery = normalized;
     const thisRequest = ++requestId;
     showRoot(normalized);
-    const quickHistory = liveHistoryPool();
+    const local = resultsFor(normalized, currentOpenItems, [], currentRetrieval);
+    const needsHistory = !currentRetrieval.historyFallback || local.length < RESULT_LIMIT;
+    const quickHistory = currentRetrieval.historyFallback ? [] : liveHistoryPool();
     const cachedDirect = queryCache.get(normalized);
     const immediateHistory = cachedDirect || quickHistory;
-    const immediate = resultsFor(normalized, currentOpenItems, immediateHistory);
-    render(normalized, immediate, { loading: !cachedDirect, error: "" });
-    if (cachedDirect) return Promise.resolve(immediate);
+    const immediate = resultsFor(normalized, currentOpenItems, immediateHistory, currentRetrieval);
+    render(normalized, immediate, { loading: needsHistory && !cachedDirect, error: "" });
+    if (!needsHistory || cachedDirect) return Promise.resolve(immediate);
 
     return directHistoryFor(normalized).then(directHistory => {
       rememberQuery(normalized, directHistory);
       if (thisRequest !== requestId || currentQuery !== normalized) return [];
-      const complete = resultsFor(normalized, currentOpenItems, [...quickHistory, ...directHistory]);
+      const complete = resultsFor(
+        normalized,
+        currentOpenItems,
+        [...quickHistory, ...directHistory],
+        currentRetrieval
+      );
       render(normalized, complete, { loading: false, error: "" });
       return complete;
     }).catch(() => {
       if (thisRequest !== requestId || currentQuery !== normalized) return [];
       render(normalized, immediate, {
         loading: false,
-        error: "Full History is unavailable; showing matches already in memory."
+        error: currentRetrieval.historyFallback
+          ? "History fallback is unavailable; showing saved recall matches."
+          : "Full History is unavailable; showing matches already in memory."
       });
       return immediate;
     });
@@ -74,6 +95,7 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
     requestId += 1;
     currentQuery = "";
     currentOpenItems = [];
+    currentRetrieval = emptyRetrieval();
     root.hidden = true;
     root.replaceChildren();
     root.removeAttribute("data-query");
@@ -123,6 +145,11 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
 
   function render(query, results, { loading, error }) {
     if (query !== currentQuery) return;
+    const focusedLink = root.contains(document.activeElement)
+      ? document.activeElement.closest?.(".search-serp__result-link")
+      : null;
+    const focusedResultId = focusedLink?.dataset.resultId || "";
+    const focusedIndex = focusedLink ? resultLinks().indexOf(focusedLink) : -1;
     const fragment = document.createDocumentFragment();
     const header = element("header", "search-serp__header");
     header.append(
@@ -131,7 +158,7 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
       element(
         "p",
         "search-serp__summary",
-        summaryText(results.length, loading)
+        summaryText(results, loading, currentRetrieval)
       )
     );
     fragment.append(header);
@@ -147,28 +174,40 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
     } else if (loading) {
       fragment.append(loadingState());
     } else {
-      fragment.append(emptyState(query));
+      fragment.append(emptyState(query, currentRetrieval));
     }
 
     fragment.append(searchHelp());
     root.replaceChildren(fragment);
     root.setAttribute("aria-busy", String(loading));
+    restoreResultFocus(focusedResultId, focusedIndex);
+  }
+
+  function restoreResultFocus(resultId, priorIndex) {
+    if (!resultId && priorIndex < 0) return;
+    const links = resultLinks();
+    const sameResult = links.find(link => link.dataset.resultId === resultId);
+    const fallback = priorIndex >= 0 ? links[Math.min(priorIndex, links.length - 1)] : null;
+    (sameResult || fallback)?.focus({ preventScroll: true });
   }
 
   function resultList(results) {
     const list = element("ol", "search-serp__results");
-    list.setAttribute("aria-label", "Matching open tabs and recent pages");
+    list.setAttribute("aria-label", "Matching saved, open, and recent pages");
     results.forEach((result, index) => {
       const item = element("li", "search-serp__result");
       item.dataset.rank = String(index + 1).padStart(2, "0");
       item.classList.toggle("search-serp__result--open", result.open);
-      item.append(resultLink(result));
+      item.classList.toggle("search-serp__result--bookmark", result.source === "bookmark");
+      item.classList.toggle("search-serp__result--tag", result.source === "tag");
+      item.classList.toggle("search-serp__result--hero", shouldShowHero(result, index));
+      item.append(resultLink(result, index));
       list.append(item);
     });
     return list;
   }
 
-  function resultLink(result) {
+  function resultLink(result, index) {
     const link = element("a", "search-serp__result-link");
     link.href = result.url;
     link.dataset.resultId = result.id;
@@ -177,24 +216,20 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
 
     const rank = element("span", "search-serp__rank", "");
     rank.setAttribute("aria-hidden", "true");
-    const icon = resultFavicon(result);
+    const visual = resultVisual(result, index);
     const copy = element("span", "search-serp__copy");
     copy.append(
       element("strong", "search-serp__title", result.title),
       element("span", "search-serp__location", displayLocation(result))
     );
+    if (result.summary) {
+      copy.append(element("span", "search-serp__snippet", result.summary));
+    }
     const evidence = element("span", "search-serp__evidence");
-    evidence.append(
-      evidenceToken(result.open ? "Open tab" : "History", result.open ? "open" : "history"),
-      evidenceToken(result.matchKind, "match")
-    );
-    if (result.lastSeenAt > 0) {
-      evidence.append(evidenceToken(formatRelativeAccess(result.lastSeenAt), "time"));
+    for (const item of buildSearchEvidence(result)) {
+      evidence.append(evidenceToken(item.text, item.kind));
     }
-    if (result.visitCount > 1) {
-      evidence.append(evidenceToken(`${result.visitCount} visits`, "visits"));
-    }
-    link.append(rank, icon, copy, evidence);
+    link.append(rank, visual, copy, evidence);
 
     link.addEventListener("click", event => {
       if (usesNativeNavigation(event)) return;
@@ -258,10 +293,12 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
   return { update, clear, focusFirst, activateFirst, isActive, moveFocus, connectSearchInput };
 }
 
-function resultsFor(query, openItems, historyItems) {
+function resultsFor(query, openItems, historyItems, retrieval = {}) {
   return buildStartPageSearchResults({
     query,
     openItems,
+    bookmarkItems: retrieval.bookmarkItems,
+    taggedItems: retrieval.taggedItems,
     historyItems,
     now: Date.now(),
     limit: RESULT_LIMIT
@@ -281,11 +318,24 @@ function queryHeading(query) {
   return heading;
 }
 
-function summaryText(count, loading) {
-  const noun = count === 1 ? "match" : "matches";
-  if (loading && count > 0) return `${count} ${noun} now · checking full History`;
-  if (loading) return "Checking open tabs and recent History";
-  return `${count} ${noun} across open tabs and recent History`;
+function summaryText(results, loading, retrieval = {}) {
+  const count = results.length;
+  const bookmarks = results.filter(result => result.source === "bookmark").length;
+  const tagged = results.filter(result => result.source === "tag").length;
+  const open = results.filter(result => result.open).length;
+  const history = results.filter(result => result.source === "history").length;
+  if (count > 0) {
+    const parts = [];
+    if (bookmarks > 0) parts.push(`${bookmarks} saved ${bookmarks === 1 ? "page" : "pages"}`);
+    if (tagged > 0) parts.push(`${tagged} related ${tagged === 1 ? "page" : "pages"}`);
+    if (open > 0) parts.push(`${open} open now`);
+    if (history > 0) parts.push(`${history} recent ${history === 1 ? "page" : "pages"}`);
+    if (loading) parts.push(history > 0 ? "checking more" : "checking recent browsing");
+    return parts.join(" · ");
+  }
+  if (loading && retrieval.historyFallback) return "Checking saved, related, and recent pages";
+  if (loading) return "Checking open and recent pages";
+  return "No matching pages";
 }
 
 function resultFavicon(result) {
@@ -299,6 +349,28 @@ function resultFavicon(result) {
     icon.src = createLetterFavicon(result.url);
   }, { once: true });
   return icon;
+}
+
+function resultVisual(result, index) {
+  if (!shouldShowHero(result, index)) return resultFavicon(result);
+  const visual = element("span", "search-serp__visual");
+  visual.setAttribute("aria-hidden", "true");
+  const hero = element("img", "search-serp__hero");
+  hero.src = result.heroImageUrl;
+  hero.alt = "";
+  const favicon = resultFavicon(result);
+  favicon.classList.add("search-serp__favicon--overlay");
+  hero.addEventListener("error", () => {
+    visual.replaceWith(resultFavicon(result));
+  }, { once: true });
+  visual.append(hero, favicon);
+  return visual;
+}
+
+function shouldShowHero(result, index) {
+  return index < 3
+    && Boolean(result?.heroImageUrl)
+    && Number(result?.heroImageScore || 0) >= 20;
 }
 
 function evidenceToken(text, kind) {
@@ -323,10 +395,16 @@ function loadingState() {
   return section;
 }
 
-function emptyState(query) {
+function emptyState(query, retrieval = {}) {
   const section = element("section", "search-serp__empty");
   section.append(
-    element("h2", "search-serp__empty-title", "No recent page matched every word"),
+    element(
+      "h2",
+      "search-serp__empty-title",
+      retrieval.historyFallback
+        ? "No bookmark, tagged recall, or recent page matched every word"
+        : "No recent page matched every word"
+    ),
     element("p", "search-serp__empty-copy", `Try a title fragment, site, or URL from “${query}”.`)
   );
   return section;
@@ -368,4 +446,16 @@ function element(tagName, className = "", text = "") {
 
 function array(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function emptyRetrieval() {
+  return { bookmarkItems: [], taggedItems: [], historyFallback: false };
+}
+
+function normalizeRetrieval(value) {
+  return {
+    bookmarkItems: array(value?.bookmarkItems),
+    taggedItems: array(value?.taggedItems),
+    historyFallback: Boolean(value?.historyFallback)
+  };
 }

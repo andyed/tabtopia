@@ -33,6 +33,7 @@ test("merges an open tab with the same History page and retains switch identity"
   assert.equal(results[0].tabId, 42);
   assert.equal(results[0].windowId, 7);
   assert.equal(results[0].visitCount, 8);
+  assert.equal(results[0].historyLastVisitedAt, NOW - (12 * 60 * 1000));
 });
 
 test("text is an admission gate while recency breaks matching ambiguity", () => {
@@ -72,6 +73,63 @@ test("bounds output deterministically", () => {
   assert.equal(results[0].title, "Common page 0");
 });
 
+test("searches bookmark summaries and keeps saved matches ahead of History", () => {
+  const results = buildStartPageSearchResults({
+    query: "shader notebook",
+    bookmarkItems: [bookmark(
+      "Depthfield notes",
+      "https://depthfield.example/camera",
+      "A shader notebook for WebGL camera effects"
+    )],
+    historyItems: [history("Shader notebook in History", "https://history.example/shaders", 1)],
+    now: NOW
+  });
+
+  assert.deepEqual(results.map(result => result.source), ["bookmark", "history"]);
+  assert.equal(results[0].matchKind, "Summary");
+  assert.equal(results[0].bookmarkSavedAt, NOW - (60 * 60 * 1000));
+});
+
+test("expands a query through shared archive tags before using History", () => {
+  const results = buildStartPageSearchResults({
+    query: "webgl",
+    taggedItems: [
+      tagged("WebGL shader guide", "https://archive.example/webgl", ["creative coding", "graphics"]),
+      tagged("Depthfield camera effects", "https://archive.example/depthfield", ["graphics", "photography"])
+    ],
+    historyItems: [history("WebGL result from History", "https://history.example/webgl", 1)],
+    now: NOW
+  });
+
+  assert.deepEqual(results.map(result => result.source), ["tag", "tag", "history"]);
+  assert.equal(results[1].matchKind, "Related tag");
+  assert.deepEqual(results[1].matchedTags, ["graphics"]);
+  assert.equal(results[1].taggedAt, NOW - (24 * 60 * 60 * 1000));
+});
+
+test("retains URL-matched hero and summary provenance when sources merge", () => {
+  const url = "https://depthfield.example/camera";
+  const results = buildStartPageSearchResults({
+    query: "camera shader",
+    openItems: [openTab(42, "Depthfield camera", url, 7)],
+    bookmarkItems: [{
+      ...bookmark("Depthfield camera", url, "Camera shader effects for WebGL"),
+      summarySource: "chrome-ai",
+      heroImageUrl: "https://depthfield.example/hero.jpg",
+      heroImageAlt: "Camera effect",
+      heroImageScore: 88
+    }],
+    now: NOW
+  });
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].open, true);
+  assert.equal(results[0].bookmarked, true);
+  assert.equal(results[0].summarySource, "chrome-ai");
+  assert.equal(results[0].heroImageUrl, "https://depthfield.example/hero.jpg");
+  assert.equal(results[0].heroImageScore, 88);
+});
+
 function openTab(id, title, url, windowId = 1) {
   return { id, windowId, title, url, lastAccessed: NOW - (3 * 60 * 1000) };
 }
@@ -83,4 +141,12 @@ function history(title, url, minutesAgo, visitCount = 1) {
     lastVisitTime: NOW - (minutesAgo * 60 * 1000),
     visitCount
   };
+}
+
+function bookmark(title, url, summary = "") {
+  return { title, url, summary, dateAdded: NOW - (60 * 60 * 1000) };
+}
+
+function tagged(title, url, tags) {
+  return { title, url, tags, archivedAt: NOW - (24 * 60 * 60 * 1000) };
 }

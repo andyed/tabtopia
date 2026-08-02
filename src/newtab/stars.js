@@ -7,6 +7,8 @@ import {
 import { formatTimeAgo } from "./timeago.js";
 import { getLocalFaviconUrl, safeUrl } from "./utility.js";
 import { getRecentHistory } from "../lib/history-cache.js";
+import { createSearchSerp } from "./search-serp.js";
+import { loadRecallSearchSources } from "./recall-search-sources.js";
 
 const CONTEXT_WINDOW_MS = 15 * 60 * 1000;
 const HISTORY_HORIZON_MS = 180 * 24 * 60 * 60 * 1000;
@@ -25,9 +27,15 @@ let currentZoomTransform = null;
 let activeZoomBehavior = null;
 let activeZoomSvg = null;
 let pendingDetailFocus = null;
+let searchBookmarks = [];
+let taggedRecallItems = [];
+let searchOpenItems = [];
+let searchSourcesReady = false;
+let searchSerp = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     renderShell();
+    searchSerp = createSearchSerp(document.getElementById("startPageSearch"));
     initControls();
     initLandmarks();
 });
@@ -86,6 +94,7 @@ function initControls() {
 
     input.value = initialQuery;
     decorateViewLinks(initialQuery.trim());
+    searchSerp?.connectSearchInput(input, exitSearchMode);
 
     let searchTimer = null;
     input.addEventListener("input", (event) => {
@@ -93,13 +102,25 @@ function initControls() {
         publishSharedQuery(query);
         decorateViewLinks(query);
         clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => applyFilter(query), 120);
+        searchTimer = setTimeout(() => applySearch(query), 120);
+    });
+
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            exitSearchMode();
+        } else if (event.key === "Enter") {
+            event.preventDefault();
+            searchSerp?.activateFirst();
+        } else if (event.key === "Tab" && searchSerp?.focusFirst()) {
+            event.preventDefault();
+        }
     });
 
     onSharedQueryChange((query) => {
         input.value = query;
         decorateViewLinks(query.trim());
-        applyFilter(query);
+        applySearch(query);
     });
 
     sort.addEventListener("change", (event) => {
@@ -129,19 +150,27 @@ function initControls() {
 
 async function initLandmarks() {
     try {
-        const [bookmarks, summaries, recentHistory] = await Promise.all([
-            fetchRecentBookmarks(MAX_LANDMARKS),
-            fetchCachedSummaries(),
-            fetchRecentHistory()
+        const [recallSources, recentHistory] = await Promise.all([
+            loadRecallSearchSources(),
+            optionalSource("recent History metrics", fetchRecentHistory(), [])
         ]);
+        const bookmarks = recallSources.bookmarkItems;
+
+        searchBookmarks = bookmarks;
+        taggedRecallItems = recallSources.taggedItems;
+        searchOpenItems = recallSources.openItems;
+        searchSourcesReady = true;
 
         if (!bookmarks.length) {
             showEmptyState();
+            applySearch(document.getElementById("starsSearch")?.value || "");
             return;
         }
 
-        allLandmarks = bookmarks.map(bookmark => createLandmark(bookmark, recentHistory, summaries));
-        applyFilter(document.getElementById("starsSearch")?.value || "");
+        allLandmarks = bookmarks
+            .slice(0, MAX_LANDMARKS)
+            .map(bookmark => createLandmark(bookmark, recentHistory));
+        applySearch(document.getElementById("starsSearch")?.value || "");
         document.getElementById("landmarks-loading")?.remove();
     } catch (error) {
         console.error("Error initializing landmarks view:", error);
@@ -149,7 +178,30 @@ async function initLandmarks() {
     }
 }
 
-function createLandmark(bookmark, historyItems, summaries) {
+function applySearch(rawQuery) {
+    const query = String(rawQuery || "").trim();
+    applyFilter(query);
+    if (!query) {
+        searchSerp?.clear();
+        return;
+    }
+    if (!searchSourcesReady) return;
+    searchSerp?.update(query, searchOpenItems, {
+        bookmarkItems: searchBookmarks,
+        taggedItems: taggedRecallItems,
+        historyFallback: true
+    });
+}
+
+function exitSearchMode() {
+    const input = document.getElementById("starsSearch");
+    if (input) input.value = "";
+    publishSharedQuery("");
+    decorateViewLinks("");
+    applySearch("");
+}
+
+function createLandmark(bookmark, historyItems) {
     const url = bookmark.url || "";
     const domain = domainFromUrl(url);
     const savedAt = Number(bookmark.dateAdded) || Date.now();
@@ -164,7 +216,7 @@ function createLandmark(bookmark, historyItems, summaries) {
         title: bookmark.title || domain || url || "Untitled landmark",
         domain,
         savedAt,
-        summary: summaries[url]?.summary || "",
+        summary: bookmark.summary || "",
         visitCount: Math.max(1, Number(historyRecord?.visitCount) || 1),
         context,
         contextLoaded: false,
@@ -475,7 +527,8 @@ function renderSelectedDetail() {
 
     const actionHadFocus = detail.contains(document.activeElement)
         && document.activeElement.classList.contains("open-landmark");
-    const shouldFocusAction = pendingDetailFocus?.id === landmark?.id
+    const shouldFocusAction = Boolean(pendingDetailFocus && landmark)
+        && pendingDetailFocus.id === landmark.id
         && (!pendingDetailFocus.delivered || actionHadFocus);
 
     detail.replaceChildren();
@@ -640,11 +693,6 @@ function domainFromUrl(url) {
     }
 }
 
-async function fetchCachedSummaries() {
-    const result = await chrome.storage.local.get(["nanoSummaries"]);
-    return result.nanoSummaries || {};
-}
-
 async function fetchRecentHistory() {
     const items = await getRecentHistory({
         text: "",
@@ -671,8 +719,13 @@ async function fetchUrlHistory(url) {
     return items.find(item => item.url === url) || items[0] || null;
 }
 
-function fetchRecentBookmarks(count) {
-    return chrome.bookmarks.getRecent(count);
+async function optionalSource(label, promise, fallback) {
+    try {
+        return await promise;
+    } catch (error) {
+        console.warn(`[Landmarks] ${label} unavailable`, error);
+        return fallback;
+    }
 }
 
 function isPublicWebUrl(url) {
@@ -693,5 +746,5 @@ function showEmptyState() {
 
 function showErrorState() {
     const loading = document.getElementById("landmarks-loading");
-    if (loading) loading.textContent = "The saved landscape could not be read.";
+    if (loading) loading.textContent = "Bookmarks could not be read. Reload Tabtopia to try again.";
 }

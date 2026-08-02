@@ -37,4 +37,35 @@ test.describe("sessions view", () => {
     // We expect our session to be tracked
     await expect(sessionCards).not.toHaveCount(0);
   });
+
+  test("uses the global recall SERP instead of limiting search to recent sessions", async ({ context, server }) => {
+    const { nt } = await openSessionsApp(context, server);
+    await nt.evaluate(async baseUrl => {
+      await chrome.bookmarks.create({ title: "Sessions external field guide one", url: `${baseUrl}/field-guide-one` });
+      await chrome.bookmarks.create({ title: "Sessions external field guide two", url: `${baseUrl}/field-guide-two` });
+    }, server);
+    await nt.reload({ waitUntil: "domcontentloaded" });
+
+    const input = nt.locator("#sessionSearch");
+    await input.fill("external field guide");
+    const results = nt.locator("#startPageSearch .search-serp__result-link");
+    await expect(results).toHaveCount(2);
+    await expect(results.nth(0).locator(".search-serp__token--saved")).toContainText("Saved");
+    await expect(nt.locator("#sessions-container")).toBeHidden();
+
+    await input.press("ArrowDown");
+    await expect(results.nth(0)).toBeFocused();
+    await results.nth(0).press("ArrowDown");
+    await expect(results.nth(1)).toBeFocused();
+    await input.focus();
+    await input.press("ArrowUp");
+    await expect(results.nth(1)).toBeFocused();
+    await results.nth(1).press("ArrowDown");
+    await expect(results.nth(0)).toBeFocused();
+
+    await results.nth(0).press("Escape");
+    await expect(input).toBeFocused();
+    await expect(nt.locator("#startPageSearch")).toBeHidden();
+    await expect(nt.locator("#sessions-container")).toBeVisible();
+  });
 });
