@@ -4060,7 +4060,7 @@ async function persistStateNow() {
             lastStateSave: stateToSave.lastSaved
         });
         console.warn(
-            `[Storage] Emergency retention recovered quota; `
+            "[Storage] Emergency retention recovered quota; "
             + `${storageByteLength(stateToSave)} browserState bytes, ${Object.keys(emergencyHeroes).length} hero pages`
         );
     }

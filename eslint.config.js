@@ -69,13 +69,46 @@ export default [
         HTMLElement: "readonly",
         Node: "readonly",
         NodeFilter: "readonly",
+        Element: "readonly",
+        SVGGraphicsElement: "readonly",
+        requestIdleCallback: "readonly",
+        cancelIdleCallback: "readonly",
       }
     },
     rules: {
       "semi": ["error", "always"],
-      "quotes": ["error", "double"],
+      // avoidEscape: a single-quoted string containing double quotes (inline
+      // HTML, mostly) stays as-is rather than being rewritten into a thicket
+      // of backslashes.
+      "quotes": ["error", "double", { "avoidEscape": true }],
       "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }], // Warn on unused vars, ignore if prefixed with _
       "no-undef": "error",
+    }
+  },
+  {
+    // Dev-time Node tooling — the MCP bridge server, the test harnesses, and the
+    // OG-image scripts. These never ship in the extension and run under Node,
+    // not the browser, so they need Node globals rather than DOM ones. Without
+    // this block, turning on no-undef reports every `require`/`process` in them.
+    files: [
+      "mcp/**/*.js",
+      "mcp/**/*.mjs",
+      "tests/**/*.js",
+      "tests/**/*.mjs",
+      "assets/**/*.mjs",
+      "playwright.config.js",
+    ],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        require: "readonly",
+        module: "writable",
+        exports: "writable",
+        __dirname: "readonly",
+        __filename: "readonly",
+        Buffer: "readonly",
+        global: "readonly",
+      }
     }
   }
 ];
