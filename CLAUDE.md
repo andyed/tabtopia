@@ -52,6 +52,27 @@ reconnects, throttled to one attempt per 30s. See the header comment in
 `:8891` appears only in a historical comment — the old interests2025 bridge
 dependency is gone; tabtopia owns its bridge end-to-end.
 
+## Chrome Built-in AI (Gemini Nano)
+
+Live, and defensively written for good reason — the API is flaky. Owned by
+`src/newtab/readout.js`; the `"ai"` manifest permission exists for it.
+
+- **Producer**: `readout.js` gates on `window.Summarizer.availability()` (raced
+  against a 5s timeout) before `window.Summarizer.create()`, then persists to the
+  `nanoSummaries` storage key.
+- **Consumers**: `src/newtab/recall-search-sources.js` (recall/search) and
+  `src/newtab/debug.js` (inspect/clear).
+- **Input cap**: `MAX_CONTENT_LENGTH = 12000` (`readout.js:1086`). Chrome's
+  Summarizer has a hard input limit around 12KB and throws above it — this cap
+  exists because that was hit in production.
+- **Queue**: bounded at `MAX_QUEUE_SIZE: 50`, drops oldest on overflow.
+- **Kill switch**: `globalSummarizerDisabled` in `src/newtab/crash-suppression.js`.
+  The Summarizer genuinely crashes; that module intercepts the crash messages and
+  pre-emptively disables the feature rather than letting it spam or wedge boot.
+
+Treat the availability gate, the 12KB cap, and the kill switch as load-bearing.
+Each was added in response to a real failure, not speculatively.
+
 ## Persistence (`chrome.storage.local`)
 
 `browserState` · `historyEntries` · `activeTabs` · `lastActiveTab` ·
