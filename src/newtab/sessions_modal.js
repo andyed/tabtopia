@@ -985,40 +985,12 @@ function createPageListItem(page, session, lastTimeStr) {
     const summaryContainer = document.createElement("div");
     summaryContainer.className = "session-page-summary";
 
-    // Check if we already have a cached summary
+    // Display the summary only if one is already cached. summaryQueue lives in
+    // readout.js module scope and is not visible here, so on-demand generation
+    // from this modal never worked — the old placeholder just flashed and hid.
     const cachedSummary = getCachedSummary(page.url);
-
     if (cachedSummary) {
-      // If we have a cached summary, display it
       summaryContainer.innerHTML = createTruncatedSummary(cachedSummary);
-    } else {
-      // Otherwise show a placeholder and attempt to queue the summary generation
-      summaryContainer.innerHTML = "<div class=\"summary-loading\">Generating summary...</div>";
-
-      // Try to generate a summary asynchronously
-      setTimeout(() => {
-        // Add this URL to the summary queue in readout.js
-        if (typeof summaryQueue !== "undefined") {
-          summaryQueue.add(page.url);
-          if (typeof processSummaryQueue === "function") {
-            processSummaryQueue().catch(console.error);
-          }
-
-          // Poll for summary updates
-          const checkInterval = setInterval(() => {
-            const newSummary = getCachedSummary(page.url);
-            if (newSummary) {
-              clearInterval(checkInterval);
-              summaryContainer.innerHTML = createTruncatedSummary(newSummary);
-            }
-          }, 2000);
-
-          // Clean up the interval after 30 seconds if summary never arrives
-          setTimeout(() => clearInterval(checkInterval), 30000);
-        } else {
-          summaryContainer.innerHTML = ""; // Hide placeholder if queue isn't available
-        }
-      }, 100);
     }
 
     // Add summary container after the list item
@@ -1085,16 +1057,7 @@ async function getHeroImagesForUrl(url) {
     // Update cache
     heroImageRequestCache.lastRequested.set(url, now);
 
-    // First check browserState if available (core shared data structure)
-    if (typeof browserState !== "undefined" && browserState.heroImages && browserState.heroImages.get) {
-      const heroImageData = browserState.heroImages.get(url);
-      if (heroImageData && heroImageData.images) {
-        resolve(heroImageData.images);
-        return;
-      }
-    }
-
-    // Then check local storage
+    // Check local storage
     chrome.storage.local.get(["heroImages"], (result) => {
       const heroImagesStore = result.heroImages || {};
       if (heroImagesStore[url]) {

@@ -660,16 +660,7 @@ async function getHeroImagesForUrl(url) {
     // Update cache
     heroImageRequestCache.lastRequested.set(url, now);
 
-    // First check browserState if available (core shared data structure)
-    if (typeof browserState !== "undefined" && browserState.heroImages && browserState.heroImages.get) {
-      const heroImageData = browserState.heroImages.get(url);
-      if (heroImageData && heroImageData.images) {
-        resolve(heroImageData.images);
-        return;
-      }
-    }
-
-    // Then check local storage
+    // Check local storage
     chrome.storage.local.get(["heroImages"], (result) => {
       const heroImagesStore = result.heroImages || {};
       if (heroImagesStore[url]) {

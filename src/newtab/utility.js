@@ -204,15 +204,6 @@ export function getLocalFaviconUrl(pageUrlOrDomain, size = 32) {
   return chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(pageUrl)}&size=${size}`);
 }
 
-function exportSession() {
-  const sessionData = {
-    timestamp: Date.now(),
-    windows: currentData.windowSwimlanes,
-    history: currentData.historySwimlane
-  };
-  return JSON.stringify(sessionData);
-}
-
 export function formatDistanceToNow(date) {
   const now = new Date();
   const elapsed = now - date;

@@ -1628,14 +1628,6 @@ window.flushSummaryCache = function () {
     console.log(`Flushing summary cache with ${summaryCache.size} entries...`);
     summaryCache.clear();
 
-    // Also clear summaries in browserState if available
-    if (typeof browserState !== "undefined" && browserState.clearSummaries) {
-        browserState.clearSummaries();
-        console.log("Cleared summaries from browserState");
-    } else {
-        console.warn("browserState.clearSummaries not available");
-    }
-
     console.log("Summary cache flushed successfully");
     return true;
 };
