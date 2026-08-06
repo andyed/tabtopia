@@ -2,8 +2,7 @@
  * Lightweight treemap visualization for Chrome extension popup
  */
 
-// Add at top with other imports
-import { getWindowColor, specialColors } from "./utility.js";
+import { getWindowColor } from "./utility.js";
 
 document.addEventListener("DOMContentLoaded", () => {
     // Get DOM elements
@@ -295,54 +294,6 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Error generating letter favicon:", error);
             return "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjNzU3NTc1IiByeD0iMiIgcnk9IjIiLz48dGV4dCB4PSI4IiB5PSIxMiIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEwIiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC13ZWlnaHQ9ImJvbGQiPj88L3RleHQ+PC9zdmc+";
         }
-    }
-    
-    /**
-     * Generate a color palette for a window
-     * @param {number} windowId - Window identifier
-     * @returns {Array} Color palette with gradient colors
-     */
-    function getWindowPalette(windowId) {
-        // Return cached palette if we already generated one for this window
-        if (colorPalettes[windowId]) {
-            return colorPalettes[windowId];
-        }
-        
-        // Generate a base color from window ID
-        // Windows get a distinct hue from the color wheel
-        let baseHue;
-        
-        if (windowColorCache.has(windowId)) {
-            baseHue = windowColorCache.get(windowId);
-        } else {
-            // Generate a unique color based on window ID
-            // Space them evenly around the color wheel
-            baseHue = (windowId * 137.5) % 360; // Golden angle approximation for good distribution
-            windowColorCache.set(windowId, baseHue);
-        }
-        
-        // Generate a palette of colors with varying lightness and saturation
-        const palette = [];
-        const paletteSize = 20; // More than enough colors for tabs in a window
-        
-        // Active tab gets a more saturated version
-        const activeColor = `hsl(${baseHue}, 70%, 45%)`;
-        
-        // Generate gradient from light to dark
-        for (let i = 0; i < paletteSize; i++) {
-            // More recent tabs get brighter colors
-            const lightness = 40 - (i * 1.2); // 40% down to 16%
-            const saturation = 50 - (i * 1.5); // 50% down to 20%
-            palette.push(`hsl(${baseHue}, ${saturation}%, ${lightness}%)`);
-        }
-        
-        // Store active color as the first one (index -1)
-        palette[-1] = activeColor;
-        
-        // Cache the palette
-        colorPalettes[windowId] = palette;
-        
-        return palette;
     }
     
     /**

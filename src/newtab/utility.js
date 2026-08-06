@@ -248,27 +248,6 @@ export function formatSessionDuration(start, end) {
   return `${seconds} second${seconds > 1 ? "s" : ""}`;
 }
 
-export function applyColorCoding(tabs, windowColors) {
-    return;
-    tabs.forEach((tab, index) => {
-        const windowId = tab.data.windowId;
-        const baseColor = d3.color(windowColors.get(windowId));
-        if (!baseColor) {
-            console.warn(`No color found for window ${windowId}, using default`);
-            tab.data.color = "#f5f5f5"; // Default color
-            return;
-        }
-
-        if (index === 0) {
-            tab.data.color = baseColor.brighter(0.3); // Lightest
-        } else if (index === 1) {
-            tab.data.color = baseColor.brighter(0.2); // Lighter
-        } else if (index === 2) {
-            tab.data.color = baseColor.brighter(0.1); // Light
-        }
-    });
-}
-
 export function getDomainFromUrl(url) {
   if (!url) return null;
   
@@ -288,11 +267,25 @@ export function getDomainFromUrl(url) {
   }
 }
 
-// Replace the duplicate sections with this consolidated code
+// Three separate caches, deliberately not shared. They hold different types
+// keyed by the same windowId, so collapsing them means whichever function runs
+// second reads the other's value: a bare hue number where a color object is
+// expected (throws on .getBorder), or a color object interpolated into an
+// hsl() string (silently emits "hsl([object Object], ...)" and paints nothing).
+const windowHueCache = new Map();   // windowId  -> number (degrees)
+const windowColorCache = new Map(); // cacheKey  -> color object
+const colorPalettes = {};           // cacheKey  -> palette object
 
-// Color palette cache - SINGLE declaration
-const windowColorCache = new Map();
-const colorPalettes = {};
+/**
+ * The golden-angle hue for a window, memoized so a window keeps its color for
+ * the life of the page. Shared by both public color functions below.
+ */
+function getWindowHue(windowId) {
+  if (!windowHueCache.has(windowId)) {
+    windowHueCache.set(windowId, (windowId * 137.5) % 360);
+  }
+  return windowHueCache.get(windowId);
+}
 
 /**
  * Get a consistent color palette for a window
@@ -304,7 +297,7 @@ export function getWindowColorPalette(windowId, options = {}) {
   // Default options
   const defaults = {
     paletteSize: 20,
-    baseHueFn: (id) => (id * 137.5) % 360, // Golden angle for good distribution
+    baseHueFn: getWindowHue, // Golden angle for good distribution
     activeSaturation: 75,
     activeLightness: 55,
     lightnessFn: (i) => 55 - (i * 1.5),  // 55% down to 25% (lighter overall)
@@ -319,15 +312,8 @@ export function getWindowColorPalette(windowId, options = {}) {
     return colorPalettes[cacheKey];
   }
   
-  // Generate or get base hue
-  let baseHue;
-  if (windowColorCache.has(windowId)) {
-    baseHue = windowColorCache.get(windowId);
-  } else {
-    baseHue = config.baseHueFn(windowId);
-    windowColorCache.set(windowId, baseHue);
-  }
-  
+  const baseHue = config.baseHueFn(windowId);
+
   // Generate palette
   const palette = {
     baseHue,
@@ -394,14 +380,16 @@ export function getWindowColor(windowId, options = {}) {
     };
   }
   
-  // Return cached value if available
-  if (windowColorCache.has(windowId)) {
-    return windowColorCache.get(windowId);
+  // Key on the resolved config, not just the window: keying on windowId alone
+  // means the first caller's lightness/saturation wins forever and every later
+  // caller's options are silently discarded.
+  const cacheKey = `${windowId}-${config.lightness}-${config.saturation}`;
+  if (windowColorCache.has(cacheKey)) {
+    return windowColorCache.get(cacheKey);
   }
-  
-  // Generate a consistent hue based on window ID
-  const hue = (windowId * 137.5) % 360; // Golden angle for good distribution
-  
+
+  const hue = getWindowHue(windowId);
+
   // Create color object with helper methods
   const colorObj = {
     windowId,
@@ -433,13 +421,15 @@ export function getWindowColor(windowId, options = {}) {
   };
   
   // Cache the color
-  windowColorCache.set(windowId, colorObj);
+  windowColorCache.set(cacheKey, colorObj);
   return colorObj;
 }
 
-// Clear color cache (call this if you want to regenerate colors)
+// Clear color caches (call this if you want to regenerate colors)
 export function resetWindowColors() {
   windowColorCache.clear();
+  windowHueCache.clear();
+  for (const key of Object.keys(colorPalettes)) delete colorPalettes[key];
 }
 
 // Fallback colors for bookmarks or special windows

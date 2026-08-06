@@ -34,7 +34,6 @@ import { handleKeyNavigation } from "./keyboardNav.js";
 import { tabSearch, reapplySearch } from "./search.js";
 import { fetchRecentBookmarks, fetchRecentHistory } from "./init.js";
 import { browserState } from "./state.js";
-import { applyColorCoding } from "./utility.js";
 
 let categorizedDataCache = null;
 let readoutTimeout = null;
