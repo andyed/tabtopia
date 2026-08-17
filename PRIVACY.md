@@ -1,0 +1,155 @@
+# Tabtopia Privacy Policy
+
+**Draft — not yet published.** Version 1.3.0 · Last reviewed 2026-08-17
+
+Items marked **TODO** need a decision before this can be submitted to the Chrome
+Web Store, which requires a publicly hosted privacy policy URL for any extension
+that handles browsing activity.
+
+---
+
+## The short version
+
+Tabtopia records how you browse so it can show you where you have been and where
+you are likely to go next. That record lives in `chrome.storage.local` on the
+machine that made it. There is no Tabtopia account, no Tabtopia server, and no
+analytics or telemetry of any kind.
+
+Exactly one third-party host is contacted during normal use: `techmeme.com`, for
+its public RSS feed. Everything else Tabtopia talks to is a loopback address on
+your own machine, and only if you have chosen to run the optional companion
+services.
+
+## What Tabtopia records
+
+All of this is written to `chrome.storage.local`, which is per-profile, per-device
+storage. Tabtopia does not use `chrome.storage.sync`, so none of it is uploaded to
+your Google account or shared between your devices.
+
+**Browsing activity**
+- Page URLs, titles, and favicons for tabs you open
+- Per-tab dwell time, focus and activity events, and audio-playback state
+- Navigation intent: the link text and target you clicked, referrer chains, and
+  which tab opened which
+- Window and tab arrangement, so the tab landscape can be drawn
+
+**Page metadata from the pages you visit**
+Content scripts run at `document_start` on every site. They report:
+- The page title and path
+- The text and destination of links you click
+- Candidate hero images (image URLs and alt text — the image files themselves are
+  never copied or uploaded)
+
+**Form submissions**
+When you submit a form, Tabtopia records the form's action URL, method, field
+count, and the page it was on. Field *values* are replaced with the literal
+placeholder `[FIELD_VALUE]`, and password fields are skipped entirely.
+
+**One exception, stated plainly:** the value of the first search-like input in the
+form *is* recorded verbatim, so that searches you ran show up in recall. "Search
+-like" means `input[type=search]`, or an input whose `name` contains `search`, or
+whose placeholder contains `search`. That last rule matches on a substring, so on
+an unusual site it could capture a field you would not think of as a search box.
+**TODO:** tighten this selector, or make search-query capture an explicit opt-in.
+
+**Your Chrome history and bookmarks**
+Tabtopia reads both through the `history` and `bookmarks` APIs to rank and group
+what it shows. It reads them; it does not modify or delete anything in them.
+
+**On-device AI summaries**
+If Chrome's built-in Summarizer (Gemini Nano) is available, Tabtopia may summarize
+page content and store the result under `nanoSummaries`. This model runs entirely
+inside Chrome on your machine. Page content sent to it does not leave the device.
+
+## What Tabtopia never records
+
+- Passwords, or the contents of password fields
+- Values of ordinary form fields (redacted to `[FIELD_VALUE]` before storage)
+- Full page bodies, except as transient input to the on-device summarizer
+- Anything at all from a page while the extension is disabled or uninstalled
+
+## Every network connection Tabtopia makes
+
+This list is exhaustive for version 1.3.0.
+
+| Destination | Purpose | Required? |
+|---|---|---|
+| `https://www.techmeme.com/feed.xml` | Public tech-news RSS feed shown on the Home view | Sent on its own; carries no browsing data |
+| `http://127.0.0.1:8889/api/history/adaptive` | Tagged archive rows from the optional local companion | Optional |
+| `http://127.0.0.1:8889/api/search` | Semantic "related" results from the same companion | Optional |
+| `http://127.0.0.1:8889/api/github/stars` | Your GitHub stars, exported locally by the companion | Optional |
+| `ws://127.0.0.1:8892` | The optional local MCP bridge daemon | Optional |
+
+The Techmeme request is an ordinary feed fetch. It sends no browsing data, no
+identifier, and no query — Techmeme learns only that some browser asked for its
+public feed.
+
+The `127.0.0.1` addresses are loopback: those requests never leave your machine
+and are not routed to any network. If the companion services are not running, the
+requests are refused, Tabtopia marks the affected panels as offline, and
+everything else keeps working. Running them is entirely your choice.
+
+## The optional local companion
+
+Two separate pieces, neither of which is installed with the extension and neither
+of which is required:
+
+**The interests2025 REST API (`:8889`)** supplies the archive feed, semantic
+search, and GitHub stars. Tabtopia sends it a bounded query built only from the
+*titles* of pages currently open or recently visited — never URLs, page bodies, or
+extracted content — capped at four titles and 320 characters.
+
+**The MCP bridge daemon (`:8892`)** lets local agent tooling read Tabtopia's live
+status, and — this part matters — request the text of a page you have open. The
+daemon accepts connections only from an allowlisted `chrome-extension://` origin,
+which a web page cannot forge. A different local process running as your user
+could spoof that origin; that is outside the threat model, and it is why the
+daemon binds loopback only. If you do not run the daemon, none of this exists.
+
+## Retention and deletion
+
+Tabtopia bounds what it keeps, both to stay useful and to stay inside Chrome's
+storage quota: hero-image metadata is capped at 160 pages, persistent browser
+state at roughly 2 MB and 128 tabs, cached semantic queries at 12, archive rows at
+96, and GitHub stars at 2000. Older entries are dropped first.
+
+To delete data:
+- **Everything:** remove Tabtopia from `chrome://extensions`. Uninstalling clears
+  the extension's entire `chrome.storage.local` for that profile.
+- **Selectively:** the debug page (`src/newtab/debug.html`, reachable with Alt+D
+  from any Tabtopia view) has controls to clear stored history, activity, graph
+  data, AI summaries, and all storage at once.
+- **Ranking diagnostics:** turn "Help improve tab ranking" off in Settings, which
+  also removes every recorded outcome.
+
+**TODO:** the only "clear my data" control lives on a hidden debug page. Before
+release, surface at least a clear-all button in Settings — a privacy policy should
+not point users at a keyboard shortcut.
+
+## Permissions, and why each one exists
+
+| Permission | Why |
+|---|---|
+| `history` | Read visit history to rank destinations and reconstruct trails |
+| `bookmarks` | Read saved bookmarks as landmarks on the map |
+| `tabs`, `windows` | See which tabs and windows are open, to draw them |
+| `storage` | Persist everything above, locally |
+| `activeTab`, `scripting` | Extract page text on demand for summaries and recall |
+| `webNavigation`, `webRequest` | Follow redirect and referrer chains so navigation intent is attributable |
+| `favicon` | Render site icons |
+| `ai` | Chrome's built-in on-device Summarizer |
+| `<all_urls>` | The content scripts above must run everywhere, because you browse everywhere |
+
+`<all_urls>` is the broadest permission here and deserves the plainest
+explanation: Tabtopia maps *your whole browsing*, so it cannot be restricted to a
+list of sites without becoming a different product.
+
+## Changes to this policy
+
+Material changes will be noted in `CHANGELOG.md` and reflected in the date at the
+top of this file.
+
+## Contact
+
+**TODO:** add a contact address and the public URL where this policy will be
+hosted. The Web Store listing requires both.
