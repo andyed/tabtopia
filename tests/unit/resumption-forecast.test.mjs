@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import { createBrowsingSnapshot } from "../../src/lib/browsing-snapshot.js";
 import { recognizeStartPageState, START_PAGE_STATES } from "../../src/lib/start-page-state.js";
-import { forecastResumption } from "../../src/lib/resumption-forecast.js";
+import {
+  forecastResumption,
+  RESUMPTION_POLICIES
+} from "../../src/lib/resumption-forecast.js";
 
 const NOW = Date.UTC(2026, 6, 23, 18, 0, 0);
 const MINUTE = 60 * 1000;
@@ -105,6 +108,81 @@ test("still-open work is damped, and named a switch rather than a resume", () =>
   assert.equal(closed.action.verb, "reopen");
   assert.ok(open.reasons.some(reason => reason.includes("already open")));
   assert.ok(closed.score > open.score, "closed work is what resumption means");
+});
+
+test("branched Google research remains a continuation candidate beside live work", () => {
+  const snapshot = snapshotOf({
+    windows: [{
+      id: 1,
+      focused: true,
+      tabs: [
+        openTab(1, "Current work", "https://local.example/a", NOW - (4 * MINUTE)),
+        { ...openTab(2, "Current detail", "https://local.example/b", NOW - (3 * MINUTE)), openerTabId: 1 }
+      ]
+    }],
+    visits: [
+      visit("s1", null, "new movies streaming - Google Search", "https://google.com/search?q=new+movies+streaming&sourceid=chrome-mobile", NOW - (25 * MINUTE), "typed", false),
+      visit("r1", "s1", "What to watch", "https://forbes.example/watch", NOW - (24 * MINUTE), "link", false),
+      visit("r2", "s1", "Streaming guide", "https://justwatch.example/us", NOW - (23 * MINUTE), "link", false),
+      visit("r3", "r2", "Movie detail", "https://justwatch.example/us/movie", NOW - (22 * MINUTE), "link", false)
+    ]
+  });
+
+  const forecast = forecastResumption(snapshot, { state: START_PAGE_STATES.CONTINUATION });
+  const search = forecast.candidates.find(candidate => candidate.kind === "search-exploration");
+
+  assert.ok(search, "remote research should not disappear merely because local tabs are open");
+  assert.equal(search.action.target.url.includes("google.com/search"), true);
+  assert.equal(search.action.target.title, "Search · new movies streaming");
+  assert.equal(search.provenance, "foreign");
+  assert.ok(search.cues.explorationDepth > 0.6);
+  assert.ok(search.reasons.some(reason => reason.includes("2 results opened")));
+});
+
+test("Continuation reserves one qualified foreign candidate beyond the ordinary cutoff", () => {
+  const localVisits = Array.from({ length: 7 }, (_, index) =>
+    visit(
+      `l${index}`,
+      null,
+      `Local ${index}`,
+      `https://local-${index}.example/`,
+      NOW - ((index + 1) * 10 * MINUTE),
+      "typed",
+      true
+    ));
+  const remote = visit(
+    "foreign",
+    null,
+    "Walken sci-fi article",
+    "https://www.bgr.com/walken-sci-fi/",
+    NOW - (85 * MINUTE),
+    "link",
+    false
+  );
+  const snapshot = snapshotOf({
+    windows: [{ id: 1, focused: true, tabs: [] }],
+    visits: [...localVisits, remote]
+  });
+
+  const forecast = forecastResumption(snapshot, {
+    state: START_PAGE_STATES.CONTINUATION,
+    limit: 6
+  });
+
+  assert.equal(forecast.candidates.length, 6);
+  assert.ok(
+    forecast.candidates.some(candidate => candidate.action.target.url === remote.url),
+    "a recent synced singleton must reach feed composition even below the raw top six"
+  );
+  assert.equal(forecast.candidates.filter(candidate => candidate.provenance === "foreign").length, 1);
+});
+
+test("every resumption policy keeps its explainable cue weights normalized", () => {
+  for (const policy of Object.values(RESUMPTION_POLICIES)) {
+    const total = Object.values(policy.weights).reduce((sum, value) => sum + value, 0);
+    assert.ok(Math.abs(total - 1) < 1e-9, `policy weights total ${total}`);
+    assert.ok(policy.weights.explorationDepth > 0);
+  }
 });
 
 test("confidence stays low when only coincidence joins the pages", () => {

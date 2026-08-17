@@ -1,5 +1,5 @@
 import { HOME_TITLE_LIMITS, truncateHomeTitle } from "../lib/home-title.js";
-import { buildActivityJourney } from "../lib/activity-journey.js";
+import { activityUrlLabel, buildActivityJourney } from "../lib/activity-journey.js";
 import { createLetterFavicon, getLocalFaviconUrl } from "./utility.js";
 
 const HOME_MODES = new Set(["quiet", "engaged", "return"]);
@@ -90,7 +90,19 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   if (safeModel.stale) {
     fragment.append(element("p", "home-takeover__cache-note", "Last view · updating"));
   }
-  fragment.append(renderHeader(safeModel, mode, titleId));
+  // The header reports what the surface is holding right now — counts computed
+  // from the model itself, not narration about what the page is for. Labels
+  // must agree with the section rails below ("stars" ↔ GitHub stars,
+  // "techmeme" ↔ Techmeme); "ranked" is the total ranked-destination pool,
+  // which the sections then split into focal / at hand / routes.
+  const tallies = [
+    ["ranked", actions.length],
+    ["archive", archiveItems.length],
+    ["threads", interests.length],
+    ["stars", githubStarItems.length],
+    ["techmeme", techmemeItems.length]
+  ];
+  fragment.append(renderHeader(safeModel, mode, titleId, tallies));
 
   const errorText = errorMessage(safeModel.error);
   if (errorText) fragment.append(renderError(errorText));
@@ -99,7 +111,7 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   if (safeModel.loading && actions.length === 0 && archiveItems.length === 0 && !safeModel.primaryActivity) {
     primaryContent = renderLoading();
   } else if (safeModel.freshOverride) {
-    primaryContent = renderFresh();
+    primaryContent = renderFresh(tallies.reduce((sum, [, count]) => sum + count, 0));
   } else if (errorText && !hasRenderableContent(safeModel, actions, archiveItems)) {
     primaryContent = renderUnavailable();
   } else if (mode === "engaged") {
@@ -107,17 +119,19 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   } else if (mode === "return") {
     primaryContent = renderReturn(safeModel, actions, handlers, status);
   } else {
-    primaryContent = renderQuiet(actions, handlers, status);
+    primaryContent = renderQuiet(actions, interests, handlers, status);
   }
   fragment.append(primaryContent);
 
   if (!safeModel.freshOverride && !(safeModel.loading && actions.length === 0 && archiveItems.length === 0)) {
     const discoveryActions = chooseDiscoveryActions(safeModel, mode, actions);
-    if (discoveryActions.length > 0 || archiveItems.length > 0 || interests.length > 0) {
+    // Quiet mode already shows the interest threads beside the focal action.
+    const discoveryInterests = mode === "quiet" && actions.length > 0 ? [] : interests;
+    if (discoveryActions.length > 0 || archiveItems.length > 0 || discoveryInterests.length > 0) {
       fragment.append(renderDiscovery(
         discoveryActions,
         archiveItems,
-        interests,
+        discoveryInterests,
         handlers,
         status,
         renderId
@@ -137,43 +151,50 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   return root;
 }
 
-function renderHeader(model, mode, titleId) {
+function renderHeader(model, mode, titleId, tallies = []) {
   const header = element("header", `home-takeover__header home-takeover__header--${mode}`);
-  if (mode === "engaged" && !model.freshOverride) {
-    const title = element(
-      "h1",
-      "home-takeover__title home-takeover__title--engaged",
-      readableText(model.stateLabel) || "Continuation"
-    );
-    title.id = titleId;
-    const flow = element("span", "home-takeover__flow-cue");
-    flow.setAttribute("aria-hidden", "true");
-    header.append(title, flow);
-    return header;
-  }
-
-  const state = element(
-    "p",
-    "home-takeover__state",
+  const title = element(
+    "h1",
+    "home-takeover__title",
     readableText(model.stateLabel) || titleCase(readableText(model.state)) || modeLabel(mode)
   );
-  const title = element("h1", "home-takeover__title", headingFor(model, mode));
   title.id = titleId;
-  const summary = element(
-    "p",
-    "home-takeover__summary",
-    readableText(model.summary) || summaryFor(model, mode)
-  );
-  header.append(state, title, summary);
+  const flow = element("span", "home-takeover__flow-cue");
+  flow.setAttribute("aria-hidden", "true");
+  header.append(title, flow);
+
+  const shown = model.freshOverride ? [] : tallies.filter(([, count]) => count > 0);
+  if (shown.length > 0) {
+    const metrics = element("p", "home-takeover__metrics");
+    shown.forEach(([label, count]) => {
+      const metric = element("span", "home-takeover__metric");
+      metric.append(
+        element("strong", "home-takeover__metric-count", String(count).padStart(2, "0")),
+        element("span", "home-takeover__metric-label", label)
+      );
+      metrics.append(metric);
+    });
+    header.append(metrics);
+  }
   return header;
 }
 
-function renderQuiet(actions, handlers, status) {
+function headingWithCount(tagName, className, text, count) {
+  const heading = element(tagName, className, text);
+  // aria-hidden keeps the accessible name clean; list semantics already
+  // announce item counts to assistive tech.
+  const badge = element("span", "home-takeover__count", String(count).padStart(2, "0"));
+  badge.setAttribute("aria-hidden", "true");
+  heading.append(badge);
+  return heading;
+}
+
+function renderQuiet(actions, interests, handlers, status) {
   const section = element("section", "home-takeover__quiet");
   section.setAttribute("aria-label", "Likely destinations");
 
   if (actions.length === 0) {
-    section.append(renderEmpty("No strong destination yet", "Start fresh or open the full tab landscape."));
+    section.append(renderEmpty("0 ranked destinations", "Evidence accrues as you browse — activity, habits, stars."));
     return section;
   }
 
@@ -188,13 +209,18 @@ function renderQuiet(actions, handlers, status) {
       titleLimit: HOME_TITLE_LIMITS.focal
     })
   );
+  // The interest threads fill the column under the focal action instead of
+  // leaving dead ground beside the At hand rail.
+  if (interests.length > 0) {
+    focalWrap.append(renderInterests(interests));
+  }
   section.append(focalWrap);
 
   const remaining = actions.slice(1, 6);
   if (remaining.length > 0) {
     const nav = element("nav", "home-takeover__destinations");
     nav.setAttribute("aria-label", "Other likely destinations");
-    nav.append(element("h2", "home-takeover__section-heading", "At hand"));
+    nav.append(headingWithCount("h2", "home-takeover__section-heading", "At hand", remaining.length));
     const list = element("ol", "home-takeover__destination-list");
     remaining.forEach(action => {
       const item = element("li", "home-takeover__destination");
@@ -211,23 +237,13 @@ function renderQuiet(actions, handlers, status) {
 }
 
 function renderDiscovery(actions, archiveItems, interests, handlers, status, renderId) {
-  const discoveryTitleId = `home-takeover-discovery-title-${renderId}`;
   const section = element("section", "home-takeover__discovery");
-  section.setAttribute("aria-labelledby", discoveryTitleId);
-
-  const header = element("header", "home-takeover__discovery-header");
-  header.append(
-    element("p", "home-takeover__section-label", "Discovery"),
-    element("h2", "home-takeover__discovery-title", "Beyond this trail")
-  );
-  header.lastElementChild.id = discoveryTitleId;
-
-  section.append(header);
+  section.setAttribute("aria-label", "Discovery");
 
   if (actions.length > 0) {
     const routes = element("section", "home-takeover__routes-panel");
     routes.setAttribute("aria-label", "More suggested routes");
-    routes.append(element("h3", "home-takeover__panel-label", "More routes"));
+    routes.append(headingWithCount("h3", "home-takeover__panel-label", "Routes", actions.length));
     const list = element("ol", "home-takeover__discovery-list");
     actions.forEach((action, index) => {
       const item = element("li", "home-takeover__discovery-item");
@@ -255,7 +271,7 @@ function renderDiscovery(actions, archiveItems, interests, handlers, status, ren
 function renderInterests(interests) {
   const panel = element("section", "home-takeover__interests");
   panel.setAttribute("aria-label", "Interest threads from the archive");
-  panel.append(element("h3", "home-takeover__panel-label", "Interest threads"));
+  panel.append(headingWithCount("h3", "home-takeover__panel-label", "Threads", interests.length));
   const list = element("ul", "home-takeover__interest-list");
   interests.forEach(interest => {
     const item = element("li", "home-takeover__interest-item");
@@ -276,7 +292,7 @@ function renderArchive(items, handlers, status, renderId) {
   const archiveTitleId = `home-takeover-archive-title-${renderId}`;
   const archive = element("section", "home-takeover__archive");
   archive.setAttribute("aria-labelledby", archiveTitleId);
-  const label = element("h3", "home-takeover__archive-label", "From your archive");
+  const label = headingWithCount("h3", "home-takeover__archive-label", "Archive", items.length);
   label.id = archiveTitleId;
   const list = element("ol", "home-takeover__archive-list");
 
@@ -293,7 +309,13 @@ function createArchiveActionLink(item, handlers, status) {
   const { action } = item;
   const link = createNavigationAnchor(action, "home-takeover__action home-takeover__archive-action");
 
-  const verb = element("span", "home-takeover__verb", verbLabel(action.verb));
+  // The label column carries the interest state (active now / warm / dormant)
+  // — a reading that varies per row — rather than a constant "Open".
+  const verb = element(
+    "span",
+    "home-takeover__verb",
+    interestStateLabel(item.interestState) || verbLabel(action.verb)
+  );
   const copy = element("span", "home-takeover__action-copy");
   copy.append(createHomeTitleElement(
     "strong",
@@ -309,8 +331,7 @@ function createArchiveActionLink(item, handlers, status) {
   }
   if (context.childElementCount > 0) copy.append(context);
 
-  const signal = [interestStateLabel(item.interestState), item.reason].filter(Boolean).join(" — ");
-  if (signal) copy.append(element("span", "home-takeover__archive-signal", signal));
+  if (item.reason) copy.append(element("span", "home-takeover__archive-signal", item.reason));
 
   link.append(verb, copy);
   prepareTitleAnchor(link, action.title, action.verb);
@@ -328,13 +349,9 @@ function renderTechmeme(items, handlers, status, renderId) {
   const titleId = `home-takeover-techmeme-title-${renderId}`;
   const section = element("section", "home-takeover__techmeme");
   section.setAttribute("aria-labelledby", titleId);
-  const header = element("header", "home-takeover__techmeme-header");
-  header.append(
-    element("p", "home-takeover__section-label", "Techmeme · filtered"),
-    element("h2", "home-takeover__techmeme-title", "Around your interests")
-  );
-  header.lastElementChild.id = titleId;
-  section.append(header);
+  const heading = headingWithCount("h2", "home-takeover__panel-label", "Techmeme", items.length);
+  heading.id = titleId;
+  section.append(heading);
 
   const list = element("ol", "home-takeover__techmeme-list");
   items.forEach(item => {
@@ -368,7 +385,8 @@ function createTechmemeActionLink(item, handlers, status) {
   }
   copy.append(context);
 
-  link.append(element("span", "home-takeover__verb", "Read"), copy);
+  // Headline age in the label column: varies per row, unlike a constant "Read".
+  link.append(element("span", "home-takeover__verb", formatHeadlineAge(item.publishedAt)), copy);
   prepareTitleAnchor(link, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
@@ -380,17 +398,24 @@ function createTechmemeActionLink(item, handlers, status) {
   return link;
 }
 
+function formatHeadlineAge(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "Read";
+  const ageMs = Math.max(0, Date.now() - timestamp);
+  const minutes = Math.round(ageMs / 60000);
+  if (minutes < 60) return `${Math.max(1, minutes)}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 function renderGithubStars(items, handlers, status, renderId) {
   const titleId = `home-takeover-github-stars-title-${renderId}`;
   const section = element("section", "home-takeover__github-stars");
   section.setAttribute("aria-labelledby", titleId);
-  const header = element("header", "home-takeover__github-stars-header");
-  header.append(
-    element("p", "home-takeover__section-label", "GitHub stars"),
-    element("h2", "home-takeover__github-stars-title", "Saved repositories")
-  );
-  header.lastElementChild.id = titleId;
-  section.append(header);
+  const heading = headingWithCount("h2", "home-takeover__panel-label", "GitHub stars", items.length);
+  heading.id = titleId;
+  section.append(heading);
 
   const list = element("ol", "home-takeover__github-stars-list");
   items.forEach(item => {
@@ -414,14 +439,14 @@ function createGithubStarActionLink(item, handlers, status) {
     HOME_TITLE_LIMITS.compact
   ));
   const context = element("span", "home-takeover__github-star-context");
-  context.append(element("span", "home-takeover__github-star-date", formatStarredDate(item.starredAt)));
   const topics = item.matchedTopics.length > 0 ? item.matchedTopics : item.topics;
   if (topics.length > 0) {
     context.append(element("span", "home-takeover__github-star-topics", topics.slice(0, 3).join(" · ")));
   }
-  copy.append(context);
+  if (context.childElementCount > 0) copy.append(context);
 
-  link.append(element("span", "home-takeover__verb", "Repo"), copy);
+  // Starred date in the label column: varies per row, unlike a constant "Repo".
+  link.append(element("span", "home-takeover__verb", formatStarredDate(item.starredAt)), copy);
   prepareTitleAnchor(link, action.title, action.verb);
 
   const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
@@ -438,7 +463,7 @@ function renderEngaged(model, actions, handlers, status, root, renderId) {
   const activity = normalizeActivity(model.primaryActivity, model.neighborhoods, actions);
 
   if (!activity) {
-    region.append(renderEmpty("No current trail found", "Choose a familiar destination or inspect all tabs."));
+    region.append(renderEmpty("No current trail", "0 linked pages in this window."));
     return region;
   }
 
@@ -469,18 +494,14 @@ function renderEngaged(model, actions, handlers, status, root, renderId) {
     primary.append(renderActivityTrail(activity.trail, handlers, status));
   }
 
-  primary.append(createActionLink(activity.action, handlers, status, {
-    className: "home-takeover__activity-action",
-    showReason: false,
-    titleLimit: HOME_TITLE_LIMITS.standard
-  }));
+  primary.append(createActivitySwitchLink(activity, handlers, status));
   region.append(primary);
 
   const fastActions = chooseFastActions(actions, activity.action.id);
   if (fastActions.length > 0) {
     const fastPath = element("aside", "home-takeover__fast-path");
-    fastPath.setAttribute("aria-label", "Habit and star shortcuts");
-    fastPath.append(element("h2", "home-takeover__fast-title", "Side routes"));
+    fastPath.setAttribute("aria-label", "Continuation side routes");
+    fastPath.append(headingWithCount("h2", "home-takeover__fast-title", "Side routes", fastActions.length));
     const list = element("ul", "home-takeover__fast-list");
     fastActions.forEach(action => {
       const item = element("li", "home-takeover__fast-item");
@@ -494,6 +515,32 @@ function renderEngaged(model, actions, handlers, status, root, renderId) {
     region.append(fastPath);
   }
   return region;
+}
+
+// The activity header already names the session; repeating the title in the
+// action bar made the page's strongest element a duplicate. The bar carries
+// the verb plus the evidence the header doesn't show.
+function createActivitySwitchLink(activity, handlers, status) {
+  const { action } = activity;
+  const link = createNavigationAnchor(action, "home-takeover__action home-takeover__activity-action");
+  const copy = element("span", "home-takeover__action-copy");
+  if (action.domain) copy.append(element("span", "home-takeover__domain", action.domain));
+  const sourceList = element("ul", "home-takeover__sources");
+  sourceList.setAttribute("aria-label", "Suggestion sources");
+  action.sources.forEach(source => sourceList.append(element("li", "home-takeover__source", sourceLabel(source))));
+  copy.append(sourceList);
+  const detail = action.reasons[0] || activity.summary;
+  if (detail) copy.append(element("span", "home-takeover__reason", detail));
+  link.append(element("span", "home-takeover__verb", verbLabel(action.verb)), copy);
+  prepareTitleAnchor(link, action.title, action.verb);
+
+  const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
+  wireNavigation(link, callback, action.raw, status, {
+    working: `${verbLabel(action.verb)} ${action.title}…`,
+    failed: `Could not ${verbLabel(action.verb).toLowerCase()} ${action.title}. Try again.`,
+    context: action
+  });
+  return link;
 }
 
 function renderActivityViews(activity, handlers, status, root, renderId) {
@@ -553,19 +600,26 @@ function viewButton(label, controlsId) {
 function renderActivityTrail(trailItems, handlers, status) {
   const trail = element("ol", "home-takeover__trail");
   trail.setAttribute("aria-label", "Pages in this activity");
+  const titleCounts = countBy(trailItems, item => searchableText(item.title));
   trailItems.slice(0, 7).forEach((trailItem, index) => {
     const item = element("li", "home-takeover__trail-item");
     const link = createNavigationAnchor(trailItem, "home-takeover__trail-link");
     const marker = element("span", "home-takeover__trail-marker", String(index + 1).padStart(2, "0"));
     marker.setAttribute("aria-hidden", "true");
     const copy = element("span", "home-takeover__trail-copy");
+    const repeatedTitle = (titleCounts.get(searchableText(trailItem.title)) || 0) > 1;
+    const urlLabel = repeatedTitle ? activityUrlLabel(actionTargetUrl(trailItem)) : "";
+    const displayTitle = urlLabel || trailItem.title;
     copy.append(createHomeTitleElement(
       "strong",
       "home-takeover__trail-title",
-      trailItem.title,
+      displayTitle,
       HOME_TITLE_LIMITS.trail
     ));
-    if (trailItem.domain) copy.append(element("span", "home-takeover__trail-domain", trailItem.domain));
+    const context = urlLabel
+      ? [trailItem.title, trailItem.domain].filter(Boolean).join(" · ")
+      : trailItem.domain;
+    if (context) copy.append(element("span", "home-takeover__trail-domain", context));
     link.append(marker, copy);
     prepareTitleAnchor(link, trailItem.title, trailItem.verb);
     const callback = typeof handlers.onAction === "function" ? handlers.onAction : handlers.action;
@@ -578,6 +632,23 @@ function renderActivityTrail(trailItems, handlers, status) {
     trail.append(item);
   });
   return trail;
+}
+
+function countBy(items, keyFor) {
+  const counts = new Map();
+  items.forEach(item => {
+    const key = keyFor(item);
+    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  return counts;
+}
+
+function searchableText(value) {
+  return String(value || "").normalize("NFKC").trim().toLocaleLowerCase();
+}
+
+function actionTargetUrl(action) {
+  return typeof action?.target === "string" ? action.target : action?.target?.url;
 }
 
 function renderActivityJourney(journey, handlers, status, renderId) {
@@ -770,7 +841,6 @@ function svgElement(tagName) {
 function renderReturn(model, actions, handlers, status) {
   const section = element("section", "home-takeover__return");
   section.setAttribute("aria-label", "Landscapes to restart");
-  section.append(element("h2", "home-takeover__section-heading", "Choose a place to re-enter"));
 
   const rawNeighborhoods = asArray(model.neighborhoods);
   const choices = (rawNeighborhoods.length > 0
@@ -779,9 +849,10 @@ function renderReturn(model, actions, handlers, status) {
   ).filter(Boolean).slice(0, 6);
 
   if (choices.length === 0) {
-    section.append(renderEmpty("No recoverable landscape yet", "Open all tabs or keep the field clear."));
+    section.append(renderEmpty("0 recoverable landscapes", "Open all tabs or keep the field clear."));
     return section;
   }
+  section.append(headingWithCount("h2", "home-takeover__section-heading", "Re-entry", choices.length));
 
   const list = element("ol", "home-takeover__landscapes");
   choices.forEach((choice, index) => {
@@ -802,7 +873,6 @@ function renderReturn(model, actions, handlers, status) {
 
 function renderUtilities(model, handlers, status) {
   const footer = element("footer", "home-takeover__utilities");
-  const label = element("p", "home-takeover__utility-label", "Change the view");
   const controls = element("div", "home-takeover__utility-controls");
 
   if (model.freshOverride) {
@@ -813,7 +883,7 @@ function renderUtilities(model, handlers, status) {
   appendCommand(controls, "All tabs", handlers.onOpenTreemap, model, status, "home-takeover__utility-action");
 
   if (controls.childElementCount === 0) footer.hidden = true;
-  footer.append(label, controls);
+  footer.append(controls);
   return footer;
 }
 
@@ -821,9 +891,7 @@ function renderLoading() {
   const section = element("section", "home-takeover__system-state home-takeover__system-state--loading");
   section.setAttribute("aria-label", "Loading suggestions");
   section.append(
-    element("p", "home-takeover__section-label", "Reading the terrain"),
-    element("h2", "home-takeover__system-title", "Routes are taking shape"),
-    element("p", "home-takeover__system-copy", "Recent activity, habits, and stars will settle here."),
+    element("p", "home-takeover__section-label", "Ranking"),
     renderLoadingRows(),
     element("span", "home-takeover__loading-route")
   );
@@ -833,7 +901,7 @@ function renderLoading() {
 function renderLoadingRows() {
   const rows = element("div", "home-takeover__loading-rows");
   rows.setAttribute("aria-hidden", "true");
-  ["Current activity", "Familiar routes", "Discovery"].forEach(label => {
+  ["Activity", "Routes", "Discovery"].forEach(label => {
     const row = element("span", "home-takeover__loading-row");
     row.append(
       element("span", "home-takeover__loading-row-label", label),
@@ -844,12 +912,12 @@ function renderLoadingRows() {
   return rows;
 }
 
-function renderFresh() {
+function renderFresh(heldCount) {
+  const count = Math.max(0, Number(heldCount) || 0);
   const section = element("section", "home-takeover__fresh-field");
   section.append(
-    element("p", "home-takeover__section-label", "Suggestions paused"),
-    element("h2", "home-takeover__system-title", "A clear field"),
-    element("p", "home-takeover__system-copy", "The suggested routes are out of the way until you bring them back.")
+    element("p", "home-takeover__section-label", "Suggestions off"),
+    element("h2", "home-takeover__system-title", `${count} suggestion${count === 1 ? "" : "s"} held`)
   );
   return section;
 }
@@ -857,18 +925,18 @@ function renderFresh() {
 function renderUnavailable() {
   const section = element("section", "home-takeover__system-state");
   section.append(
-    element("h2", "home-takeover__system-title", "Suggestions are unavailable"),
-    element("p", "home-takeover__system-copy", "Your tab landscape is still available while the prediction recovers.")
+    element("h2", "home-takeover__system-title", "Suggestions unavailable"),
+    element("p", "home-takeover__system-copy", "Ranking failed — your tab landscape is unaffected.")
   );
   return section;
 }
 
 function renderEmpty(title, copy) {
   const section = element("section", "home-takeover__system-state home-takeover__system-state--empty");
-  section.append(
-    element("h2", "home-takeover__system-title", title),
-    element("p", "home-takeover__system-copy", copy)
-  );
+  section.append(element("h2", "home-takeover__system-title", title));
+  if (readableText(copy)) {
+    section.append(element("p", "home-takeover__system-copy", copy));
+  }
   return section;
 }
 
@@ -1366,7 +1434,7 @@ function interestStateLabel(value) {
 function chooseFastActions(actions, primaryId) {
   const remainder = actions.filter(action => action.id !== primaryId);
   const evidenceFast = remainder.filter(action => action.sources.some(source =>
-    /habit|history|star|bookmark/i.test(source)
+    /activity|habit|history|star|bookmark/i.test(source)
   ));
   return uniqueActions([...evidenceFast, ...remainder]).slice(0, 4);
 }
@@ -1412,7 +1480,7 @@ function formatStarredDate(value) {
   const now = new Date();
   const options = { month: "short", day: "numeric" };
   if (date.getFullYear() !== now.getFullYear()) options.year = "numeric";
-  return `starred ${new Intl.DateTimeFormat("en-US", options).format(date)}`;
+  return new Intl.DateTimeFormat("en-US", options).format(date);
 }
 
 function resolveMode(model) {
@@ -1422,20 +1490,6 @@ function resolveMode(model) {
   if (["continuation", "engaged"].includes(state)) return "engaged";
   if (["reorientation", "reinstatement", "handoff", "return"].includes(state)) return "return";
   return "quiet";
-}
-
-function headingFor(model, mode) {
-  if (model.freshOverride) return "A quiet place to begin";
-  if (mode === "engaged") return "Continuation";
-  if (mode === "return") return "Find your way back";
-  return "Where next?";
-}
-
-function summaryFor(model, mode) {
-  if (model.freshOverride) return "Suggestions are hidden, but your tabs remain close at hand.";
-  if (mode === "engaged") return "";
-  if (mode === "return") return "Choose the activity that will restore useful context fastest.";
-  return "Begin with a familiar destination, or keep the field clear for something new.";
 }
 
 function modeLabel(mode) {

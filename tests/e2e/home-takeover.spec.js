@@ -1,4 +1,4 @@
-const { test, expect } = require("./fixtures");
+const { test, expect, ARCHIVE_SNAPSHOT_VERSION } = require("./fixtures");
 const path = require("path");
 
 const ARCHIVE_STORAGE_KEY = "tabtopiaArchiveProviderV1";
@@ -12,7 +12,7 @@ async function seedArchiveProvider(page, extensionId, { fetchedAt, rows }) {
   }, {
     key: ARCHIVE_STORAGE_KEY,
     snapshot: {
-      version: 1,
+      version: ARCHIVE_SNAPSHOT_VERSION,
       updatedAt: fetchedAt,
       archive: { fetchedAt, rows },
       queries: {},
@@ -240,9 +240,9 @@ test.describe("development home takeover", () => {
       waitUntil: "domcontentloaded"
     });
     const firstHome = first.locator("#startPageHome");
-    await expect(firstHome.getByRole("heading", { name: "From your archive" })).toBeVisible();
+    await expect(firstHome.getByRole("heading", { name: "Archive" })).toBeVisible();
     await expect(firstHome.getByText("ACT-R archive proof", { exact: true })).toBeVisible();
-    await expect(firstHome.getByText("recurring — Repeatedly useful.", { exact: true })).toBeVisible();
+    await expect(firstHome.getByText("Repeatedly useful.", { exact: true })).toBeVisible();
     await expect.poll(() => offlineRequests).toBeGreaterThan(0);
     await expect(firstHome).toHaveAttribute("aria-busy", "false");
     await expect(firstHome.getByText("ACT-R archive proof", { exact: true })).toBeVisible();
@@ -412,7 +412,7 @@ test.describe("development home takeover", () => {
     });
     const launchHome = launch.locator("#startPageHome");
     await expect(launchHome).toHaveAttribute("data-mode", "quiet");
-    await expect(launchHome.getByRole("heading", { name: "Where next?" })).toBeVisible();
+    await expect(launchHome.getByRole("heading", { name: "Launch" })).toBeVisible();
     await launch.close();
 
     await context.addInitScript(({ offsetMs }) => {
@@ -444,7 +444,7 @@ test.describe("development home takeover", () => {
     const returnHome = returned.locator("#startPageHome");
     await expect(returnHome).toHaveAttribute("data-state", "reorientation");
     await expect(returnHome).toHaveAttribute("data-mode", "return");
-    await expect(returnHome.getByRole("heading", { name: "Find your way back" })).toBeVisible();
+    await expect(returnHome.getByRole("heading", { name: "Re-entry" })).toBeVisible();
     await expect(returnHome.locator(".home-takeover__landscape-action").first()).toBeVisible();
   });
 
@@ -481,7 +481,7 @@ test.describe("development home takeover", () => {
     await expect(home.getByText("Current activity, familiar alternatives nearby.", { exact: true })).toHaveCount(0);
     await expect(home.getByText("Fast path", { exact: true })).toHaveCount(0);
     await expect(home.getByText("Familiar side routes", { exact: true })).toHaveCount(0);
-    await expect(home.getByRole("heading", { name: "Beyond this trail" })).toBeVisible();
+    await expect(home.getByRole("heading", { name: "Routes", exact: true })).toBeVisible();
     await expect.poll(() => home.locator(".home-takeover__discovery-action").count())
       .toBeGreaterThanOrEqual(2);
     await expect(newtab.locator(".visualization-container")).toBeHidden();
@@ -499,7 +499,7 @@ test.describe("development home takeover", () => {
       }).length
     );
     expect(aboveFoldActions).toBeGreaterThanOrEqual(4);
-    await home.getByRole("heading", { name: "Beyond this trail" }).scrollIntoViewIfNeeded();
+    await home.getByRole("heading", { name: "Routes", exact: true }).scrollIntoViewIfNeeded();
     await expect(home.locator(".home-takeover__discovery-action").first()).toBeVisible();
     await newtab.evaluate(() => window.scrollTo({ top: document.scrollingElement.scrollHeight }));
     await expect.poll(() => newtab.evaluate(() => window.scrollY)).toBeGreaterThan(0);
@@ -511,7 +511,7 @@ test.describe("development home takeover", () => {
         path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-takeover-engaged-1600x1000.png"),
         animations: "disabled"
       });
-      await home.getByRole("heading", { name: "Beyond this trail" }).scrollIntoViewIfNeeded();
+      await home.getByRole("heading", { name: "Routes", exact: true }).scrollIntoViewIfNeeded();
       await newtab.screenshot({
         path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-takeover-discovery-1600x1000.png"),
         animations: "disabled"
@@ -527,7 +527,7 @@ test.describe("development home takeover", () => {
 
     await home.getByRole("button", { name: "Start fresh" }).click();
     await expect(home).toHaveClass(/home-takeover--fresh/);
-    await expect(home.getByRole("heading", { name: "A quiet place to begin" })).toBeVisible();
+    await expect(home.getByRole("heading", { name: "suggestions held" })).toBeVisible();
     await newtab.evaluate(() => window.tabtopiaStartPageRecognition.refresh());
     await expect(home).toHaveClass(/home-takeover--fresh/);
     await home.getByRole("button", { name: "Show suggested" }).click();
@@ -591,16 +591,16 @@ test.describe("development home takeover", () => {
     });
     const archive = home.locator(".home-takeover__archive");
 
-    await expect(home.getByRole("heading", { name: "Beyond this trail" })).toBeVisible();
-    await expect(archive.getByRole("heading", { name: "From your archive" })).toBeVisible();
+    await expect(home.locator(".home-takeover__discovery")).toBeVisible();
+    await expect(archive.getByRole("heading", { name: "Archive" })).toBeVisible();
     await expect(archive.locator(".home-takeover__archive-item")).toHaveCount(6);
     await expect(archive.getByText("Archive item 6", { exact: true })).toBeVisible();
     await expect(archive.getByText("Archive item 7", { exact: true })).toHaveCount(0);
     await expect(archive.getByText("ACT-R reference", { exact: true })).toBeVisible();
     await expect(archive.getByText("archive.example", { exact: true }).first()).toBeVisible();
     await expect(archive.getByText("Cognitive science · Memory", { exact: true })).toBeVisible();
-    await expect(archive.getByText("Frequently revisited — A familiar morning destination", { exact: true })).toBeVisible();
-    await expect(home.getByText("Interest threads", { exact: true })).toBeVisible();
+    await expect(archive.getByText("A familiar morning destination", { exact: true })).toBeVisible();
+    await expect(home.getByRole("heading", { name: "Threads" })).toBeVisible();
     await expect(home.getByText("Cognitive science", { exact: true })).toBeVisible();
 
     const firstAction = archive.locator(".home-takeover__archive-action").first();
@@ -740,8 +740,7 @@ test.describe("development home takeover", () => {
     });
     const panel = home.locator(".home-takeover__techmeme");
 
-    await expect(panel.getByText("Techmeme · filtered", { exact: true })).toBeVisible();
-    await expect(panel.getByRole("heading", { name: "Around your interests" })).toBeVisible();
+    await expect(panel.getByRole("heading", { name: "Techmeme" })).toBeVisible();
     await expect(panel.locator(".home-takeover__techmeme-item")).toHaveCount(8);
     await expect(panel.getByText("Relevant AI headline 10", { exact: true })).toHaveCount(0);
     await expect(panel.getByText("working memory · browser agents", { exact: true })).toBeVisible();
@@ -811,12 +810,11 @@ test.describe("development home takeover", () => {
     });
     const panel = home.locator(".home-takeover__github-stars");
 
-    await expect(panel.getByText("GitHub stars", { exact: true })).toBeVisible();
-    await expect(panel.getByRole("heading", { name: "Saved repositories" })).toBeVisible();
+    await expect(panel.getByRole("heading", { name: "GitHub stars" })).toBeVisible();
     await expect(panel.locator(".home-takeover__github-stars-item")).toHaveCount(8);
     await expect(panel.getByText("owner/repository-10", { exact: true })).toHaveCount(0);
     await expect(panel.getByText("working memory", { exact: true })).toBeVisible();
-    await expect(panel.getByText(/starred Jul 25/)).toBeVisible();
+    await expect(panel.getByText(/Jul 25/)).toBeVisible();
     const fullTitle = panel.locator("[data-home-title]").first();
     await expect(fullTitle).toHaveAttribute("data-title-shortened", "true");
 
@@ -938,6 +936,10 @@ test.describe("development home takeover", () => {
     await expect(linksButton).toHaveAttribute("aria-pressed", "true");
     await expect(linksPanel).toBeVisible();
     await expect(linksPanel.locator(".home-takeover__trail-link")).toHaveCount(7);
+    const trailTitles = await linksPanel.locator(".home-takeover__trail-title").allTextContents();
+    expect(new Set(trailTitles).size).toBe(7);
+    expect(trailTitles.some(title => /billing/iu.test(title))).toBe(true);
+    expect(trailTitles.some(title => /trigger/iu.test(title))).toBe(true);
     await page.evaluate(() => window.__rerenderArchiveFixture());
     await expect(linksButton).toHaveAttribute("aria-pressed", "true");
 
@@ -1062,10 +1064,14 @@ test.describe("development home takeover", () => {
       rootWidth: root.getBoundingClientRect().width,
       focalWidth: root.querySelector(".home-takeover__focal-action").getBoundingClientRect().width
     }));
-    expect(density.focalFont).toBeGreaterThanOrEqual(52);
-    expect(density.repositoryFont).toBeGreaterThanOrEqual(28);
+    // Density contract: the focal action stays the single display-scale
+    // element; every other title reads at data scale (see home-takeover.css).
+    expect(density.focalFont).toBeGreaterThanOrEqual(40);
+    expect(density.focalFont).toBeLessThanOrEqual(48);
+    expect(density.repositoryFont).toBeGreaterThanOrEqual(18);
+    expect(density.repositoryFont).toBeLessThanOrEqual(24);
     expect(density.repositoryColumns).toBe(3);
-    expect(density.focalWidth / density.rootWidth).toBeGreaterThan(0.55);
+    expect(density.focalWidth / density.rootWidth).toBeGreaterThan(0.5);
 
     const primary = home.locator("a[data-action-id='primary-link']");
     const [opened] = await Promise.all([
@@ -1136,5 +1142,59 @@ test.describe("development home takeover", () => {
     await expect(archive.getByText("<img src=x> literal title", { exact: true })).toBeVisible();
     await expect(archive.getByText("<script>topic()</script>", { exact: true })).toBeVisible();
     await expect(archive.locator("img, script, svg, b")).toHaveCount(0);
+  });
+
+  test("keeps an evidence-rich remote continuation in the visible side routes", async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    const remote = {
+      id: "remote-research",
+      title: "Search · new movies streaming",
+      verb: "continue",
+      target: { url: "https://google.com/search?q=new+movies+streaming" },
+      sources: ["activity", "foreign"],
+      reasons: ["3 results opened from this search"]
+    };
+    const habits = Array.from({ length: 5 }, (_, index) => ({
+      id: `habit-${index}`,
+      title: `Habit ${index + 1}`,
+      verb: "open",
+      target: { url: `https://habit-${index}.example/` },
+      sources: ["habit"]
+    }));
+    const primaryActivity = {
+      id: "current-activity",
+      action: {
+        verb: "switch",
+        target: {
+          title: "Current desktop exploration",
+          url: "https://current.example/",
+          open: true,
+          tabId: 10,
+          windowId: 1
+        }
+      },
+      sources: ["activity"],
+      reasons: ["current work"]
+    };
+    const home = await renderArchiveFixture(page, extensionId, {
+      mode: "engaged",
+      primaryActivity,
+      actions: [remote, ...habits]
+    });
+
+    await expect(home.getByRole("heading", { name: "Continuation" })).toBeVisible();
+    await expect(home.getByRole("complementary", { name: "Continuation side routes" })).toBeVisible();
+    await expect(home.getByText("Search · new movies streaming", { exact: true })).toBeVisible();
+    await expect(home.getByText("Another device", { exact: true })).toBeVisible();
+    await expect(home.locator(".home-takeover__fast-action")).toHaveCount(4);
+
+    if (process.env.TABTOPIA_VISUAL_DIR) {
+      await page.setViewportSize({ width: 1024, height: 768 });
+      await page.screenshot({
+        path: path.join(process.env.TABTOPIA_VISUAL_DIR, "home-continuation-remote-runner-up-1024x768.png"),
+        animations: "disabled",
+        fullPage: true
+      });
+    }
   });
 });

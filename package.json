@@ -10,7 +10,9 @@
     "test:headed": "HEADED=1 playwright test",
     "test:report": "playwright show-report",
     "benchmark:omnibox": "node tests/perf/omnibox-benchmark.js",
-    "benchmark:treemap": "node tests/perf/treemap-benchmark.js"
+    "benchmark:treemap": "node tests/perf/treemap-benchmark.js",
+    "benchmark:boot": "node tests/perf/newtab-boot-benchmark.js",
+    "benchmark:profile": "node tests/perf/newtab-profile.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0"

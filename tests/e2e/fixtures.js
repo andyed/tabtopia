@@ -53,6 +53,12 @@ const PAGES = {
   "/alpha": "Alpha Page",
   "/beta": "Beta Page",
   "/gamma": "Gamma Page",
+  "/delta-search": "Delta Page",
+  "/epsilon": "Epsilon Page",
+  "/zeta": "Zeta Page",
+  "/eta": "Eta Page",
+  "/theta": "Theta Page",
+  "/iota": "Iota Page",
   "/recent-only": "Recently Closed Flight Review",
   // Used by the pin test to navigate an existing tab and force a treemap redraw.
   "/delta": "Delta Page",
@@ -140,4 +146,27 @@ const test = base.test.extend({
   },
 });
 
-module.exports = { test, expect: base.expect, launchExtensionContext, HOSTILE_TITLE };
+// Specs that seed a cached archive snapshot must stamp it with the version the
+// provider currently accepts, or validateSnapshot() discards it and the test is
+// silently exercising an empty cache instead of the one it set up.
+//
+// Read out of the source rather than duplicated as a literal: these specs are
+// CommonJS and archive-provider.js is an ES module, so it cannot simply be
+// required — and four hand-maintained copies of the number is exactly how a
+// version bump turns into four confusing test failures.
+const ARCHIVE_SNAPSHOT_VERSION = (() => {
+  const src = require("fs").readFileSync(
+    path.join(EXTENSION_PATH, "src/lib/archive-provider.js"), "utf8"
+  );
+  const match = src.match(/SNAPSHOT_VERSION\s*=\s*(\d+)/);
+  if (!match) throw new Error("Could not read SNAPSHOT_VERSION from archive-provider.js");
+  return Number(match[1]);
+})();
+
+module.exports = {
+  test,
+  expect: base.expect,
+  launchExtensionContext,
+  HOSTILE_TITLE,
+  ARCHIVE_SNAPSHOT_VERSION,
+};

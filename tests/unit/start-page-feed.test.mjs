@@ -108,6 +108,58 @@ test("an unmatched resumption activity remains the primary activity", () => {
   assert.equal(feed.mode, "engaged");
 });
 
+test("Continuation promotes one recent remote runner-up beside the focal activity", () => {
+  const current = activity("current", "https://local.example/current", 0.9);
+  const remote = {
+    ...activity("remote", "https://remote.example/article", 0.7),
+    provenance: "foreign",
+    cues: { recency: 0.7, explorationDepth: 0.5, foreignFraction: 1 }
+  };
+  const feed = buildStartPageFeed({
+    state: START_PAGE_STATES.CONTINUATION,
+    resumptionActivities: [current, remote]
+  });
+
+  assert.equal(feed.primaryActivity.id, "current");
+  assert.equal(feed.actions.length, 1);
+  assert.equal(feed.actions[0].action.target.url, "https://remote.example/article");
+  assert.deepEqual(feed.actions[0].sources, ["activity", "foreign"]);
+});
+
+test("Continuation keeps stale shallow remote history latent", () => {
+  const current = activity("current", "https://local.example/current", 0.9);
+  const stale = {
+    ...activity("stale", "https://remote.example/old", 0.6),
+    provenance: "foreign",
+    cues: { recency: 0.2, explorationDepth: 0.5, foreignFraction: 1 }
+  };
+  const feed = buildStartPageFeed({
+    state: START_PAGE_STATES.CONTINUATION,
+    resumptionActivities: [current, stale]
+  });
+
+  assert.equal(feed.primaryActivity.id, "current");
+  assert.deepEqual(feed.actions, []);
+});
+
+test("deep search exploration receives a longer but bounded continuation horizon", () => {
+  const current = activity("current", "https://local.example/current", 0.9);
+  const research = {
+    ...activity("research", "https://google.com/search?q=topic", 0.65),
+    kind: "search-exploration",
+    provenance: "foreign",
+    cues: { recency: 0.3, explorationDepth: 0.8, foreignFraction: 1 },
+    task: { kind: "search-exploration", evidence: { branchCount: 3 } }
+  };
+  const feed = buildStartPageFeed({
+    state: START_PAGE_STATES.CONTINUATION,
+    resumptionActivities: [current, research]
+  });
+
+  assert.equal(feed.actions[0].action.target.url, "https://google.com/search?q=topic");
+  assert.deepEqual(feed.actions[0].sources, ["activity", "foreign"]);
+});
+
 test("action order and source evidence are deterministic and bounded", () => {
   const habits = Array.from({ length: 20 }, (_, index) =>
     pageCandidate("habit", `h${index}`, `https://h-${index}.example/`, -index));

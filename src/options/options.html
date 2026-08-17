@@ -11,9 +11,26 @@
     <main class="settings-shell">
         <header class="page-header">
             <p class="eyebrow">Tabtopia</p>
-            <h1>Ranking diagnostics</h1>
-            <p class="lede">Measure whether tab recall and next-tab predictions are improving. Diagnostics stay on this device.</p>
+            <h1>Settings</h1>
+            <p class="lede">Choose what Tabtopia shows and what it measures. Everything here stays on this device.</p>
         </header>
+
+        <section class="setting-panel" aria-labelledby="home-title">
+            <label class="setting-row" for="homeTakeoverEnabled">
+                <span class="setting-copy">
+                    <span class="setting-title" id="home-title">Use Tabtopia as your new tab</span>
+                    <span class="setting-description">Show ranked destinations, habits, and continuations on every new tab. Turn this off to open the tab landscape instead.</span>
+                </span>
+                <span class="switch">
+                    <input id="homeTakeoverEnabled" type="checkbox" role="switch">
+                    <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                </span>
+            </label>
+            <div class="install-note">
+                <span class="install-badge">Default on</span>
+                <span id="homeStatus" role="status">Applies to new tabs opened from now on.</span>
+            </div>
+        </section>
 
         <section class="setting-panel" aria-labelledby="diagnostics-title">
             <label class="setting-row" for="diagnosticsEnabled">
@@ -29,6 +46,23 @@
             <div class="install-note">
                 <span id="installBadge" class="install-badge">Checking install…</span>
                 <span id="retentionNote">Turning diagnostics off removes all recorded outcomes.</span>
+            </div>
+        </section>
+
+        <section class="setting-panel" aria-labelledby="fisheye-title">
+            <label class="setting-row" for="searchFisheyeEnabled">
+                <span class="setting-copy">
+                    <span class="setting-title" id="fisheye-title">Magnify search results</span>
+                    <span class="setting-description">Enlarge the result under the pointer or keyboard focus while keeping the ranked list in place.</span>
+                </span>
+                <span class="switch">
+                    <input id="searchFisheyeEnabled" type="checkbox" role="switch">
+                    <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                </span>
+            </label>
+            <div class="install-note">
+                <span class="install-badge">Experimental · default off</span>
+                <span id="fisheyeStatus" role="status">Uses the fisheye-menu target-acquisition lens.</span>
             </div>
         </section>
 

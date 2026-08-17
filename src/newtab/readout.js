@@ -1591,9 +1591,9 @@ function showDefaultReadout(categorizedDataCache) {
         readoutContainer.innerHTML = `
           <div class="readout-content">
         <div class="readout-intro">
-            <div class="readout-kicker">Browsing memory</div>
-            <h2>Follow a region</h2>
-            <p>Hover a tile to reveal pages and stars from its domain. Click a tile to hold that context here.</p>
+            <div class="readout-kicker">Tab field</div>
+            <h2 data-field-count>&hairsp;</h2>
+            <p data-field-detail></p>
         </div>
         <div class="recent-stars">
             <div class="readout-section-heading">
@@ -1608,6 +1608,29 @@ function showDefaultReadout(categorizedDataCache) {
         `;
         contentContainer = readoutContainer.querySelector(":scope > .readout-content");
     }
+
+    // Show the live field instead of describing how to explore it: the intro
+    // reports what the treemap is holding right now.
+    const activeWindows = categorizedDataCache?.activeWindows || [];
+    const tabCount = activeWindows.reduce((sum, window) => sum + (window.tabs?.length || 0), 0);
+    const domains = new Set();
+    activeWindows.forEach(window => (window.tabs || []).forEach(tab => {
+        try {
+            domains.add(new URL(tab.url).hostname.replace(/^www\./, ""));
+        } catch {
+            // tabs without a parseable URL (chrome://, about:) stay uncounted
+        }
+    }));
+    const countNode = contentContainer.querySelector("[data-field-count]");
+    if (countNode) {
+        countNode.textContent =
+            `${tabCount} tab${tabCount === 1 ? "" : "s"} · ${activeWindows.length} window${activeWindows.length === 1 ? "" : "s"}`;
+    }
+    const detailNode = contentContainer.querySelector("[data-field-detail]");
+    if (detailNode) {
+        detailNode.textContent = `${domains.size} domain${domains.size === 1 ? "" : "s"} on the map`;
+    }
+
     renderRecentStars(contentContainer.querySelector(".star-list"));
 
     // NOTE: no tabSearch.buildIndex() here. This function is always called with

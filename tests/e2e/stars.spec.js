@@ -1,7 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { test, expect, launchExtensionContext } = require("./fixtures");
+const { test, expect, launchExtensionContext, ARCHIVE_SNAPSHOT_VERSION } = require("./fixtures");
 
 test.describe("landmarks view", () => {
   test("maps bookmarks and reveals the selected context trail", async ({ context, extensionId, server }) => {
@@ -56,7 +56,7 @@ test.describe("landmarks view", () => {
     stars.on("pageerror", error => runtimeErrors.push(error.message));
     await stars.goto(`chrome-extension://${extensionId}/src/newtab/stars.html`, { waitUntil: "domcontentloaded" });
 
-    await stars.evaluate(async ({ baseUrl, now }) => {
+    await stars.evaluate(async ({ baseUrl, now, snapshotVersion }) => {
       await chrome.bookmarks.create({
         title: "Buried Keepsake",
         url: `${baseUrl}/buried-keepsake`
@@ -71,7 +71,7 @@ test.describe("landmarks view", () => {
 
       await chrome.storage.local.set({
         tabtopiaArchiveProviderV1: {
-          version: 1,
+          version: snapshotVersion,
           updatedAt: now,
           archive: {
             fetchedAt: now,
@@ -94,7 +94,7 @@ test.describe("landmarks view", () => {
           lastQuery: ""
         }
       });
-    }, { baseUrl: server, now: Date.now() });
+    }, { baseUrl: server, now: Date.now(), snapshotVersion: ARCHIVE_SNAPSHOT_VERSION });
 
     await stars.reload({ waitUntil: "domcontentloaded" });
     await expect(stars.locator(".landmark-node")).toHaveCount(60);
@@ -157,10 +157,10 @@ test.describe("landmarks view", () => {
   test("honors a carried search term while recall sources are loading", async ({ context, extensionId, server }) => {
     const setup = await context.newPage();
     await setup.goto(`chrome-extension://${extensionId}/src/newtab/stars.html`, { waitUntil: "domcontentloaded" });
-    await setup.evaluate(async ({ baseUrl, now }) => {
+    await setup.evaluate(async ({ baseUrl, now, snapshotVersion }) => {
       await chrome.storage.local.set({
         tabtopiaArchiveProviderV1: {
-          version: 1,
+          version: snapshotVersion,
           updatedAt: now,
           archive: {
             fetchedAt: now,
@@ -175,7 +175,7 @@ test.describe("landmarks view", () => {
           lastQuery: ""
         }
       });
-    }, { baseUrl: server, now: Date.now() });
+    }, { baseUrl: server, now: Date.now(), snapshotVersion: ARCHIVE_SNAPSHOT_VERSION });
 
     await setup.goto(
       `chrome-extension://${extensionId}/src/newtab/stars.html?q=webgl`,
@@ -198,7 +198,7 @@ test.describe("landmarks view", () => {
       first = await launchExtensionContext(userDataDir);
       const seedPage = first.pages()[0] || await first.newPage();
       await seedPage.goto("chrome://newtab/", { waitUntil: "domcontentloaded" });
-      await seedPage.evaluate(async ({ baseUrl, now }) => {
+      await seedPage.evaluate(async ({ baseUrl, now, snapshotVersion }) => {
         const staleTabId = 999_999_999;
         const legacyHeroes = {};
         for (let index = 0; index < 180; index += 1) {
@@ -246,7 +246,7 @@ test.describe("landmarks view", () => {
             lastSaved: now
           },
           tabtopiaArchiveProviderV1: {
-            version: 1,
+            version: snapshotVersion,
             updatedAt: now,
             archive: {
               fetchedAt: now,
@@ -261,7 +261,7 @@ test.describe("landmarks view", () => {
             lastQuery: ""
           }
         });
-      }, { baseUrl: server, now: Date.now() });
+      }, { baseUrl: server, now: Date.now(), snapshotVersion: ARCHIVE_SNAPSHOT_VERSION });
       await first.close();
       first = null;
 

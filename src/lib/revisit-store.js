@@ -5,6 +5,7 @@ import {
     scoreHistory,
     scoreHierarchical
 } from "./revisit-model.js";
+import { estimateNonReturnWindow } from "./non-return-window.js";
 
 const STATE_KEY = "tabtopiaRevisitModelV1";
 const SECRET_KEY = "tabtopiaRevisitSecretV1";
@@ -148,6 +149,11 @@ export class RevisitStore {
                 )
             };
         }));
+    }
+
+    estimateNonReturnWindow() {
+        const timestamps = Object.values(this.state.histories.page).flat();
+        return estimateNonReturnWindow(timestamps);
     }
 
     async clear() {

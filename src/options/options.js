@@ -1,4 +1,10 @@
+import { FEATURE_FLAGS, readFeatureFlag, writeFeatureFlag } from "../lib/feature-flags.js";
+
 const enabledInput = document.getElementById("diagnosticsEnabled");
+const homeInput = document.getElementById("homeTakeoverEnabled");
+const homeStatus = document.getElementById("homeStatus");
+const fisheyeInput = document.getElementById("searchFisheyeEnabled");
+const fisheyeStatus = document.getElementById("fisheyeStatus");
 const installBadge = document.getElementById("installBadge");
 const reportStatus = document.getElementById("reportStatus");
 const modelReport = document.getElementById("modelReport");
@@ -20,6 +26,39 @@ enabledInput.addEventListener("change", async () => {
     setBusy(false);
 });
 
+homeInput.addEventListener("change", async () => {
+    setBusy(true);
+    try {
+        homeStatus.textContent = describeHome(await writeFeatureFlag(
+            chrome.storage.local,
+            FEATURE_FLAGS.homeTakeover,
+            homeInput.checked
+        ));
+    } catch {
+        homeInput.checked = !homeInput.checked;
+        homeStatus.textContent = "Could not update the new tab setting.";
+    }
+    setBusy(false);
+});
+
+fisheyeInput.addEventListener("change", async () => {
+    setBusy(true);
+    try {
+        const enabled = await writeFeatureFlag(
+            chrome.storage.local,
+            FEATURE_FLAGS.searchFisheye,
+            fisheyeInput.checked
+        );
+        fisheyeStatus.textContent = enabled
+            ? "On for search lists with four or more results."
+            : "Off. Search results keep their standard row heights.";
+    } catch {
+        fisheyeInput.checked = !fisheyeInput.checked;
+        fisheyeStatus.textContent = "Could not update the search magnification setting.";
+    }
+    setBusy(false);
+});
+
 refreshButton.addEventListener("click", refresh);
 clearButton.addEventListener("click", async () => {
     setBusy(true);
@@ -29,7 +68,17 @@ clearButton.addEventListener("click", async () => {
 });
 
 async function refresh() {
-    const response = await sendMessage({ action: "getRankingDiagnostics" });
+    const [response, homeTakeoverEnabled, fisheyeEnabled] = await Promise.all([
+        sendMessage({ action: "getRankingDiagnostics" }),
+        readFeatureFlag(chrome.storage.local, FEATURE_FLAGS.homeTakeover),
+        readFeatureFlag(chrome.storage.local, FEATURE_FLAGS.searchFisheye)
+    ]);
+    homeInput.checked = homeTakeoverEnabled;
+    homeStatus.textContent = describeHome(homeTakeoverEnabled);
+    fisheyeInput.checked = fisheyeEnabled;
+    fisheyeStatus.textContent = fisheyeEnabled
+        ? "On for search lists with four or more results."
+        : "Off. Search results keep their standard row heights.";
     if (!response?.success) {
         reportStatus.textContent = response?.error || "Diagnostics are unavailable.";
         return;
@@ -40,6 +89,12 @@ async function refresh() {
         ? "Internal install · default on"
         : "Standard install · default off";
     renderSummary(response.summary, response.enabled);
+}
+
+function describeHome(enabled) {
+    return enabled
+        ? "On. New tabs open the ranked Home view."
+        : "Off. New tabs open the tab landscape.";
 }
 
 function renderSummary(summary, enabled) {
@@ -105,6 +160,8 @@ function textElement(tag, text) {
 
 function setBusy(busy) {
     enabledInput.disabled = busy;
+    homeInput.disabled = busy;
+    fisheyeInput.disabled = busy;
     refreshButton.disabled = busy;
     clearButton.disabled = busy;
 }

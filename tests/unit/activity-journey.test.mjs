@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildActivityJourney, pageRoleIdentity } from "../../src/lib/activity-journey.js";
+import {
+  activityUrlLabel,
+  buildActivityJourney,
+  pageRoleIdentity
+} from "../../src/lib/activity-journey.js";
 
 const BASE = Date.UTC(2026, 6, 30, 16, 0, 0);
 
@@ -136,6 +140,30 @@ test("uses a two-row serpentine layout once a graph has four roles", () => {
     { x: 90, y: 74 },
     { x: 50, y: 74 }
   ]);
+});
+
+test("describes app URLs when their document titles do not distinguish the pages", () => {
+  assert.equal(
+    activityUrlLabel("https://www.google.com/maps/place/Blueberry+Dr/@37.05012,-122.01234,17z/data=!4m2"),
+    "Place · Blueberry Dr · 17z near 37.0501, -122.0123"
+  );
+  assert.equal(
+    activityUrlLabel("https://www.google.com/maps/dir/Santa+Cruz/Blueberry+Dr/@37.05,-122.01,12.5z"),
+    "Directions · Santa Cruz → Blueberry Dr · 12.5z near 37.0500, -122.0100"
+  );
+  assert.equal(
+    activityUrlLabel("https://example.com/catalog/results?q=blueberries"),
+    "Search · blueberries"
+  );
+  assert.equal(
+    activityUrlLabel("https://meetup.com/subscription/checkout/?billing=monthly&utm_source=email"),
+    "meetup.com · subscription / checkout · billing · monthly"
+  );
+  assert.equal(
+    activityUrlLabel("https://example.com/account/callback?code=secret&state=private"),
+    "example.com · account / callback"
+  );
+  assert.equal(activityUrlLabel("chrome://history/"), "");
 });
 
 function page(key, title, url, minute) {

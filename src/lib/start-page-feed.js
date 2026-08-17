@@ -1,10 +1,11 @@
 import { normalizeIdentity } from "./revisit-model.js";
+import { isQualifiedContinuationAlternative } from "./resumption-forecast.js";
 import { START_PAGE_STATES } from "./start-page-state.js";
 
 const DEFAULT_ACTION_LIMIT = 18;
 const MAX_ACTION_LIMIT = 24;
 const SOURCE_SLOTS = Object.freeze(["habit", "star", "habit", "star", "habit", "star"]);
-const SOURCE_ORDER = Object.freeze(["habit", "star", "activity"]);
+const SOURCE_ORDER = Object.freeze(["habit", "star", "activity", "foreign"]);
 
 export const HOME_COMPOSITION_MODES = Object.freeze({
   QUIET: "quiet",
@@ -34,10 +35,11 @@ export function buildStartPageFeed({
   const activities = candidateArray(resumptionActivities);
   const actionEntries = indexPageActions(habits, stars);
   const safeLimit = boundedLimit(actionLimit);
-  const selected = selectBySourceSlots(actionEntries, habits, stars, safeLimit);
+  let selected = selectBySourceSlots(actionEntries, habits, stars, safeLimit);
   const selectedByPage = new Map(selected.map(action => [action.pageIdentity, action]));
 
   let primaryActivity = null;
+  let continuationAlternative = null;
   for (const activity of activities) {
     const pageIdentity = pageOf(activity?.action?.target?.url);
     const matchingAction = pageIdentity ? selectedByPage.get(pageIdentity) : null;
@@ -46,7 +48,19 @@ export function buildStartPageFeed({
       adoptSwitchTarget(matchingAction, activity);
     } else if (!primaryActivity) {
       primaryActivity = normalizePrimaryActivity(activity);
+    } else if (pageIdentity
+      && !continuationAlternative
+      && shouldPromoteContinuationAlternative(activity, state)) {
+      continuationAlternative = createPageAction(pageIdentity, activity);
+      addEvidence(continuationAlternative, "activity", activity);
+      adoptSwitchTarget(continuationAlternative, activity);
     }
+  }
+
+  if (continuationAlternative && safeLimit > 0) {
+    selected = [continuationAlternative, ...selected]
+      .filter((action, index, actions) => actions.findIndex(item => item.pageIdentity === action.pageIdentity) === index)
+      .slice(0, safeLimit);
   }
 
   return {
@@ -63,6 +77,11 @@ export function buildStartPageFeed({
       activity: activities.length
     }
   };
+}
+
+function shouldPromoteContinuationAlternative(activity, state) {
+  return state === START_PAGE_STATES.CONTINUATION
+    && isQualifiedContinuationAlternative(activity);
 }
 
 export function compositionModeForState(state) {
@@ -167,6 +186,7 @@ function addEvidence(entry, source, candidate) {
     kind: String(candidate.kind || ""),
     score: Number.isFinite(candidate.score) ? Number(candidate.score) : null,
     confidence: Number.isFinite(candidate.confidence) ? Number(candidate.confidence) : null,
+    provenance: String(candidate.provenance || ""),
     cues: cloneRecord(candidate.cues),
     reasons: Array.isArray(candidate.reasons) ? candidate.reasons.map(String) : []
   });
@@ -181,7 +201,9 @@ function adoptSwitchTarget(entry, candidate) {
 }
 
 function finalizeAction(entry) {
-  const sources = [...new Set(entry.sources)]
+  const sourceSet = new Set(entry.sources);
+  if (entry.evidence.some(item => item.provenance === "foreign")) sourceSet.add("foreign");
+  const sources = [...sourceSet]
     .sort((left, right) => SOURCE_ORDER.indexOf(left) - SOURCE_ORDER.indexOf(right));
   const evidence = entry.evidence.slice().sort((left, right) => {
     return SOURCE_ORDER.indexOf(left.source) - SOURCE_ORDER.indexOf(right.source)
@@ -232,4 +254,9 @@ function boundedLimit(value) {
 function finiteTimestamp(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function finiteCue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
 }

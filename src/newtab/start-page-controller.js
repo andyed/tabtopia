@@ -218,7 +218,12 @@ export async function collectStartPageState(now = Date.now()) {
     tabHistory: backgroundState?.tabHistory || [],
     tabRelationships: backgroundState?.tabRelationships || []
   });
-  const recognition = recognizeStartPageState(snapshot);
+  const recognition = recognizeStartPageState(snapshot, {
+    nonReturnWindowEstimate: backgroundState?.nonReturnWindow || null,
+    ...(backgroundState?.nonReturnWindow?.status === "ready"
+      ? { interruptionMs: backgroundState.nonReturnWindow.boundaryMs }
+      : {})
+  });
   const forecast = forecastResumption(snapshot, { state: recognition.state });
   const archiveQuery = archiveQueryForState({ snapshot, forecast });
   const currentArchiveSnapshot = archiveSnapshotForQuery(archiveSnapshot, archiveQuery);

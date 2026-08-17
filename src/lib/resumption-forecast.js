@@ -1,4 +1,5 @@
 import { START_PAGE_STATES } from "./start-page-state.js";
+import { projectContinuationTask } from "./continuation-task.js";
 
 const RECENCY_HALF_LIFE_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_CANDIDATE_LIMIT = 6;
@@ -13,37 +14,37 @@ const DEFAULT_CANDIDATE_LIMIT = 6;
  */
 export const RESUMPTION_POLICIES = Object.freeze({
   [START_PAGE_STATES.HANDOFF]: {
-    weights: { recency: 0.24, investment: 0.16, structure: 0.16, unfinished: 0.14, habit: 0.08, provenance: 0.22 },
+    weights: { recency: 0.24, explorationDepth: 0.18, investment: 0.08, structure: 0.12, unfinished: 0.12, habit: 0.06, provenance: 0.20 },
     prefer: "foreign",
     open: "damp",
     entry: "resume"
   },
   [START_PAGE_STATES.REORIENTATION]: {
-    weights: { recency: 0.14, investment: 0.26, structure: 0.24, unfinished: 0.14, habit: 0.14, provenance: 0.08 },
+    weights: { recency: 0.14, explorationDepth: 0.20, investment: 0.18, structure: 0.18, unfinished: 0.12, habit: 0.10, provenance: 0.08 },
     prefer: "local",
     open: "neutral",
     entry: "restart"
   },
   [START_PAGE_STATES.REINSTATEMENT]: {
-    weights: { recency: 0.30, investment: 0.18, structure: 0.18, unfinished: 0.18, habit: 0.08, provenance: 0.08 },
+    weights: { recency: 0.30, explorationDepth: 0.18, investment: 0.12, structure: 0.12, unfinished: 0.14, habit: 0.06, provenance: 0.08 },
     prefer: "local",
     open: "prefer",
     entry: "resume"
   },
   [START_PAGE_STATES.CONTINUATION]: {
-    weights: { recency: 0.28, investment: 0.16, structure: 0.22, unfinished: 0.20, habit: 0.06, provenance: 0.08 },
+    weights: { recency: 0.28, explorationDepth: 0.22, investment: 0.10, structure: 0.14, unfinished: 0.14, habit: 0.04, provenance: 0.08 },
     prefer: "local",
     open: "damp",
     entry: "resume"
   },
   [START_PAGE_STATES.THRESHOLD]: {
-    weights: { recency: 0.26, investment: 0.16, structure: 0.16, unfinished: 0.14, habit: 0.20, provenance: 0.08 },
+    weights: { recency: 0.26, explorationDepth: 0.20, investment: 0.10, structure: 0.12, unfinished: 0.10, habit: 0.14, provenance: 0.08 },
     prefer: "local",
     open: "prefer",
     entry: "resume"
   },
   [START_PAGE_STATES.LAUNCH]: {
-    weights: { recency: 0.16, investment: 0.14, structure: 0.14, unfinished: 0.10, habit: 0.38, provenance: 0.08 },
+    weights: { recency: 0.16, explorationDepth: 0.18, investment: 0.10, structure: 0.10, unfinished: 0.08, habit: 0.30, provenance: 0.08 },
     prefer: "local",
     open: "neutral",
     entry: "resume"
@@ -70,30 +71,73 @@ export function forecastResumption(snapshot, { state, limit = DEFAULT_CANDIDATE_
   const candidates = neighborhoods
     .map(neighborhood => scoreNeighborhood(neighborhood, policy, now))
     .filter(Boolean)
-    .sort((left, right) => right.score - left.score
-      || right.confidence - left.confidence
-      || right.lastActivityAt - left.lastActivityAt
-      || left.id.localeCompare(right.id));
+    .sort(compareCandidates);
+
+  const selectedCandidates = selectCandidates(candidates, resolvedState, limit);
 
   return {
     generatedAt: now,
     state: resolvedState,
     policy: policy.weights,
-    candidates: candidates.slice(0, Math.max(0, limit)),
+    candidates: selectedCandidates,
     suppressedCount: Math.max(0, candidates.length - Math.max(0, limit))
   };
+}
+
+function selectCandidates(candidates, state, limit) {
+  const safeLimit = Math.max(0, Number(limit) || 0);
+  const selected = candidates.slice(0, safeLimit);
+  if (state !== START_PAGE_STATES.CONTINUATION || safeLimit === 0) return selected;
+  if (selected.some(isQualifiedForeignContinuation)) return selected;
+
+  // The feed can promote a remote runner-up only if candidate generation lets
+  // it see one. Preserve one qualified cross-device continuation when a busy
+  // desktop fills the ordinary top-N cutoff; this is recall, not a source rail.
+  const foreign = candidates.find(isQualifiedForeignContinuation);
+  if (!foreign) return selected;
+  return [...selected.slice(0, Math.max(0, safeLimit - 1)), foreign].sort(compareCandidates);
+}
+
+function isQualifiedForeignContinuation(candidate) {
+  return candidate?.provenance === "foreign"
+    && isQualifiedContinuationAlternative(candidate);
+}
+
+export function isQualifiedContinuationAlternative(candidate) {
+  if (candidate?.action?.target?.open) return false;
+  const recency = clamp01(candidate?.cues?.recency);
+  const depth = clamp01(candidate?.cues?.explorationDepth);
+  const remote = candidate?.provenance === "foreign"
+    || clamp01(candidate?.cues?.foreignFraction) >= 0.8;
+
+  if (candidate?.kind === "maps-continuation" && candidate?.task?.evidence?.hasDirections) {
+    return recency >= 0.5;
+  }
+  if (["search-exploration", "maps-continuation"].includes(candidate?.kind)) {
+    return depth >= 0.65 && recency >= 0.25;
+  }
+  return remote && recency >= 0.5;
+}
+
+function compareCandidates(left, right) {
+  return right.score - left.score
+    || right.confidence - left.confidence
+    || right.lastActivityAt - left.lastActivityAt
+    || left.id.localeCompare(right.id);
 }
 
 function scoreNeighborhood(neighborhood, policy, now) {
   const items = neighborhood?.items || [];
   if (items.length === 0) return null;
 
-  const cues = computeCues(neighborhood, now);
+  const task = projectContinuationTask(neighborhood);
+  const cues = computeCues(neighborhood, now, task);
   const provenanceCue = policy.prefer === "foreign"
     ? cues.foreignFraction
     : 1 - cues.foreignFraction;
 
   const weighted = policy.weights.recency * cues.recency
+    + policy.weights.explorationDepth * cues.explorationDepth
     + policy.weights.investment * cues.investment
     + policy.weights.structure * cues.structure
     + policy.weights.unfinished * cues.unfinished
@@ -103,11 +147,12 @@ function scoreNeighborhood(neighborhood, policy, now) {
   const openMultiplier = openAdjustment(policy.open, cues.openFraction);
   const score = clamp01(weighted * openMultiplier);
   const resumePoint = items[0];
-  const entryPoint = selectEntryPoint(neighborhood) || resumePoint;
-  const target = policy.entry === "restart" ? entryPoint : resumePoint;
+  const entryPoint = task?.entryPoint || selectEntryPoint(neighborhood) || resumePoint;
+  const target = task?.target || (policy.entry === "restart" ? entryPoint : resumePoint);
 
   return {
     id: neighborhood.id,
+    kind: task?.kind || "resumption-activity",
     score,
     confidence: confidenceFor(neighborhood, cues),
     itemCount: neighborhood.itemCount,
@@ -116,6 +161,7 @@ function scoreNeighborhood(neighborhood, policy, now) {
     lastActivityAt: neighborhood.lastActivityAt,
     spanMs: neighborhood.spanMs,
     provenance: provenanceLabel(cues.foreignFraction),
+    task,
     action: {
       verb: actionVerb(policy, target, cues),
       target,
@@ -123,11 +169,11 @@ function scoreNeighborhood(neighborhood, policy, now) {
       resumePoint
     },
     cues,
-    reasons: reasonsFor(neighborhood, cues, policy, now)
+    reasons: reasonsFor(neighborhood, cues, policy, now, task)
   };
 }
 
-function computeCues(neighborhood, now) {
+function computeCues(neighborhood, now, task) {
   const items = neighborhood.items;
   const itemCount = neighborhood.itemCount || items.length;
   const visitCount = neighborhood.visitCount || 0;
@@ -153,6 +199,8 @@ function computeCues(neighborhood, now) {
   return {
     recency,
     ageMs,
+    explorationDepth: task ? clamp01(task.depth) : 0.5,
+    taskKind: task?.kind || null,
     investment: clamp01(
       0.7 * (Math.log2(1 + itemCount) / Math.log2(9))
       + 0.3 * (Math.log2(1 + visitCount) / Math.log2(17))
@@ -218,8 +266,8 @@ function provenanceLabel(foreignFraction) {
   return "local";
 }
 
-function reasonsFor(neighborhood, cues, policy, now) {
-  const reasons = [];
+function reasonsFor(neighborhood, cues, policy, now, task) {
+  const reasons = [...(task?.reasons || [])];
   const pages = `${neighborhood.itemCount} page${neighborhood.itemCount === 1 ? "" : "s"}`;
 
   if (cues.structuralEdges > 0) {

@@ -1,8 +1,10 @@
 import { getRecentHistory, recentHistoryCacheConfig } from "../lib/history-cache.js";
 import { buildStartPageSearchResults } from "../lib/start-page-search.js";
+import { buildTypeaheadCompletion } from "../lib/typeahead-completion.js";
 import { createStartPageActionExecutor } from "./start-page-actions.js";
 import { createLetterFavicon, getLocalFaviconUrl } from "./utility.js";
 import { buildSearchEvidence } from "./search-evidence.js";
+import { createSearchFisheye } from "./search-fisheye.js";
 
 const DIRECT_HISTORY_LIMIT = 200;
 const RESULT_LIMIT = 16;
@@ -20,10 +22,19 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
   let currentRetrieval = emptyRetrieval();
   let onClear = null;
   let connectedSearchInput = null;
+  let currentCompletion = null;
+  let composing = false;
+  const typeahead = typeaheadElements();
+  const fisheye = createSearchFisheye(root);
 
   root.addEventListener("keydown", event => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       if (moveFocus(event.key === "ArrowDown" ? 1 : -1)) event.preventDefault();
+      return;
+    }
+    if (event.key === "ArrowLeft" && event.target.closest?.(".search-serp__result-link")) {
+      event.preventDefault();
+      focusSearchInput();
       return;
     }
     if (event.key === "Escape") {
@@ -38,13 +49,69 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
     onClear = clearHandler;
     if (connectedSearchInput === searchInput) return;
     connectedSearchInput?.removeEventListener("keydown", handleSearchInputNavigation);
+    connectedSearchInput?.removeEventListener("keydown", handleTypeaheadKeydown);
+    connectedSearchInput?.removeEventListener("input", clearTypeahead);
+    connectedSearchInput?.removeEventListener("compositionstart", handleCompositionStart);
+    connectedSearchInput?.removeEventListener("compositionend", handleCompositionEnd);
     connectedSearchInput = searchInput;
+    connectedSearchInput.addEventListener("keydown", handleTypeaheadKeydown);
     connectedSearchInput.addEventListener("keydown", handleSearchInputNavigation);
+    connectedSearchInput.addEventListener("input", clearTypeahead);
+    connectedSearchInput.addEventListener("compositionstart", handleCompositionStart);
+    connectedSearchInput.addEventListener("compositionend", handleCompositionEnd);
+  }
+
+  function handleTypeaheadKeydown(event) {
+    if (event.isComposing || composing || !currentCompletion) return;
+    const acceptsWithTab = event.key === "Tab" && !event.shiftKey;
+    if (!acceptsWithTab) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    acceptTypeahead();
+  }
+
+  function handleCompositionStart() {
+    composing = true;
+    clearTypeahead();
+  }
+
+  function handleCompositionEnd() {
+    composing = false;
+  }
+
+  function caretIsAtEnd() {
+    if (!connectedSearchInput) return false;
+    const end = connectedSearchInput.value.length;
+    return connectedSearchInput.selectionStart === end
+      && connectedSearchInput.selectionEnd === end;
+  }
+
+  function acceptTypeahead() {
+    if (!connectedSearchInput || !currentCompletion) return false;
+    connectedSearchInput.value = currentCompletion.value;
+    const end = connectedSearchInput.value.length;
+    connectedSearchInput.setSelectionRange?.(end, end);
+    clearTypeahead();
+    connectedSearchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
   }
 
   function handleSearchInputNavigation(event) {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    if (moveFocus(event.key === "ArrowDown" ? 1 : -1)) event.preventDefault();
+    if (event.key === "ArrowRight" && caretIsAtEnd()) {
+      if (focusFirst()) event.preventDefault();
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (moveFocus(event.key === "ArrowDown" ? 1 : -1)) event.preventDefault();
+    }
+  }
+
+  function focusSearchInput() {
+    if (!connectedSearchInput) return false;
+    connectedSearchInput.focus({ preventScroll: true });
+    const end = connectedSearchInput.value.length;
+    connectedSearchInput.setSelectionRange?.(end, end);
+    return true;
   }
 
   function update(query, openItems = [], retrieval = {}) {
@@ -101,6 +168,8 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
     root.removeAttribute("data-query");
     root.setAttribute("aria-busy", "false");
     document.body.classList.remove("start-page-search-active");
+    clearTypeahead();
+    fisheye.clear();
   }
 
   function focusFirst() {
@@ -180,7 +249,34 @@ export function createSearchSerp(root = document.getElementById("startPageSearch
     fragment.append(searchHelp());
     root.replaceChildren(fragment);
     root.setAttribute("aria-busy", String(loading));
+    fisheye.refresh();
+    updateTypeahead(query, results);
     restoreResultFocus(focusedResultId, focusedIndex);
+  }
+
+  function updateTypeahead(query, results) {
+    clearTypeahead();
+    if (!connectedSearchInput || composing || connectedSearchInput.value !== query) return;
+    const completion = buildTypeaheadCompletion(query, results);
+    if (!completion || !typeahead.root) return;
+    currentCompletion = completion;
+    if (typeahead.prefix) typeahead.prefix.textContent = query;
+    if (typeahead.suffix) typeahead.suffix.textContent = completion.suffix;
+    typeahead.root.hidden = false;
+    if (typeahead.status) {
+      const source = completion.kind === "location" ? "location" : "title";
+      typeahead.status.textContent = `${completion.value}, suggested ${source}. Press Tab to complete, or Right Arrow to move to results.`;
+    }
+    const help = root.querySelector(".search-serp__help");
+    if (help) help.textContent = "Tab completes · ←→ search/results · ↑↓ move · Enter opens · Esc clears";
+  }
+
+  function clearTypeahead() {
+    currentCompletion = null;
+    if (typeahead.root) typeahead.root.hidden = true;
+    if (typeahead.prefix) typeahead.prefix.textContent = "";
+    if (typeahead.suffix) typeahead.suffix.textContent = "";
+    if (typeahead.status) typeahead.status.textContent = "";
   }
 
   function restoreResultFocus(resultId, priorIndex) {
@@ -411,7 +507,7 @@ function emptyState(query, retrieval = {}) {
 }
 
 function searchHelp() {
-  const help = element("p", "search-serp__help", "↑↓ move · Enter opens · Esc clears");
+  const help = element("p", "search-serp__help", "←→ search/results · ↑↓ move · Enter opens · Esc clears");
   return help;
 }
 
@@ -434,6 +530,16 @@ function inertSerp() {
     isActive: noop,
     moveFocus: noop,
     connectSearchInput: noop
+  };
+}
+
+function typeaheadElements() {
+  const root = document.getElementById("tabSearchTypeahead");
+  return {
+    root,
+    prefix: root?.querySelector("[data-typeahead-prefix]") || null,
+    suffix: root?.querySelector("[data-typeahead-suffix]") || null,
+    status: document.getElementById("tabSearchTypeaheadStatus")
   };
 }
 

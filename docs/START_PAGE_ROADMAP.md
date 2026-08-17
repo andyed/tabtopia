@@ -213,6 +213,16 @@ The first version should use transparent deterministic rules. It should return i
 }
 ```
 
+The Reinstatement interruption boundary may adapt from the local qualified-access
+corpus. Fit a two-component mixture to log inter-access gaps and use the point
+where a within-burst return and a later return are equally likely. Report the
+25%-to-75% posterior transition as the uncertainty window. The estimate stays
+on-device, consumes timestamps rather than URLs, requires enough samples and a
+clearly separated bimodal fit, and must remain within the reviewed 10-to-60
+minute product range. Sparse, unstable, unimodal, or out-of-range fits retain
+the established 30-minute boundary. Reorientation remains a separate extended-
+return decision and is not learned from this session-scale estimate.
+
 ### 2. Candidate generators
 
 Generate candidates by job before ranking them together:
@@ -261,12 +271,13 @@ Unavailable evidence is neutral. The UI must not make predictive claims stronger
 #### Resumption forecast (implemented)
 
 `resumption-forecast.js` ranks whole neighborhoods — activities, not pages — by
-how likely the user is to resume them. Six bounded cues, each reported as
+how likely the user is to resume them. Seven bounded cues, each reported as
 evidence rather than folded into an opaque number:
 
 | Cue | Reads |
 |---|---|
 | `recency` | 2-hour half-life decay on last activity |
+| `explorationDepth` | task progression and branching; neutral when no typed task projection is available |
 | `investment` | pages plus repeat visits, log-scaled |
 | `structure` | share of edges that are followed links rather than coincidence |
 | `unfinished` | share of arrivals that came by following something — a trail cut part-way |
@@ -287,6 +298,44 @@ candidates. Unavailable cues resolve to 0.5, never 0.
 
 The weights are hand-set policy, not learned. They are the interpretable
 baseline any later calibrated model has to beat.
+
+#### Cross-device continuation refinement (active)
+
+Cross-device work must compete inside Continuation rather than requiring a
+mutually exclusive Handoff state or a permanent source rail. Provenance explains
+a prediction after ranking; it does not own a section of the page.
+
+Rough delivery sequence:
+
+1. **Task projection — implemented vertical slice.** Recognize an exact Google
+   query with at least two structurally followed result branches. Project Maps
+   URLs into search, place, comparison, and directions stages while ignoring
+   viewport and zoom churn. Preserve the exact recorded URL as the action target.
+2. **Blended continuation — implemented as a bounded probe.** Keep one focal
+   activity. During Continuation, admit at most one non-primary activity into
+   visible side routes when recent foreign evidence is strong, or when a typed
+   search/Maps task has sufficient depth and recency. Directions retain a short
+   eligibility horizon.
+3. **Source completeness and downstream summaries — next.** Audit which Chrome
+   synced-history records reach the local archive, preserve trustworthy remote
+   provenance without guessing a device, and define the export contract used by
+   `interests2025`. Once that boundary is verified, make remote exploration
+   eligible for its interest summaries as evidence, not as an automatic claim
+   of durable interest.
+4. **Calibration — next.** Replay recent local fixtures and record only
+   content-free outcomes: surfaced, opened, ignored, dismissed, and time-to-open.
+   Tune promotion thresholds and depth bands only if they beat the current
+   deterministic policy. Do not silently learn production weights.
+5. **Broader task grammar — later.** Consider explicitly linked query
+   reformulations, richer Maps place comparison, and named synced devices. Do
+   not merge semantically similar queries or infer phone origin without new
+   evidence and review.
+
+Required fixtures cover: zero/one/multiple search-result clicks; a deeper branch
+after a result; Maps pan/zoom variants; place comparison; place-to-directions;
+recent versus stale foreign singletons; and mixed live-desktop plus recovered
+foreign activity. The visible proof keeps exactly one focal activity and makes
+the qualified runner-up keyboard reachable.
 
 ## Learning and feedback
 

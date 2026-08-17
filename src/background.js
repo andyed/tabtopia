@@ -2558,19 +2558,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ history, relationship });
                 return true;
             case "getState":
-                // Ensure browserState and its properties are defined
-                // console.log('Background: getState received. Sending state:', browserState);
-                sendResponse({
-                    tabs: browserState.tabs ? [...browserState.tabs.entries()] : [],
-                    windows: browserState.windows ? [...browserState.windows.entries()] : [],
-                    tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
-                    tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
-                    tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
-                    // Include other parts of state if necessary and managed by background.js
-                    // ui: browserState.ui || {},
-                    // graphData: browserState.graphData || {},
-                    // cache: browserState.cache || {}
-                });
+                revisitReady
+                    .then(store => sendResponse({
+                        tabs: browserState.tabs ? [...browserState.tabs.entries()] : [],
+                        windows: browserState.windows ? [...browserState.windows.entries()] : [],
+                        tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
+                        tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
+                        tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
+                        nonReturnWindow: store?.estimateNonReturnWindow() || null
+                    }))
+                    .catch(() => sendResponse({
+                        tabs: browserState.tabs ? [...browserState.tabs.entries()] : [],
+                        windows: browserState.windows ? [...browserState.windows.entries()] : [],
+                        tabHistory: browserState.tabHistory ? [...browserState.tabHistory.entries()] : [],
+                        tabRelationships: browserState.tabRelationships ? [...browserState.tabRelationships.entries()] : [],
+                        tabActivityLog: browserState.tabActivityLog ? [...browserState.tabActivityLog.entries()] : [],
+                        nonReturnWindow: null
+                    }));
                 return true; // Prevent fallback handler
             case "getInitialState":
                 console.log("🔍 🔍 🔍 getInitialState request received - AUDIO DEBUG MODE 🔍 🔍 🔍");

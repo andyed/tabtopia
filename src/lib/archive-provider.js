@@ -1,5 +1,16 @@
 const STORAGE_KEY = "tabtopiaArchiveProviderV1";
-const SNAPSHOT_VERSION = 1;
+// Bump whenever cached rows change MEANING, not just shape. validateSnapshot()
+// discards any snapshot whose version differs and returns emptySnapshot(), whose
+// fetchedAt is 0 — so the next refresh reads as stale and refetches immediately
+// instead of serving stale rows for up to ARCHIVE_TTL_MS.
+//
+// 2 (2026-08-05): the archive endpoint used to attach tags by canonical URL key
+// (hostname + path, query dropped), which collapsed every ...com/watch?v=,
+// /search?q= and /citation.cfm?id= onto one key and served the last-written
+// bookmark's tags to all of them. Home showed "camping" and "diablo-iii" as
+// interest threads off the back of it. The server is fixed, but a cached v1
+// snapshot keeps those tags for a further 24 hours.
+export const SNAPSHOT_VERSION = 2;
 const ARCHIVE_ENDPOINT = "http://127.0.0.1:8889/api/history/adaptive";
 const SEARCH_ENDPOINT = "http://127.0.0.1:8889/api/search";
 

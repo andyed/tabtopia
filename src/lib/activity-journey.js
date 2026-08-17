@@ -113,6 +113,34 @@ export function pageRoleIdentity(rawUrl) {
   }
 }
 
+/**
+ * Turn an app-style URL into a compact cue that can disambiguate pages which
+ * all reuse one document title. This is presentation evidence only: the exact
+ * recorded URL remains the navigation target.
+ */
+export function activityUrlLabel(rawUrl) {
+  let url;
+  try {
+    url = new URL(String(rawUrl || ""));
+  } catch {
+    return "";
+  }
+  if (!["http:", "https:"].includes(url.protocol)) return "";
+
+  const host = url.hostname.toLowerCase().replace(/^www\./u, "");
+  if (/(^|\.)google\.[a-z.]+$/u.test(host) && url.pathname.startsWith("/maps")) {
+    return googleMapsLabel(url);
+  }
+
+  const query = firstReadableParam(url, ["q", "query", "search", "destination"]);
+  if (query) return `Search · ${query}`;
+
+  const pieces = decodedPathPieces(url.pathname);
+  if (pieces.length === 0) return host;
+  const qualifier = firstReadableEntry(url);
+  return [host, pieces.slice(-2).join(" / "), qualifier].filter(Boolean).join(" · ");
+}
+
 function normalizeItem(raw) {
   if (!raw || typeof raw !== "object") return null;
   const roleKey = pageRoleIdentity(raw.url);
@@ -255,6 +283,69 @@ function displayPath(url) {
   const pieces = url.pathname.split("/").filter(Boolean);
   const leaf = pieces.at(-1) || "home";
   return `${url.hostname.replace(/^www\./u, "")}/${leaf}`;
+}
+
+function googleMapsLabel(url) {
+  const pieces = decodedPathPieces(url.pathname);
+  const mapsIndex = pieces.findIndex(piece => piece.toLocaleLowerCase() === "maps");
+  const mode = String(pieces[mapsIndex + 1] || "").toLocaleLowerCase();
+  const values = pieces.slice(mapsIndex + 2).filter(piece => !piece.startsWith("@"));
+  let label = "Map view";
+
+  if (mode === "dir" && values.length > 0) {
+    label = `Directions · ${values.slice(0, 2).join(" → ")}`;
+  } else if (mode === "search") {
+    const query = values[0] || firstReadableParam(url, ["query", "q"]);
+    if (query) label = `Search · ${query}`;
+  } else if (mode === "place" && values[0]) {
+    label = `Place · ${values[0]}`;
+  }
+
+  const viewport = url.pathname.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?),(\d+(?:\.\d+)?z)/u);
+  if (viewport) {
+    const latitude = Number(viewport[1]).toFixed(4);
+    const longitude = Number(viewport[2]).toFixed(4);
+    label += ` · ${viewport[3]} near ${latitude}, ${longitude}`;
+  }
+  return label;
+}
+
+function decodedPathPieces(pathname) {
+  return String(pathname || "")
+    .split("/")
+    .filter(Boolean)
+    .map(piece => readableUrlPart(piece))
+    .filter(Boolean);
+}
+
+function firstReadableParam(url, names) {
+  for (const name of names) {
+    const value = readableUrlPart(url.searchParams.get(name));
+    if (value) return value;
+  }
+  return "";
+}
+
+function firstReadableEntry(url) {
+  const allowed = new Set([
+    "billing", "filter", "loginprovider", "page", "return", "sort", "tab", "trigger", "view"
+  ]);
+  for (const [rawName, rawValue] of url.searchParams) {
+    if (!allowed.has(rawName.toLocaleLowerCase())) continue;
+    const name = readableUrlPart(rawName);
+    const value = readableUrlPart(rawValue);
+    if (name && value && value.length <= 48) return `${name} · ${value}`;
+  }
+  return "";
+}
+
+function readableUrlPart(value) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(String(value).replace(/\+/gu, " ")).replace(/\s+/gu, " ").trim();
+  } catch {
+    return String(value).replace(/\+/gu, " ").replace(/\s+/gu, " ").trim();
+  }
 }
 
 function dominantValue(values) {

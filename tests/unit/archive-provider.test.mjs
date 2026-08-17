@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  SNAPSHOT_VERSION,
   archiveQueryForState,
   readCachedArchive,
   refreshArchive
@@ -31,6 +32,55 @@ test("cached archive is available for first paint without a network call", async
   assert.equal(result.related[0].title, "Cached match");
   assert.deepEqual(result.freshness, { archive: "fresh", related: "fresh" });
   assert.equal(storage.getCount, 1);
+});
+
+test("a snapshot from an older version is discarded, not served", async () => {
+  // This is the mechanism the SNAPSHOT_VERSION bump relies on. When cached rows
+  // change meaning — as they did when the archive endpoint stopped attaching
+  // tags by a query-stripped URL key, which had been serving one bookmark's
+  // tags to every ...com/watch?v= URL — the stale snapshot must not survive.
+  // Without invalidation, Home keeps painting the old tags for ARCHIVE_TTL_MS,
+  // which is 24 hours.
+  const storage = new MemoryStorage({
+    [STORAGE_KEY]: {
+      ...storedSnapshot({
+        archiveRows: [archiveRow("Stale reference", "https://example.test/stale")],
+        archiveFetchedAt: NOW - MINUTE
+      }),
+      version: SNAPSHOT_VERSION - 1
+    }
+  });
+
+  const result = await readCachedArchive({ storage, now: NOW });
+
+  assert.equal(result.archive.length, 0, "old-version rows must not reach the view");
+  assert.notEqual(result.status, "cached");
+});
+
+test("a stale-version snapshot refetches immediately rather than waiting out the TTL", async () => {
+  // emptySnapshot() carries fetchedAt: 0, so the discarded snapshot reads as
+  // stale and the very next refresh goes to the network.
+  const storage = new MemoryStorage({
+    [STORAGE_KEY]: {
+      ...storedSnapshot({
+        archiveRows: [archiveRow("Stale reference", "https://example.test/stale")],
+        archiveFetchedAt: NOW - MINUTE
+      }),
+      version: SNAPSHOT_VERSION - 1
+    }
+  });
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(String(url));
+    return response(url.includes("/api/search")
+      ? { results: [] }
+      : [archiveRow("Fresh reference", "https://example.test/fresh")]);
+  };
+
+  const result = await refreshArchive({ storage, now: NOW, fetchImpl });
+
+  assert.ok(calls.some(u => u.includes("/api/history/adaptive")), "expected an archive refetch");
+  assert.equal(result.archive[0].title, "Fresh reference");
 });
 
 test("live refresh stores only bounded tagged archive rows and semantic hits", async () => {
@@ -338,7 +388,9 @@ function storedSnapshot({
     [query.toLowerCase()]: { query, fetchedAt: relatedFetchedAt, hits }
   } : {};
   return {
-    version: 1,
+    // Follows the module rather than duplicating it: a SNAPSHOT_VERSION bump
+    // must invalidate real caches without silently breaking these fixtures.
+    version: SNAPSHOT_VERSION,
     updatedAt: Math.max(archiveFetchedAt, relatedFetchedAt),
     archive: { fetchedAt: archiveFetchedAt, rows: archiveRows },
     queries,

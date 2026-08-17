@@ -261,6 +261,7 @@ export function reapplySearch() {
 // search UI behavior now lives here.
 export function initializeSearch({ windows } = {}) {
     const searchInput = document.getElementById("tabSearch");
+    const clearButton = document.getElementById("tabSearchClear");
 
     if (!searchInput) {
         console.error("Search input element not found!");
@@ -273,6 +274,7 @@ export function initializeSearch({ windows } = {}) {
     // links immediately so a view switch right after load carries it too.
     const initialQuery = readSharedQuery();
     searchInput.value = initialQuery;
+    syncClearButton(searchInput, clearButton);
     decorateViewLinks(initialQuery.trim());
     const serp = getSearchSerp();
     serp.connectSearchInput(searchInput, exitSearchMode);
@@ -296,7 +298,13 @@ export function initializeSearch({ windows } = {}) {
     // the query if a view switch or new tab happens inside the debounce
     // window); debounce only the search + repaint.
     searchInput.addEventListener("input", (event) => {
+        syncClearButton(searchInput, clearButton);
         publishSharedQuery(event.target.value.trim());
+    });
+
+    clearButton?.addEventListener("click", () => {
+        exitSearchMode();
+        searchInput.focus();
     });
 
     searchInput.addEventListener("input", debounce((event) => {
@@ -324,6 +332,7 @@ export function initializeSearch({ windows } = {}) {
     // view updates this one. Fires only in documents that didn't do the write.
     onSharedQueryChange((query) => {
         searchInput.value = query;
+        syncClearButton(searchInput, clearButton);
         applySearch(query.trim());
         decorateViewLinks(query.trim());
     });
@@ -405,13 +414,20 @@ function focusFirstSearchResult() {
 
 export function exitSearchMode() {
     const searchInput = document.getElementById("tabSearch");
+    const clearButton = document.getElementById("tabSearchClear");
     if (searchInput) {
         searchInput.value = "";
         searchInput.blur();
     }
+    syncClearButton(searchInput, clearButton);
     publishSharedQuery("");
     clearSearchResults();
     getSearchSerp().clear();
+}
+
+function syncClearButton(searchInput, clearButton) {
+    if (!clearButton) return;
+    clearButton.hidden = !searchInput?.value;
 }
 
 export function handleSearchResults(results) {

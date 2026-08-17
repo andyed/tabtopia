@@ -17,6 +17,9 @@ export const START_PAGE_STATE_DEFAULTS = Object.freeze({
 
 export function recognizeStartPageState(snapshot, config = {}) {
   const thresholds = { ...START_PAGE_STATE_DEFAULTS, ...config };
+  const nonReturnWindow = config?.nonReturnWindowEstimate || null;
+  const adaptiveInterruption = nonReturnWindow?.status === "ready"
+    && Number.isFinite(nonReturnWindow.boundaryMs);
   const currentCount = snapshot?.currentWindow?.tabs?.length || 0;
   const otherWindows = snapshot?.otherWindows || [];
   const otherCount = otherWindows.reduce((sum, window) => sum + (window.tabs?.length || 0), 0);
@@ -31,7 +34,12 @@ export function recognizeStartPageState(snapshot, config = {}) {
   const edgeCount = snapshot?.topology?.edgeCount || 0;
   const gapMs = snapshot?.activity?.interruptionGapMs;
   const crossedLocalDayBoundary = Boolean(snapshot?.activity?.crossedLocalDayBoundary);
-  const interruptionSignals = { gapMs, crossedLocalDayBoundary };
+  const interruptionSignals = {
+    gapMs,
+    crossedLocalDayBoundary,
+    interruptionBoundaryMs: thresholds.interruptionMs,
+    interruptionBoundarySource: adaptiveInterruption ? nonReturnWindow.source : "fallback"
+  };
   const foreignItems = recentForeignItems(snapshot, thresholds.handoffHorizonMs);
   const foreignDomains = new Set(foreignItems.map(item => domainOf(item.url)).filter(Boolean));
   const latestForeignAt = Number(snapshot?.history?.latestForeignAt || 0);
@@ -96,6 +104,7 @@ export function recognizeStartPageState(snapshot, config = {}) {
     return result(START_PAGE_STATES.REINSTATEMENT, clamp(0.76 + Math.min(0.16, gapMs / (6 * 60 * 60 * 1000))), [
       currentWindowIsClean ? "clean-current-window" : `${currentCount}-live-tabs-in-current-window`,
       `${gapMinutes}-minute-gap`,
+      ...(adaptiveInterruption ? ["adaptive-non-return-window"] : []),
       `${neighborhoodCount}-active-neighborhood${neighborhoodCount === 1 ? "" : "s"}`,
       ...(otherCount > 0 ? [`${otherCount}-live-tabs-in-${nonEmptyWindowCount(otherWindows)}-other-windows`] : [])
     ], {

@@ -7,8 +7,8 @@ import { buildGithubStarsEnrichment } from "../lib/github-stars-enrichment.js";
 import { createStartPageController } from "./start-page-controller.js";
 import { createStartPageActionExecutor } from "./start-page-actions.js";
 import { renderHomeTakeover } from "./home-takeover.js";
+import { FEATURE_FLAGS, readFeatureFlag } from "../lib/feature-flags.js";
 
-const HOME_TAKEOVER_FLAG = "tabtopiaHomeTakeoverV1";
 const HOME_MODEL_CACHE_KEY = "tabtopiaHomeModelV1";
 const HOME_MODEL_CACHE_VERSION = 1;
 const HOME_MODEL_CACHE_TTL_MS = 30 * 60 * 1000;
@@ -29,14 +29,14 @@ startWhenIdle();
 
 async function startWhenIdle() {
   installType = await getInstallType();
-  homeEnabled = await shouldUseHomeTakeover(installType);
+  homeEnabled = await shouldUseHomeTakeover();
   if (homeEnabled) showInitialHome();
 
   const start = async () => {
     // The hash can change between module evaluation and the idle start (for
     // example a direct jump to the legacy landscape). Resolve it again here so
     // an early route never gets lost before the hashchange listener exists.
-    homeEnabled = await shouldUseHomeTakeover(installType);
+    homeEnabled = await shouldUseHomeTakeover();
     if (homeEnabled) showInitialHome();
     else deactivateHome();
     window.addEventListener("hashchange", handleRouteChange);
@@ -335,7 +335,7 @@ function openTreemap() {
 }
 
 async function handleRouteChange() {
-  homeEnabled = await shouldUseHomeTakeover(installType);
+  homeEnabled = await shouldUseHomeTakeover();
   if (homeEnabled) {
     if (freshOverride) renderFreshHome();
     else if (latestHomeModel) renderSuggestedHome();
@@ -924,19 +924,8 @@ function getInstallType() {
   });
 }
 
-async function shouldUseHomeTakeover(currentInstallType) {
+async function shouldUseHomeTakeover() {
   if (window.location.hash === "#/treemap") return false;
   if (window.location.hash === "#/home") return true;
-  const persisted = await getStoredHomeFlag();
-  return typeof persisted === "boolean" ? persisted : currentInstallType === "development";
-}
-
-function getStoredHomeFlag() {
-  return new Promise(resolve => {
-    if (!chrome.storage?.local?.get) return resolve(undefined);
-    chrome.storage.local.get([HOME_TAKEOVER_FLAG], result => {
-      if (chrome.runtime.lastError) return resolve(undefined);
-      resolve(result?.[HOME_TAKEOVER_FLAG]);
-    });
-  });
+  return readFeatureFlag(chrome.storage?.local, FEATURE_FLAGS.homeTakeover);
 }

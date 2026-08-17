@@ -124,6 +124,36 @@ test("a one-hour lunch interruption remains reinstatement", () => {
   assert.equal(recognition.signals.crossedLocalDayBoundary, false);
 });
 
+test("a ready non-return estimate replaces only the reinstatement boundary", () => {
+  const recognition = recognizeStartPageState(snapshotForGap(20 * 60 * 1000), {
+    interruptionMs: 15 * 60 * 1000,
+    nonReturnWindowEstimate: {
+      status: "ready",
+      source: "qualified-access-mixture",
+      boundaryMs: 15 * 60 * 1000
+    }
+  });
+
+  assert.equal(recognition.state, START_PAGE_STATES.REINSTATEMENT);
+  assert.equal(recognition.signals.interruptionBoundaryMs, 15 * 60 * 1000);
+  assert.equal(recognition.signals.interruptionBoundarySource, "qualified-access-mixture");
+  assert.ok(recognition.evidence.includes("adaptive-non-return-window"));
+});
+
+test("an unready non-return estimate leaves the fallback boundary intact", () => {
+  const recognition = recognizeStartPageState(snapshotForGap(20 * 60 * 1000), {
+    nonReturnWindowEstimate: {
+      status: "insufficient-data",
+      source: "fallback",
+      boundaryMs: 30 * 60 * 1000
+    }
+  });
+
+  assert.equal(recognition.state, START_PAGE_STATES.THRESHOLD);
+  assert.equal(recognition.signals.interruptionBoundaryMs, 30 * 60 * 1000);
+  assert.equal(recognition.signals.interruptionBoundarySource, "fallback");
+});
+
 test("an eight-hour interruption becomes reorientation", () => {
   const recognition = recognizeStartPageState(snapshotForGap(8 * HOUR));
 

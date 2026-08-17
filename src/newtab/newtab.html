@@ -74,7 +74,22 @@
         <a href="debug.html" id="debug-link" title="Debug Tools">Debug</a>
       </button>
       <div class="search-container">
-        <input type="text" id="tabSearch" placeholder="Search your browsing..." class="search-input" />
+        <div class="search-typeahead">
+          <div id="tabSearchTypeahead" class="search-typeahead__completion" hidden aria-hidden="true">
+            <span data-typeahead-prefix></span><span class="search-typeahead__suffix" data-typeahead-suffix></span>
+          </div>
+          <input type="text" id="tabSearch" placeholder="Search your browsing..." class="search-input"
+            autocomplete="off" spellcheck="false"
+            aria-describedby="tabSearchTypeaheadHint tabSearchTypeaheadStatus" />
+          <button id="tabSearchClear" class="search-typeahead__clear" type="button" aria-label="Clear search"
+            title="Clear search" hidden>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+              <path d="M6 6l12 12M18 6L6 18"></path>
+            </svg>
+          </button>
+          <span id="tabSearchTypeaheadHint" class="search-typeahead__assistive">When a completion appears, press Tab to accept it. Press Right Arrow at the end of the query to move to the results.</span>
+          <span id="tabSearchTypeaheadStatus" class="search-typeahead__assistive" role="status" aria-live="polite" aria-atomic="true"></span>
+        </div>
       </div>
     </div>
   </header>
@@ -85,9 +100,9 @@
     <aside id="readout" aria-label="Tab context">
       <div class="readout-content">
         <div class="readout-intro">
-          <div class="readout-kicker">Browsing memory</div>
-          <h2>Follow a region</h2>
-          <p>Hover a tile to reveal pages and stars from its domain. Click a tile to hold that context here.</p>
+          <div class="readout-kicker">Tab field</div>
+          <h2 data-field-count>&hairsp;</h2>
+          <p data-field-detail></p>
         </div>
         <div class="recent-stars">
           <div class="readout-section-heading">
