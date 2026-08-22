@@ -14,6 +14,23 @@ Code, Codex CLI, Gemini CLI, anything that speaks
 [MCP](https://modelcontextprotocol.io) — live awareness of your browsing
 context.
 
+## Choose your setup
+
+| Goal | Install | You can skip |
+|---|---|---|
+| Use Tabtopia as a Chrome extension | Load the extension folder in Chrome | Node.js, the MCP daemon/server, an MCP client, and the `browser-now` skill |
+| Give an agent live browser context | Load the extension, then run and register the local MCP companion | The optional archive/search service on `:8889`; it is unrelated to the MCP |
+
+The extension works on its own. If the MCP daemon is absent, its loopback
+connection simply stays offline and the normal Tabtopia views continue to
+work.
+
+The reverse has one important qualification: the MCP's Node processes are
+self-contained, but they need the Tabtopia extension as their browser sensor.
+Running `mcp/server.js` and `mcp/bridge-daemon.js` without the extension yields
+no live snapshot. The current sensor is not headless—the same extension also
+provides Tabtopia's views and new-tab override.
+
 ## The MCP: your agent knows what you're looking at
 
 Every browser MCP with traction is an automation tool: the agent drives the
@@ -59,13 +76,14 @@ your working state — the only write), and `get_tab_content` (read the DOM text
 of a tab you already have open, including logged-in pages a plain fetch can't
 see).
 
-Everything binds `127.0.0.1`; the extension↔daemon socket is gated by a
-`chrome-extension://` Origin allowlist; nothing leaves your machine. One
+All MCP traffic binds `127.0.0.1`; the extension↔daemon socket is gated by a
+`chrome-extension://` Origin allowlist; MCP data never leaves your machine. One
 runtime dependency. Setup and architecture: [`mcp/README.md`](mcp/README.md).
-A ready-made Claude Code skill ships at
-[`.claude/skills/browser-now/`](.claude/skills/browser-now/SKILL.md) so the
-agent knows when to reach for the tools ("what am I looking at", "save my
-research state", "the tab about X"); other agents get the same guidance from
+Ready-made `browser-now` skills ship for
+[Codex and other agent-skill clients](.agents/skills/browser-now/SKILL.md) and
+[Claude Code](.claude/skills/browser-now/SKILL.md), so the agent knows when to
+reach for the tools ("what am I looking at", "save my research state", "the tab
+about X"). Other clients get the same guidance from
 [`mcp/USAGE-FOR-AGENTS.md`](mcp/USAGE-FOR-AGENTS.md) pasted into their context
 file (`AGENTS.md`, `GEMINI.md`, …).
 
@@ -179,6 +197,10 @@ The underlying synchronization and history trail system can be leveraged for var
 
 ## Installation
 
+### Extension only
+
+No Node.js process, local daemon, MCP client, or agent skill is required.
+
 **From a release (recommended):** download the latest `tabtopia-v*.zip` from the
 [Releases](https://github.com/andyed/tabtopia/releases) page and unzip it. Then:
 
@@ -187,6 +209,19 @@ The underlying synchronization and history trail system can be leveraged for var
 3. Click "Load Unpacked" and select the unzipped folder (the one containing `manifest.json`)
 
 **From source:** clone this repository and "Load Unpacked" the repository folder.
+
+Optional local enrichment and MCP connections fail closed when their companion
+processes are absent. Core tab, history, session, graph, bookmark, search, and
+new-tab behavior remains local to the extension.
+
+### Live browser context through MCP
+
+This path still requires the extension above: it supplies the live snapshot and
+answers bounded, read-only page-content requests. Then follow the clean setup in
+[`mcp/README.md`](mcp/README.md) to install the single Node dependency, run the
+daemon, and register the server with your MCP client. The `browser-now` skills
+are optional guidance that teaches an agent when to use the four tools; the MCP
+tools work without a skill.
 
 ## Debug Tools and Console Functions
 

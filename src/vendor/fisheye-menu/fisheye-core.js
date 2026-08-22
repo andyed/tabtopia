@@ -1,8 +1,7 @@
 /**
  * Fisheye Flyout Menu — Pure computation functions
  *
- * Vendored from Andy Edmonds' fisheye-menu at commit 899379e.
- * Source: /Users/andyed/Documents/dev/fisheye-menu/fisheye-core.js
+ * Vendored from fisheye-menu at commit 899379e.
  * License: MIT; see LICENSE in this directory.
  */
 

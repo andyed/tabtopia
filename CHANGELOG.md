@@ -2,8 +2,54 @@
 
 All notable changes to tabtopia are recorded here.
 
-Tabtopia ships **unpacked** — it is not distributed through the Chrome Web Store.
-To run a release, load the repo at that tag via `chrome://extensions` → *Load unpacked*.
+Tabtopia ships as a release archive loaded through
+`chrome://extensions` → *Load unpacked*. It is not currently distributed
+through the Chrome Web Store.
+
+## [1.4.0] — 2026-08-22
+
+The behavior-aware Home release: Tabtopia now recognizes the shape of the
+current browsing moment, combines multiple recall sources into one search, and
+ships a portable `browser-now` path for both Codex and Claude Code.
+
+### Added
+
+- **State-aware Home** with Launch, Threshold, Reinstatement, Continuation, and
+  Handoff behavior. Ranked destinations, recent activity, browsing
+  neighborhoods, deferred intentions, and task continuation share one surface.
+- **Unified recall search** across open tabs, recent history, bookmarks, saved
+  summaries, and optional local archive results, with typeahead, keyboard
+  navigation, and evidence-labelled results.
+- **Behavior-derived ranking** using revisit history, engagement, recency,
+  transition context, habit destinations, and a bounded non-return-window
+  estimate.
+- Optional discovery panels for archive activity, GitHub stars, and Techmeme.
+  Each provider fails closed when its local or network source is unavailable.
+- Settings for the Home takeover, search fisheye experiment, and local ranking
+  diagnostics.
+- A public `browser-now` skill for Codex and other agent-skill clients alongside
+  the existing Claude Code skill.
+
+### MCP
+
+- `get_tab_content` can return bounded `text`, semantic `outline`, or labelled
+  `interactive` views. Input values and hidden DOM are omitted, and page-derived
+  data is explicitly marked untrusted.
+- Public setup now distinguishes extension-only use from live-browser MCP use.
+  The MCP needs the extension as its browser sensor but does not need private
+  archive, embedding, or history services.
+- Removed machine-specific MCP configuration from the public tree and added a
+  reproducible allowlisted release builder.
+
+### Fixed
+
+- Home now defaults on for packed and ordinary installs instead of being
+  accidentally limited to unpacked development installs.
+- Persistent browser state, hero metadata, semantic caches, archive rows, and
+  GitHub-star data are bounded under storage pressure.
+- Window-color caches no longer collide across views.
+- Public documentation and vendored-source metadata no longer contain local
+  checkout paths.
 
 ## [1.3.0] — 2026-07-19
 
@@ -49,7 +95,7 @@ The MCP release: tabtopia's live browser state, exposed to your agent.
 
 ### Added
 
-- **Standalone MCP server** (`mcp/`) — two-process design: an always-on loopback
+- **Local MCP companion** (`mcp/`) — two-process design: an always-on loopback
   bridge daemon (WS :8892, Origin-allowlisted to the extension; HTTP :8893) and
   a stateless stdio server spawned per agent session. Four tools:
   `get_context`, `search`, `capture_context`, `get_tab_content`. Open tabs are

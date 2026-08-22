@@ -6,6 +6,10 @@ etc. Claude Code users can skip it — the `browser-now` skill in this repo
 carries the same guidance. The tools work without this file; the judgment
 about *when* to reach for them is what makes the experience feel ambient.
 
+Runtime requirement: this MCP needs both the local bridge daemon and the
+Tabtopia Chrome extension, which supplies the live snapshot. It does not need
+the optional archive/search service on `:8889`, embeddings, or a history corpus.
+
 ---
 
 The `tabtopia` MCP server reads the user's LIVE browser state: open tabs,

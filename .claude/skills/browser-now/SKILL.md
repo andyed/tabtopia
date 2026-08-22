@@ -1,21 +1,23 @@
 ---
 name: browser-now
-description: "Read the user's LIVE browser state — the tabs open right now, which one is focused, what's playing audio, the recent navigation flow, and DOM text from an open (possibly logged-in) tab. Use whenever the request is grounded in the present: \"this page\", \"what I'm looking at\", \"the tab about X\", \"my current research\", \"do I have Y open\", \"save my research state\", or before WebFetch when the user points at something they already have open. Powered by the tabtopia extension + its standalone MCP (tools get_context, search, capture_context, get_tab_content). Not for closed history — that's a separate browsing-history tool."
+description: "Read the user's LIVE browser state — the tabs open right now, which one is focused, what's playing audio, the recent navigation flow, and DOM text from an open (possibly logged-in) tab. Use whenever the request is grounded in the present: \"this page\", \"what I'm looking at\", \"the tab about X\", \"my current research\", \"do I have Y open\", \"save my research state\", or before WebFetch when the user points at something they already have open. Powered by the tabtopia extension + its local MCP companion (tools get_context, search, capture_context, get_tab_content). Not for closed history — that's a separate browsing-history tool."
 user-invocable: true
 ---
 
 # browser-now — live browser state
 
 tabtopia (a Chrome extension) pushes a live snapshot of the browser to a small
-standalone MCP server. That snapshot is the ground truth for **what the user is
+local MCP companion. That snapshot is the ground truth for **what the user is
 doing right now**: open tabs, which is focused, what's playing audio, and the
 recent navigation flow. Every tab carries **real engagement** — seconds
 actually spent reading — so ranking surfaces the tab they were working in over
 the six they opened and abandoned.
 
-This is a separate, standalone server that ships in this repo (`mcp/`). It has
-**no** external dependencies beyond `ws` — no embeddings, no history corpus. For
-*closed* history ("that article last week") use a browsing-history tool instead.
+The Node companion in this repo (`mcp/`) is independent of private archive or
+embedding services and has **no** external dependency beyond `ws`. It is not
+independent of the extension: without that browser sensor there is no live
+snapshot. For *closed* history ("that article last week") use a browsing-history
+tool instead.
 
 ## The four tools
 
@@ -45,7 +47,11 @@ This is a separate, standalone server that ships in this repo (`mcp/`). It has
 
 ## Setup (once)
 
-Two processes, both from this repo's `mcp/` directory (`npm install` first):
+Run these commands from the repository root:
+
+```
+npm --prefix mcp install
+```
 
 1. **Bridge daemon** (always-on; the extension pushes to it, holds the snapshot):
    ```
@@ -57,7 +63,7 @@ Two processes, both from this repo's `mcp/` directory (`npm install` first):
 
 2. **MCP server** (stateless, spawned per Claude session — register once):
    ```
-   claude mcp add tabtopia -- node "$(pwd)/mcp/server.js"
+   claude mcp add tabtopia -- node "$PWD/mcp/server.js"
    ```
 
 The tabtopia extension must be loaded in Chrome — it's what pushes the snapshot.

@@ -93,7 +93,7 @@ async function renderArchiveFixture(page, extensionId, {
 }
 
 test.describe("development home takeover", () => {
-  test("an explicit home route wakes an already-loaded normal-install page", async ({ context, extensionId }) => {
+  test("explicit routes switch an already-loaded normal-install page", async ({ context, extensionId }) => {
     await context.addInitScript(() => {
       Object.defineProperty(chrome.management, "getSelf", {
         configurable: true,
@@ -106,8 +106,12 @@ test.describe("development home takeover", () => {
     });
 
     const home = page.locator("#startPageHome");
+    await expect(home).toBeVisible();
+    await expect(home).toHaveAttribute("aria-busy", "false");
+    await home.getByRole("button", { name: "All tabs" }).click();
+
+    await expect(page).toHaveURL(/newtab\.html#\/treemap$/);
     await expect(home).toBeHidden();
-    await page.waitForTimeout(100);
     await page.locator("a[href='newtab.html#/home']").click();
 
     await expect(page).toHaveURL(/newtab\.html#\/home$/);
@@ -552,7 +556,12 @@ test.describe("development home takeover", () => {
     await newtab.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html`, {
       waitUntil: "domcontentloaded"
     });
+    await expect.poll(() => newtab.evaluate(() => chrome.storage.local
+      .get("tabtopiaRevisitModelV1")
+      .then(result => Number(result.tabtopiaRevisitModelV1?.updatedAt || 0))))
+      .toBeGreaterThan(0);
     await newtab.evaluate(url => chrome.bookmarks.create({ title: "Alpha saved", url }), server + "/alpha");
+    await newtab.evaluate(() => window.tabtopiaStartPageRecognition.refresh());
 
     const home = newtab.locator("#startPageHome");
     await expect(home.locator('[data-action-id^="page:"]')).toHaveCount(1);

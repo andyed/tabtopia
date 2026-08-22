@@ -5,10 +5,8 @@
 > to this project. Verified inconsistency, not a bug to "fix" casually — the
 > manifest name is user-visible and the extension key is pinned.
 
-> **This is the live extension.** `~/Documents/dev/dev_backburner/tabtopia-extension`
-> is an abandoned v0.1.0 prototype that still carries its own CLAUDE.md with a
-> "Known Bugs" list. Those bugs are the prototype's and were fixed here long ago.
-> It has already misdirected one session. Ignore it.
+> **This repository is the live extension.** Verify the current branch and
+> working tree here rather than relying on an older checkout.
 
 ## Codebase Overview
 
@@ -27,7 +25,8 @@ dev-time test harness — the extension itself ships unbundled.
 - `src/newtab/` — six view shells: `newtab`, `graph`, `sessions`, `stars`, `popup`, `debug`
 - `src/lib/` — 28 feature modules (providers, ranking, recall, state)
 - `src/options/` — options page
-- `mcp/` — standalone MCP bridge daemon + server (Node, not shipped)
+- `mcp/` — optional MCP bridge daemon + server (Node; not part of the extension
+  runtime and not required for extension-only use)
 
 **Entry points** (`manifest.json`): newtab override → `src/newtab/newtab.html`;
 toolbar popup → `src/newtab/popup.html`; options → `src/options/options.html`;
@@ -41,7 +40,8 @@ omnibox keyword `tt`.
   the daemon needs this extension's id in its allowlist. Bidirectional — the
   daemon can request tab content via `GET_TAB_CONTENT`.
 - **`:8893`** — MCP health endpoint (`curl -s localhost:8893/health`).
-- **`:8889`** — interests2025 REST, consumed by `src/lib/archive-provider.js` and
+- **`:8889`** — optional local REST companion, consumed by
+  `src/lib/archive-provider.js` and
   `src/lib/github-stars-provider.js`.
 
 Bridge design constraint: **no reconnect timers.** A backoff loop would keep the
@@ -49,7 +49,7 @@ MV3 service worker alive and fight Chrome's teardown. Each push lazily
 reconnects, throttled to one attempt per 30s. See the header comment in
 `src/bridge-client.js` before touching any of this.
 
-`:8891` appears only in a historical comment — the old interests2025 bridge
+`:8891` appears only in a historical comment — the old host-application bridge
 dependency is gone; tabtopia owns its bridge end-to-end.
 
 ## Chrome Built-in AI (Gemini Nano)

@@ -1,6 +1,6 @@
 # tabtopia MCP
 
-Standalone [Model Context Protocol](https://modelcontextprotocol.io) server that
+Local [Model Context Protocol](https://modelcontextprotocol.io) companion that
 exposes the **live state of your browser** to your agent — Claude Code, Codex
 CLI, Gemini CLI, or any MCP client — the tabs open right now,
 which one is focused, what's playing audio, the recent navigation flow, and the
@@ -22,6 +22,25 @@ activation landscape instead of the tab order.
 No embeddings, no history corpus, no external services. One runtime dependency
 (`ws`). This is deliberately **not** a browsing-history search — for closed
 history use a separate corpus tool.
+
+## What "MCP only" requires
+
+You do **not** need Tabtopia's optional archive/search companion on `:8889`, any
+embedding service, or any private data corpus. You do need these three public
+pieces:
+
+1. The Tabtopia Chrome extension, loaded and enabled. It is the browser sensor.
+2. One long-lived `bridge-daemon.js` process.
+3. One `server.js` registration in your MCP client.
+
+Starting only the two Node programs does not provide browser data; tools report
+`no_data` until the extension connects. The current extension also supplies the
+Tabtopia UI and overrides Chrome's new-tab page—there is not yet a separate
+headless sensor build.
+
+If you only want the Tabtopia extension and do not want agent access, stop after
+the root [extension installation](../readme.md#extension-only). Nothing in this
+directory needs to run.
 
 ## Architecture — two processes
 
@@ -68,17 +87,20 @@ to call another tool.
 
 ## Setup
 
+Clone or download the repository first. Keep its location stable after MCP
+registration because clients store the absolute path to `server.js`.
+
 ```sh
-cd mcp
-npm install                      # pulls ws
+# Run from the repository root.
+npm --prefix mcp install         # pulls ws
 
 # 1. Start the always-on daemon (best under launchd — see below)
-node bridge-daemon.js            # WS 127.0.0.1:8892, HTTP 127.0.0.1:8893
+node mcp/bridge-daemon.js        # WS 127.0.0.1:8892, HTTP 127.0.0.1:8893
 
 # 2. Register the stdio server with your MCP client (once)
-claude mcp add tabtopia -- node "$(pwd)/server.js"     # Claude Code
-codex mcp add tabtopia -- node "$(pwd)/server.js"      # Codex CLI
-gemini mcp add tabtopia node "$(pwd)/server.js"        # Gemini CLI
+claude mcp add tabtopia -- node "$PWD/mcp/server.js"     # Claude Code
+codex mcp add tabtopia -- node "$PWD/mcp/server.js"      # Codex CLI
+gemini mcp add tabtopia node "$PWD/mcp/server.js"        # Gemini CLI
 ```
 
 Anything else (Cursor, Windsurf, Cline, …) takes the generic form in its MCP
@@ -88,12 +110,20 @@ config:
 { "mcpServers": { "tabtopia": { "command": "node", "args": ["/ABS/PATH/tabtopia/mcp/server.js"] } } }
 ```
 
-Claude Code users get tool-routing guidance automatically via the
-[`browser-now` skill](../.claude/skills/browser-now/SKILL.md) that ships in
-this repo. Everyone else: paste [`USAGE-FOR-AGENTS.md`](USAGE-FOR-AGENTS.md)
-into whatever context file your agent reads (`AGENTS.md`, `GEMINI.md`, …) —
-the tools work without it, but the judgment about *when* to reach for them is
-what makes the experience feel ambient.
+Ready-made `browser-now` skills ship for
+[Codex and other agent-skill clients](../.agents/skills/browser-now/SKILL.md)
+and [Claude Code](../.claude/skills/browser-now/SKILL.md). Everyone else: paste
+[`USAGE-FOR-AGENTS.md`](USAGE-FOR-AGENTS.md) into whatever context file your
+agent reads (`AGENTS.md`, `GEMINI.md`, …) — the tools work without it, but the
+judgment about *when* to reach for them is what makes the experience feel
+ambient.
+
+The skills are optional. To make one available outside this repository, copy
+its whole `browser-now` directory into your client's user-level skills folder
+(for example `~/.codex/skills/` or `~/.claude/skills/`) and restart the client.
+Do not commit or copy generated MCP client configuration between machines;
+registration contains an absolute checkout path and belongs in each user's
+local configuration.
 
 The **tabtopia extension** must be loaded in Chrome (it pushes the snapshot).
 Health check: `curl -s localhost:8893/health`.
@@ -124,5 +154,5 @@ beyond binding two loopback ports.
 ## Tests
 
 ```sh
-node test.mjs      # spins up the daemon, simulates the extension, drives all 4 tools
+node mcp/test.mjs  # from repo root; simulates the extension and drives all 4 tools
 ```

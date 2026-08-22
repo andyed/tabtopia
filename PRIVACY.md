@@ -91,11 +91,12 @@ everything else keeps working. Running them is entirely your choice.
 
 ## The optional local companion
 
-Two separate pieces, neither of which is installed with the extension and neither
-of which is required:
+Two separate pieces, neither of which is installed or started by Chrome and
+neither of which is required for extension-only use:
 
-**The interests2025 REST API (`:8889`)** supplies the archive feed, semantic
-search, and GitHub stars. Tabtopia sends it a bounded query built only from the
+**The optional local REST API (`:8889`)** supplies the archive feed, semantic
+search, and GitHub stars when a user chooses to run a compatible companion.
+Tabtopia sends it a bounded query built only from the
 *titles* of pages currently open or recently visited — never URLs, page bodies, or
 extracted content — capped at four titles and 320 characters.
 

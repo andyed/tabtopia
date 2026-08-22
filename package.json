@@ -1,6 +1,6 @@
 {
   "name": "tabtopia",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Tabtopia — Chrome extension that visualizes browsing telemetry. (This package.json exists only for the dev-time E2E test harness; the extension itself ships unbundled.)",
   "scripts": {
@@ -9,6 +9,7 @@
     "test:e2e": "playwright test",
     "test:headed": "HEADED=1 playwright test",
     "test:report": "playwright show-report",
+    "release:build": "scripts/build-release.sh",
     "benchmark:omnibox": "node tests/perf/omnibox-benchmark.js",
     "benchmark:treemap": "node tests/perf/treemap-benchmark.js",
     "benchmark:boot": "node tests/perf/newtab-boot-benchmark.js",

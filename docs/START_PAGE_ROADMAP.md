@@ -319,9 +319,9 @@ Rough delivery sequence:
 3. **Source completeness and downstream summaries — next.** Audit which Chrome
    synced-history records reach the local archive, preserve trustworthy remote
    provenance without guessing a device, and define the export contract used by
-   `interests2025`. Once that boundary is verified, make remote exploration
-   eligible for its interest summaries as evidence, not as an automatic claim
-   of durable interest.
+   the optional local archive companion. Once that boundary is verified, make
+   remote exploration eligible for its interest summaries as evidence, not as
+   an automatic claim of durable interest.
 4. **Calibration — next.** Replay recent local fixtures and record only
    content-free outcomes: surfaced, opened, ignored, dismissed, and time-to-open.
    Tune promotion thresholds and depth bands only if they beat the current

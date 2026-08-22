@@ -16,6 +16,9 @@
 *.log
 *.patch
 
+# Reproducible release archives are generated from tracked files only.
+/dist/
+
 # Node (if tooling is ever added)
 node_modules/
 
@@ -29,10 +32,14 @@ node_modules/
 /blob-report/
 /.playwright/
 
-# Claude Code local state. The browser-now skill (.claude/skills/) IS public —
-# it ships with the MCP so agents know how to use the tools.
+# Claude Code local state. The browser-now skills under .claude/ and .agents/
+# ARE public so agents know how to use the MCP tools.
 /.claude/worktrees/
 /.claude/settings.local.json
+
+# MCP client registration stores an absolute path to this checkout. Keep that
+# machine-local; public setup commands live in mcp/README.md.
+/.codex/config.toml
 
 # Internal docs — this repo is PUBLIC (github.com/andyed/tabtopia).
 # Strategy and audit docs stay on local disk: they carry positioning, and they
@@ -43,6 +50,7 @@ node_modules/
 /docs/AUDIT.md
 /docs/MCP_ARCHITECTURE.md
 /docs/ANNOUNCEMENT.md
+/TODO.md
 
 # Reference papers — third-party copyrighted PDFs. Keep locally, cite by DOI;
 # do not redistribute from a public repo.

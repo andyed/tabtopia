@@ -8,7 +8,7 @@
 // test ports are somehow taken — the test fails fast instead of silently
 // running against whatever else is listening.
 //
-//   cd mcp && node test.mjs
+//   node mcp/test.mjs  (from the repository root)
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

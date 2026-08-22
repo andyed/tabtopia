@@ -55,6 +55,9 @@ test.describe("fuzzy search", () => {
     }
     await nt.bringToFront();
     await expect(list).toHaveClass(/search-serp__results--fisheye/);
+    await expect(list).toBeVisible();
+    await expect.poll(() => list.evaluate(node => node.getBoundingClientRect().height))
+      .toBeGreaterThan(0);
 
     const baseHeight = await list.evaluate(node => node.getBoundingClientRect().height);
     await items.nth(4).hover();
