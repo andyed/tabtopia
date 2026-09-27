@@ -41,7 +41,7 @@ function extensionIdFromPath(absPath) {
 
 // Repo root IS the extension (manifest.json lives at the top level). Chrome only
 // reads files the manifest references, so loading the whole repo is fine.
-const EXTENSION_PATH = path.resolve(__dirname, "..", "..");
+const EXTENSION_PATH = path.resolve(process.env.TABTOPIA_EXTENSION_PATH || path.join(__dirname, "..", ".."));
 
 // Injection probe used by the /hostile fixture page. Deliberately contains no
 // quotes so it stays usable inside a CSS [aria-label="..."] selector.
@@ -88,11 +88,12 @@ async function launchExtensionContext(userDataDir) {
   // leave headless:false so Playwright doesn't override us with the old flag.
   if (headless) args.push("--headless=new");
 
-  return chromium.launchPersistentContext(userDataDir, {
+  const context = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
     viewport: { width: 1600, height: 1000 },
     args,
   });
+  return context;
 }
 
 const test = base.test.extend({

@@ -403,9 +403,12 @@ These events should enter bounded local diagnostics first. After M3 produces eno
 - Make `/` enter a stable, list-first search state from any recognized environment.
 - Keep Omnibox `tt` responsible for direct open-tab recall; start-page search spans sessions, stars, history, and connected context.
 - Preserve query and selection when returning from previews or changing the temporary lens.
-- Extend the existing local diagnostics to compare MRU, frecency, History/Context, and temporal variants.
+- The local shadow study now compares MRU, investment, same-domain, strip-neighbor,
+  transition, frecency, History-only, and page/domain/hierarchical Bayesian variants.
 - Keep diagnostics opt-in and default off for ordinary installs, on for unpacked development installs.
-- Report top-1, top-3, MRR, activation/dismissal by recognized state, and latency.
+- The Settings report now includes top-1, top-3, top-4, MRR, coverage,
+  censoring, calibration, open-tab bands, session-age bands, and latency. Adding
+  activation/dismissal segmentation by recognized start-page state remains open.
 
 **Exit gate:** The state-aware model demonstrates useful lift or reveals which candidate sources should be removed. Search remains responsive even while recognition and history enrichment are incomplete.
 
@@ -639,3 +642,122 @@ The next build should be small enough to review and test independently:
 6. Extend diagnostics by state before adding temporal or connectedness complexity.
 
 That produces the shortest path from the current codebase to a falsifiable product behavior.
+
+
+## Predictivity investment — 2026-09-22
+
+The first slice repairs the evidence needed to choose a better ranker:
+
+- Next-tab study V3 excludes qualified accesses that remain on the source tab.
+  The shared access timer runs after URL changes and load completion as well as
+  activation, so those events previously inflated out-of-candidate censoring.
+  An active tab in an unfocused window cannot qualify an access.
+- A fresh cohort separates this change in observation semantics from V2. No
+  historical accuracy claim is transferred to the corrected cohort.
+- A 90-day daily aggregate store survives the detail buffer (up to 5,000 compact
+  records within 2 MiB, expanded on 2026-09-28) and
+  service-worker restarts. It retains the existing weekly comparison,
+  calibration, coverage, censoring, and segment metrics without browsing
+  content or identifiers. Settings displays the cohort, days with observations,
+  and a conservative latency bound. Disable and Clear remove both stores.
+
+This does not establish improved Home prediction accuracy. The next-tab study
+compares choices among open tabs; Home additionally offers habitual closed
+pages, deferred bookmarks, and activity continuations. Its alternating source
+slots do not represent a single comparable probability scale. Before changing
+that composition, measure the actual displayed destinations and qualified
+outcomes by recognized start-page state, including off-list destinations and
+search departures. Evaluate open-tab returns and closed-page reopening as
+separate tasks, with MRU as the open-tab baseline. Preserve source provenance
+and the existing canonical action executor. Do not infer Home ranking quality
+from all-day next-tab accuracy or merge incomparable lane scores.
+
+## Featured destinations and recommendation measurement — 2026-09-27
+
+Home now features up to three `home-recs-v3` actions from inferred or explicitly
+selected hubs, revisited history, documents, Chrome bookmarks, bookmark support
+within URL paths, and optional fresh 30-minute semantic context. Existing primary
+routes move into “Your other routes” when recommendations are available. Without
+eligible recommendations the existing Home composition returns; Start fresh
+continues to hide suggestions. Open destinations use the canonical Switch action,
+and closed destinations use canonical in-place navigation.
+
+The 2026-09-28 policy reserves one available slot for an unresolved Mobile-folder
+bookmark, including pages never visited on this desktop. A brief opening does
+not discharge that cue; a separate thirty-second foreground-visit proxy does.
+V3 uses new study/pending keys and preserves explicit snooze preferences. See
+the [revisit research plan](REVISIT_RESEARCH_PLAN.md) for the implemented general
+return bootstrap, bookmark observation limits, embedding input design, and
+Cartographer use cases. No predictive or causal lift has yet been established.
+
+The complete [algorithm and signals reference](HOME_RECOMMENDATION_ALGORITHM.md)
+records candidate bounds, identity rules, every scoring weight, hub thresholds,
+bookmark smoothing, a reproducible worked example, selection and locking,
+semantic freshness, measurement lifecycle, privacy, and proposed extensions.
+It is the implementation reference for this policy; scores are heuristics, not
+probabilities or calibrated next-tab accuracy.
+
+### Evidence, not seeded destinations
+
+No install has default personal hubs. The initial Stats/Cartographer development
+seeds were removed after the user requested genuine discovery. Explicit favorites
+saved in Options remain a separate preference, limited to twelve URLs.
+A recently visited non-document URL with no query becomes an inferred hub with
+at least twelve accumulated visits, or three visits and two distinct revisited
+descendant paths. Capped logarithmic repeat/breadth support decays with age. Only
+observed destinations are candidates; ancestor URLs are never invented.
+
+Chrome visit counts are cumulative, not counts of recent independent sessions.
+Last visit must be within 28 days for ordinary history and inferred hubs, while
+documents receive a 180-day horizon and preferred shortlist position. Qualified
+visit fields are supported by the ranker but are not yet supplied by the live
+Chrome-history collector. Local app ports distinguish identities and sites.
+Cartographer memory documents group by their decoded file paths, preserving the
+actual navigation URL and filters. Other queries continue to distinguish pages.
+
+Bookmark density means distinct Chrome-bookmarked pages under URL path segments,
+not GitHub stars. A hub receives its own subtree's support; a GitHub profile does
+not inherit every bookmark on github.com. Ordinary documents can receive sibling
+support. Pseudocount smoothing, capped bonuses, and bounded source scans limit the
+influence and cost of this signal.
+
+### Recent context and preferences
+
+The public build has no supplemental context service connection. Previously
+stored context can be read locally until it expires; history, documents and
+bookmarks work independently of supplemental sources.
+
+Hide site and one-day Snooze each provide immediate Undo; Options can restore
+hidden sites. No install has a default personal site exclusion.
+
+### Diversity, stability and learning what works
+
+Each Home document assigns balanced or explore with equal probability when
+exploration is enabled. Explore offers one supported alternative from a bounded
+pool. Diversity usually permits one action per site, with an allowance for a hub
+and a distinct document. A visible slate stays stable through feedback and late
+context arrivals. Show alternatives excludes the immediately previous slate;
+small pools may return fewer than three actions or cycle back to older slates.
+Local exposure fatigue and recent engagement reduce repetition on later pages.
+
+The existing diagnostics switch controls local measurement and feedback. The
+V2 report separates visible slates, individual exposures, attempted standard
+clicks, ten uninterrupted focused seconds, early departures after arrival, and
+snoozes by policy. Engagement validates destination identity and tab ID. Native
+modifier clicks are not attributed; worker restarts and missing outcomes can
+undercount engagement. Visibility has no minimum duration or gaze requirement.
+
+Durable storage retains 28 UTC days of policy totals and HMAC destination
+feedback, plus at most 500 content-free details. Raw pending identities remain
+in bounded session storage. Clear/disable removes measurement and feedback;
+explicit favorite, hidden-site and snooze preferences persist. Normal installs
+default measurement off; development installs default on unless changed.
+
+This report is separate from the older observational `home-context-v1` cohort
+and the independent open-tab shadow study. Shared feedback across arms, repeated
+observations from one person, manual alternatives, censoring and small samples
+make arm comparisons descriptive rather than clean causal lift estimates.
+Tests establish implementation contracts, not recommendation utility. The next
+step is natural-use evidence, followed by instrumented experiments on qualified
+revisit days, transition-derived hubs, temporal routines, multiple semantic
+clusters and topic/path diversity as described in the algorithm reference.

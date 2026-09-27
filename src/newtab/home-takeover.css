@@ -1766,3 +1766,116 @@ h2.home-takeover__panel-label {
   0% { transform: translateX(-105%); }
   55%, 100% { transform: translateX(270%); }
 }
+
+/* Recent-context trial: editorial rows keep the destinations, rather than
+   activity diagrams, at the top of Home. Existing routes stay one step away. */
+.home-takeover__featured,
+.home-takeover__other-routes,
+.home-takeover__context-feedback {
+  width: min(100%, 1680px);
+  margin: 0 auto 20px;
+}
+.home-takeover__featured-label {
+  margin: 0 0 6px;
+  color: var(--home-muted);
+  font-size: 16px;
+  font-weight: 600;
+}
+.home-takeover__featured-list { list-style: none; padding: 0; margin: 0; }
+.home-takeover__featured-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.home-takeover__featured-toolbar .home-takeover__featured-label { margin: 0; }
+.home-takeover__recommendation-controls { display: flex; gap: 8px; }
+.home-takeover__featured-link .home-takeover__reason { color: var(--home-muted); font-size: 16px; line-height: 1.4; }
+.home-takeover__featured-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 20px;
+  border-bottom: 1px solid var(--home-line);
+}
+.home-takeover__featured-link { padding: 12px 0; }
+.home-takeover__featured-link .home-takeover__action-title {
+  font-size: clamp(20px, 2.2vw, 30px);
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.home-takeover__featured-row:first-child .home-takeover__action-title {
+  font-size: clamp(26px, 3vw, 42px);
+}
+.home-takeover__featured-link .home-takeover__domain { font-size: 16px; }
+.home-takeover__featured-link .home-takeover__sources { display: none; }
+.home-takeover__context-hide,
+.home-takeover__context-undo {
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--home-line);
+  border-radius: 4px;
+  background: var(--home-ink);
+  color: var(--home-muted);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.home-takeover__context-hide:focus-visible,
+.home-takeover__context-undo:focus-visible,
+.home-takeover__other-routes > summary:focus-visible {
+  outline: 2px solid var(--home-focus);
+  outline-offset: 3px;
+}
+.home-takeover__other-routes > summary {
+  color: var(--home-route);
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+.home-takeover__other-routes[open] > summary { margin-bottom: 12px; }
+.home-takeover__context-feedback { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.home-takeover__context-note { color: var(--home-muted); font-size: 16px; }
+@media (max-width: 600px) {
+  .home-takeover__featured-row { grid-template-columns: minmax(0, 1fr); padding-bottom: 8px; }
+  .home-takeover__featured-link { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .home-takeover__featured-link .home-takeover__verb { display: none; }
+  .home-takeover__context-hide { max-width: none; }
+  .home-takeover__alternatives { max-width: none; }
+  .home-takeover__recommendation-controls { justify-content: flex-end; gap: 8px; }
+}
+.home-takeover__featured-link .home-takeover__verb { font-size: 16px; }
+@media (max-width: 520px) {
+  .home-takeover-active:not(.start-page-search-active) .app-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px 8px;
+    height: auto;
+    padding: 6px 12px;
+  }
+  .home-takeover-active:not(.start-page-search-active) .logo {
+    margin: 0;
+    padding-right: 0;
+  }
+  .home-takeover-active:not(.start-page-search-active) .header-controls { display: contents; }
+  .home-takeover-active:not(.start-page-search-active) .view-toggle {
+    justify-self: end;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    gap: 0;
+  }
+  .home-takeover-active:not(.start-page-search-active) .view-toggle a {
+    width: 40px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+  }
+  .home-takeover-active:not(.start-page-search-active) .search-container {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+  }
+  .home-takeover-active:not(.start-page-search-active) #tabSearch {
+    min-width: 0;
+    height: 44px;
+    font-size: 16px;
+  }
+}

@@ -1,7 +1,6 @@
 // Bridge client: pushes live-status snapshots to tabtopia's standalone MCP
 // bridge daemon (ws://127.0.0.1:8892), where the MCP server's status tools read
-// them. This used to point at the interests2025 bridge on :8891; tabtopia now
-// owns its bridge end-to-end with no interests2025 dependency.
+// them. Tabtopia owns its bridge end-to-end without another application's runtime.
 //
 // MV3 service-worker rules shape this design: NO reconnect timers. A backoff
 // loop would keep the SW alive (battery) and fight Chrome's teardown. Instead

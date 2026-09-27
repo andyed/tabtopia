@@ -1,3 +1,5 @@
+import { setContextSiteHidden } from "../lib/recent-context-provider.js";
+import { buildHomeRecommendations } from "../lib/home-recommendations.js";
 import { stateDisplayName } from "../lib/start-page-state.js";
 import { buildArchiveEnrichment } from "../lib/archive-enrichment.js";
 import { buildDeferredIntentions } from "../lib/deferred-intentions.js";
@@ -10,7 +12,7 @@ import { renderHomeTakeover } from "./home-takeover.js";
 import { FEATURE_FLAGS, readFeatureFlag } from "../lib/feature-flags.js";
 
 const HOME_MODEL_CACHE_KEY = "tabtopiaHomeModelV1";
-const HOME_MODEL_CACHE_VERSION = 1;
+const HOME_MODEL_CACHE_VERSION = 2;
 const HOME_MODEL_CACHE_TTL_MS = 30 * 60 * 1000;
 let controller = null;
 let installType = "normal";
@@ -19,6 +21,20 @@ let freshOverride = false;
 let latestHomeModel = null;
 const executeHomeAction = createStartPageActionExecutor();
 let cachedHomeRead = null;
+let lastHiddenContextHost = "";
+let lastHiddenContextItem = null;
+let featuredImpression = null;
+let contextExpiryTimer = null;
+const contextPageId = crypto.randomUUID();
+let contextImpressionSequence = 0;
+let recommendationRound = 0;
+let recommendationLockedPages = [];
+let recommendationRestorePage = null;
+let recommendationExcludedPages = [];
+let recommendationPreferencesSignature = "";
+let lastSnoozedRecommendation = null;
+let recommendationFeedbackMessage = "";
+const recommendationArm = crypto.getRandomValues(new Uint32Array(1))[0] % 2 ? "explore" : "balanced";
 
 if (window.location.hash === "#/home") {
   homeEnabled = true;
@@ -70,6 +86,8 @@ async function restoreCachedHome() {
   if (!homeEnabled || latestHomeModel) return;
   renderHome({
     ...stored.model,
+    // Recommendations need current preferences and feedback before exposure.
+    featuredItems: [],
     loading: true,
     stale: true,
     error: null,
@@ -142,8 +160,34 @@ function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinati
     interestTopics: archiveEnrichment.interests,
     contextTitles: techmemeContextTitles(baseFeed, forecast, snapshot)
   });
+  const preferencesSignature = JSON.stringify(extra.recommendationPreferences);
+  if (preferencesSignature !== recommendationPreferencesSignature) {
+    recommendationLockedPages = [];
+    recommendationRestorePage = null;
+    recommendationExcludedPages = [];
+    recommendationPreferencesSignature = preferencesSignature;
+  }
+  const arm = extra.recommendationPreferences?.exploration === false ? "balanced" : recommendationArm;
+  const candidates = buildHomeRecommendations({
+    context: extra.recentContextSnapshot,
+    history: extra.historyPool,
+    bookmarks: extra.recommendationBookmarks,
+    openTabs: (extra.windows || []).flatMap(w => w.tabs || []),
+    preferences: extra.recommendationPreferences,
+    feedback: extra.recommendationFeedback,
+    now: extra.generatedAt,
+    seed: `${contextPageId}:${recommendationRound}`,
+    arm, limit: 3, excludePages: recommendationExcludedPages,
+    lockedPages: recommendationRestorePage
+      ? [recommendationRestorePage, ...recommendationLockedPages.filter(page => page !== recommendationRestorePage)]
+      : recommendationLockedPages
+  });
+  const featuredItems = candidates;
   const feed = {
     ...baseFeed,
+    featuredItems,
+    recommendationArm: arm,
+    recentContext: extra.recentContextSnapshot,
     archiveItems: archiveEnrichment.items,
     interests: archiveEnrichment.interests,
     archiveSourceCounts: archiveEnrichment.sourceCounts,
@@ -304,17 +348,143 @@ function renderHome(model) {
   if (!root) return;
   activateHome();
   try {
-    renderHomeTakeover(root, model, {
+    const focusedRecommendation = root.contains(document.activeElement) ? document.activeElement?.dataset?.recommendationFocus : null;
+    const otherRoutesOpen = root.querySelector(".home-takeover__other-routes")?.open;
+    renderHomeTakeover(root, { ...model, undoHiddenHost: lastHiddenContextHost,
+      undoSnoozed: lastSnoozedRecommendation?.title, recommendationFeedbackMessage }, {
+      onFeaturedVisible: items => recordFeaturedImpression(items, model),
+      onFeaturedAction: handleFeaturedAction,
+      onHideContextSite: hideContextSite,
+      onUndoContextHide: undoContextHide,
+      onShowAlternatives: showRecommendationAlternatives,
+      onSnoozeRecommendation: snoozeRecommendation,
+      onUndoSnooze: undoRecommendationSnooze,
       onAction: handleHomeAction,
       onStartFresh: renderFreshHome,
       onShowSuggested: renderSuggestedHome,
       onOpenTreemap: openTreemap
     });
+    const otherRoutes = root.querySelector(".home-takeover__other-routes");
+    if (otherRoutes && otherRoutesOpen) otherRoutes.open = true;
+    if (focusedRecommendation) {
+      [...root.querySelectorAll("[data-recommendation-focus]")]
+        .find(node => node.dataset.recommendationFocus === focusedRecommendation)?.focus({ preventScroll: true });
+    }
     window.tabtopiaStartPageHome = { model, freshOverride };
+    clearTimeout(contextExpiryTimer);
+    const expiresAt = Math.min(...(model.featuredItems || []).map(item => Number(item.expiresAt)).filter(value => value > Date.now()));
+    if (Number.isFinite(expiresAt) && expiresAt > Date.now()) contextExpiryTimer = setTimeout(() => {
+      if (homeEnabled && latestHomeModel) renderHome(latestHomeModel);
+      controller?.refresh().catch(() => {});
+    }, Math.min(expiresAt - Date.now() + 25, 2147483647));
   } catch (error) {
     console.warn("[StartPageHome] rendering failed", error);
     deactivateHome();
   }
+}
+
+
+function recordFeaturedImpression(items, model) {
+  if (document.visibilityState !== "visible" || !homeEnabled || freshOverride || !items.length) return;
+  const root = document.getElementById("startPageHome");
+  if (!root || root.hidden || !root.getClientRects().length) return;
+  // A refresh already in flight can carry the pre-Undo preference. Keep the
+  // restore request until the restored action actually reaches the display.
+  if (recommendationRestorePage && (model.featuredItems || []).some(item => item.identity === recommendationRestorePage)) {
+    recommendationRestorePage = null;
+  }
+  const signature = (model.featuredItems || []).map(item => `${item.rank}:${item.identity}`).join("|");
+  if (featuredImpression?.signature !== signature) {
+    featuredImpression = { signature, id: `${contextPageId}:${++contextImpressionSequence}`, seen: new Set() };
+  }
+  const newlyVisible = items.filter(item => !featuredImpression.seen.has(item.identity));
+  if (!newlyVisible.length) return;
+  for (const item of newlyVisible) featuredImpression.seen.add(item.identity);
+  recommendationLockedPages = (model.featuredItems || []).map(item => item.identity);
+  sendContextDiagnostic({ action: "recordHomeRecommendationImpression", impressionId: featuredImpression.id,
+    arm: model.recommendationArm,
+    candidates: newlyVisible.map(item => ({ url: item.url, identity: item.identity, rank: item.rank })) });
+}
+
+async function sendContextDiagnostic(message) {
+  try { return await chrome.runtime.sendMessage(message); } catch { return null; }
+}
+
+async function handleFeaturedAction(action) {
+  const impressionId = featuredImpression?.id;
+  if (impressionId) await sendContextDiagnostic({ action: "recordHomeRecommendationChoice",
+    impressionId, url: action.target.url, rank: action.rank,
+    targetTabId: action.target.tabId });
+  const result = await handleHomeAction(action);
+  if (!result.ok && impressionId) await sendContextDiagnostic({ action: "cancelHomeRecommendationChoice",
+    impressionId, rank: action.rank });
+  return result;
+}
+
+async function hideContextSite(item) {
+  recommendationRestorePage = null;
+  const host = await setContextSiteHidden(item.url, true, { development: installType === "development" });
+  lastHiddenContextHost = host;
+  lastHiddenContextItem = item;
+  featuredImpression = null;
+  await controller?.refresh();
+  document.querySelector(".home-takeover__context-undo")?.focus();
+}
+
+async function showRecommendationAlternatives() {
+  recommendationRestorePage = null;
+  const previous = (latestHomeModel?.featuredItems || []).map(item => item.identity);
+  recommendationExcludedPages = previous;
+  recommendationLockedPages = [];
+  recommendationRound++;
+  featuredImpression = null;
+  recommendationFeedbackMessage = "Showing a different set of destinations.";
+  await controller?.refresh();
+  if (!latestHomeModel?.featuredItems?.length) {
+    recommendationExcludedPages = [];
+    recommendationFeedbackMessage = "You’ve seen all eligible destinations. More will appear as your browsing changes.";
+    await controller?.refresh();
+  }
+  document.querySelector(".home-takeover__alternatives")?.focus();
+}
+
+async function snoozeRecommendation(item) {
+  recommendationRestorePage = null;
+  const response = await sendContextDiagnostic({ action: "snoozeHomeRecommendation", url: item.url,
+    identity: item.identity, durationMs: 24 * 60 * 60 * 1000 });
+  if (!response?.success || !response.recorded) throw new Error("Could not snooze destination");
+  lastSnoozedRecommendation = item;
+  recommendationLockedPages = recommendationLockedPages.filter(identity => identity !== item.identity);
+  featuredImpression = null;
+  await controller?.refresh();
+  document.querySelector(".home-takeover__snooze-undo")?.focus();
+}
+
+async function undoRecommendationSnooze() {
+  if (!lastSnoozedRecommendation) return;
+  const item = lastSnoozedRecommendation;
+  const response = await sendContextDiagnostic({ action: "snoozeHomeRecommendation", url: item.url,
+    identity: item.identity, durationMs: 0 });
+  if (!response?.success || !response.recorded) throw new Error("Could not undo snooze");
+  lastSnoozedRecommendation = null;
+  recommendationRestorePage = item.identity;
+  recommendationLockedPages = [item.identity, ...recommendationLockedPages.filter(identity => identity !== item.identity)].slice(0, 3);
+  featuredImpression = null;
+  await controller?.refresh();
+  document.querySelector(".home-takeover__featured a")?.focus();
+}
+
+async function undoContextHide() {
+  if (!lastHiddenContextHost) return;
+  await setContextSiteHidden(lastHiddenContextHost, false, { development: installType === "development" });
+  recommendationRestorePage = lastHiddenContextItem?.identity || null;
+  if (lastHiddenContextItem) recommendationLockedPages = [lastHiddenContextItem.identity,
+    ...recommendationLockedPages.filter(identity => identity !== lastHiddenContextItem.identity)].slice(0, 3);
+  lastHiddenContextItem = null;
+  lastHiddenContextHost = "";
+  featuredImpression = null;
+  await controller?.refresh();
+  document.querySelector(".home-takeover__featured a")?.focus();
 }
 
 async function handleHomeAction(action) {

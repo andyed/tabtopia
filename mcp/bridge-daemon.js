@@ -5,8 +5,7 @@
 // server (server.js) is spawned many times over. A WS listener can only bind
 // its port once. So the bridge — the thing the extension pushes to, and the
 // single owner of the live snapshot — lives HERE, in one long-lived daemon, and
-// every stdio MCP instance reads it over a tiny loopback HTTP API. This mirrors
-// the split interests2025 used, minus every interests2025 dependency.
+// every stdio MCP instance reads it over a tiny loopback HTTP API.
 //
 // Surfaces:
 //   WS   :8892  — the tabtopia extension connects and pushes SNAPSHOT frames;

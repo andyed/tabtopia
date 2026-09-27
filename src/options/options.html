@@ -32,6 +32,25 @@
             </div>
         </section>
 
+        <section class="setting-panel recommendation-settings" aria-labelledby="recommendations-title">
+            <h2 id="recommendations-title">Featured recommendations</h2>
+            <p>Give familiar hubs, individual documents, and paths with more bookmarked pages extra priority alongside your recent browsing context.</p>
+            <form id="recommendationPreferencesForm">
+                <label class="field-label" for="recommendationHubs">Favorite hubs</label>
+                <p id="recommendationHubsHint" class="field-hint">One full http or https address per line, up to 12. Local apps on different ports count as different hubs. Leave empty to use browsing evidence alone.</p>
+                <textarea id="recommendationHubs" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="recommendationHubsHint"></textarea>
+                <label class="recommendation-checkbox" for="recommendationExploration">
+                    <input id="recommendationExploration" type="checkbox">
+                    <span>Try a wider mix of recommendations</span>
+                </label>
+                <p class="field-hint">When enabled, new recommendation sets can use either a balanced mix or a mix with more exploration. Each set stays stable while you use it. Repetition controls apply to both.</p>
+                <div class="recommendation-save-row">
+                    <button id="saveRecommendationPreferences" class="secondary-button" type="submit">Save recommendations</button>
+                    <span id="recommendationPreferencesStatus" role="status" aria-live="polite">Loading preferences…</span>
+                </div>
+            </form>
+        </section>
+
         <section class="setting-panel" aria-labelledby="diagnostics-title">
             <label class="setting-row" for="diagnosticsEnabled">
                 <span class="setting-copy">
@@ -64,6 +83,22 @@
                 <span class="install-badge">Experimental · default off</span>
                 <span id="fisheyeStatus" role="status">Uses the fisheye-menu target-acquisition lens.</span>
             </div>
+        </section>
+
+        <section class="report-panel recommendation-report" aria-labelledby="home-recommendation-title">
+            <h2 id="home-recommendation-title">Recommendation engagement</h2>
+            <p id="homeRecommendationReport" role="status">Loading local observations…</p>
+            <div id="homeRecommendationPolicies" class="model-report" aria-label="Recommendation outcomes by policy"></div>
+            <p class="field-hint">An engaged recommendation receives at least 10 continuous seconds of focused viewing after selection. Early departures end before that threshold. Counts describe each policy's observations, not next-tab accuracy or proof that one policy is better.</p>
+            <p class="field-hint">The diagnostics switch and Clear control below apply here too. Clearing removes measurements and keeps your favorite hubs, hidden sites, and snoozed destinations. Local diagnostics retain up to 28 days of bounded records without URLs or titles. Browser background shutdown can cause visits to go uncounted.</p>
+            <h3>Hidden sites</h3>
+            <div id="hiddenContextSites" aria-label="Sites hidden from featured context"></div>
+            <details class="previous-context-trial">
+                <summary>Previous 30-minute context trial</summary>
+                <p>These earlier observations counted visits after two seconds of focused viewing and remain separate from recommendation engagement.</p>
+                <p id="homeContextReport" role="status">Loading local observations…</p>
+                <p class="field-hint">At most 500 content-free events, controlled by the same diagnostics switch and Clear control.</p>
+            </details>
         </section>
 
         <section class="report-panel" aria-labelledby="report-title">

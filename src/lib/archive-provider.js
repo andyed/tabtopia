@@ -1,22 +1,10 @@
+// Compatibility reader for previously saved supplemental data.
+// Public builds have no archive service connection.
 const STORAGE_KEY = "tabtopiaArchiveProviderV1";
-// Bump whenever cached rows change MEANING, not just shape. validateSnapshot()
-// discards any snapshot whose version differs and returns emptySnapshot(), whose
-// fetchedAt is 0 — so the next refresh reads as stale and refetches immediately
-// instead of serving stale rows for up to ARCHIVE_TTL_MS.
-//
-// 2 (2026-08-05): the archive endpoint used to attach tags by canonical URL key
-// (hostname + path, query dropped), which collapsed every ...com/watch?v=,
-// /search?q= and /citation.cfm?id= onto one key and served the last-written
-// bookmark's tags to all of them. Home showed "camping" and "diablo-iii" as
-// interest threads off the back of it. The server is fixed, but a cached v1
-// snapshot keeps those tags for a further 24 hours.
 export const SNAPSHOT_VERSION = 2;
-const ARCHIVE_ENDPOINT = "http://127.0.0.1:8889/api/history/adaptive";
-const SEARCH_ENDPOINT = "http://127.0.0.1:8889/api/search";
 
 const ARCHIVE_TTL_MS = 24 * 60 * 60 * 1000;
 const RELATED_TTL_MS = 10 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 1500;
 
 const MAX_ARCHIVE_ROWS = 96;
 const MAX_SEMANTIC_HITS = 12;
@@ -45,106 +33,11 @@ export async function readCachedArchive({
   return view(loaded.snapshot, query, timestamp, status, false);
 }
 
-/**
- * Refresh stale archive and semantic-query entries in the background.
- * Network, JSON, validation, timeout, and storage failures are all converted
- * to an inspectable offline result; none escape into the Home controller.
- */
-export async function refreshArchive({
-  query = "",
-  storage = globalThis.chrome?.storage?.local,
-  fetchImpl = globalThis.fetch,
-  now = Date.now(),
-  force = false
-} = {}) {
-  const timestamp = validNow(now);
-  const normalizedQuery = normalizeQuery(query);
-  const loaded = await loadSnapshot(storage);
-  if (!loaded.ok) return view(emptySnapshot(), normalizedQuery, timestamp, "offline", false);
-
-  const previous = loaded.snapshot;
-  const archiveNeeded = Boolean(force) || !isFresh(previous.archive.fetchedAt, timestamp, ARCHIVE_TTL_MS);
-  const relatedEntry = previous.queries[queryKey(normalizedQuery)];
-  const relatedNeeded = normalizedQuery !== ""
-    && (Boolean(force) || !isFresh(relatedEntry?.fetchedAt, timestamp, RELATED_TTL_MS));
-
-  if (!archiveNeeded && !relatedNeeded) {
-    const next = cloneSnapshot(previous);
-    const queryChanged = normalizedQuery !== "" && normalizedQuery !== previous.lastQuery;
-    const changed = queryChanged && !sameData(
-      hitsForQuery(previous, previous.lastQuery),
-      hitsForQuery(previous, normalizedQuery)
-    );
-    if (queryChanged) {
-      next.lastQuery = normalizedQuery;
-      const written = await saveSnapshot(storage, next);
-      if (!written) return view(previous, normalizedQuery, timestamp, "offline", false);
-    }
-    const status = hasVisibleData(next, normalizedQuery) ? "cached" : "empty";
-    return view(next, normalizedQuery, timestamp, status, changed);
-  }
-
-  if (typeof fetchImpl !== "function") {
-    return view(previous, normalizedQuery, timestamp, "offline", false);
-  }
-
-  const requests = [];
-  if (archiveNeeded) {
-    requests.push(fetchJson(ARCHIVE_ENDPOINT, fetchImpl)
-      .then(payload => ({ source: "archive", ok: true, value: normalizeArchivePayload(payload) }))
-      .catch(() => ({ source: "archive", ok: false })));
-  }
-  if (relatedNeeded) {
-    requests.push(fetchJson(searchUrl(normalizedQuery), fetchImpl)
-      .then(payload => ({ source: "related", ok: true, value: normalizeSearchPayload(payload) }))
-      .catch(() => ({ source: "related", ok: false })));
-  }
-
-  const results = await Promise.all(requests);
-  const next = cloneSnapshot(previous);
-  let changed = false;
-  let failed = false;
-  let succeeded = false;
-
-  for (const result of results) {
-    if (!result.ok) {
-      failed = true;
-      continue;
-    }
-    succeeded = true;
-    if (result.source === "archive") {
-      changed = changed || !sameData(previous.archive.rows, result.value);
-      next.archive = { fetchedAt: timestamp, rows: result.value };
-    } else {
-      const key = queryKey(normalizedQuery);
-      changed = changed
-        || !sameData(previous.queries[key]?.hits || [], result.value)
-        || (previous.lastQuery !== normalizedQuery
-          && !sameData(hitsForQuery(previous, previous.lastQuery), result.value));
-      next.queries[key] = {
-        query: normalizedQuery,
-        fetchedAt: timestamp,
-        hits: result.value
-      };
-      next.lastQuery = normalizedQuery;
-    }
-  }
-
-  if (succeeded) {
-    next.updatedAt = timestamp;
-    trimQueryCache(next.queries);
-    const written = await saveSnapshot(storage, next);
-    if (!written) return view(previous, normalizedQuery, timestamp, "offline", false);
-  }
-
-  const status = failed ? "offline" : "live";
-  return view(succeeded ? next : previous, normalizedQuery, timestamp, status, changed);
+// Public builds preserve cached data but have no service connection.
+export async function refreshArchive() {
+  return { changed: false, status: "disabled" };
 }
 
-/**
- * Build a bounded semantic query exclusively from visible page titles. URL,
- * body, summary, and extracted-content fields are deliberately never read.
- */
 export function archiveQueryForState({ snapshot, forecast } = {}) {
   const titles = [];
   const currentTabs = Array.isArray(snapshot?.currentWindow?.tabs)
@@ -188,33 +81,6 @@ async function loadSnapshot(storage) {
     return { ok: true, snapshot: validateSnapshot(stored?.[STORAGE_KEY]) };
   } catch {
     return { ok: false, snapshot: emptySnapshot() };
-  }
-}
-
-async function saveSnapshot(storage, snapshot) {
-  if (typeof storage?.set !== "function") return false;
-  try {
-    await storage.set({ [STORAGE_KEY]: snapshot });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function fetchJson(url, fetchImpl) {
-  const controller = typeof AbortController === "function" ? new AbortController() : null;
-  const timer = controller
-    ? setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-    : null;
-  try {
-    const response = await fetchImpl(url, {
-      signal: controller?.signal,
-      headers: { Accept: "application/json" }
-    });
-    if (!response?.ok || typeof response.json !== "function") throw new Error("archive endpoint unavailable");
-    return await response.json();
-  } finally {
-    if (timer !== null) clearTimeout(timer);
   }
 }
 
@@ -330,23 +196,6 @@ function emptySnapshot() {
   };
 }
 
-function cloneSnapshot(snapshot) {
-  return {
-    version: SNAPSHOT_VERSION,
-    updatedAt: snapshot.updatedAt,
-    archive: {
-      fetchedAt: snapshot.archive.fetchedAt,
-      rows: snapshot.archive.rows.map(row => ({ ...row, tags: [...row.tags] }))
-    },
-    queries: Object.fromEntries(Object.entries(snapshot.queries).map(([key, entry]) => [key, {
-      query: entry.query,
-      fetchedAt: entry.fetchedAt,
-      hits: entry.hits.map(hit => ({ ...hit }))
-    }])),
-    lastQuery: snapshot.lastQuery
-  };
-}
-
 function view(snapshot, query, now, status, changed) {
   const resolvedQuery = normalizeQuery(query) || snapshot.lastQuery;
   const related = snapshot.queries[queryKey(resolvedQuery)];
@@ -383,17 +232,6 @@ function isFresh(fetchedAt, now, ttlMs) {
 function hasVisibleData(snapshot, query) {
   return snapshot.archive.rows.length > 0
     || (snapshot.queries[queryKey(query)]?.hits.length || 0) > 0;
-}
-
-function hitsForQuery(snapshot, query) {
-  return snapshot.queries[queryKey(query)]?.hits || [];
-}
-
-function searchUrl(query) {
-  const url = new URL(SEARCH_ENDPOINT);
-  url.searchParams.set("q", query);
-  url.searchParams.set("limit", String(MAX_SEMANTIC_HITS));
-  return url.toString();
 }
 
 function normalizeQuery(value) {
@@ -494,8 +332,4 @@ function trimQueryCache(queries) {
   for (const key of Object.keys(queries)) {
     if (!keep.has(key)) delete queries[key];
   }
-}
-
-function sameData(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }

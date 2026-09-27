@@ -7,17 +7,10 @@ which one is focused, what's playing audio, the recent navigation flow, and the
 DOM text of a tab you already have open (including logged-in pages a plain fetch
 can't see).
 
-Tabs are ranked by **real engagement** — seconds actually spent reading, tied by
-recency — so "the tab you were working in" beats the six you opened and
-abandoned. That ranking is the point; anything can list tabs.
-
-The ranking has a lineage. In ACT-R's rational analysis of memory (Anderson &
-Schooler 1991), a memory chunk's base-level activation — how retrievable it is —
-estimates the probability it will be needed *now*, from how recently and how
-much it has been used. Engagement-seconds × recency is the same estimate applied
-to tabs: open tabs are declarative chunks in your extended working memory, the
-focused tab is the goal buffer, and `get_context` hands your agent the
-activation landscape instead of the tab order.
+Tabs are ranked by **recorded time spent**, with recency breaking ties. This
+helps distinguish a tab you returned to from one you opened briefly. It is a
+proxy for engagement, not a measurement of reading or attention. This ordering
+is separate from Tabtopia's experimental predictive revisit models.
 
 No embeddings, no history corpus, no external services. One runtime dependency
 (`ws`). This is deliberately **not** a browsing-history search — for closed
@@ -25,7 +18,7 @@ history use a separate corpus tool.
 
 ## What "MCP only" requires
 
-You do **not** need Tabtopia's optional archive/search companion on `:8889`, any
+You do **not** need an interest-profile service, any
 embedding service, or any private data corpus. You do need these three public
 pieces:
 
@@ -39,7 +32,7 @@ Tabtopia UI and overrides Chrome's new-tab page—there is not yet a separate
 headless sensor build.
 
 If you only want the Tabtopia extension and do not want agent access, stop after
-the root [extension installation](../readme.md#extension-only). Nothing in this
+the root [extension installation](../readme.md#install). Nothing in this
 directory needs to run.
 
 ## Architecture — two processes
@@ -63,6 +56,9 @@ is stateless and reads the daemon over loopback HTTP.
 send `Origin` on a service-worker WebSocket and page JS can't forge it, so a
 drive-by web page can't connect. Both the WS and HTTP surfaces bind `127.0.0.1`
 only. Local native processes can spoof Origin; that's outside the threat model.
+The local transport ends at the MCP client: a cloud-backed agent may send tool
+results, including requested page text, to its model provider. Choose the client
+and model with that data flow in mind.
 
 ## Tools
 

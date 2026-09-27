@@ -1,6 +1,8 @@
 # Tabtopia Privacy Policy
 
-**Draft — not yet published.** Version 1.3.0 · Last reviewed 2026-08-17
+**Working draft — not a published store policy.** Original 1.3.0 review:
+2026-08-17. Network, image access, and agent-boundary clarifications: 2026-11-10.
+The remaining TODOs and older retention figures still need a complete release audit.
 
 Items marked **TODO** need a decision before this can be submitted to the Chrome
 Web Store, which requires a publicly hosted privacy policy URL for any extension
@@ -12,13 +14,13 @@ that handles browsing activity.
 
 Tabtopia records how you browse so it can show you where you have been and where
 you are likely to go next. That record lives in `chrome.storage.local` on the
-machine that made it. There is no Tabtopia account, no Tabtopia server, and no
-analytics or telemetry of any kind.
+machine that made it. There is no Tabtopia account or hosted browsing-data
+service. Optional ranking studies keep local evaluation records.
 
-Exactly one third-party host is contacted during normal use: `techmeme.com`, for
-its public RSS feed. Everything else Tabtopia talks to is a loopback address on
-your own machine, and only if you have chosen to run the optional companion
-services.
+Network requests include the public Techmeme feed and images loaded from their
+original websites or CDNs. Optional companion services run separately. The MCP
+bridge defaults to loopback, but an agent client can pass its results to a remote
+model provider; local transport is not a promise that agent use stays on-device.
 
 ## What Tabtopia records
 
@@ -34,11 +36,18 @@ your Google account or shared between your devices.
 - Window and tab arrangement, so the tab landscape can be drawn
 
 **Page metadata from the pages you visit**
-Content scripts run at `document_start` on every site. They report:
+Content scripts are declared for all URLs and run where Chrome grants site
+access. They report:
 - The page title and path
 - The text and destination of links you click
-- Candidate hero images (image URLs and alt text — the image files themselves are
-  never copied or uploaded)
+- Candidate hero images, stored as image URLs and metadata such as alt text.
+  Displaying them can load image files from the original website or CDN.
+
+Hero-image collection needs access to page metadata and images. Broad site
+access enables automatic collection across sites; restricting access limits
+where content scripts can run. The same access supports other navigation and
+page-context features. The extension does not store screenshots of your browser
+as hero images.
 
 **Form submissions**
 When you submit a form, Tabtopia records the form's action URL, method, field
@@ -54,7 +63,9 @@ an unusual site it could capture a field you would not think of as a search box.
 
 **Your Chrome history and bookmarks**
 Tabtopia reads both through the `history` and `bookmarks` APIs to rank and group
-what it shows. It reads them; it does not modify or delete anything in them.
+what it shows. User-facing controls can also create bookmarks when you select
+that action. The optional MCP's read-only contract is separate from these
+interactive extension controls.
 
 **On-device AI summaries**
 If Chrome's built-in Summarizer (Gemini Nano) is available, Tabtopia may summarize
@@ -65,54 +76,51 @@ inside Chrome on your machine. Page content sent to it does not leave the device
 
 - Passwords, or the contents of password fields
 - Values of ordinary form fields (redacted to `[FIELD_VALUE]` before storage)
-- Full page bodies, except as transient input to the on-device summarizer
+- Full page bodies as a browsing archive; extracted text can be passed to the
+  on-device summarizer or returned through an explicit MCP page-content request
 - Anything at all from a page while the extension is disabled or uninstalled
 
-## Every network connection Tabtopia makes
+## Network connections
 
-This list is exhaustive for version 1.3.0.
+The public extension has no archive, semantic-context or GitHub-star service
+connection. Those sources are available only in separately maintained local
+customizations, whose data handling must be reviewed independently.
 
 | Destination | Purpose | Required? |
 |---|---|---|
 | `https://www.techmeme.com/feed.xml` | Public tech-news RSS feed shown on the Home view | Sent on its own; carries no browsing data |
-| `http://127.0.0.1:8889/api/history/adaptive` | Tagged archive rows from the optional local companion | Optional |
-| `http://127.0.0.1:8889/api/search` | Semantic "related" results from the same companion | Optional |
-| `http://127.0.0.1:8889/api/github/stars` | Your GitHub stars, exported locally by the companion | Optional |
 | `ws://127.0.0.1:8892` | The optional local MCP bridge daemon | Optional |
+| Original image websites and CDNs | Load hero images when rendering session cards and mosaics | Depends on the displayed imagery |
 
 The Techmeme request is an ordinary feed fetch. It sends no browsing data, no
 identifier, and no query — Techmeme learns only that some browser asked for its
 public feed.
 
-The `127.0.0.1` addresses are loopback: those requests never leave your machine
-and are not routed to any network. If the companion services are not running, the
-requests are refused, Tabtopia marks the affected panels as offline, and
-everything else keeps working. Running them is entirely your choice.
+## The optional MCP bridge
 
-## The optional local companion
-
-Two separate pieces, neither of which is installed or started by Chrome and
-neither of which is required for extension-only use:
-
-**The optional local REST API (`:8889`)** supplies the archive feed, semantic
-search, and GitHub stars when a user chooses to run a compatible companion.
-Tabtopia sends it a bounded query built only from the
-*titles* of pages currently open or recently visited — never URLs, page bodies, or
-extracted content — capped at four titles and 320 characters.
+The bridge is not installed or started by Chrome and is not required for
+extension-only use. It binds to loopback on your machine.
 
 **The MCP bridge daemon (`:8892`)** lets local agent tooling read Tabtopia's live
 status, and — this part matters — request the text of a page you have open. The
 daemon accepts connections only from an allowlisted `chrome-extension://` origin,
 which a web page cannot forge. A different local process running as your user
 could spoof that origin; that is outside the threat model, and it is why the
-daemon binds loopback only. If you do not run the daemon, none of this exists.
+daemon binds loopback only. If you do not run the daemon, MCP page requests are
+unavailable. Once results reach an agent client, that client's model and provider
+settings determine whether browsing context and extracted page text leave the
+machine. Named MCP context captures are stored separately from Chrome extension
+storage; uninstalling the extension does not delete those files.
 
 ## Retention and deletion
 
 Tabtopia bounds what it keeps, both to stay useful and to stay inside Chrome's
 storage quota: hero-image metadata is capped at 160 pages, persistent browser
 state at roughly 2 MB and 128 tabs, cached semantic queries at 12, archive rows at
-96, and GitHub stars at 2000. Older entries are dropped first.
+96, and GitHub stars at 2000. Older entries are dropped first. Compatibility
+readers retain previously saved supplemental data locally; these provider paths
+do not refresh it or send page titles to a service. Removing a connection
+does not erase its existing cached data.
 
 To delete data:
 - **Everything:** remove Tabtopia from `chrome://extensions`. Uninstalling clears

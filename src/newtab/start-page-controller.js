@@ -1,3 +1,5 @@
+import { readRecentContext, refreshRecentContext } from "../lib/recent-context-provider.js";
+import { HOME_RECOMMENDATION_PREFS_KEY, readHomeRecommendationPreferences, collectHomeRecommendationIdentities } from "../lib/home-recommendations.js";
 import {
   clearRecentHistoryCache,
   getRecentHistory,
@@ -46,7 +48,9 @@ export function createStartPageController({
 } = {}) {
   let refreshTimer = null;
   let refreshInFlight = null;
+  let refreshRequested = false;
   let archiveRefreshInFlight = null;
+  let contextRefreshInFlight = null;
   let techmemeRefreshInFlight = null;
   let githubStarsRefreshInFlight = null;
   let activeArchiveQuery = null;
@@ -61,6 +65,9 @@ export function createStartPageController({
   }
 
   function installListeners() {
+    listen(chrome.storage?.onChanged, (changes, area) => {
+      if (area === "local" && (changes.tabtopiaContextHiddenSitesV1 || changes[HOME_RECOMMENDATION_PREFS_KEY])) scheduleRefresh();
+    });
     listen(chrome.tabs.onCreated, () => scheduleRefresh());
     listen(chrome.tabs.onRemoved, () => scheduleRefresh());
     listen(chrome.tabs.onActivated, () => scheduleRefresh());
@@ -70,9 +77,11 @@ export function createStartPageController({
     listen(chrome.windows.onCreated, () => scheduleRefresh());
     listen(chrome.windows.onRemoved, () => scheduleRefresh());
     listen(chrome.windows.onFocusChanged, () => scheduleRefresh());
-    listen(chrome.bookmarks?.onCreated, () => scheduleRefresh());
-    listen(chrome.bookmarks?.onRemoved, () => scheduleRefresh());
-    listen(chrome.bookmarks?.onChanged, () => scheduleRefresh());
+    const bookmarksChanged = () => { bookmarkTreeCache = null; scheduleRefresh(); };
+    listen(chrome.bookmarks?.onCreated, bookmarksChanged);
+    listen(chrome.bookmarks?.onRemoved, bookmarksChanged);
+    listen(chrome.bookmarks?.onChanged, bookmarksChanged);
+    listen(chrome.bookmarks?.onMoved, bookmarksChanged);
     listen(chrome.history.onVisited, () => invalidateHistoryAndRefresh());
     listen(chrome.history.onVisitRemoved, () => invalidateHistoryAndRefresh());
   }
@@ -92,11 +101,20 @@ export function createStartPageController({
   }
 
   async function refresh() {
-    if (refreshInFlight) return refreshInFlight;
+    if (refreshInFlight) {
+      refreshRequested = true;
+      return refreshInFlight;
+    }
     refreshInFlight = collectStartPageState()
       .then(result => {
         onUpdate(result);
         refreshArchiveInBackground(result);
+        if (!contextRefreshInFlight) {
+          contextRefreshInFlight = refreshRecentContext()
+            .then(update => { if (started && update.changed) scheduleRefresh(0); })
+            .catch(() => {})
+            .finally(() => { contextRefreshInFlight = null; });
+        }
         refreshTechmemeInBackground();
         refreshGithubStarsInBackground();
         return result;
@@ -107,6 +125,10 @@ export function createStartPageController({
       })
       .finally(() => {
         refreshInFlight = null;
+        if (refreshRequested) {
+          refreshRequested = false;
+          if (started) scheduleRefresh(0);
+        }
       });
     return refreshInFlight;
   }
@@ -184,7 +206,10 @@ export async function collectStartPageState(now = Date.now()) {
     bookmarks,
     archiveSnapshot,
     techmemeSnapshot,
-    githubStarsSnapshot
+    githubStarsSnapshot,
+    recentContextSnapshot,
+    recommendationBookmarks,
+    recommendationPreferences
   ] = await Promise.all([
     getCurrentWindow(),
     getAllWindows(),
@@ -196,7 +221,10 @@ export async function collectStartPageState(now = Date.now()) {
     getRecentBookmarks(RECENT_BOOKMARK_LIMIT),
     readCachedArchive({ now }),
     readCachedTechmeme({ now }),
-    readCachedGithubStars({ now })
+    readCachedGithubStars({ now }),
+    readRecentContext({ now, development: await isDevelopmentInstall() }),
+    getRecommendationBookmarks(),
+    readHomeRecommendationPreferences({ development: await isDevelopmentInstall() })
   ]);
   const historyItems = historyPool
     .filter(item => Number(item?.lastVisitTime || 0) >= now - HISTORY_HORIZON_MS)
@@ -235,6 +263,12 @@ export async function collectStartPageState(now = Date.now()) {
     limit: HABIT_DESTINATION_DEFAULTS.resultLimit
   });
 
+  const identities = collectHomeRecommendationIdentities({ context: recentContextSnapshot,
+    history: historyPool, bookmarks: recommendationBookmarks, preferences: recommendationPreferences });
+  const recommendationFeedback = await chrome.runtime.sendMessage({
+    action: "getHomeRecommendationFeedback", identities
+  }).then(result => result?.feedback || {}).catch(() => ({}));
+
   return {
     generatedAt: now,
     windows,
@@ -247,7 +281,11 @@ export async function collectStartPageState(now = Date.now()) {
     archiveSnapshot: currentArchiveSnapshot,
     archiveQuery,
     techmemeSnapshot,
-    githubStarsSnapshot
+    githubStarsSnapshot,
+    recentContextSnapshot,
+    recommendationBookmarks,
+    recommendationPreferences,
+    recommendationFeedback
   };
 }
 
@@ -315,6 +353,23 @@ function getRecentBookmarks(limit) {
   return chrome.bookmarks.getRecent(limit).catch(() => []);
 }
 
+let bookmarkTreeCache = null;
+function getRecommendationBookmarks() {
+  if (!chrome.bookmarks?.getTree) return Promise.resolve([]);
+  if (!bookmarkTreeCache) bookmarkTreeCache = chrome.bookmarks.getTree().then(tree => {
+    const pages = [];
+    const visit = nodes => {
+      for (const node of nodes || []) {
+        if (node.url) pages.push({ url: node.url, title: node.title, dateAdded: node.dateAdded });
+        if (node.children) visit(node.children);
+      }
+    };
+    visit(tree);
+    return pages;
+  }).catch(() => { bookmarkTreeCache = null; return []; });
+  return bookmarkTreeCache;
+}
+
 async function scoreHabitHistory(candidates) {
   if (!Array.isArray(candidates) || candidates.length === 0) return [];
   try {
@@ -329,4 +384,12 @@ async function scoreHabitHistory(candidates) {
   } catch {
     return [];
   }
+}
+
+let developmentInstall;
+async function isDevelopmentInstall() {
+  if (!developmentInstall) developmentInstall = new Promise(resolve => {
+    try { chrome.management.getSelf(self => resolve(self?.installType === "development")); } catch { resolve(false); }
+  });
+  return developmentInstall;
 }

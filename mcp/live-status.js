@@ -11,9 +11,7 @@
 // The status tools read from here; ranking (dwell × recency) lives in the MCP
 // server where the tools are defined, so this module stays a pure store.
 //
-// Ported verbatim in spirit from interests2025/src/live_status.js — the point
-// of "remove interests2025" is that this now stands alone with no imports from
-// that project.
+// This store stands alone and imports no host-application modules.
 
 const fs = require('fs');
 const path = require('path');

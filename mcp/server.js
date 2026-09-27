@@ -13,8 +13,7 @@
 //
 // Deliberately dependency-free (no MCP SDK, no dotenv, no config import): the
 // JSON-RPC framing is hand-rolled, so nothing can print a banner onto stdout
-// and corrupt the protocol channel — the exact bug the interests2025-hosted
-// version carried.
+// and corrupt the protocol channel.
 //
 // Register with any MCP client, e.g.:
 //   claude mcp add tabtopia -- node /ABS/PATH/tabtopia/mcp/server.js   (Claude Code)

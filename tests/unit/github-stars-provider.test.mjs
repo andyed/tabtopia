@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   parseGithubStars,
-  readCachedGithubStars,
-  refreshGithubStars
+  readCachedGithubStars
 } from "../../src/lib/github-stars-provider.js";
 
 const STORAGE_KEY = "tabtopiaGithubStarsProviderV1";
@@ -38,44 +37,6 @@ test("cached GitHub stars are first-paint data and never fetch", async () => {
   assert.equal(result.freshness, "fresh");
   assert.equal(result.items[0].title, "cached/repo");
   assert.equal(storage.getCount, 1);
-});
-
-test("background refresh stores the local service response and respects its TTL", async () => {
-  const storage = new MemoryStorage();
-  let calls = 0;
-  const fetchImpl = async (url, options) => {
-    calls += 1;
-    assert.equal(url, "http://127.0.0.1:8889/api/github/stars");
-    assert.equal(options.headers.Accept, "application/json");
-    return response({ items: [star("live/repo")], updatedAt: NOW - HOUR });
-  };
-
-  const first = await refreshGithubStars({ storage, fetchImpl, now: NOW });
-  const cached = await refreshGithubStars({ storage, fetchImpl, now: NOW + HOUR });
-  const forced = await refreshGithubStars({ storage, fetchImpl, now: NOW + (2 * HOUR), force: true });
-
-  assert.equal(first.status, "live");
-  assert.equal(first.changed, true);
-  assert.equal(first.sourceUpdatedAt, NOW - HOUR);
-  assert.equal(cached.status, "cached");
-  assert.equal(forced.changed, false);
-  assert.equal(calls, 2);
-});
-
-test("offline refresh preserves a stale last-good snapshot", async () => {
-  const storage = new MemoryStorage({
-    [STORAGE_KEY]: snapshot({ fetchedAt: NOW - (7 * HOUR), items: [star("still/useful")] })
-  });
-
-  const result = await refreshGithubStars({
-    storage,
-    fetchImpl: async () => { throw new Error("offline"); },
-    now: NOW
-  });
-
-  assert.equal(result.status, "offline");
-  assert.equal(result.freshness, "stale");
-  assert.equal(result.items[0].title, "still/useful");
 });
 
 function star(title, overrides = {}) {

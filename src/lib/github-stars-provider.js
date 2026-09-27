@@ -1,8 +1,6 @@
 const STORAGE_KEY = "tabtopiaGithubStarsProviderV1";
 const SNAPSHOT_VERSION = 1;
-const GITHUB_STARS_ENDPOINT = "http://127.0.0.1:8889/api/github/stars";
 const SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 4000;
 const MAX_STORED_ITEMS = 2000;
 const MAX_TITLE_LENGTH = 180;
 const MAX_DESCRIPTION_LENGTH = 600;
@@ -28,46 +26,12 @@ export async function readCachedGithubStars({
   );
 }
 
-/**
- * Refresh the local Interests GitHub-star export in the background. A failed
- * service, malformed response, or storage error preserves the last good data.
- */
-export async function refreshGithubStars({
-  storage = globalThis.chrome?.storage?.local,
-  fetchImpl = globalThis.fetch,
-  now = Date.now(),
-  force = false
-} = {}) {
-  const timestamp = validNow(now);
-  const loaded = await loadSnapshot(storage);
-  if (!loaded.ok) return view(emptySnapshot(), timestamp, "offline", false);
+/** No external star source is connected in public builds. */
 
-  const previous = loaded.snapshot;
-  if (!force && isFresh(previous.fetchedAt, timestamp)) {
-    return view(previous, timestamp, previous.items.length > 0 ? "cached" : "empty", false);
-  }
-  if (typeof fetchImpl !== "function") return view(previous, timestamp, "offline", false);
-
-  try {
-    const response = await fetchGithubStars(fetchImpl);
-    const items = parseGithubStars(response);
-    const next = {
-      version: SNAPSHOT_VERSION,
-      fetchedAt: timestamp,
-      sourceUpdatedAt: dateTimestamp(response?.updatedAt),
-      items
-    };
-    const changed = !sameItems(previous.items, items)
-      || previous.sourceUpdatedAt !== next.sourceUpdatedAt;
-    const written = await saveSnapshot(storage, next);
-    if (!written) return view(previous, timestamp, "offline", false);
-    return view(next, timestamp, "live", changed);
-  } catch {
-    return view(previous, timestamp, "offline", false);
-  }
+export async function refreshGithubStars() {
+  return { changed: false, status: "disabled" };
 }
 
-/** Retain only the small, explicit-interest surface Home needs. */
 export function parseGithubStars(payload) {
   const sourceItems = Array.isArray(payload) ? payload : payload?.items;
   if (!Array.isArray(sourceItems)) throw new Error("malformed GitHub stars response");
@@ -97,24 +61,6 @@ export function parseGithubStars(payload) {
   return items.slice(0, MAX_STORED_ITEMS);
 }
 
-async function fetchGithubStars(fetchImpl) {
-  const controller = typeof AbortController === "function" ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS) : null;
-  try {
-    const response = await fetchImpl(GITHUB_STARS_ENDPOINT, {
-      signal: controller?.signal,
-      cache: "no-store",
-      headers: { Accept: "application/json" }
-    });
-    if (!response?.ok || typeof response.json !== "function") {
-      throw new Error("GitHub stars unavailable");
-    }
-    return await response.json();
-  } finally {
-    if (timer !== null) clearTimeout(timer);
-  }
-}
-
 async function loadSnapshot(storage) {
   if (typeof storage?.get !== "function") return { ok: false, snapshot: emptySnapshot() };
   try {
@@ -122,16 +68,6 @@ async function loadSnapshot(storage) {
     return { ok: true, snapshot: validateSnapshot(stored?.[STORAGE_KEY]) };
   } catch {
     return { ok: false, snapshot: emptySnapshot() };
-  }
-}
-
-async function saveSnapshot(storage, snapshot) {
-  if (typeof storage?.set !== "function") return false;
-  try {
-    await storage.set({ [STORAGE_KEY]: snapshot });
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -210,8 +146,4 @@ function validNow(value) {
 
 function isFresh(fetchedAt, now) {
   return fetchedAt > 0 && now - fetchedAt <= SNAPSHOT_TTL_MS;
-}
-
-function sameItems(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }

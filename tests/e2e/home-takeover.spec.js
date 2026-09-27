@@ -1,6 +1,13 @@
 const { test, expect, ARCHIVE_SNAPSHOT_VERSION } = require("./fixtures");
 const path = require("path");
 
+async function showOtherRoutes(home) {
+  const disclosure = home.locator(".home-takeover__other-routes");
+  if (await disclosure.count() && !await disclosure.evaluate(node => node.open)) {
+    await disclosure.locator("summary").click();
+  }
+}
+
 const ARCHIVE_STORAGE_KEY = "tabtopiaArchiveProviderV1";
 
 async function seedArchiveProvider(page, extensionId, { fetchedAt, rows }) {
@@ -130,7 +137,8 @@ test.describe("development home takeover", () => {
     }));
 
     const home = page.locator("#startPageHome");
-    await expect(home.getByText("Revisit proof", { exact: true })).toBeVisible();
+    await showOtherRoutes(home);
+    await expect(home.getByText("Revisit proof", { exact: true }).first()).toBeVisible();
 
     await home.getByRole("button", { name: "All tabs" }).click();
     await expect(home).toBeHidden();
@@ -141,7 +149,8 @@ test.describe("development home takeover", () => {
     await page.locator("a[href='newtab.html#/home']").click();
     await expect(page).toHaveURL(/newtab\.html#\/home$/);
     await expect(home).toBeVisible();
-    await expect(home.getByText("Hash revisit proof", { exact: true })).toBeVisible();
+    await showOtherRoutes(home);
+    await expect(home.getByText("Hash revisit proof", { exact: true }).first()).toBeVisible();
 
     await page.locator("a[href='graph.html']").click();
     await expect(page).toHaveURL(/graph\.html$/);
@@ -161,7 +170,8 @@ test.describe("development home takeover", () => {
     await expect(home).toBeHidden();
     await page.locator("#tabSearch").press("Escape");
     await expect(home).toBeVisible();
-    await expect(home.getByText("Document revisit proof", { exact: true })).toBeVisible();
+    await showOtherRoutes(home);
+    await expect(home.getByText("Document revisit proof", { exact: true }).first()).toBeVisible();
   });
 
   test("paints the last canonical model while a new tab refreshes", async ({ context, extensionId }) => {
@@ -174,7 +184,7 @@ test.describe("development home takeover", () => {
       url: "https://example.com/immediate-paint"
     }));
     const firstHome = first.locator("#startPageHome");
-    await expect(firstHome.getByText("Immediate paint", { exact: true })).toBeVisible();
+    await expect(firstHome.getByText("Immediate paint", { exact: true }).first()).toBeVisible();
     await expect.poll(() => first.evaluate(async () => Boolean(
       (await chrome.storage.session.get("tabtopiaHomeModelV1")).tabtopiaHomeModelV1
     ))).toBe(true);
@@ -195,7 +205,7 @@ test.describe("development home takeover", () => {
       waitUntil: "domcontentloaded"
     });
     const secondHome = second.locator("#startPageHome");
-    await expect(secondHome.getByText("Immediate paint", { exact: true })).toBeVisible();
+    await expect(secondHome.getByText("Immediate paint", { exact: true }).first()).toBeVisible();
     await expect(secondHome.getByText("Last view · updating", { exact: true })).toBeVisible();
     await expect(secondHome).toHaveAttribute("aria-busy", "true");
     const cachedLink = secondHome.locator("a[data-action-id]").first();
@@ -214,7 +224,7 @@ test.describe("development home takeover", () => {
     await expect(secondHome.getByText("Last view · updating", { exact: true })).toHaveCount(0);
   });
 
-  test("paints cached archive content immediately and preserves it while the provider is offline", async ({ context, extensionId }) => {
+  test("paints cached archive content immediately and preserves it without contacting a provider", async ({ context, extensionId }) => {
     let offlineRequests = 0;
     await context.route("http://127.0.0.1:8889/**", async route => {
       offlineRequests += 1;
@@ -247,7 +257,7 @@ test.describe("development home takeover", () => {
     await expect(firstHome.getByRole("heading", { name: "Archive" })).toBeVisible();
     await expect(firstHome.getByText("ACT-R archive proof", { exact: true })).toBeVisible();
     await expect(firstHome.getByText("Repeatedly useful.", { exact: true })).toBeVisible();
-    await expect.poll(() => offlineRequests).toBeGreaterThan(0);
+    expect(offlineRequests).toBe(0);
     await expect(firstHome).toHaveAttribute("aria-busy", "false");
     await expect(firstHome.getByText("ACT-R archive proof", { exact: true })).toBeVisible();
     await expect.poll(() => first.evaluate(async () => Boolean(
@@ -343,41 +353,7 @@ test.describe("development home takeover", () => {
     })).toBe(2);
   });
 
-  test("adds relevant GitHub stars after first paint and caches the complete source", async ({ context, extensionId }) => {
-    let releaseStars;
-    let starRequests = 0;
-    const starsGate = new Promise(resolve => { releaseStars = resolve; });
-    await context.route("http://127.0.0.1:8889/api/github/stars", async route => {
-      starRequests += 1;
-      await starsGate;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          updatedAt: Date.now(),
-          items: [{
-            title: "cognition/act-r-tools",
-            url: "https://github.com/cognition/act-r-tools",
-            description: "Working-memory utilities for cognitive architectures",
-            topics: ["cognitive-architecture", "working-memory"],
-            stars: 82,
-            date_added: "2026-07-24T12:00:00Z",
-            source: "GitHub",
-            type: "star"
-          }, {
-            title: "newest/unrelated",
-            url: "https://github.com/newest/unrelated",
-            description: "An unrelated but explicitly saved repository",
-            topics: ["utilities"],
-            stars: 20,
-            date_added: "2026-07-25T12:00:00Z",
-            source: "GitHub",
-            type: "star"
-          }]
-        })
-      });
-    });
-
+  test("renders previously saved GitHub stars without a connected service", async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/src/options/options.html`, {
       waitUntil: "domcontentloaded"
@@ -386,16 +362,21 @@ test.describe("development home takeover", () => {
       title: "Working memory research",
       url: "https://research.example/working-memory"
     }));
+    await page.evaluate(() => chrome.storage.local.set({ tabtopiaGithubStarsProviderV1: {
+      version: 1, fetchedAt: Date.now(), sourceUpdatedAt: Date.now(), items: [
+        { title: "cognition/act-r-tools", url: "https://github.com/cognition/act-r-tools",
+          description: "Working-memory utilities for cognitive architectures", topics: ["cognitive-architecture", "working-memory"], starredAt: Date.now() },
+        { title: "newest/unrelated", url: "https://github.com/newest/unrelated",
+          description: "An unrelated but explicitly saved repository", topics: ["utilities"], starredAt: Date.now() - 1000 }
+      ]
+    } }));
     await page.goto(`chrome-extension://${extensionId}/src/newtab/newtab.html#/home`, {
       waitUntil: "domcontentloaded"
     });
 
     const home = page.locator("#startPageHome");
     await expect(home).toHaveAttribute("aria-busy", "false");
-    await expect(home.locator(".home-takeover__github-stars")).toHaveCount(0);
-    await expect.poll(() => starRequests).toBe(1);
 
-    releaseStars();
     const panel = home.locator(".home-takeover__github-stars");
     await expect(panel.getByRole("link", { name: "Open: cognition/act-r-tools" })).toBeVisible();
     await expect(panel.locator(".home-takeover__github-stars-item").first())
@@ -416,7 +397,8 @@ test.describe("development home takeover", () => {
     });
     const launchHome = launch.locator("#startPageHome");
     await expect(launchHome).toHaveAttribute("data-mode", "quiet");
-    await expect(launchHome.getByRole("heading", { name: "Launch" })).toBeVisible();
+    await expect(launchHome.getByRole("heading", { name: "Launch", exact: true })).toBeVisible();
+    await expect(launchHome.locator(".home-takeover__featured")).toHaveCount(0);
     await launch.close();
 
     await context.addInitScript(({ offsetMs }) => {
@@ -448,7 +430,8 @@ test.describe("development home takeover", () => {
     const returnHome = returned.locator("#startPageHome");
     await expect(returnHome).toHaveAttribute("data-state", "reorientation");
     await expect(returnHome).toHaveAttribute("data-mode", "return");
-    await expect(returnHome.getByRole("heading", { name: "Re-entry" })).toBeVisible();
+    await expect(returnHome.getByRole("heading", { name: "Re-entry", exact: true })).toBeVisible();
+    await showOtherRoutes(returnHome);
     await expect(returnHome.locator(".home-takeover__landscape-action").first()).toBeVisible();
   });
 
@@ -479,7 +462,8 @@ test.describe("development home takeover", () => {
       title,
       url: `https://example.com/${slug}`
     }))));
-    await expect(home.getByRole("heading", { name: "Continuation" })).toBeVisible();
+    await expect(home.getByRole("heading", { name: "For now", exact: true })).toBeVisible();
+    await showOtherRoutes(home);
     await expect(home.getByRole("heading", { name: "Side routes" })).toBeVisible();
     await expect(home.getByText("Keep the thread moving", { exact: true })).toHaveCount(0);
     await expect(home.getByText("Current activity, familiar alternatives nearby.", { exact: true })).toHaveCount(0);
@@ -502,7 +486,7 @@ test.describe("development home takeover", () => {
         return bounds.top < window.innerHeight && bounds.bottom > 0;
       }).length
     );
-    expect(aboveFoldActions).toBeGreaterThanOrEqual(4);
+    expect(aboveFoldActions).toBeGreaterThanOrEqual(3);
     await home.getByRole("heading", { name: "Routes", exact: true }).scrollIntoViewIfNeeded();
     await expect(home.locator(".home-takeover__discovery-action").first()).toBeVisible();
     await newtab.evaluate(() => window.scrollTo({ top: document.scrollingElement.scrollHeight }));
@@ -566,6 +550,7 @@ test.describe("development home takeover", () => {
     const home = newtab.locator("#startPageHome");
     await expect(home.locator('[data-action-id^="page:"]')).toHaveCount(1);
     const destination = home.locator('[data-action-id^="page:"]').first();
+    await showOtherRoutes(home);
     await expect(destination.getByText("Habit", { exact: true })).toBeVisible();
     await expect(destination.getByText("Star", { exact: true })).toBeVisible();
     await expect(destination).toHaveAttribute("data-verb", "switch");

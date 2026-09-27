@@ -48,6 +48,9 @@ import {
     rankTabs,
     rankTabsByFrecency
 } from "./lib/tab-recall.js";
+import { HomeContextDiagnostics } from "./lib/home-context-diagnostics.js";
+import { HomeRecommendationStore } from "./lib/home-recommendation-store.js";
+import { recommendationIdentity } from "./lib/home-recommendations.js";
 
 // Repair the durable corpus before any initializer gets a chance to write.
 // A profile already at quota cannot even save a tiny setting or active-tab
@@ -63,6 +66,44 @@ const revisitReady = storageRepairReady.then(() => revisitStore.init()).catch(er
 const rankingDiagnostics = new RankingDiagnostics(chrome.storage.local, chrome.storage.session);
 let rankingDiagnosticsInstallType = "normal";
 const rankingDiagnosticsReady = storageRepairReady.then(initializeRankingDiagnostics);
+const homeContextDiagnostics = new HomeContextDiagnostics(chrome.storage.local, chrome.storage.session, {
+    isEnabled: () => rankingDiagnostics.isEnabled()
+});
+
+const homeRecommendationStore = new HomeRecommendationStore(chrome.storage.local, chrome.storage.session, {
+    isEnabled: () => rankingDiagnostics.isEnabled(),
+    digest: async identity => (await revisitReady)?.digest(identity),
+    identityForUrl: recommendationIdentity
+});
+let homeRecommendationTimer = null;
+let homeRecommendationFocusRevision = 0;
+
+function cancelHomeRecommendationTimer() {
+    homeRecommendationFocusRevision += 1;
+    clearTimeout(homeRecommendationTimer);
+    homeRecommendationTimer = null;
+}
+
+// The existing tab/window listeners own focus. One bounded timeout checks a
+// selected destination after ten uninterrupted foreground seconds; no polling.
+function refreshHomeRecommendationFocus() {
+    cancelHomeRecommendationTimer();
+    const revision = homeRecommendationFocusRevision;
+    (async () => {
+        await rankingDiagnosticsReady;
+        if (!rankingDiagnostics.isEnabled()) return;
+        const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        const window = tab ? await chrome.windows.get(tab.windowId) : null;
+        if (revision !== homeRecommendationFocusRevision) return;
+        const access = tab && window?.focused && !tab.incognito
+            ? { tabId: tab.id, url: tab.url, focused: true } : null;
+        const pending = await homeRecommendationStore.updateFocus(access);
+        if (revision !== homeRecommendationFocusRevision || !rankingDiagnostics.isEnabled()) return;
+        if (pending?.remainingMs > 0) {
+            homeRecommendationTimer = setTimeout(refreshHomeRecommendationFocus, pending.remainingMs + 25);
+        }
+    })().catch(error => globalThis.TabtopiaLogger?.warn("[HomeRecommendation] foreground observation failed", error));
+}
 
 const OMNIBOX_RESULT_LIMIT = 5;
 const REVISIT_QUALIFICATION_MS = 2000;
@@ -437,6 +478,9 @@ function scheduleQualifiedRevisitAccess(tab, previousUrl = "") {
             omniboxSnapshotDirty = true;
             if (rankingDiagnostics.isEnabled()) {
                 await recordQualifiedActivationDiagnostics(expectedTabId);
+                await homeContextDiagnostics.recordQualifiedAccess({
+                    url: expectedUrl, tabId: expectedTabId, qualifiedDwellMs: REVISIT_QUALIFICATION_MS
+                });
             }
         } catch (error) {
             // Tabs frequently disappear during the qualification window.
@@ -1045,6 +1089,7 @@ chrome.history.onVisitRemoved.addListener((removed) => {
  * Uses debouncing to reduce unnecessary processing
  */
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    refreshHomeRecommendationFocus();
     try {
         // Store previous active tab for dwell time tracking
         const previousTabId = browserState.lastActive?.tabId;
@@ -1681,6 +1726,7 @@ chrome.windows.onCreated.addListener(async (window) => {
  * Ensures no memory leaks from removed tabs
  */
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+    refreshHomeRecommendationFocus();
     markOmniboxSnapshotDirty();
     console.log("Tab being removed:", {
         tabId,
@@ -1744,6 +1790,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 // Track window focus changes for context awareness. Focusing a window whose
 // active tab did not change does not emit tabs.onActivated, so record it here.
 chrome.windows.onFocusChanged.addListener((windowId) => {
+    refreshHomeRecommendationFocus();
     markOmniboxSnapshotDirty();
     if (windowId !== chrome.windows.WINDOW_ID_NONE) {
         const previousUrl = browserState.lastActive?.tabId
@@ -1970,6 +2017,7 @@ function cleanProcessedNavigations() {
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (tab.active && (changeInfo.url || changeInfo.status === "complete")) refreshHomeRecommendationFocus();
     if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") {
         markOmniboxSnapshotDirty();
     }
@@ -2308,6 +2356,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ received: true });
         return;
     }
+    if (["recordHomeRecommendationImpression", "recordHomeRecommendationChoice", "cancelHomeRecommendationChoice", "snoozeHomeRecommendation", "getHomeRecommendationFeedback", "getHomeRecommendationDiagnostics"].includes(message.action)) {
+        const senderUrl = String(sender?.url || sender?.tab?.url || "");
+        if (!senderUrl.startsWith(chrome.runtime.getURL("")) || sender?.tab?.incognito) {
+            sendResponse({ success: false, error: "non-incognito extension pages only" });
+            return true;
+        }
+        rankingDiagnosticsReady.then(async () => {
+            if (message.action === "getHomeRecommendationDiagnostics") return { success: true, summary: await homeRecommendationStore.summary() };
+            if (message.action === "getHomeRecommendationFeedback") return { success: true, feedback: await homeRecommendationStore.getFeedback({ identities: Array.isArray(message.identities) ? message.identities : [] }) };
+            const payload = { ...message, sourceTabId: sender?.tab?.id };
+            const method = { recordHomeRecommendationImpression: "recordImpression", recordHomeRecommendationChoice: "recordChoice", cancelHomeRecommendationChoice: "cancelChoice", snoozeHomeRecommendation: "snooze" }[message.action];
+            const recorded = await homeRecommendationStore[method](payload);
+            if (recorded && message.action === "recordHomeRecommendationChoice") refreshHomeRecommendationFocus();
+            if (recorded && message.action === "cancelHomeRecommendationChoice") cancelHomeRecommendationTimer();
+            return { success: true, recorded };
+        }).then(sendResponse).catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
+    }
+    if (["recordHomeContextImpression", "recordHomeContextChoice", "recordHomeContextDismissal", "getHomeContextDiagnostics"].includes(message.action)) {
+        const senderUrl = String(sender?.url || sender?.tab?.url || "");
+        if (!senderUrl.startsWith(chrome.runtime.getURL("")) || sender?.tab?.incognito) {
+            sendResponse({ success: false, error: "non-incognito extension pages only" });
+            return true;
+        }
+        rankingDiagnosticsReady.then(async () => {
+            if (message.action === "getHomeContextDiagnostics") {
+                return { success: true, summary: await homeContextDiagnostics.getSummary() };
+            }
+            const sourceTabId = sender?.tab?.id;
+            const method = {
+                recordHomeContextImpression: "recordImpression",
+                recordHomeContextChoice: "recordChoice",
+                recordHomeContextDismissal: "recordDismissal"
+            }[message.action];
+            return { success: true, recorded: await homeContextDiagnostics[method](message, sourceTabId) };
+        }).then(sendResponse)
+            .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
+    }
     if (message.action === "getRankingDiagnostics") {
         rankingDiagnosticsReady
             .then(() => rankingDiagnostics.getRecords())
@@ -2323,13 +2410,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "setRankingDiagnostics") {
         rankingDiagnosticsReady
             .then(() => rankingDiagnostics.setEnabled(Boolean(message.enabled)))
-            .then(enabled => sendResponse({ success: true, enabled }))
+            .then(async enabled => {
+                if (!enabled) {
+                    cancelHomeRecommendationTimer();
+                    await Promise.all([homeContextDiagnostics.clear(), homeRecommendationStore.clear()]);
+                }
+                sendResponse({ success: true, enabled });
+            })
             .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
         return true;
     }
     if (message.action === "clearRankingDiagnostics") {
         rankingDiagnosticsReady
-            .then(() => rankingDiagnostics.clear())
+            .then(() => {
+                cancelHomeRecommendationTimer();
+                return Promise.all([rankingDiagnostics.clear(), homeContextDiagnostics.clear(), homeRecommendationStore.clear()]);
+            })
             .then(() => sendResponse({ success: true }))
             .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
         return true;

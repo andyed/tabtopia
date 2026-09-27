@@ -45,13 +45,18 @@ export function createHomeTakeoverRoot(parent = document.body) {
 export function renderHomeTakeover(root, model = {}, handlers = {}) {
   if (!root?.replaceChildren) throw new TypeError("A render root is required");
   disposeTitlePeek(root);
+  root.__contextVisibilityCleanup?.();
 
   const safeModel = model && typeof model === "object" ? model : {};
   const mode = resolveMode(safeModel);
+  const featuredItems = safeModel.freshOverride ? [] : asArray(safeModel.featuredItems)
+    .filter(item => item.expiresAt > Date.now()).slice(0, 3);
+  const featuredUrls = new Set(featuredItems.map(item => item.url));
   const actions = asArray(safeModel.actions).map((action, index) =>
     normalizeAction(action, index, mode === "return" ? "restart" : "open")
   );
   const archiveItems = asArray(safeModel.archiveItems)
+    .filter(item => !featuredUrls.has(item.url))
     .slice(0, MAX_ARCHIVE_ITEMS)
     .map((item, index) => normalizeArchiveItem(item, index));
   const interests = asArray(safeModel.interests)
@@ -96,17 +101,36 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   // "techmeme" ↔ Techmeme); "ranked" is the total ranked-destination pool,
   // which the sections then split into focal / at hand / routes.
   const tallies = [
+    ["featured", featuredItems.length],
     ["ranked", actions.length],
     ["archive", archiveItems.length],
     ["threads", interests.length],
     ["stars", githubStarItems.length],
     ["techmeme", techmemeItems.length]
   ];
-  fragment.append(renderHeader(safeModel, mode, titleId, tallies));
+  fragment.append(renderHeader(featuredItems.length ? { ...safeModel, stateLabel: "For now" } : safeModel, mode, titleId, tallies));
 
   const errorText = errorMessage(safeModel.error);
   if (errorText) fragment.append(renderError(errorText));
 
+  if (featuredItems.length) fragment.append(renderFeatured(featuredItems, safeModel, handlers, status, renderId));
+  if (safeModel.undoHiddenHost) {
+    const note = element("div", "home-takeover__context-feedback");
+    note.append(element("span", "", `Hidden ${safeModel.undoHiddenHost} from contextual suggestions.`));
+    appendCommand(note, "Undo", handlers.onUndoContextHide, null, status, "home-takeover__context-undo");
+    fragment.append(note);
+  }
+  if (safeModel.undoSnoozed) {
+    const note = element("div", "home-takeover__context-feedback");
+    note.append(element("span", "", `Snoozed ${safeModel.undoSnoozed} for a day.`));
+    appendCommand(note, "Undo snooze", handlers.onUndoSnooze, null, status, "home-takeover__context-undo home-takeover__snooze-undo");
+    fragment.append(note);
+  }
+  if (safeModel.recommendationFeedbackMessage) {
+    const note = element("p", "home-takeover__context-feedback home-takeover__context-note", safeModel.recommendationFeedbackMessage);
+    note.setAttribute("role", "status");
+    fragment.append(note);
+  }
   let primaryContent = null;
   if (safeModel.loading && actions.length === 0 && archiveItems.length === 0 && !safeModel.primaryActivity) {
     primaryContent = renderLoading();
@@ -121,7 +145,11 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   } else {
     primaryContent = renderQuiet(actions, interests, handlers, status);
   }
-  fragment.append(primaryContent);
+  if (featuredItems.length) {
+    const more = element("details", "home-takeover__other-routes");
+    more.append(element("summary", "", "Your other routes"), primaryContent);
+    fragment.append(more);
+  } else fragment.append(primaryContent);
 
   if (!safeModel.freshOverride && !(safeModel.loading && actions.length === 0 && archiveItems.length === 0)) {
     const discoveryActions = chooseDiscoveryActions(safeModel, mode, actions);
@@ -148,7 +176,73 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   fragment.append(renderUtilities(safeModel, handlers, status), status);
   root.replaceChildren(fragment);
   installTitlePeek(root);
+  if (featuredItems.length) observeFeatured(root, featuredItems, handlers.onFeaturedVisible);
   return root;
+}
+
+function renderFeatured(items, model, handlers, status, renderId) {
+  const section = element("section", "home-takeover__featured");
+  const heading = element("h2", "home-takeover__featured-label", "Your next destination");
+  heading.id = `featured-context-${renderId}`;
+  section.setAttribute("aria-labelledby", heading.id);
+  const toolbar = element("div", "home-takeover__featured-toolbar");
+  toolbar.append(heading);
+  appendCommand(toolbar, "Show alternatives", handlers.onShowAlternatives, null, status, "home-takeover__context-hide home-takeover__alternatives");
+  section.append(toolbar);
+  const list = element("ol", "home-takeover__featured-list");
+  for (const item of items) {
+    const row = element("li", "home-takeover__featured-row");
+    const action = normalizeAction(item, item.rank - 1, item.verb || "open");
+    const link = createActionLink(action, { onAction: handlers.onFeaturedAction || handlers.onAction }, status, {
+      className: "home-takeover__featured-link", titleLimit: 120, showReason: true, reasonLimit: 2
+    });
+    link.dataset.contextRank = String(item.rank);
+    link.dataset.recommendationFocus = `open:${item.identity || item.url}`;
+    const hide = element("button", "home-takeover__context-hide", "Hide site");
+    hide.type = "button";
+    hide.dataset.recommendationFocus = `hide:${item.identity || item.url}`;
+    hide.setAttribute("aria-label", `Hide ${item.domain} from contextual suggestions`);
+    wireCommand(hide, handlers.onHideContextSite, item, status, { working: "Hiding site…", failed: "Could not hide this site. Try again." });
+    const controls = element("div", "home-takeover__recommendation-controls");
+    const snooze = element("button", "home-takeover__context-hide", "Snooze 1d");
+    snooze.type = "button";
+    snooze.dataset.recommendationFocus = `snooze:${item.identity || item.url}`;
+    snooze.setAttribute("aria-label", `Snooze ${item.title} for one day`);
+    wireCommand(snooze, handlers.onSnoozeRecommendation, item, status, { working: "Snoozing…", failed: "Could not snooze this destination. Try again." });
+    controls.append(snooze, hide);
+    row.append(link, controls);
+    list.append(row);
+  }
+  section.append(list);
+  if (items.some(item => item.sources?.includes("recent-context")) && model.recentContext?.context?.seedCount === 1) {
+    section.append(element("p", "home-takeover__context-note", "Based on one recently viewed page."));
+  }
+  return section;
+}
+
+function observeFeatured(root, items, callback) {
+  if (typeof callback !== "function") return;
+  let frame;
+  const report = () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      if (!root.isConnected || root.hidden || document.visibilityState !== "visible") return;
+      const visible = [...root.querySelectorAll("[data-context-rank]")].filter(link => {
+        const box = link.getBoundingClientRect();
+        const shown = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, 0);
+        return box.width > 0 && box.height > 0 && shown >= box.height / 2;
+      }).map(link => items.find(item => item.rank === Number(link.dataset.contextRank))).filter(Boolean);
+      if (visible.length) callback(visible);
+    });
+  };
+  const observer = new IntersectionObserver(report, { threshold: [0, 0.5, 1] });
+  root.querySelectorAll("[data-context-rank]").forEach(link => observer.observe(link));
+  document.addEventListener("visibilitychange", report);
+  root.__contextVisibilityCleanup = () => {
+    observer.disconnect(); cancelAnimationFrame(frame);
+    document.removeEventListener("visibilitychange", report);
+  };
+  report();
 }
 
 function renderHeader(model, mode, titleId, tallies = []) {
@@ -972,7 +1066,7 @@ function createActionLink(action, handlers, status, options = {}) {
   copy.append(sourceList);
 
   if (options.showReason && action.reasons.length > 0) {
-    copy.append(element("span", "home-takeover__reason", action.reasons[0]));
+    copy.append(element("span", "home-takeover__reason", action.reasons.slice(0, options.reasonLimit || 1).join(" · ")));
   }
 
   link.append(verb, copy);
@@ -1513,6 +1607,7 @@ function verbLabel(verb) {
 }
 
 function sourceLabel(source) {
+  if (source === "recent-context") return "Recent context";
   const value = cleanToken(source);
   const labels = {
     activity: "Activity",

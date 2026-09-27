@@ -32,7 +32,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
     font: inherit;
 }
 
@@ -197,6 +198,97 @@ h1 {
 
 .report-panel {
     padding: 24px;
+    margin-bottom: 18px;
+}
+
+.recommendation-settings {
+    padding: 24px;
+}
+
+.recommendation-settings p,
+.recommendation-report p {
+    line-height: 1.4;
+}
+
+.field-label {
+    display: block;
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.field-hint,
+#recommendationPreferencesStatus {
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.4;
+}
+
+.field-hint {
+    margin: 8px 0 16px;
+}
+
+#recommendationHubs {
+    display: block;
+    width: 100%;
+    min-height: 112px;
+    resize: vertical;
+    padding: 12px;
+    border: 1px solid var(--muted);
+    border-radius: 6px;
+    color: var(--text);
+    background: var(--canvas);
+    font-size: 18px;
+    line-height: 1.5;
+}
+
+#recommendationHubs:focus-visible,
+.recommendation-checkbox input:focus-visible,
+.previous-context-trial summary:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+}
+
+.recommendation-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    margin-top: 12px;
+    cursor: pointer;
+}
+
+.recommendation-checkbox input {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.recommendation-save-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.recommendation-settings .secondary-button,
+.recommendation-report .secondary-button {
+    min-height: 44px;
+}
+
+.recommendation-report .model-card h3 {
+    min-height: 0;
+}
+
+.previous-context-trial {
+    margin-top: 18px;
+    border-top: 1px solid rgba(243, 239, 227, 0.16);
+}
+
+.previous-context-trial summary {
+    min-height: 44px;
+    padding: 12px 0;
+    cursor: pointer;
 }
 
 .report-heading,

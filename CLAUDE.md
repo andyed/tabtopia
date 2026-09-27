@@ -40,9 +40,6 @@ omnibox keyword `tt`.
   the daemon needs this extension's id in its allowlist. Bidirectional — the
   daemon can request tab content via `GET_TAB_CONTENT`.
 - **`:8893`** — MCP health endpoint (`curl -s localhost:8893/health`).
-- **`:8889`** — optional local REST companion, consumed by
-  `src/lib/archive-provider.js` and
-  `src/lib/github-stars-provider.js`.
 
 Bridge design constraint: **no reconnect timers.** A backoff loop would keep the
 MV3 service worker alive and fight Chrome's teardown. Each push lazily

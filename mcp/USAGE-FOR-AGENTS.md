@@ -8,7 +8,7 @@ about *when* to reach for them is what makes the experience feel ambient.
 
 Runtime requirement: this MCP needs both the local bridge daemon and the
 Tabtopia Chrome extension, which supplies the live snapshot. It does not need
-the optional archive/search service on `:8889`, embeddings, or a history corpus.
+an interest-profile service, embeddings, or a history corpus.
 
 ---
 
