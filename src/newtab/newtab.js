@@ -932,8 +932,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true; // Keep the message channel open
     }
 
-    // Default response for unhandled messages
-    sendResponse({ received: true });
+    // Leave messages owned by other extension contexts unanswered. Replying
+    // here races the background worker and can steal its response from callers
+    // such as the Settings diagnostics report.
     return false;
 });
 

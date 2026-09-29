@@ -1,4 +1,5 @@
 import { readRecentContext, refreshRecentContext } from "../lib/recent-context-provider.js";
+import { flattenBookmarkTree } from "../lib/bookmark-intent.js";
 import { HOME_RECOMMENDATION_PREFS_KEY, readHomeRecommendationPreferences, collectHomeRecommendationIdentities } from "../lib/home-recommendations.js";
 import {
   clearRecentHistoryCache,
@@ -268,6 +269,11 @@ export async function collectStartPageState(now = Date.now()) {
   const recommendationFeedback = await chrome.runtime.sendMessage({
     action: "getHomeRecommendationFeedback", identities
   }).then(result => result?.feedback || {}).catch(() => ({}));
+  const bookmarkEvidence = await chrome.runtime.sendMessage({
+    action: "getBookmarkIntentEvidence", pages: recommendationBookmarks.filter(page => page.mobileFolder)
+      .sort((a, b) => Number(b.dateAdded || 0) - Number(a.dateAdded || 0)).slice(0, 800)
+  }).then(result => result?.evidence || {}).catch(() => ({}));
+  for (const bookmark of recommendationBookmarks) Object.assign(bookmark, bookmarkEvidence[bookmark.url] || {});
 
   return {
     generatedAt: now,
@@ -356,18 +362,9 @@ function getRecentBookmarks(limit) {
 let bookmarkTreeCache = null;
 function getRecommendationBookmarks() {
   if (!chrome.bookmarks?.getTree) return Promise.resolve([]);
-  if (!bookmarkTreeCache) bookmarkTreeCache = chrome.bookmarks.getTree().then(tree => {
-    const pages = [];
-    const visit = nodes => {
-      for (const node of nodes || []) {
-        if (node.url) pages.push({ url: node.url, title: node.title, dateAdded: node.dateAdded });
-        if (node.children) visit(node.children);
-      }
-    };
-    visit(tree);
-    return pages;
-  }).catch(() => { bookmarkTreeCache = null; return []; });
-  return bookmarkTreeCache;
+  if (!bookmarkTreeCache) bookmarkTreeCache = chrome.bookmarks.getTree().then(flattenBookmarkTree)
+    .catch(() => { bookmarkTreeCache = null; return []; });
+  return bookmarkTreeCache.then(pages => pages.map(page => ({ ...page })));
 }
 
 async function scoreHabitHistory(candidates) {

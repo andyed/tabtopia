@@ -105,11 +105,28 @@ export class RevisitStore {
                 : this.config.resolution === "domain"
                     ? domain.score
                     : scoreHierarchical({ domain, page });
+            const pageContextAvailable = hasOutgoingEvidence(
+                this.state.transitions.page,
+                currentDigests.page
+            );
+            const domainContextAvailable = hasOutgoingEvidence(
+                this.state.transitions.domain,
+                currentDigests.domain
+            );
 
             return {
                 tabId: tab.id,
                 score,
                 history: page.history,
+                pageScore: page.score,
+                domainScore: domain.score,
+                hierarchicalScore: scoreHierarchical({ domain, page }),
+                pageHistory: page.history,
+                domainHistory: domain.history,
+                pageContext: page.context,
+                domainContext: domain.context,
+                pageContextAvailable,
+                domainContextAvailable,
                 source: Number.isFinite(score) ? "bayesian" : "none"
             };
         }));
@@ -217,6 +234,12 @@ function emptyState() {
         transitions: { page: {}, domain: {} },
         updatedAt: 0
     };
+}
+
+function hasOutgoingEvidence(transitions, currentIdentity) {
+    if (!currentIdentity) return false;
+    const outgoing = transitions?.[currentIdentity];
+    return Object.values(outgoing || {}).some(value => Number.isFinite(Number(value)) && Number(value) > 0);
 }
 
 function validateState(value) {

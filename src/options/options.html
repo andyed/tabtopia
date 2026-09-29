@@ -101,6 +101,17 @@
             </details>
         </section>
 
+        <section class="report-panel" aria-labelledby="revisit-title">
+            <h2>Saved for a deeper desktop visit</h2>
+            <p id="bookmarkIntentStatus" role="status">Loading bookmark observations…</p>
+            <p class="field-hint">Mobile-folder bookmarks can take one recommendation slot until a 30-second continuous foreground desktop visit is recorded. A brief opening does not complete that observation. Folder membership is evidence of where a bookmark is saved, not proof of its originating device. Earlier desktop reading is unknown; hide or snooze still applies.</p>
+            <h2 id="revisit-title">Will this page be revisited?</h2>
+            <p id="revisitStudyStatus" role="status">Loading local observations…</p>
+            <div id="revisitStudyReport" class="model-report"></div>
+            <p class="field-hint">Separate shadow experiment: return to a page within the next 10, 50, or 200 qualified page accesses, including pages reopened after closing. Consecutive accesses to the same page count once. An access requires two seconds in a focused tab. Unfinished observations are pending; 90-day expiry censors them. No observed return does not mean a page was irrelevant.</p>
+            <p class="field-hint">Compares a learned base rate with visit-frequency and recency buckets. Lower Brier score is better. Predictions are recorded before outcomes and trained only when each horizon finishes. This changes no recommendations. The diagnostics switch and Clear control also govern this study; pending and historical page identities use local keyed digests.</p>
+        </section>
+
         <section class="report-panel" aria-labelledby="report-title">
             <div class="report-heading">
                 <div>
@@ -110,7 +121,10 @@
                 <button id="refreshReport" class="secondary-button" type="button">Refresh</button>
             </div>
             <p id="reportStatus" class="report-status" role="status">Loading local observations…</p>
+            <div id="studySummary" class="study-summary" aria-label="Study coverage"></div>
+            <p id="exposureStatus" class="exposure-status"></p>
             <div id="modelReport" class="model-report"></div>
+            <div id="segmentReport" class="segment-report"></div>
             <div class="report-footer">
                 <span id="interactionSummary">No omnibox interactions recorded.</span>
                 <button id="clearDiagnostics" class="text-button" type="button">Clear diagnostics</button>

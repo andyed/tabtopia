@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | MVP implemented; prediction study pending |
+| Status | MVP implemented; local shadow study collecting |
 | Target | Tabtopia browser extension |
 | Keyword | `tt` |
 | Primary job | Recover an open tab from the browser's address bar |
@@ -411,6 +411,49 @@ Given the current browsing context and the set of other open tabs, how accuratel
 
 Showing predictions changes the behavior being predicted. The first study therefore logs predictions before activation events without displaying or using them in ranking. This produces an unbiased baseline and prevents a self-fulfilling “accuracy” result.
 
+### Implemented shadow matrix
+
+The local study now runs twelve deterministic models from the same open-tab
+snapshot: MRU, total investment, same-domain MRU, tab-strip neighbor, page and
+domain transition, frecency, page and domain History-only, and page, domain,
+and hierarchical Bayesian History/Context. Evidence-dependent models abstain
+when their evidence is absent so coverage remains visible instead of being
+silently replaced by another ranker.
+
+Candidate tab identifiers and relative-softmax probabilities live only in the
+short-lived `chrome.storage.session` pending prediction. The durable bounded
+buffer stores one content-free outcome per qualified activation: model version,
+rank, probability, coverage, latency, censor reason, destination class, open-tab
+band, and browser-session-age band. It contains no tab identifiers, URLs,
+titles, domains, or queries. The current `next-tab-matrix-v3` cohort excludes
+same-tab navigation, reload completion, and refocus from next-tab outcomes;
+qualified access also requires a focused window. V2 outcomes and pending
+predictions cannot enter the corrected study or exposure gate.
+
+Up to 5,000 compact detail records within a 2 MiB byte budget remain under
+`tabtopiaRankingDiagnosticsV2` for inspection. Legacy arrays are read transparently
+and encoded on the next flush. Settings reads `tabtopiaRankingStudyDaysV3`: 90 UTC calendar days
+of content-free sufficient statistics, independent of detail-buffer rollover.
+Daily aggregates preserve model hits, reciprocal ranks, log loss, calibration
+bins, seven-day evaluation windows, and tab/session/destination segments.
+Latency uses a fixed histogram whose p95 is a conservative upper bound, with
+an exact 50 ms boundary for the existing exposure gate. The report identifies
+its cohort and retained-day count. Disabling or clearing diagnostics removes
+both stores and pending session data. Old detail records are not backfilled
+because their observation semantics differ.
+
+The current conservative evaluation gate uses seven-day windows and remains
+report-only. It requires at least 100 eligible outcomes, two windows with at
+least 25 outcomes where domain Bayesian beats both MRU and frecency on top-one
+and MRR, at least 80% primary-model coverage, expected calibration error at or
+below 0.10, and prediction p95 at or below 50 ms. Passing this calculation does
+not enable prediction UI automatically.
+
+The separate [revisit and saved-intention program](REVISIT_RESEARCH_PLAN.md)
+adds page-return prediction over 10/50/200 qualified-access horizons, Mobile-folder
+bookmark observations, and a read-only local browsing/chat retrieval probe.
+These have distinct labels and cohorts; none establishes next-tab or Home lift.
+
 ### Observation unit
 
 On every qualified tab activation:
@@ -420,7 +463,7 @@ On every qualified tab activation:
 3. Run every baseline and candidate model immediately; persist their ranked identifiers and model versions.
 4. Observe the next qualified activation as the outcome.
 
-An activation is qualified when the tab remains active for at least two seconds. This filters accidental passes during rapid keyboard traversal. The dwell threshold should be configurable and reported with evaluation results.
+An activation is qualified when the tab remains active for at least two seconds. This filters accidental passes during rapid keyboard traversal. The dwell threshold should be configurable and reported with evaluation results. Transition origins resolve from Chrome's live tab object when legacy in-memory tab state is absent, which preserves context evidence across service-worker restarts and extension-internal pages.
 
 Close, window-close, browser shutdown, and long inactivity may censor an observation rather than count as a wrong tab prediction. The evaluation code must report the censoring rule and rate.
 
@@ -447,6 +490,7 @@ The Bayesian History/Context adaptation is the primary candidate model. Experime
 - Log loss after probabilities are calibrated.
 - Coverage and censoring rate.
 - Accuracy by open-tab-count band and session age.
+- Counts split by existing-tab and out-of-set destinations.
 
 Report lift over MRU, Firefox-style frecency, and power-law History—not just absolute accuracy. Segment results without storing raw domains in the evaluation output. Include top-four accuracy as a paper-comparison metric, while treating top-one, top-three, and MRR as the primary Tabtopia product metrics.
 
@@ -486,21 +530,33 @@ Use bounded, append-style local records or a bounded ring buffer in `chrome.stor
 ```json
 {
   "event": "next_tab_outcome",
+  "cohort": "next-tab-matrix-v3",
   "timestamp": 0,
-  "contextId": "local-ephemeral-id",
-  "modelVersion": "bayes-history-context-v1",
-  "identityResolution": "domain",
-  "decay": 0.5,
-  "smoothing": 0.01,
+  "destinationClass": "existing-tab",
   "candidateCount": 0,
-  "predictedTabIds": [0, 0, 0],
-  "actualTabId": 0,
   "qualifiedDwellMs": 0,
-  "censored": false
+  "observationAgeMs": 0,
+  "predictionLatencyMs": 0,
+  "openTabBand": "6-10",
+  "sessionAgeBand": "15-60m",
+  "censorReason": "",
+  "models": [
+    {
+      "modelVersion": "bayes-domain-v1",
+      "identityResolution": "domain",
+      "confidenceMethod": "relative-softmax-v1",
+      "predictedCount": 0,
+      "actualRank": 0,
+      "actualProbability": 0,
+      "top1Probability": 0
+    }
+  ]
 }
 ```
 
-Identifiers should be sufficient for short-lived local evaluation and cleaned with the retention window. They are not cross-device user identifiers.
+Tab identifiers are limited to the session-scoped pending prediction and are
+consumed when this record is produced. They are never copied into the durable
+outcome buffer.
 
 ## Accessibility and visual quality
 
@@ -564,14 +620,18 @@ Chrome renders the omnibox, so Tabtopia controls information architecture rather
 
 ### Phase 3 — shadow next-tab study
 
-- Add qualified-activation observation lifecycle.
-- Run MRU, investment, frecency, History, and every Bayesian identity-resolution candidate.
-- Report Byrne-paper top-four accuracy alongside Tabtopia's primary top-one, top-three, and MRR metrics.
-- Add bounded local retention and an exportable aggregate report.
-- Verify that raw queries and raw page metadata are absent from evaluation records.
-- Gate all evaluation behind Ranking diagnostics: default off for standard installs, default on for unpacked development installs.
+- Implemented: qualified-activation observation and explicit censoring lifecycle.
+- Implemented: MRU, investment, same-domain, strip-neighbor, transition,
+  frecency, History, and every Bayesian identity-resolution candidate.
+- Implemented: top-one, top-three, top-four, MRR, log loss, calibration,
+  coverage, censoring, open-tab bands, session-age bands, and weekly lift.
+- Implemented: bounded local retention and an aggregate Settings report.
+- Verified by contract tests: durable evaluation records contain no raw query,
+  page metadata, or tab identifier.
+- Gated behind Ranking diagnostics: default off for standard installs, default
+  on for unpacked development installs.
 
-**Exit:** A local report shows baseline-relative accuracy, MRR, calibration, coverage, censoring, and performance.
+**Exit:** Pending a meaningful local sample that clears the two-window exposure gate.
 
 ### Phase 4 — prediction experiment
 

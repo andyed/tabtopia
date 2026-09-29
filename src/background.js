@@ -20,6 +20,7 @@
  */
 
 // Import utility functions
+import "./logging.js";
 import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
 import { pushSnapshot, setRequestHandler } from "./bridge-client.js";
 import {
@@ -37,20 +38,22 @@ import {
     storageByteLength
 } from "./lib/storage-retention.js";
 import {
-    RankingDiagnostics,
-    summarizeRankingDiagnostics
+    RankingDiagnostics
 } from "./lib/ranking-diagnostics.js";
 import {
     buildRecallCandidate,
     escapeOmniboxText,
     formatRelativeAccess,
     normalizeQuery,
-    rankTabs,
-    rankTabsByFrecency
+    rankTabs
 } from "./lib/tab-recall.js";
+import { buildShadowPredictions } from "./lib/shadow-ranking.js";
+import { resolveActivationOrigin } from "./lib/activation-origin.js";
 import { HomeContextDiagnostics } from "./lib/home-context-diagnostics.js";
 import { HomeRecommendationStore } from "./lib/home-recommendation-store.js";
 import { recommendationIdentity } from "./lib/home-recommendations.js";
+import { RevisitStudy } from "./lib/revisit-study.js";
+import { BookmarkIntentStudy } from "./lib/bookmark-intent.js";
 
 // Repair the durable corpus before any initializer gets a chance to write.
 // A profile already at quota cannot even save a tiny setting or active-tab
@@ -66,6 +69,36 @@ const revisitReady = storageRepairReady.then(() => revisitStore.init()).catch(er
 const rankingDiagnostics = new RankingDiagnostics(chrome.storage.local, chrome.storage.session);
 let rankingDiagnosticsInstallType = "normal";
 const rankingDiagnosticsReady = storageRepairReady.then(initializeRankingDiagnostics);
+const revisitStudy = new RevisitStudy(chrome.storage.local, {
+    isEnabled: () => rankingDiagnostics.isEnabled(),
+    digest: async identity => (await revisitReady)?.digest(identity)
+});
+const bookmarkIntentStudy = new BookmarkIntentStudy(chrome.storage.local, {
+    isEnabled: () => rankingDiagnostics.isEnabled(),
+    digest: async identity => (await revisitReady)?.digest(identity)
+});
+let bookmarkIntentDirty = true;
+let bookmarkIntentSync = null;
+let bookmarkIntentRevision = 0;
+function syncBookmarkIntentStudy() {
+    if (!rankingDiagnostics.isEnabled()) return Promise.resolve(false);
+    if (bookmarkIntentSync) return bookmarkIntentSync;
+    if (!bookmarkIntentDirty) return Promise.resolve(true);
+    bookmarkIntentDirty = false;
+    const revision = bookmarkIntentRevision;
+    bookmarkIntentSync = chrome.bookmarks.getTree().then(tree => revision === bookmarkIntentRevision
+        ? bookmarkIntentStudy.syncBookmarks(tree) : false)
+        .catch(error => {
+            bookmarkIntentDirty = true;
+            globalThis.TabtopiaLogger.warn("[BookmarkIntent] inventory refresh failed", error);
+            return false;
+        })
+        .finally(() => { bookmarkIntentSync = null; });
+    return bookmarkIntentSync;
+}
+for (const event of [chrome.bookmarks.onCreated, chrome.bookmarks.onRemoved, chrome.bookmarks.onChanged, chrome.bookmarks.onMoved]) {
+    event.addListener(() => { bookmarkIntentDirty = true; refreshHomeRecommendationFocus(); });
+}
 const homeContextDiagnostics = new HomeContextDiagnostics(chrome.storage.local, chrome.storage.session, {
     isEnabled: () => rankingDiagnostics.isEnabled()
 });
@@ -85,7 +118,8 @@ function cancelHomeRecommendationTimer() {
 }
 
 // The existing tab/window listeners own focus. One bounded timeout checks a
-// selected destination after ten uninterrupted foreground seconds; no polling.
+// selected recommendation after ten seconds and saved intent after thirty;
+// a single timeout targets the next threshold, with no continuous polling.
 function refreshHomeRecommendationFocus() {
     cancelHomeRecommendationTimer();
     const revision = homeRecommendationFocusRevision;
@@ -97,10 +131,15 @@ function refreshHomeRecommendationFocus() {
         if (revision !== homeRecommendationFocusRevision) return;
         const access = tab && window?.focused && !tab.incognito
             ? { tabId: tab.id, url: tab.url, focused: true } : null;
-        const pending = await homeRecommendationStore.updateFocus(access);
+        await syncBookmarkIntentStudy();
+        if (revision !== homeRecommendationFocusRevision) return;
+        const [pending, bookmarkPending] = await Promise.all([
+            homeRecommendationStore.updateFocus(access), bookmarkIntentStudy.updateFocus(access)
+        ]);
         if (revision !== homeRecommendationFocusRevision || !rankingDiagnostics.isEnabled()) return;
-        if (pending?.remainingMs > 0) {
-            homeRecommendationTimer = setTimeout(refreshHomeRecommendationFocus, pending.remainingMs + 25);
+        const waits = [pending?.remainingMs, bookmarkPending?.remainingMs].filter(ms => ms > 0);
+        if (waits.length) {
+            homeRecommendationTimer = setTimeout(refreshHomeRecommendationFocus, Math.min(...waits) + 25);
         }
     })().catch(error => globalThis.TabtopiaLogger?.warn("[HomeRecommendation] foreground observation failed", error));
 }
@@ -471,16 +510,29 @@ function scheduleQualifiedRevisitAccess(tab, previousUrl = "") {
         try {
             const currentTab = await chrome.tabs.get(expectedTabId);
             if (!currentTab.active || currentTab.url !== expectedUrl) return;
+            const currentWindow = await chrome.windows.get(currentTab.windowId);
+            if (!currentWindow.focused) return;
             const store = await revisitReady;
             if (!store) return;
             await store.recordAccess(expectedUrl, previousUrl, Date.now());
             pendingRevisitOrigins.delete(expectedTabId);
             omniboxSnapshotDirty = true;
+            await rankingDiagnosticsReady;
             if (rankingDiagnostics.isEnabled()) {
-                await recordQualifiedActivationDiagnostics(expectedTabId);
-                await homeContextDiagnostics.recordQualifiedAccess({
-                    url: expectedUrl, tabId: expectedTabId, qualifiedDwellMs: REVISIT_QUALIFICATION_MS
-                });
+                refreshHomeRecommendationFocus();
+                const outcomes = await Promise.allSettled([
+                    revisitStudy.recordAccess({
+                        url: expectedUrl, focused: true, incognito: currentTab.incognito,
+                        qualifiedDwellMs: REVISIT_QUALIFICATION_MS
+                    }),
+                    recordQualifiedActivationDiagnostics(expectedTabId),
+                    homeContextDiagnostics.recordQualifiedAccess({
+                        url: expectedUrl, tabId: expectedTabId, qualifiedDwellMs: REVISIT_QUALIFICATION_MS
+                    })
+                ]);
+                for (const outcome of outcomes) if (outcome.status === "rejected") {
+                    globalThis.TabtopiaLogger.warn("[RevisitStudy] observation failed", outcome.reason);
+                }
             }
         } catch (error) {
             // Tabs frequently disappear during the qualification window.
@@ -523,10 +575,20 @@ async function refreshOmniboxSnapshot() {
         const fallback = scoreFallbackFrecency(activity, lastAccessed);
         return buildRecallCandidate(tab, {
             totalTimeSpent: activity.totalTimeSpent || 0,
+            firstSeen: activity.firstSeen || 0,
             lastAccessed,
             bayesianScore: hasBayesianEvidence ? behavior?.score : fallback,
             frecencyScore: fallback,
             historyScore: behavior?.history,
+            pageBayesianScore: behavior?.pageScore,
+            domainBayesianScore: behavior?.domainScore,
+            hierarchicalBayesianScore: behavior?.hierarchicalScore,
+            pageHistoryScore: behavior?.pageHistory,
+            domainHistoryScore: behavior?.domainHistory,
+            pageContextScore: behavior?.pageContext,
+            domainContextScore: behavior?.domainContext,
+            pageContextAvailable: behavior?.pageContextAvailable,
+            domainContextAvailable: behavior?.domainContextAvailable,
             source: hasBayesianEvidence ? (behavior?.source || "none") : (Number.isFinite(fallback) ? "frecency" : "none")
         });
     });
@@ -683,28 +745,21 @@ async function recordQualifiedActivationDiagnostics(actualTabId) {
     await rankingDiagnosticsReady;
     if (!rankingDiagnostics.isEnabled()) return;
 
-    const outcomes = await rankingDiagnostics.takePendingPrediction(
-        actualTabId,
-        REVISIT_QUALIFICATION_MS
-    );
-    for (const outcome of outcomes || []) rankingDiagnostics.record(outcome);
-
     const snapshot = await refreshOmniboxSnapshot();
-    const limit = Math.min(10, Math.max(0, snapshot.candidates.length - 1));
-    const bayesian = rankTabs("", snapshot.candidates, {
-        limit,
-        currentTabId: snapshot.currentTabId
-    });
-    const frecency = rankTabsByFrecency(snapshot.candidates, {
-        limit,
+    const outcome = await rankingDiagnostics.takePendingPrediction(
+        actualTabId,
+        REVISIT_QUALIFICATION_MS,
+        snapshot.candidates.map(candidate => candidate.tabId)
+    );
+    if (outcome) rankingDiagnostics.record(outcome);
+
+    const predictionStartedAt = performance.now();
+    const prediction = buildShadowPredictions(snapshot.candidates, {
         currentTabId: snapshot.currentTabId
     });
     await rankingDiagnostics.setPendingPrediction({
-        candidateCount: limit,
-        models: {
-            "bayes-history-context-v1": bayesian.map(result => result.tabId),
-            "frecency-v1": frecency.map(result => result.tabId)
-        }
+        ...prediction,
+        latencyMs: performance.now() - predictionStartedAt
     });
 }
 
@@ -1078,6 +1133,10 @@ chrome.history.onVisitRemoved.addListener((removed) => {
     // History candidate pool without requiring reversible lookup in the
     // HMAC-backed qualified-access store.
     if (removed?.allHistory) {
+        bookmarkIntentRevision += 1;
+        bookmarkIntentStudy.clear().catch(error => globalThis.TabtopiaLogger.warn("[BookmarkIntent] history clear failed", error));
+        bookmarkIntentDirty = true;
+        revisitStudy.clear().catch(error => globalThis.TabtopiaLogger.warn("[RevisitStudy] history clear failed", error));
         revisitReady
             .then(store => store?.clear())
             .catch(error => console.warn("[RevisitStore] history clear failed", error));
@@ -1094,9 +1153,11 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         // Store previous active tab for dwell time tracking
         const previousTabId = browserState.lastActive?.tabId;
         const previousTabTimestamp = browserState.lastActive?.timestamp;
-        const previousUrl = previousTabId
-            ? browserState.tabs.get(previousTabId)?.url || ""
-            : "";
+        const previousUrl = await resolveActivationOrigin(
+            previousTabId,
+            browserState.tabs,
+            tabId => chrome.tabs.get(tabId)
+        );
 
         try {
             const activatedTab = await chrome.tabs.get(activeInfo.tabId);
@@ -1789,22 +1850,32 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
 // Track window focus changes for context awareness. Focusing a window whose
 // active tab did not change does not emit tabs.onActivated, so record it here.
-chrome.windows.onFocusChanged.addListener((windowId) => {
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
     refreshHomeRecommendationFocus();
     markOmniboxSnapshotDirty();
     if (windowId !== chrome.windows.WINDOW_ID_NONE) {
-        const previousUrl = browserState.lastActive?.tabId
-            ? browserState.tabs.get(browserState.lastActive.tabId)?.url || ""
-            : "";
-        chrome.tabs.query({ active: true, windowId }).then(([tab]) => {
+        const previousTabId = browserState.lastActive?.tabId;
+        const previousUrl = await resolveActivationOrigin(
+            previousTabId,
+            browserState.tabs,
+            tabId => chrome.tabs.get(tabId)
+        );
+        try {
+            const [tab] = await chrome.tabs.query({ active: true, windowId });
             if (!tab) return;
+            // onActivated already scheduled this same tab with the true origin.
+            // Do not let the trailing window-focus event replace that origin
+            // with a self-transition before the qualification timer fires.
+            if (tab.id === previousTabId && revisitQualificationTimer) return;
             browserState.lastActive = {
                 tabId: tab.id,
                 windowId,
                 timestamp: Date.now()
             };
             scheduleQualifiedRevisitAccess(tab, previousUrl);
-        }).catch(error => console.warn("[RevisitStore] window focus lookup failed", error));
+        } catch (error) {
+            globalThis.TabtopiaLogger.warn("[RevisitStore] window focus lookup failed", error);
+        }
     }
 });
 
@@ -2349,6 +2420,18 @@ function serializeHabitHistoryEvidence(evidence) {
 
 // Message handler for various actions
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "getBookmarkIntentEvidence") {
+        const senderUrl = String(sender?.url || sender?.tab?.url || "");
+        if (!senderUrl.startsWith(chrome.runtime.getURL("")) || sender?.tab?.incognito) {
+            sendResponse({ success: false, error: "non-incognito extension pages only" });
+            return true;
+        }
+        rankingDiagnosticsReady.then(async () => {
+            await syncBookmarkIntentStudy();
+            return { success: true, evidence: await bookmarkIntentStudy.evidence(message.pages) || {} };
+        }).then(sendResponse).catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
+    }
     if (message.type === "hasOpener") {
         if (sender.tab) {
             tabsWithOpener.add(sender.tab.id);
@@ -2369,7 +2452,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const method = { recordHomeRecommendationImpression: "recordImpression", recordHomeRecommendationChoice: "recordChoice", cancelHomeRecommendationChoice: "cancelChoice", snoozeHomeRecommendation: "snooze" }[message.action];
             const recorded = await homeRecommendationStore[method](payload);
             if (recorded && message.action === "recordHomeRecommendationChoice") refreshHomeRecommendationFocus();
-            if (recorded && message.action === "cancelHomeRecommendationChoice") cancelHomeRecommendationTimer();
+            if (recorded && message.action === "cancelHomeRecommendationChoice") refreshHomeRecommendationFocus();
             return { success: true, recorded };
         }).then(sendResponse).catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
         return true;
@@ -2397,12 +2480,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message.action === "getRankingDiagnostics") {
         rankingDiagnosticsReady
-            .then(() => rankingDiagnostics.getRecords())
-            .then(records => sendResponse({
+            .then(async () => {
+                await syncBookmarkIntentStudy();
+                return Promise.all([rankingDiagnostics.getSummary(), revisitStudy.getSummary(), bookmarkIntentStudy.summary()]);
+            })
+            .then(([summary, revisit, bookmarks]) => sendResponse({
                 success: true,
                 enabled: rankingDiagnostics.isEnabled(),
                 installType: rankingDiagnosticsInstallType,
-                summary: summarizeRankingDiagnostics(records)
+                summary,
+                revisitStudy: revisit || null,
+                bookmarkIntentStudy: bookmarks || null
             }))
             .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
         return true;
@@ -2412,8 +2500,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then(() => rankingDiagnostics.setEnabled(Boolean(message.enabled)))
             .then(async enabled => {
                 if (!enabled) {
+                    bookmarkIntentRevision += 1;
                     cancelHomeRecommendationTimer();
-                    await Promise.all([homeContextDiagnostics.clear(), homeRecommendationStore.clear()]);
+                    await Promise.all([homeContextDiagnostics.clear(), homeRecommendationStore.clear(), revisitStudy.clear(), bookmarkIntentStudy.clear()]);
+                    bookmarkIntentDirty = true;
                 }
                 sendResponse({ success: true, enabled });
             })
@@ -2424,7 +2514,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         rankingDiagnosticsReady
             .then(() => {
                 cancelHomeRecommendationTimer();
-                return Promise.all([rankingDiagnostics.clear(), homeContextDiagnostics.clear(), homeRecommendationStore.clear()]);
+                bookmarkIntentRevision += 1;
+                bookmarkIntentDirty = true;
+                return Promise.all([rankingDiagnostics.clear(), homeContextDiagnostics.clear(), homeRecommendationStore.clear(), revisitStudy.clear(), bookmarkIntentStudy.clear()]);
             })
             .then(() => sendResponse({ success: true }))
             .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));

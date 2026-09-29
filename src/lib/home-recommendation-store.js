@@ -1,7 +1,7 @@
 /** Opt-in, local Home experiment. Raw identities occur only in session storage. */
-export const HOME_RECOMMENDATION_COHORT = "home-recs-v2";
-export const HOME_RECOMMENDATION_KEY = "tabtopiaHomeRecommendationStudyV2";
-export const HOME_RECOMMENDATION_SESSION_KEY = "tabtopiaHomeRecommendationPendingV2";
+export const HOME_RECOMMENDATION_COHORT = "home-recs-v3";
+export const HOME_RECOMMENDATION_KEY = "tabtopiaHomeRecommendationStudyV3";
+export const HOME_RECOMMENDATION_SESSION_KEY = "tabtopiaHomeRecommendationPendingV3";
 export const HOME_RECOMMENDATION_SNOOZE_KEY = "tabtopiaHomeRecommendationSnoozesV2";
 const DAY = 86400000;
 const MAX_AGE = 30 * 60000;
@@ -272,7 +272,8 @@ export class HomeRecommendationStore {
     clear() {
         this.generation += 1;
         const run = this.chain.catch(() => {}).then(() => Promise.all([
-            this.local.remove(HOME_RECOMMENDATION_KEY), this.session.remove(HOME_RECOMMENDATION_SESSION_KEY)
+            this.local.remove(HOME_RECOMMENDATION_KEY), this.session.remove(HOME_RECOMMENDATION_SESSION_KEY),
+            this.local.remove("tabtopiaHomeRecommendationStudyV2"), this.session.remove("tabtopiaHomeRecommendationPendingV2")
         ]));
         this.chain = run;
         return run;

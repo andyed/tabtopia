@@ -71,7 +71,7 @@ test("recommendation report reads both policies from the real background and fit
   });
   expect(results.outcomes.every(result => result.success && result.recorded)).toBe(true);
   expect(results.response.success).toBe(true);
-  expect(results.response.summary.cohort).toBe("home-recs-v2");
+  expect(results.response.summary.cohort).toBe("home-recs-v3");
   expect(results.response.summary.arms.balanced).toMatchObject({ impressions: 1, exposures: 2, clicks: 1, engaged: 0, bounces: 0 });
   expect(results.response.summary.arms.explore).toMatchObject({ impressions: 1, exposures: 1, clicks: 1, engaged: 0, bounces: 0 });
 

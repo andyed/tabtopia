@@ -28,6 +28,7 @@
  * @requires state
  */
 
+import "../logging.js";
 import { getFaviconUrl, formatDistanceToNow, formatSessionDuration } from "./utility.js";
 import { displayReadout, hideReadout } from "./readout.js";
 import { handleKeyNavigation } from "./keyboardNav.js";
@@ -980,7 +981,7 @@ function fitTextToCell(textElement, cellWidth, cellHeight) {
 
 // Move listener setup to initialization
 function initializeMessageHandling() {
-    chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener((message, sender) => {
         // Check for URL bar navigation specifically
         if (message.action === "tabUpdated" &&
             message.changeInfo?.navigationType === "urlBarNavigation") {
@@ -988,12 +989,17 @@ function initializeMessageHandling() {
             console.log("URL bar navigation detected - updating treemap");
 
             // For URL bar navigation, we want to ensure we have the latest data
-            chrome.runtime.sendMessage({ action: "getInitialState" }, async (freshState) => {
-                treemapState.data = freshState;
-                await drawTreemap(treemapState.data);
-            });
+            chrome.runtime.sendMessage({ action: "getInitialState" })
+                .then(async freshState => {
+                    treemapState.data = freshState;
+                    await drawTreemap(treemapState.data);
+                })
+                .catch(error => globalThis.TabtopiaLogger.warn(
+                    "Could not refresh treemap after URL bar navigation",
+                    error
+                ));
 
-            return true;
+            return false;
         }
 
         // Handle other message types as before...
@@ -1038,12 +1044,15 @@ function initializeMessageHandling() {
             };
 
             // Update treemap immediately
-            await handleTabUpdated(updateData);
-            return true;
+            handleTabUpdated(updateData).catch(error => globalThis.TabtopiaLogger.warn(
+                "Could not update treemap from link navigation",
+                error
+            ));
+            return false;
         }
 
-        // Handle other message types...
-        return true;
+        // Leave messages owned by other extension contexts unanswered.
+        return false;
     });
 }
 

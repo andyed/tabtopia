@@ -1,6 +1,6 @@
 // Home actions use bounded, explainable heuristics. Scores are not probabilities.
 export const HOME_RECOMMENDATION_PREFS_KEY = "tabtopiaHomeRecommendationPrefsV1";
-const POLICY = "home-recs-v2";
+const POLICY = "home-recs-v3";
 const MINUTE = 60000;
 const DAY = 24 * 60 * MINUTE;
 
@@ -95,10 +95,19 @@ function historyBranches(history, now) {
 }
 function shortlist(values, scanLimit = 5000) {
   // Keep documents even when ordinary high-volume browsing would crowd them out.
-  return (Array.isArray(values) ? values : []).slice(0, scanLimit)
+  const rows = Array.isArray(values) ? values : [];
+  // Chrome's Mobile folder may occur after thousands of desktop bookmarks.
+  // Select its newest saves before applying the general URL scan bound.
+  const scan = scanLimit === 10000
+    ? [...rows.filter(value => value?.mobileFolder).sort((a, b) => positive(b.dateAdded) - positive(a.dateAdded)),
+      ...rows.filter(value => !value?.mobileFolder)].slice(0, scanLimit)
+    : rows.slice(0, scanLimit);
+  return scan
     .map((value, index) => ({ value, index, identity: recommendationIdentity(value?.url) }))
     .filter(item => item.identity)
-    .sort((a, b) => Number(b.identity.document) - Number(a.identity.document) || a.index - b.index)
+    .sort((a, b) => Number(Boolean(b.value.mobileFolder)) - Number(Boolean(a.value.mobileFolder))
+      || (a.value.mobileFolder && b.value.mobileFolder ? positive(b.value.dateAdded) - positive(a.value.dateAdded) : 0)
+      || Number(b.identity.document) - Number(a.identity.document) || a.index - b.index)
     .slice(0, 800).map(item => item.value);
 }
 
@@ -144,7 +153,8 @@ export function buildHomeRecommendations({ context, history = [], bookmarks = []
         title = identity.path.split("/").filter(Boolean).pop() || title;
       }
       candidate = { identity, url: new URL(raw.url).href, title, navigationAt: 0,
-        sources: new Set(), response: response || {}, hub: false, visits: 0, qualified: 0, lastVisit: 0, semantic: 0, related: false, bookmarked: false };
+        sources: new Set(), response: response || {}, hub: false, visits: 0, qualified: 0, lastVisit: 0, semantic: 0, related: false, bookmarked: false,
+        mobilePending: false, bookmarkSavedAt: 0 };
       candidates.set(identity.page, candidate);
     }
     candidate.sources.add(source);
@@ -183,7 +193,15 @@ export function buildHomeRecommendations({ context, history = [], bookmarks = []
   }
   for (const raw of shortlist(bookmarks, 10000)) {
     const item = add(raw, "bookmark");
-    if (item) item.bookmarked = true;
+    if (item) {
+      item.bookmarked = true;
+      const savedAt = positive(raw.dateAdded);
+      if (raw.mobileFolder && (!positive(raw.desktopEngagedAt) || positive(raw.desktopEngagedAt) < savedAt)) {
+        item.mobilePending = true;
+        item.bookmarkSavedAt = Math.max(item.bookmarkSavedAt, savedAt);
+        item.sources.add("mobile-bookmark");
+      }
+    }
   }
   const tabs = new Map();
   for (const tab of Array.isArray(openTabs) ? openTabs : []) {
@@ -236,6 +254,7 @@ export function buildHomeRecommendations({ context, history = [], bookmarks = []
       + (item.lastVisit ? 0.35 * Math.exp(-(now - item.lastVisit) / (7 * DAY)) : 0)
       + Math.min(1, density * Math.log1p(pathSupport) * 0.5) - fatigue - engagementPenalty;
     const reasons = [];
+    if (item.mobilePending) reasons.push("From Mobile bookmarks", "No deep desktop visit recorded");
     if (item.hub) reasons.push("Your selected hub");
     else if (inferredHub) reasons.push(branchPages >= 2 ? `Hub for ${branchPages} revisited pages` : "Frequently revisited");
     if (item.related) reasons.push("Related to your last 30 minutes");
@@ -251,7 +270,8 @@ export function buildHomeRecommendations({ context, history = [], bookmarks = []
       contextGeneratedAt: item.related ? generatedAt : now, policy: POLICY, arm: selectedArm,
       features: { hub: item.hub || inferredHub, selectedHub: item.hub, inferredHub, hubStrength, branchPages,
         bookmarkPath: prefix, document: item.identity.document, bookmarkDensity: density, bookmarkSupport: pathSupport,
-        bookmarked: item.bookmarked, context: item.related, semanticSimilarity: item.related ? item.semantic : null,
+        bookmarked: item.bookmarked, mobilePending: item.mobilePending, bookmarkSavedAt: item.bookmarkSavedAt,
+        context: item.related, semanticSimilarity: item.related ? item.semantic : null,
         visits: item.visits, qualifiedVisits: item.qualified, fatigue, engagementPenalty, heuristicScore: score },
       _site: item.identity.site, _path: item.identity.path, _score: score,
       _explorable: (item.hub || item.related || item.identity.document || item.visits >= 2) && engagementPenalty === 0 && fatigue < 2.5 };
@@ -271,6 +291,15 @@ export function buildHomeRecommendations({ context, history = [], bookmarks = []
     const identity = recommendationIdentity(page)?.page;
     const item = ranked.find(candidate => candidate.identity === identity);
     if (item && diverse(item)) selected.push(item);
+  }
+  // A mobile-folder save is an explicit deferred-intent cue, including pages
+  // with zero desktop visits. Reserve one existing card, honor hides/snoozes,
+  // and never reshuffle an already-visible locked slate.
+  if (selected.length < cap && !selected.some(item => item.features.mobilePending)) {
+    const deferred = ranked.filter(item => item.features.mobilePending && !item.target.open && diverse(item))
+      .sort((a, b) => a.features.fatigue - b.features.fatigue
+        || b.features.bookmarkSavedAt - a.features.bookmarkSavedAt || b._score - a._score)[0];
+    if (deferred) selected.push(deferred);
   }
   // Balanced choices fill the first slots; exploration rotates one supported action.
   const mainSlots = selectedArm === "explore" ? Math.max(0, cap - 1) : cap;

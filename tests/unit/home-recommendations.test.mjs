@@ -11,6 +11,33 @@ const context = results => ({ generatedAt: NOW - 1000, expiresAt: NOW + 60000, s
 const rank = values => buildHomeRecommendations({ now: NOW, ...values });
 const item = (url, score = .7) => ({ url, title: new URL(url).hostname, score });
 
+test("an unseen mobile placeholder receives one slot, survives quick openings, and yields after deeper reading", () => {
+  const url = "https://phone.test/read-later";
+  const mobile = { url, title: "Read later", mobileFolder: true, dateAdded: NOW - 10000 };
+  const input = { preferences: { hubs: [0, 1, 2].map(i => ({ url: `https://hub${i}.test/` })) },
+    bookmarks: [mobile], arm: "balanced" };
+  const before = rank(input);
+  assert.equal(before.length, 3);
+  assert.equal(before.filter(row => row.features.mobilePending).length, 1);
+  assert.equal(before[0].url, url);
+  assert.ok(before[0].reasons.includes("From Mobile bookmarks"));
+  assert.ok(rank({ ...input, bookmarks: [{ ...mobile, desktopOpenedAt: NOW - 1000 }] }).some(row => row.url === url));
+  assert.equal(rank({ ...input, bookmarks: [{ ...mobile, desktopEngagedAt: NOW - 1000 }] }).some(row => row.url === url), false);
+  assert.equal(rank({ ...input, feedback: { [url]: { snoozedUntil: NOW + 10000 } } }).some(row => row.url === url), false);
+  assert.equal(rank({ ...input, context: { hiddenHosts: ["phone.test"] } }).some(row => row.url === url), false);
+  assert.equal(rank({ ...input, openTabs: [{ url, id: 12 }] }).some(row => row.url === url), false);
+});
+
+test("mobile placeholders survive the candidate shortlist and never displace a locked visible slate", () => {
+  const url = "https://phone.test/later";
+  const bookmarks = Array.from({ length: 11000 }, (_, i) => ({ url: `https://old${i}.test/a.pdf` }));
+  bookmarks.push({ url, mobileFolder: true, dateAdded: NOW });
+  assert.ok(collectHomeRecommendationIdentities({ bookmarks }).includes(url));
+  const locked = ["https://one.test/", "https://two.test/", "https://three.test/"];
+  const results = rank({ bookmarks, preferences: { hubs: locked.map(url => ({ url })) }, lockedPages: locked });
+  assert.deepEqual(results.map(row => row.url), locked);
+});
+
 test("preferences have no personal defaults on any install, persist explicit choices, and validate before writes", async () => {
   assert.deepEqual(await readHomeRecommendationPreferences({ storage: storage() }), { hubs: [], exploration: true });
   const defaults = await readHomeRecommendationPreferences({ storage: storage(), development: true });
@@ -54,7 +81,7 @@ test("hubs, documents, meaningful revisits and fresh contextual candidates merge
   assert.equal(document.target.tabId, 9);
   assert.equal(document.target.windowId, 2);
   assert.deepEqual(results.map(result => result.rank), [1, 2, 3]);
-  assert.ok(results.every(result => result.policy === "home-recs-v2" && !Object.hasOwn(result, "probability")));
+  assert.ok(results.every(result => result.policy === "home-recs-v3" && !Object.hasOwn(result, "probability")));
   assert.equal(results.some(result => result.url.includes("oneoff")), false);
 });
 

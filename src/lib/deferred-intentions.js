@@ -1,4 +1,5 @@
 import { normalizeIdentity } from "./revisit-model.js";
+import { flattenBookmarkTree } from "./bookmark-intent.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BOOKMARK_RECENCY_HALF_LIFE_MS = 30 * DAY_MS;
@@ -34,7 +35,7 @@ export function buildDeferredIntentions({
   const historyByPage = indexHistory(historyItems);
   const bookmarksByPage = new Map();
 
-  for (const bookmark of flattenBookmarks(bookmarks)) {
+  for (const bookmark of flattenBookmarkTree(bookmarks)) {
     const url = String(bookmark?.url || "");
     if (!isEligibleUrl(url)) continue;
     const identity = normalizeIdentity(url);
@@ -80,6 +81,7 @@ export function buildDeferredIntentions({
         bookmarkedAt: bookmark.bookmarkedAt,
         bookmarkAgeMs: ageMs,
         bookmarkRecency,
+        mobileFolder: bookmark.mobileFolder,
         lastVisitTime,
         revisitedAfterSave,
         bookmarkCount: bookmark.bookmarkCount
@@ -102,18 +104,6 @@ export function buildDeferredIntentions({
   };
 }
 
-function flattenBookmarks(bookmarks) {
-  const flattened = [];
-  const queue = Array.isArray(bookmarks) ? [...bookmarks] : [];
-  for (let index = 0; index < queue.length; index += 1) {
-    const node = queue[index];
-    if (!node || typeof node !== "object") continue;
-    if (node.url) flattened.push(node);
-    if (Array.isArray(node.children)) queue.push(...node.children);
-  }
-  return flattened;
-}
-
 function normalizeBookmark(bookmark, identity) {
   const id = String(bookmark?.id ?? "");
   return {
@@ -122,6 +112,7 @@ function normalizeBookmark(bookmark, identity) {
     url: String(bookmark.url),
     title: String(bookmark.title || identity.domain || "Untitled"),
     bookmarkedAt: finiteTimestamp(bookmark.dateAdded),
+    mobileFolder: Boolean(bookmark.mobileFolder),
     primaryBookmarkId: id || identity.page,
     bookmarkIds: id ? [id] : [],
     bookmarkCount: 1
@@ -137,6 +128,7 @@ function mergeBookmarks(existing, incoming) {
     ...representative,
     normalizedPage: existing.normalizedPage,
     domain: existing.domain,
+    mobileFolder: existing.mobileFolder || incoming.mobileFolder,
     bookmarkIds: [...new Set([...existing.bookmarkIds, ...incoming.bookmarkIds])].sort(),
     bookmarkCount: existing.bookmarkCount + incoming.bookmarkCount
   };
@@ -176,7 +168,8 @@ function reasonsForBookmark({ bookmarkedAt, revisitedAfterSave, open }) {
 }
 
 function compareDeferredIntentions(left, right) {
-  return right.cues.bookmarkRecency - left.cues.bookmarkRecency
+  return Number(right.cues.mobileFolder) - Number(left.cues.mobileFolder)
+    || right.cues.bookmarkRecency - left.cues.bookmarkRecency
     || right.cues.bookmarkedAt - left.cues.bookmarkedAt
     || left.action.target.url.localeCompare(right.action.target.url)
     || left.id.localeCompare(right.id);

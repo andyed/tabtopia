@@ -9,7 +9,10 @@ const fisheyeInput = document.getElementById("searchFisheyeEnabled");
 const fisheyeStatus = document.getElementById("fisheyeStatus");
 const installBadge = document.getElementById("installBadge");
 const reportStatus = document.getElementById("reportStatus");
+const studySummary = document.getElementById("studySummary");
+const exposureStatus = document.getElementById("exposureStatus");
 const modelReport = document.getElementById("modelReport");
+const segmentReport = document.getElementById("segmentReport");
 const interactionSummary = document.getElementById("interactionSummary");
 const refreshButton = document.getElementById("refreshReport");
 const clearButton = document.getElementById("clearDiagnostics");
@@ -123,6 +126,10 @@ async function refresh() {
         ? "Internal install · default on"
         : "Standard install · default off";
     renderSummary(response.summary, response.enabled);
+    renderRevisitStudy(response.revisitStudy, response.enabled);
+    document.getElementById("bookmarkIntentStatus").textContent = !response.enabled ? "Diagnostics are off."
+        : response.bookmarkIntentStudy?.groups?.map(group => `${group.source === "mobile-folder" ? "Mobile folder" : "Other bookmarks"}: ${group.tracked} tracked · ${group.opened} opened · ${group.engaged} deeper visits · ${group.pending} pending (${group.overdue7d} saved over a week ago)`).join(". ")
+            || "Bookmark observations are unavailable until the extension is reloaded.";
     await renderHiddenContextSites(response.installType === "development");
     if (!loadedRecommendationPreferences) {
         try {
@@ -235,24 +242,32 @@ function describeHome(enabled) {
 function renderSummary(summary, enabled) {
     const models = Array.isArray(summary?.models) ? summary.models : [];
     modelReport.replaceChildren();
+    studySummary.replaceChildren();
+    segmentReport.replaceChildren();
     if (!enabled) {
         reportStatus.textContent = "Diagnostics are off. No ranking evaluation is running.";
     } else if (models.length === 0) {
         reportStatus.textContent = "Diagnostics are on. Switch between tabs to begin the shadow comparison.";
     } else {
         const observations = Math.max(...models.map(model => model.observations));
-        reportStatus.textContent = `${observations} qualified next-tab outcomes compared locally.`;
+        reportStatus.textContent = `${observations} qualified next-tab outcomes compared locally (${summary.study?.cohort || "unknown cohort"}).`;
     }
 
-    for (const model of models) {
+    renderStudySummary(summary?.study);
+    renderExposureGate(summary?.exposureGate, enabled);
+
+    for (const model of sortModels(models)) {
         const card = document.createElement("article");
         card.className = "model-card";
         card.append(
             textElement("h3", friendlyModelName(model.modelVersion)),
             metricGrid(model)
         );
+        const lift = liftSummary(model);
+        if (lift) card.append(textElement("p", "model-lift", lift));
         modelReport.append(card);
     }
+    renderSegments(summary?.segments, summary?.exposureGate?.primaryModel);
 
     interactionSummary.textContent = summary?.selections || summary?.abandonments
         ? `${summary.selections} Tabtopia selections · ${summary.abandonments} cancelled or native-result exits`
@@ -266,11 +281,15 @@ function metricGrid(model) {
     for (const [label, value] of [
         ["Top 1", model.hit1],
         ["Top 3", model.hit3],
-        ["MRR", model.mrr]
+        ["Top 4", model.hit4],
+        ["MRR", model.mrr],
+        ["Coverage", model.coverage],
+        ["Calibration error", model.calibrationError],
+        ["Log loss", model.logLoss, "number"]
     ]) {
         const item = document.createElement("div");
         const term = textElement("dt", label);
-        const metric = textElement("dd", formatMetric(value));
+        const metric = textElement("dd", argumentsForMetric(label, value));
         item.append(term, metric);
         grid.append(item);
     }
@@ -278,18 +297,178 @@ function metricGrid(model) {
 }
 
 function friendlyModelName(version) {
-    if (version === "bayes-history-context-v1") return "Bayesian History + Context";
-    if (version === "frecency-v1") return "Frecency baseline";
-    return version;
+    return ({
+        "mru-v1": "MRU baseline",
+        "investment-v1": "Investment baseline",
+        "same-domain-mru-v1": "Same-domain MRU",
+        "strip-neighbor-v1": "Tab-strip neighbor",
+        "transition-page-v1": "Page transition",
+        "transition-domain-v1": "Domain transition",
+        "frecency-v1": "Frecency baseline",
+        "history-page-v1": "History only · page",
+        "history-domain-v1": "History only · domain",
+        "bayes-page-v1": "Bayesian · page",
+        "bayes-domain-v1": "Bayesian · domain",
+        "bayes-hierarchical-v1": "Bayesian · hierarchical",
+        "bayes-history-context-v1": "Bayesian History + Context"
+    })[version] || version;
 }
 
 function formatMetric(value) {
     return Number.isFinite(value) ? `${Math.round(value * 100)}%` : "—";
 }
 
-function textElement(tag, text) {
+function formatNumber(value) {
+    return Number.isFinite(value) ? value.toFixed(2) : "—";
+}
+
+function argumentsForMetric(label, value) {
+    return label === "Log loss" ? formatNumber(value) : formatMetric(value);
+}
+
+function renderStudySummary(study) {
+    for (const [label, value] of [
+        ["Outcomes", Number(study?.outcomes || 0).toLocaleString()],
+        ["Eligible", formatMetric(study?.eligibilityCoverage)],
+        ["Censored", formatMetric(study?.censoringRate)],
+        ["Censor reasons", formatCensorReasons(study?.censorReasons)],
+        ["Weekly windows", Number(study?.evaluationWindows || 0).toLocaleString()],
+        ["Retained days", `${Number(study?.retainedDays || 0)} / ${Number(study?.retentionDays || 90)}`],
+        ["Retained details", `${Number(study?.retainedDetails || 0).toLocaleString()} / ${Number(study?.detailLimit || 5000).toLocaleString()} (2 MiB limit)`],
+        ["Prediction p95 upper bound", Number.isFinite(study?.predictionP95Ms)
+            ? `${study.predictionP95Ms.toFixed(1)} ms`
+            : "—"]
+    ]) {
+        const item = document.createElement("div");
+        item.className = "study-stat";
+        item.append(textElement("span", "study-stat__label", label), textElement("strong", value));
+        studySummary.append(item);
+    }
+}
+
+function renderRevisitStudy(study, enabled) {
+    const status = document.getElementById("revisitStudyStatus");
+    const report = document.getElementById("revisitStudyReport");
+    report.replaceChildren();
+    status.textContent = !enabled ? "Diagnostics are off."
+        : !study ? "Revisit diagnostics are unavailable until the extension is reloaded."
+        : `${Number(study.qualifiedAccesses).toLocaleString()} qualified page accesses · ${study.pendingAnchors} pending anchors · ${study.censoredLabels} expired horizon observations · up to ${study.retentionDays} days retained.`;
+    for (const horizon of study?.horizons || []) {
+        const card = document.createElement("article");
+        card.className = "model-card";
+        card.append(textElement("h3", `Within ${horizon.horizon} accesses`));
+        card.append(textElement("p", `${horizon.resolved} resolved · ${horizon.returned} returned · ${horizon.noObservedReturn} without observed return · ${horizon.pending} pending`));
+        for (const model of horizon.models) {
+            const name = model.model === "base-rate-v1" ? "Base rate" : "History buckets";
+            card.append(textElement("p", `${name}: Brier ${formatNumber(model.brier)} · calibration error ${formatMetric(model.calibrationError)}`));
+        }
+        report.append(card);
+    }
+}
+
+function formatCensorReasons(reasons) {
+    if (!Array.isArray(reasons) || reasons.length === 0) return "None";
+    const labels = {
+        inactivity: "inactivity",
+        "outcome-not-candidate": "outside set",
+        "candidate-set-changed": "set changed",
+        unspecified: "unspecified"
+    };
+    return reasons
+        .map(item => `${labels[item.reason] || item.reason} ${Number(item.count || 0).toLocaleString()}`)
+        .join(" · ");
+}
+
+function renderExposureGate(gate, enabled) {
+    if (!enabled) {
+        exposureStatus.textContent = "Exposure gate paused while diagnostics are off.";
+        exposureStatus.dataset.state = "paused";
+        return;
+    }
+    if (gate?.ready) {
+        exposureStatus.textContent = "Study gate passed. Results still remain shadow-only; no prediction UI is enabled automatically.";
+        exposureStatus.dataset.state = "ready";
+        return;
+    }
+    const reason = Array.isArray(gate?.reasons) && gate.reasons.length > 0
+        ? gate.reasons[0]
+        : "Collecting the first qualified outcomes.";
+    exposureStatus.textContent = `Shadow only · ${reason}`;
+    exposureStatus.dataset.state = "collecting";
+}
+
+function renderSegments(segments, primaryModel) {
+    const sections = [
+        ["Accuracy by open-tab count", segments?.openTabBands],
+        ["Accuracy by browser-session age", segments?.sessionAgeBands],
+        ["Next destination type", segments?.destinationClasses]
+    ];
+    for (const [title, values] of sections) {
+        if (!Array.isArray(values) || values.length === 0) continue;
+        const group = document.createElement("section");
+        group.className = "segment-group";
+        group.append(textElement("h3", title));
+        const list = document.createElement("ul");
+        list.className = "segment-list";
+        for (const segment of values) {
+            const primary = segment.models?.find(model => model.modelVersion === primaryModel);
+            const item = document.createElement("li");
+            item.append(
+                textElement("strong", segment.band),
+                textElement("span", `${segment.eligibleOutcomes} eligible · Top 1 ${formatMetric(primary?.hit1)} · MRR ${formatMetric(primary?.mrr)}`)
+            );
+            list.append(item);
+        }
+        group.append(list);
+        segmentReport.append(group);
+    }
+}
+
+function liftSummary(model) {
+    const mru = model?.lift?.["mru-v1"];
+    const frecency = model?.lift?.["frecency-v1"];
+    if (!mru || !frecency) return "";
+    return `Top-1 lift · MRU ${formatSignedMetric(mru.hit1)} · Frecency ${formatSignedMetric(frecency.hit1)}`;
+}
+
+function formatSignedMetric(value) {
+    if (!Number.isFinite(value)) return "—";
+    const percentage = Math.round(value * 100);
+    return `${percentage > 0 ? "+" : ""}${percentage} pp`;
+}
+
+function sortModels(models) {
+    const order = [
+        "bayes-domain-v1",
+        "mru-v1",
+        "frecency-v1",
+        "bayes-page-v1",
+        "bayes-hierarchical-v1",
+        "history-page-v1",
+        "history-domain-v1",
+        "transition-page-v1",
+        "transition-domain-v1",
+        "investment-v1",
+        "same-domain-mru-v1",
+        "strip-neighbor-v1"
+    ];
+    return models.slice().sort((left, right) => {
+        const leftIndex = order.indexOf(left.modelVersion);
+        const rightIndex = order.indexOf(right.modelVersion);
+        return (leftIndex < 0 ? order.length : leftIndex)
+            - (rightIndex < 0 ? order.length : rightIndex)
+            || left.modelVersion.localeCompare(right.modelVersion);
+    });
+}
+
+function textElement(tag, classNameOrText, text) {
     const element = document.createElement(tag);
-    element.textContent = text;
+    if (text === undefined) {
+        element.textContent = classNameOrText;
+    } else {
+        element.className = classNameOrText;
+        element.textContent = text;
+    }
     return element;
 }
 

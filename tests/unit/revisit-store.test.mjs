@@ -38,6 +38,13 @@ test("revisit store persists keyed identities and scores History/Context", async
     );
     assert.equal(score.source, "bayesian");
     assert.ok(Number.isFinite(score.score));
+    assert.ok(Number.isFinite(score.pageScore));
+    assert.ok(Number.isFinite(score.domainScore));
+    assert.ok(Number.isFinite(score.hierarchicalScore));
+    assert.equal(score.pageContextAvailable, true);
+    assert.equal(score.domainContextAvailable, true);
+    assert.ok(score.pageContext > 0);
+    assert.ok(score.domainContext > 0);
 });
 
 test("History-only candidate scoring preserves page/domain evidence and ignores transitions", async () => {

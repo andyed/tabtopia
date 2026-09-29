@@ -30,11 +30,22 @@ export function buildRecallCandidate(tab, behavior = {}) {
         active: Boolean(tab.active),
         pinned: Boolean(tab.pinned),
         audible: Boolean(tab.audible),
+        index: Number.isFinite(Number(tab.index)) ? Number(tab.index) : null,
         lastAccessed: Number(tab.lastAccessed || behavior.lastAccessed || 0),
         totalTimeSpent: Number(behavior.totalTimeSpent || 0),
+        firstSeen: Number(behavior.firstSeen || 0),
         bayesianScore: Number(behavior.bayesianScore),
         frecencyScore: Number(behavior.frecencyScore),
         historyScore: Number(behavior.historyScore),
+        pageBayesianScore: Number(behavior.pageBayesianScore),
+        domainBayesianScore: Number(behavior.domainBayesianScore),
+        hierarchicalBayesianScore: Number(behavior.hierarchicalBayesianScore),
+        pageHistoryScore: Number(behavior.pageHistoryScore),
+        domainHistoryScore: Number(behavior.domainHistoryScore),
+        pageContextScore: Number(behavior.pageContextScore),
+        domainContextScore: Number(behavior.domainContextScore),
+        pageContextAvailable: Boolean(behavior.pageContextAvailable),
+        domainContextAvailable: Boolean(behavior.domainContextAvailable),
         behaviorSource: behavior.source || "none"
     };
 }

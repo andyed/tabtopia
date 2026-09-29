@@ -127,7 +127,7 @@ function scheduleIdle(callback) {
 function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinations, ...extra }) {
   const sourceState = { snapshot, recognition, forecast, habitDestinations, ...extra };
   const deferredIntentions = buildDeferredIntentions({
-    bookmarks: extra.bookmarks,
+    bookmarks: extra.recommendationBookmarks || extra.bookmarks,
     historyItems: extra.historyPool,
     openTabs: (extra.windows || []).flatMap(window => window.tabs || []),
     now: extra.generatedAt
@@ -349,6 +349,8 @@ function renderHome(model) {
   activateHome();
   try {
     const focusedRecommendation = root.contains(document.activeElement) ? document.activeElement?.dataset?.recommendationFocus : null;
+    const focusedAlternatives = root.contains(document.activeElement)
+      && document.activeElement?.matches(".home-takeover__alternatives");
     const otherRoutesOpen = root.querySelector(".home-takeover__other-routes")?.open;
     renderHomeTakeover(root, { ...model, undoHiddenHost: lastHiddenContextHost,
       undoSnoozed: lastSnoozedRecommendation?.title, recommendationFeedbackMessage }, {
@@ -369,6 +371,8 @@ function renderHome(model) {
     if (focusedRecommendation) {
       [...root.querySelectorAll("[data-recommendation-focus]")]
         .find(node => node.dataset.recommendationFocus === focusedRecommendation)?.focus({ preventScroll: true });
+    } else if (focusedAlternatives) {
+      root.querySelector(".home-takeover__alternatives")?.focus({ preventScroll: true });
     }
     window.tabtopiaStartPageHome = { model, freshOverride };
     clearTimeout(contextExpiryTimer);
