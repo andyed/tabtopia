@@ -12,6 +12,10 @@ const SECRET_KEY = "tabtopiaRevisitSecretV1";
 const STATE_VERSION = 1;
 const RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_ACCESSES_PER_IDENTITY = 64;
+// Ages exposed per tab for the replay log. Eight is enough for the decay
+// sweep (under t^-d the oldest of 64 accesses contributes almost nothing)
+// and keeps a replay row near its pre-ages size.
+const MAX_ACCESS_AGES = 8;
 const MAX_IDENTITIES = 1000;
 const MAX_TRANSITION_SOURCES = 500;
 const MAX_TRANSITION_TARGETS = 32;
@@ -127,6 +131,13 @@ export class RevisitStore {
                 domainContext: domain.context,
                 pageContextAvailable,
                 domainContextAvailable,
+                // Ages of the most recent qualified accesses, relative to the
+                // same `now` the scores above used, so a replay can recompute
+                // History from them with another decay and, at d = 0.5, land
+                // on pageHistory exactly. Diagnostic only: no live score reads
+                // them.
+                pageAccessAges: recentAccessAges(this.state.histories.page[pageDigest], now),
+                domainAccessAges: recentAccessAges(this.state.histories.domain[domainDigest], now),
                 source: Number.isFinite(score) ? "bayesian" : "none"
             };
         }));
@@ -322,6 +333,21 @@ function historyEvidence(timestamps, now, decay) {
         accessCount: accesses.length,
         lastAccessAt: latest(accesses)
     };
+}
+
+/**
+ * Ages (ms) of the newest MAX_ACCESS_AGES qualified accesses, most recent
+ * first. Filters exactly as scoreHistory does (finite, not in the future), so
+ * an identity with at most MAX_ACCESS_AGES accesses reproduces its History
+ * score from these ages alone.
+ */
+function recentAccessAges(timestamps, now) {
+    if (!Array.isArray(timestamps)) return [];
+    return timestamps
+        .filter(timestamp => Number.isFinite(timestamp) && timestamp <= now)
+        .sort((a, b) => b - a)
+        .slice(0, MAX_ACCESS_AGES)
+        .map(timestamp => now - timestamp);
 }
 
 function emptyHistoryCandidate(key) {

@@ -9,6 +9,7 @@ import {
     summarizeRankingDiagnostics
 } from "../../src/lib/ranking-diagnostics.js";
 import {
+    MAX_REPLAY_ACCESS_AGES,
     MAX_REPLAY_CANDIDATES,
     REPLAY_CURRENT_TAB_ID,
     REPLAY_FEATURES,
@@ -17,7 +18,8 @@ import {
     encodeReplayRows,
     finalizeReplayRow,
     reconstructCandidates,
-    replayOutcome
+    replayOutcome,
+    sanitizeCapture
 } from "../../src/lib/ranking-replay.js";
 
 class MemoryStorage {
@@ -59,9 +61,14 @@ function candidate(tabId, overrides = {}) {
         pageBayesianScore: Number.NEGATIVE_INFINITY,
         domainBayesianScore: Number.NEGATIVE_INFINITY,
         hierarchicalBayesianScore: Number.NEGATIVE_INFINITY,
+        pageAccessAges: [],
+        domainAccessAges: [],
         ...overrides
     };
 }
+
+const AGE_LIST_FEATURES = ["pageAccessAges", "domainAccessAges"];
+const isAgeList = feature => AGE_LIST_FEATURES.includes(feature);
 
 // Deliberately awkward: ties on lastAccessed, a candidate with no index, one
 // in another window, one with no domain, abstaining models (-Infinity), a
@@ -70,8 +77,11 @@ function fixture() {
     const candidates = [
         candidate(50, { domain: "alpha.example", frecencyScore: 0.25, pageBayesianScore: 0.1, lastAccessed: NOW - 5000 }),
         candidate(30, { domain: "alpha.example", index: 3, frecencyScore: 0.5 }), // current
-        candidate(10, { windowId: 2, index: 0, frecencyScore: 0.4, domainBayesianScore: 0.3, lastAccessed: NOW - 5000 }),
-        candidate(40, { index: null, domain: "", pageContextScore: 0.7, domainContextScore: 0.2 }),
+        candidate(10, {
+            windowId: 2, index: 0, frecencyScore: 0.4, domainBayesianScore: 0.3, lastAccessed: NOW - 5000,
+            pageAccessAges: [5000, 60_000, 86_400_000], domainAccessAges: [5000, 30_000, 60_000, 86_400_000]
+        }),
+        candidate(40, { index: null, domain: "", pageContextScore: 0.7, domainContextScore: 0.2, domainAccessAges: [1500] }),
         candidate(20, { pinned: true, audible: true, hierarchicalBayesianScore: 0.9, frecencyScore: 0.4, lastAccessed: 0 }),
         candidate(60, { domain: "gamma.example", pageContextAvailable: false, domainContextAvailable: false })
     ];
@@ -92,8 +102,18 @@ test("a replayed row reproduces every live model's ranking and confidence", () =
     assert.equal(capture.matrix.length, live.eligibleTabIds.length);
     assert.equal(capture.features.length, REPLAY_FEATURES.length);
     for (const values of capture.matrix) {
-        for (const value of values) assert.ok(value === null || (typeof value === "number" && Number.isFinite(value)));
+        values.forEach((value, index) => {
+            if (isAgeList(capture.features[index]) && Array.isArray(value)) {
+                assert.ok(value.length > 0 && value.every(age => Number.isInteger(age) && age >= 0), capture.features[index]);
+                return;
+            }
+            assert.ok(value === null || (typeof value === "number" && Number.isFinite(value)), capture.features[index]);
+        });
     }
+    // The fixture must actually store some age lists, or the array branches
+    // of the codec are never exercised below.
+    const ageColumns = AGE_LIST_FEATURES.map(feature => capture.features.indexOf(feature));
+    assert.ok(capture.matrix.some(values => ageColumns.some(column => Array.isArray(values[column]))));
     // Nothing identifying survives into the capture.
     const text = JSON.stringify(capture);
     for (const needle of ["example", "private", "Private", "https", "tabId", "title"]) assert.ok(!text.includes(needle), needle);
@@ -103,7 +123,15 @@ test("a replayed row reproduces every live model's ranking and confidence", () =
     assert.deepEqual(decoded.matrix, row.matrix);
     assert.equal(decoded.cohort, RANKING_STUDY_COHORT);
 
-    const replayed = buildShadowPredictions(reconstructCandidates(decoded), { currentTabId: REPLAY_CURRENT_TAB_ID });
+    // Age lists survive the round trip verbatim and come back as [] when null.
+    const reconstructed = reconstructCandidates(decoded);
+    live.eligibleTabIds.forEach((tabId, position) => {
+        const source = candidates.find(item => item.tabId === tabId);
+        const twin = reconstructed[position + 1];
+        for (const feature of AGE_LIST_FEATURES) assert.deepEqual(twin[feature], source[feature], `${tabId} ${feature}`);
+    });
+
+    const replayed = buildShadowPredictions(reconstructed, { currentTabId: REPLAY_CURRENT_TAB_ID });
     assert.deepEqual(Object.keys(replayed.models), Object.keys(live.models));
     for (const version of Object.values(SHADOW_MODEL_VERSIONS)) {
         const expected = live.models[version];
@@ -235,9 +263,45 @@ test("decode maps columns by name so a row written with another feature list sti
     for (const values of normalized.matrix) assert.equal(values[lastIndex], null);
     for (const feature of REPLAY_FEATURES.slice(0, -1)) {
         const index = REPLAY_FEATURES.indexOf(feature);
-        normalized.matrix.forEach((values, position) => assert.equal(values[index], row.matrix[position][index], feature));
+        normalized.matrix.forEach((values, position) => assert.deepEqual(values[index], row.matrix[position][index], feature));
     }
+    // The dropped last column is an age list, so a row from before the column
+    // reconstructs it as an empty list rather than a null a model would trip on.
+    for (const candidate of reconstructCandidates(normalized).slice(1)) assert.deepEqual(candidate[last], []);
     assert.ok(decodeReplayRows({ format: "something-else", features: [], rows: [] }).length === 0);
+});
+
+test("access-age columns are capped, integer, most recent first, and the only cells that may hold arrays", () => {
+    const { candidates, currentTabId } = fixture();
+    // Twelve unsorted, fractional ages with a stray negative and a NaN.
+    const many = [9e6, 1.4, 3e5, Number.NaN, -1, 7e5, 2e6, 1e6, 4e6, 8e6, 5e6, 3e6, 6e6, 7e6];
+    candidates[0].pageAccessAges = many;
+    const live = buildShadowPredictions(candidates, { currentTabId });
+    const capture = captureReplayFeatures(candidates, live, { now: NOW });
+    const column = capture.features.indexOf("pageAccessAges");
+    const stored = capture.matrix[live.eligibleTabIds.indexOf(candidates[0].tabId)][column];
+    assert.deepEqual(stored, [1, 3e5, 7e5, 1e6, 2e6, 3e6, 4e6, 5e6].slice(0, MAX_REPLAY_ACCESS_AGES));
+    assert.equal(stored.length, MAX_REPLAY_ACCESS_AGES);
+
+    // sanitizeCapture: an array in a numeric column, an empty list, and a list
+    // with a bad element all become null; a whole list passes untouched.
+    const scoreColumn = capture.features.indexOf("pageHistoryScore");
+    const domainColumn = capture.features.indexOf("domainAccessAges");
+    const tampered = structuredClone(capture);
+    tampered.matrix[0][scoreColumn] = [1, 2];
+    tampered.matrix[0][domainColumn] = [];
+    tampered.matrix[1][domainColumn] = [100, "200"];
+    tampered.matrix[2][domainColumn] = [250, 90_000];
+    const sane = sanitizeCapture(tampered);
+    assert.equal(sane.matrix[0][scoreColumn], null);
+    assert.equal(sane.matrix[0][domainColumn], null);
+    assert.equal(sane.matrix[1][domainColumn], null);
+    assert.deepEqual(sane.matrix[2][domainColumn], [250, 90_000]);
+    assert.deepEqual(sane.matrix[0][column], stored);
+
+    // Nothing in the row's text is anything but digits, brackets, and nulls.
+    const row = finalizeReplayRow(capture, { outcomeIndex: 0, timestamp: NOW, cohort: RANKING_STUDY_COHORT });
+    assert.match(JSON.stringify(row.matrix), /^[\d\[\],.e+\-null]+$/);
 });
 
 test("replayed records feed the study summarizer like live ones", () => {

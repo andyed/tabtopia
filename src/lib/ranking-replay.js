@@ -12,7 +12,8 @@
 // Privacy contract (same as ranking-diagnostics): no tab ids, URLs, titles,
 // domains, or queries survive into the durable row. Domains and windows are
 // reduced to per-row group numbers (0 = shares the current tab's), identities
-// to positions, timestamps to ages. Every stored value is a number or null.
+// to positions, timestamps to ages. Every stored value is a number or null,
+// except the two access-age columns, which are arrays of integer ages or null.
 import { buildShadowPredictions } from "./shadow-ranking.js";
 
 export const REPLAY_FORMAT = "ranking-replay-v1";
@@ -54,8 +55,19 @@ export const REPLAY_FEATURES = Object.freeze([
     "domainContextAvailable",
     "pageBayesianScore",
     "domainBayesianScore",
-    "hierarchicalBayesianScore"
+    "hierarchicalBayesianScore",
+    // Ages (ms before the score's `now`, most recent first) of the newest
+    // qualified accesses at each identity, capped at MAX_REPLAY_ACCESS_AGES;
+    // null when none. Added 2026-10-08 so the Zemla et al. decay and
+    // ordinal-time variants can be swept offline: a summed activation cannot
+    // be re-decayed, its inputs can. At d = 0.5 these reproduce
+    // pageHistoryScore / domainHistoryScore when the identity has no more
+    // accesses than the cap (scripts/replay-models/decay-variants.mjs).
+    "pageAccessAges",
+    "domainAccessAges"
 ]);
+// Store cap on each access-age list. Eight ages cost ~70 bytes per candidate.
+export const MAX_REPLAY_ACCESS_AGES = 8;
 
 const SCORE_FEATURES = new Set([
     "frecencyScore", "bayesianScore", "historyScore", "pageHistoryScore", "domainHistoryScore",
@@ -63,6 +75,9 @@ const SCORE_FEATURES = new Set([
     "hierarchicalBayesianScore"
 ]);
 const FLAG_FEATURES = new Set(["pinned", "audible", "pageContextAvailable", "domainContextAvailable"]);
+// The only columns whose cells may be arrays; everywhere else an array is
+// treated as a bad value and becomes null.
+const AGE_LIST_FEATURES = new Set(["pageAccessAges", "domainAccessAges"]);
 
 /**
  * Capture the feature matrix for one prediction. `prediction` is the object
@@ -115,6 +130,7 @@ export function captureReplayFeatures(candidates, prediction, { now = Date.now()
             default:
                 if (FLAG_FEATURES.has(feature)) return candidate[feature] ? 1 : 0;
                 if (SCORE_FEATURES.has(feature)) return roundedOrNull(candidate[feature], SCORE_PRECISION);
+                if (AGE_LIST_FEATURES.has(feature)) return ageListOrNull(candidate[feature]);
                 return null;
             }
         });
@@ -195,7 +211,9 @@ export function reconstructCandidates(row) {
         domain: row.currentHasDomain ? "d0" : "",
         lastAccessed: capturedAt,
         totalTimeSpent: 0,
-        firstSeen: 0
+        firstSeen: 0,
+        pageAccessAges: [],
+        domainAccessAges: []
     }];
     row.matrix.forEach((values, position) => {
         const get = feature => column(values, feature);
@@ -216,6 +234,8 @@ export function reconstructCandidates(row) {
         for (const feature of FLAG_FEATURES) candidate[feature] = get(feature) === 1;
         // rankBy drops non-finite scores, so null (live -Infinity or NaN) → NaN.
         for (const feature of SCORE_FEATURES) candidate[feature] = get(feature) ?? Number.NaN;
+        // A null age list (no accesses, or a row older than the column) → [].
+        for (const feature of AGE_LIST_FEATURES) candidate[feature] = get(feature) ?? [];
         candidates.push(candidate);
     });
     return candidates;
@@ -304,7 +324,7 @@ export function sanitizeCapture(capture) {
     const width = capture.features.length;
     if (width === 0 || !capture.features.every(feature => typeof feature === "string")) return null;
     const matrix = capture.matrix.map(values => Array.isArray(values) && values.length === width
-        ? values.map(value => (typeof value === "number" && Number.isFinite(value)) ? value : null) : null);
+        ? values.map((value, index) => sanitizeCell(value, capture.features[index])) : null);
     if (matrix.length === 0 || matrix.some(values => values === null)) return null;
     return {
         features: [...capture.features],
@@ -321,9 +341,32 @@ function columnReader(row) {
     return (values, feature) => {
         const index = positions.get(feature);
         if (index === undefined) return null;
-        const value = values[index];
-        return typeof value === "number" && Number.isFinite(value) ? value : null;
+        return sanitizeCell(values[index], feature);
     };
+}
+
+/**
+ * A cell is a finite number or null. In the two age-list columns it may also
+ * be a non-empty array of finite numbers; an array anywhere else, an empty
+ * array, or an array with a bad element is null, never partially kept, so a
+ * stored list is either whole or absent.
+ */
+function sanitizeCell(value, feature) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (Array.isArray(value) && AGE_LIST_FEATURES.has(feature)) {
+        return value.length > 0 && value.every(age => typeof age === "number" && Number.isFinite(age)) ? value : null;
+    }
+    return null;
+}
+
+/** Newest MAX_REPLAY_ACCESS_AGES ages as integers, most recent first; null when none. */
+function ageListOrNull(value) {
+    if (!Array.isArray(value)) return null;
+    const ages = value.filter(age => Number.isFinite(age) && age >= 0)
+        .sort((left, right) => left - right)
+        .slice(0, MAX_REPLAY_ACCESS_AGES)
+        .map(age => Math.round(age));
+    return ages.length > 0 ? ages : null;
 }
 
 function normalizeMatrix(row, features) {

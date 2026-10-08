@@ -46,8 +46,15 @@ export function buildRecallCandidate(tab, behavior = {}) {
         domainContextScore: Number(behavior.domainContextScore),
         pageContextAvailable: Boolean(behavior.pageContextAvailable),
         domainContextAvailable: Boolean(behavior.domainContextAvailable),
+        // Replay-log inputs from RevisitStore.scoreTabs; no ranking reads them.
+        pageAccessAges: accessAges(behavior.pageAccessAges),
+        domainAccessAges: accessAges(behavior.domainAccessAges),
         behaviorSource: behavior.source || "none"
     };
+}
+
+function accessAges(value) {
+    return Array.isArray(value) ? value.filter(age => Number.isFinite(age) && age >= 0) : [];
 }
 
 export function scoreText(query, candidate) {

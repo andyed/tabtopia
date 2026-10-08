@@ -23,7 +23,7 @@ import path from "node:path";
 
 import { buildShadowPredictions } from "../src/lib/shadow-ranking.js";
 import { decodeRankingDetails } from "../src/lib/ranking-detail-codec.js";
-import { summarizeRankingDiagnostics } from "../src/lib/ranking-diagnostics.js";
+import { MAX_MODELS, summarizeRankingDiagnostics } from "../src/lib/ranking-diagnostics.js";
 import { decodeReplayRows, replayOutcome } from "../src/lib/ranking-replay.js";
 
 const args = process.argv.slice(2);
@@ -79,6 +79,13 @@ if (has("--json")) {
 
 function evaluate(subset, builder) {
     const records = subset.map(row => replayOutcome(row, builder));
+    // The summariser keeps the first MAX_MODELS models of a record and says
+    // nothing about the rest, so a --models file that pushes the total past
+    // the cap would lose its last models without any sign in the table.
+    const widest = Math.max(0, ...records.map(record => record.models.length));
+    if (widest > MAX_MODELS) {
+        console.error(`warning: ${widest} models per row but the summariser keeps ${MAX_MODELS}; the last ${widest - MAX_MODELS} are not scored`);
+    }
     const summary = summarizeRankingDiagnostics(records);
     const mru = summary.models.find(model => model.modelVersion === "mru-v1");
     for (const model of summary.models) {

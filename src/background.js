@@ -590,6 +590,8 @@ async function refreshOmniboxSnapshot() {
             domainContextScore: behavior?.domainContext,
             pageContextAvailable: behavior?.pageContextAvailable,
             domainContextAvailable: behavior?.domainContextAvailable,
+            pageAccessAges: behavior?.pageAccessAges,
+            domainAccessAges: behavior?.domainAccessAges,
             source: hasBayesianEvidence ? (behavior?.source || "none") : (Number.isFinite(fallback) ? "frecency" : "none")
         });
     });
