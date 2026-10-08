@@ -35,7 +35,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_DAYS = 90;
 // Upper bounds keep durable latency storage fixed-size and p95 conservative.
 const LATENCY_BOUNDS = [0, 1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 35, 50, 75, 100, 200, 500, 1000, 60000];
-export const MAX_MODELS = 24;
+// Bounds the models kept per outcome, live and replayed. 19 live models plus
+// a replay --models file of eight already overran 24, and the overflow was
+// dropped without a trace; 48 leaves room for two such files. Only the live
+// matrix sets what the detail buffer stores, so raising this costs nothing
+// on disk until more live models are added.
+export const MAX_MODELS = 48;
 const MAX_CANDIDATES = 1000;
 const CALIBRATION_BIN_COUNT = 5;
 const LOG_LOSS_FLOOR = 1e-6;

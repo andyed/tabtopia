@@ -19,9 +19,8 @@
 //     paper counted every visit; a replay row cannot see visits to pages that
 //     are not open tabs, so it is "switch rank among open tabs", not "visits
 //     since".
-// The ordinal variant runs at d = 0.5 only, as in the paper: with the 19
-// live models these five make exactly the 24 the summariser keeps per row
-// (MAX_MODELS in ranking-diagnostics.js); replay-eval warns past that.
+// The ordinal variant runs at d = 0.5 only, the paper's setting; sweep d
+// there too once the clock-time sweep has said anything.
 // Version strings end in -v0: hypotheses to run, not proposals.
 import { rankBy } from "../../src/lib/shadow-ranking.js";
 import { scoreHistory } from "../../src/lib/revisit-model.js";
