@@ -288,9 +288,13 @@ test("aggregate report gates exposure on two winning windows, coverage, calibrat
     }]);
     assert.equal(summary.study.evaluationWindows, 2);
     assert.equal(primary.hit1, 0.8);
-    assert.equal(primary.mrr, 0.9);
+    assert.equal(primary.hit3, 0.8);
+    // 80% at rank 1 plus 20% at rank 5: 0.8 + 0.2 / 5.
+    assert.ok(Math.abs(primary.mrr - 0.84) < 1e-9);
     assert.ok(primary.lift["mru-v1"].hit1 > 0);
+    assert.ok(primary.lift["mru-v1"].hit3 > 0);
     assert.ok(primary.lift["frecency-v1"].mrr > 0);
+    assert.equal(summary.exposureGate.hitMetric, "hit3");
     assert.ok(primary.calibrationError < 1e-12);
     assert.equal(summary.segments.openTabBands.length, 2);
     assert.equal(summary.segments.sessionAgeBands.length, 2);
@@ -332,7 +336,9 @@ function outcomeModel(modelVersion, hit, confidence) {
         identityResolution: modelVersion.includes("domain") ? "domain" : "none",
         confidenceMethod: "relative-softmax-v1",
         predictedCount: 8,
-        actualRank: hit ? 1 : 2,
+        // A miss lands outside the top 3 so hit1, hit3 and MRR all move
+        // together; the exposure gate now judges top-3.
+        actualRank: hit ? 1 : 5,
         actualProbability: hit ? confidence : 1 - confidence,
         top1Probability: confidence
     };

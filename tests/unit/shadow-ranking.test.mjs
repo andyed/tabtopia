@@ -76,7 +76,8 @@ test("shadow study runs the complete deterministic baseline matrix", () => {
         })
     ], { currentTabId: 1 });
 
-    assert.equal(Object.keys(predictions.models).length, 12);
+    assert.equal(Object.keys(predictions.models).length, 19);
+    assert.equal(Object.keys(predictions.models).length, Object.keys(SHADOW_MODEL_VERSIONS).length);
     assert.equal(predictions.models[SHADOW_MODEL_VERSIONS.mru].predictedTabIds[0], 2);
     assert.equal(predictions.models[SHADOW_MODEL_VERSIONS.investment].predictedTabIds[0], 3);
     assert.deepEqual(predictions.models[SHADOW_MODEL_VERSIONS.sameDomain].predictedTabIds, [2]);

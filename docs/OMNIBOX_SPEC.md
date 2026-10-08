@@ -498,7 +498,7 @@ Report lift over MRU, Firefox-style frecency, and power-law History—not just a
 
 Do not label or present a `Likely next` result until all of the following hold on a meaningful local sample:
 
-- The Bayesian model beats both MRU and Firefox-style frecency on top-1 and MRR.
+- The Bayesian model beats both MRU and Firefox-style frecency on top-3 and MRR. (Top-3, not top-1, since 2026-10-07: Home shows three featured destinations, and Zemla et al. report a four-slot springboard. `exposureHitMetric` in `RANKING_STUDY_DEFAULTS` names the metric.)
 - The gain persists across more than one evaluation window.
 - Latency remains within the omnibox budget.
 - Calibration is good enough that a confidence threshold has semantic meaning.

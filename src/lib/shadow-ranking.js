@@ -13,8 +13,22 @@ export const SHADOW_MODEL_VERSIONS = Object.freeze({
     historyDomain: "history-domain-v1",
     bayesPage: "bayes-page-v1",
     bayesDomain: "bayes-domain-v1",
-    bayesHierarchical: "bayes-hierarchical-v1"
+    bayesHierarchical: "bayes-hierarchical-v1",
+    // Zemla et al. (2015) follow-ups, added 2026-10-07; see
+    // docs/research/zemla2015-review.md. Equal-weight History/Context lost
+    // to context alone on V3, so the context weight is swept; MRU is the
+    // model to beat, so two fusions ask whether behaviour adds to recency.
+    historyContextW2Domain: "history-context-w2-domain-v1",
+    historyContextW4Domain: "history-context-w4-domain-v1",
+    historyContextW2Page: "history-context-w2-page-v1",
+    historyContextW4Page: "history-context-w4-page-v1",
+    rrfMruBayesPage: "rrf-mru-bayes-page-v1",
+    rrfMruContextDomain: "rrf-mru-context-domain-v1",
+    mruMinuteThenHistory: "mru-minute-then-history-v1"
 });
+
+// Reciprocal-rank fusion constant; the conventional value, not tuned.
+const RRF_K = 60;
 
 /**
  * Build every next-tab study model from one immutable open-tab snapshot.
@@ -88,6 +102,44 @@ export function buildShadowPredictions(candidates, { currentTabId = null } = {})
         "hierarchical"
     ));
 
+    // Weighted History/Context. History must be present (the live Bayesian
+    // models abstain without it); missing context is neutral, as in
+    // scoreContext.
+    addModel(models, SHADOW_MODEL_VERSIONS.historyContextW2Domain, rankEvidence(
+        eligible, candidate => weightedHistoryContext(candidate.domainHistoryScore, candidate.domainContextScore, 2), null, "domain"
+    ));
+    addModel(models, SHADOW_MODEL_VERSIONS.historyContextW4Domain, rankEvidence(
+        eligible, candidate => weightedHistoryContext(candidate.domainHistoryScore, candidate.domainContextScore, 4), null, "domain"
+    ));
+    addModel(models, SHADOW_MODEL_VERSIONS.historyContextW2Page, rankEvidence(
+        eligible, candidate => weightedHistoryContext(candidate.pageHistoryScore, candidate.pageContextScore, 2), null, "page"
+    ));
+    addModel(models, SHADOW_MODEL_VERSIONS.historyContextW4Page, rankEvidence(
+        eligible, candidate => weightedHistoryContext(candidate.pageHistoryScore, candidate.pageContextScore, 4), null, "page"
+    ));
+
+    // Reciprocal-rank fusion of MRU with one behavioural model. Candidates the
+    // behavioural model cannot score share the last rank, so fusion degrades
+    // to MRU rather than abstaining.
+    const mruRank = rankPositions(eligible, candidate => candidate.lastAccessed);
+    const bayesPageRank = rankPositions(eligible, candidate => candidate.pageBayesianScore);
+    addModel(models, SHADOW_MODEL_VERSIONS.rrfMruBayesPage, rankBy(eligible, candidate =>
+        1 / (RRF_K + mruRank.get(candidate.tabId)) + 1 / (RRF_K + bayesPageRank.get(candidate.tabId)),
+    { identityResolution: "page" }));
+    const contextDomainRank = rankPositions(eligible, candidate => candidate.domainContextScore);
+    addModel(models, SHADOW_MODEL_VERSIONS.rrfMruContextDomain, rankBy(eligible, candidate =>
+        1 / (RRF_K + mruRank.get(candidate.tabId)) + 1 / (RRF_K + contextDomainRank.get(candidate.tabId)),
+    { identityResolution: "domain" }));
+
+    // MRU order with same-minute ties broken by page history. History is
+    // log-activation, well inside (-50, 50) in practice; a logistic squeeze
+    // into (0, 1) keeps the minute as the primary key.
+    addModel(models, SHADOW_MODEL_VERSIONS.mruMinuteThenHistory, rankBy(eligible, candidate => {
+        const minute = Math.floor(Number(candidate.lastAccessed || 0) / 60000);
+        const history = Number.isFinite(candidate.pageHistoryScore) ? candidate.pageHistoryScore : -50;
+        return minute + 1 / (1 + Math.exp(-history / 10));
+    }, { identityResolution: "page" }));
+
     return {
         sourceTabId: Number.isFinite(Number(currentTabId)) ? Number(currentTabId) : null,
         eligibleTabIds: eligible.map(candidate => candidate.tabId),
@@ -133,6 +185,25 @@ export function rankBy(candidates, score, { identityResolution = "none" } = {}) 
         predictedTabIds: ranked.map(item => item.candidate.tabId),
         probabilities
     };
+}
+
+function weightedHistoryContext(history, context, weight) {
+    if (!Number.isFinite(history)) return Number.NaN;
+    return history + weight * (Number.isFinite(context) ? context : 0);
+}
+
+/**
+ * 1-based position of every candidate under one score, descending; candidates
+ * with a non-finite score share the position after the last scored one.
+ * Exported for replay experiments alongside rankBy.
+ */
+export function rankPositions(candidates, score) {
+    const scored = candidates.map(candidate => ({ tabId: candidate.tabId, value: Number(score(candidate)) }));
+    const finite = scored.filter(item => Number.isFinite(item.value))
+        .sort((left, right) => right.value - left.value || Number(left.tabId) - Number(right.tabId));
+    const positions = new Map(finite.map((item, index) => [item.tabId, index + 1]));
+    for (const item of scored) if (!positions.has(item.tabId)) positions.set(item.tabId, finite.length + 1);
+    return positions;
 }
 
 function relativeSoftmax(scores) {

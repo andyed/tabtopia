@@ -428,7 +428,7 @@ function liftSummary(model) {
     const mru = model?.lift?.["mru-v1"];
     const frecency = model?.lift?.["frecency-v1"];
     if (!mru || !frecency) return "";
-    return `Top-1 lift · MRU ${formatSignedMetric(mru.hit1)} · Frecency ${formatSignedMetric(frecency.hit1)}`;
+    return `Top-3 lift · MRU ${formatSignedMetric(mru.hit3)} · Frecency ${formatSignedMetric(frecency.hit3)}`;
 }
 
 function formatSignedMetric(value) {

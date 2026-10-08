@@ -21,6 +21,10 @@ export const RANKING_STUDY_DEFAULTS = Object.freeze({
     minimumTotalObservations: 100,
     minimumWindowObservations: 25,
     requiredWinningWindows: 2,
+    // Home shows three featured destinations, so the gate judges the surface
+    // it guards: top-3 (plus MRR), not top-1. Zemla et al. (2015) likewise
+    // report a four-slot springboard rather than a single prediction.
+    exposureHitMetric: "hit3",
     minimumCoverage: 0.8,
     maximumCalibrationError: 0.1,
     maximumPredictionP95Ms: 50
@@ -753,6 +757,7 @@ function addBaselineLift(models) {
             if (!baseline) continue;
             model.lift[version] = {
                 hit1: difference(model.hit1, baseline.hit1),
+                hit3: difference(model.hit3, baseline.hit3),
                 mrr: difference(model.mrr, baseline.mrr)
             };
         }
@@ -808,7 +813,7 @@ function evaluateExposureGate(models, study, settings) {
         reasons.push(`Need ${settings.minimumTotalObservations} eligible outcomes.`);
     }
     if (winningWindows < settings.requiredWinningWindows) {
-        reasons.push(`Need lift over MRU and frecency in ${settings.requiredWinningWindows} evaluation windows.`);
+        reasons.push(`Need ${hitMetricLabel(settings)} and MRR lift over MRU and frecency in ${settings.requiredWinningWindows} evaluation windows.`);
     }
     if (!Number.isFinite(primary?.coverage) || primary.coverage < settings.minimumCoverage) {
         reasons.push(`Primary-model coverage must reach ${Math.round(settings.minimumCoverage * 100)}%.`);
@@ -831,8 +836,19 @@ function evaluateExposureGate(models, study, settings) {
         winningWindows,
         requiredWinningWindows: settings.requiredWinningWindows,
         minimumWindowObservations: settings.minimumWindowObservations,
+        hitMetric: hitMetric(settings),
         reasons
     };
+}
+
+const GATE_HIT_METRICS = new Set(["hit1", "hit3", "hit4"]);
+
+function hitMetric(settings) {
+    return GATE_HIT_METRICS.has(settings?.exposureHitMetric) ? settings.exposureHitMetric : "hit3";
+}
+
+function hitMetricLabel(settings) {
+    return `top-${hitMetric(settings).slice(3)}`;
 }
 
 function windowBeatsBaselines(primaryWindow, mru, frecency, settings) {
@@ -842,9 +858,10 @@ function windowBeatsBaselines(primaryWindow, mru, frecency, settings) {
     if (!mruWindow || !frecencyWindow) return false;
     if (mruWindow.observations < settings.minimumWindowObservations
         || frecencyWindow.observations < settings.minimumWindowObservations) return false;
-    return primaryWindow.hit1 > mruWindow.hit1
+    const metric = hitMetric(settings);
+    return primaryWindow[metric] > mruWindow[metric]
         && primaryWindow.mrr > mruWindow.mrr
-        && primaryWindow.hit1 > frecencyWindow.hit1
+        && primaryWindow[metric] > frecencyWindow[metric]
         && primaryWindow.mrr > frecencyWindow.mrr;
 }
 
