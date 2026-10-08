@@ -2,8 +2,13 @@ import "../logging.js";
 
 import { SHADOW_MODEL_VERSIONS } from "./shadow-ranking.js";
 import { encodeRankingDetails, decodeRankingDetails } from "./ranking-detail-codec.js";
+import {
+    decodeReplayRows, encodeReplayRows, finalizeReplayRow, sanitizeCapture
+} from "./ranking-replay.js";
 
 export const DIAGNOSTICS_SETTING_KEY = "tabtopiaRankingDiagnosticsEnabledV1";
+// Content-free feature rows for eligible outcomes; see ranking-replay.js.
+export const DIAGNOSTICS_REPLAY_KEY = "tabtopiaRankingReplayV1";
 export const DIAGNOSTICS_BUFFER_KEY = "tabtopiaRankingDiagnosticsV2";
 export const DIAGNOSTICS_PENDING_KEY = "tabtopiaRankingDiagnosticsPendingV2";
 export const DIAGNOSTICS_SESSION_KEY = "tabtopiaRankingDiagnosticsSessionV2";
@@ -65,6 +70,7 @@ export class RankingDiagnostics {
         this.ready = false;
         this.sessionStartedAt = 0;
         this.pendingRecords = [];
+        this.pendingReplayRows = [];
         this.flushTimer = null;
         this.flushChain = Promise.resolve();
     }
@@ -100,6 +106,11 @@ export class RankingDiagnostics {
         const record = sanitizeRecord(rawRecord);
         if (!record) return false;
         this.pendingRecords.push(record);
+        // The replay row rides alongside the record from takePendingPrediction;
+        // sanitizeRecord drops it on purpose so the detail buffer stays small.
+        if (rawRecord.replay && record.event === "next_tab_outcome" && !record.censorReason) {
+            this.pendingReplayRows.push(rawRecord.replay);
+        }
         this.scheduleFlush();
         return true;
     }
@@ -119,17 +130,26 @@ export class RankingDiagnostics {
             this.flushTimer = null;
         }
         const records = this.pendingRecords.splice(0);
+        const replayRows = this.pendingReplayRows.splice(0);
         this.flushChain = this.flushChain.catch(() => {}).then(async () => {
             if (!this.isEnabled()) return;
-            const saved = await this.localStorage.get([DIAGNOSTICS_BUFFER_KEY, DIAGNOSTICS_ROLLUP_KEY]);
+            const saved = await this.localStorage.get([DIAGNOSTICS_BUFFER_KEY, DIAGNOSTICS_ROLLUP_KEY, DIAGNOSTICS_REPLAY_KEY]);
             const existing = decodeRankingDetails(saved[DIAGNOSTICS_BUFFER_KEY]);
             const days = updateStudyDays(saved[DIAGNOSTICS_ROLLUP_KEY], records, this.now());
-            await this.localStorage.set({
+            const values = {
                 [DIAGNOSTICS_BUFFER_KEY]: encodeRankingDetails([...existing, ...records], { maxRecords: this.maxRecords }),
                 [DIAGNOSTICS_ROLLUP_KEY]: days
-            });
+            };
+            if (replayRows.length > 0) {
+                const existingReplay = decodeReplayRows(saved[DIAGNOSTICS_REPLAY_KEY]);
+                values[DIAGNOSTICS_REPLAY_KEY] = encodeReplayRows([...existingReplay, ...replayRows]);
+            }
+            await this.localStorage.set(values);
         }).catch(error => {
-            if (this.isEnabled()) this.pendingRecords.unshift(...records);
+            if (this.isEnabled()) {
+                this.pendingRecords.unshift(...records);
+                this.pendingReplayRows.unshift(...replayRows);
+            }
             throw error;
         });
         await this.flushChain;
@@ -141,12 +161,14 @@ export class RankingDiagnostics {
             this.flushTimer = null;
         }
         this.pendingRecords = [];
+        this.pendingReplayRows = [];
         this.sessionStartedAt = 0;
         await this.flushChain.catch(() => {});
         this.flushChain = Promise.resolve();
         await Promise.all([
             removeKey(this.localStorage, DIAGNOSTICS_BUFFER_KEY),
             removeKey(this.localStorage, DIAGNOSTICS_ROLLUP_KEY),
+            removeKey(this.localStorage, DIAGNOSTICS_REPLAY_KEY),
             removeKey(this.sessionStorage, DIAGNOSTICS_PENDING_KEY),
             removeKey(this.sessionStorage, DIAGNOSTICS_SESSION_KEY)
         ]);
@@ -164,7 +186,7 @@ export class RankingDiagnostics {
         await this.flush();
         await this.flushChain;
         const saved = this.isEnabled()
-            ? await this.localStorage.get([DIAGNOSTICS_ROLLUP_KEY, DIAGNOSTICS_BUFFER_KEY]) : {};
+            ? await this.localStorage.get([DIAGNOSTICS_ROLLUP_KEY, DIAGNOSTICS_BUFFER_KEY, DIAGNOSTICS_REPLAY_KEY]) : {};
         const days = retainedStudyDays(saved[DIAGNOSTICS_ROLLUP_KEY], this.now());
         const accumulator = createStudyAccumulator();
         for (const day of days) mergeStudyAccumulator(accumulator, decodeAccumulator(day.data));
@@ -174,6 +196,7 @@ export class RankingDiagnostics {
         summary.study.predictionLatencyMethod = "histogram-upper-bound";
         summary.study.detailLimit = this.maxRecords;
         summary.study.retainedDetails = decodeRankingDetails(saved[DIAGNOSTICS_BUFFER_KEY]).length;
+        summary.study.replayRows = decodeReplayRows(saved[DIAGNOSTICS_REPLAY_KEY]).length;
         return summary;
     }
 
@@ -226,7 +249,7 @@ export class RankingDiagnostics {
             });
         }
 
-        return sanitizeRecord({
+        const record = sanitizeRecord({
             event: "next_tab_outcome",
             cohort: pending.cohort,
             timestamp: now,
@@ -240,6 +263,16 @@ export class RankingDiagnostics {
             censorReason,
             models
         });
+        // Only an eligible outcome earns a replay row: a censored one has no
+        // label a model could be scored against. The row shares the record's
+        // timestamp so the offline fidelity check can join the two.
+        if (record && !censorReason && pending.replay) {
+            const replay = finalizeReplayRow(pending.replay, {
+                outcomeIndex: eligibleTabIds.indexOf(actual), timestamp: now, cohort: pending.cohort
+            });
+            if (replay) record.replay = replay;
+        }
+        return record;
     }
 
     async setPendingPrediction(prediction, now = Date.now()) {
@@ -252,6 +285,10 @@ export class RankingDiagnostics {
             if (!version) continue;
             models[version] = sanitizePendingModel(rawPrediction);
         }
+        // A capture must have exactly one feature row per eligible tab, in the
+        // same order, or the outcome index resolved later would point at the
+        // wrong candidate. Anything else is dropped rather than stored.
+        const replay = sanitizeCapture(prediction?.replay);
         await this.sessionStorage.set({
             [DIAGNOSTICS_PENDING_KEY]: {
                 cohort: RANKING_STUDY_COHORT,
@@ -261,7 +298,9 @@ export class RankingDiagnostics {
                 eligibleTabIds,
                 latencyMs: boundedNumber(prediction?.latencyMs, 0, 60000),
                 sessionAgeMs: Math.max(0, now - this.sessionStartedAt),
-                models
+                models,
+                replay: replay && replay.matrix.length === eligibleTabIds.length
+                    ? { format: prediction.replay.format, ...replay } : null
             }
         });
         return true;

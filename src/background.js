@@ -48,6 +48,7 @@ import {
     rankTabs
 } from "./lib/tab-recall.js";
 import { buildShadowPredictions } from "./lib/shadow-ranking.js";
+import { captureReplayFeatures } from "./lib/ranking-replay.js";
 import { resolveActivationOrigin } from "./lib/activation-origin.js";
 import { HomeContextDiagnostics } from "./lib/home-context-diagnostics.js";
 import { HomeRecommendationStore } from "./lib/home-recommendation-store.js";
@@ -757,10 +758,11 @@ async function recordQualifiedActivationDiagnostics(actualTabId) {
     const prediction = buildShadowPredictions(snapshot.candidates, {
         currentTabId: snapshot.currentTabId
     });
-    await rankingDiagnostics.setPendingPrediction({
-        ...prediction,
-        latencyMs: performance.now() - predictionStartedAt
-    });
+    const latencyMs = performance.now() - predictionStartedAt;
+    // Captured after the latency clock stops so replay logging never shows up
+    // in the study's prediction-latency figure.
+    const replay = captureReplayFeatures(snapshot.candidates, prediction, { now: Date.now() });
+    await rankingDiagnostics.setPendingPrediction({ ...prediction, latencyMs, replay });
 }
 
 /**

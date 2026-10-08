@@ -112,7 +112,12 @@ function rankStripNeighbors(candidates, current) {
     }, { identityResolution: "tab-strip" });
 }
 
-function rankBy(candidates, score, { identityResolution = "none" } = {}) {
+/**
+ * Exported for replay experiments: a candidate model written against the
+ * replay feature set can reuse the live ranking, tie-break, and confidence
+ * rules so its metrics are comparable with the shipped models.
+ */
+export function rankBy(candidates, score, { identityResolution = "none" } = {}) {
     const ranked = candidates
         .map(candidate => ({ candidate, score: Number(score(candidate)) }))
         .filter(item => Number.isFinite(item.score))
