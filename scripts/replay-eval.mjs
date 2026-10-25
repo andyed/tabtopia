@@ -20,6 +20,7 @@
 // temporal holdout to use when a model has tunable constants.
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { buildShadowPredictions } from "../src/lib/shadow-ranking.js";
 import { decodeRankingDetails } from "../src/lib/ranking-detail-codec.js";
@@ -45,7 +46,8 @@ const truncatedCount = allRows.filter(row => row.truncated).length;
 
 let build = buildShadowPredictions;
 if (flag("--models")) {
-    const extra = (await import(path.resolve(flag("--models")))).default;
+    // A file URL, because import() reads a Windows drive letter as a URL scheme.
+    const extra = (await import(pathToFileURL(path.resolve(flag("--models"))).href)).default;
     if (typeof extra !== "function") throw new Error("--models module must default-export (candidates, { currentTabId }) => models");
     build = (candidates, options) => {
         const live = buildShadowPredictions(candidates, options);

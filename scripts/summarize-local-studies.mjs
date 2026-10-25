@@ -7,13 +7,14 @@
 // second implementation of the metrics to drift. Nothing is written back.
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const args = process.argv.slice(2);
 const asJson = args.includes("--json");
 const dir = args.find(a => !a.startsWith("--"));
 if (!dir) { console.error("usage: summarize-local-studies.mjs <dump-dir> [--json]"); process.exit(2); }
-const lib = name => path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "lib", name);
+// A file URL, because import() reads a Windows drive letter as a URL scheme.
+const lib = name => pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "lib", name)).href;
 
 const load = key => {
     try { return JSON.parse(fs.readFileSync(path.join(dir, `${key}.json`), "utf8")); } catch { return undefined; }
