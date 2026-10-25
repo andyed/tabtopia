@@ -16,7 +16,19 @@ Feed the directory to scripts/summarize-local-studies.mjs.
 """
 import argparse, glob, os, shutil, struct, sys, tempfile
 
-DEFAULT_PROFILE = os.path.expanduser("~/Library/Application Support/Google/Chrome/Default")
+
+
+def default_profile():
+    """Chrome's default profile directory for this platform; --profile-dir overrides it."""
+    if sys.platform == "win32":
+        return os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser(r"~\AppData\Local")),
+                            "Google", "Chrome", "User Data", "Default")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/Google/Chrome/Default")
+    return os.path.expanduser("~/.config/google-chrome/Default")
+
+
+DEFAULT_PROFILE = default_profile()
 DEFAULT_EXTENSION_ID = "moaofehfbphhadakgfiejlpgjdcggfho"
 TABLE_MAGIC = bytes.fromhex("57fb808b247547db")  # LevelDB SSTable footer magic
 BLOCK = 32768  # write-ahead log block size
