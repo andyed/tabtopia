@@ -310,7 +310,8 @@ function friendlyModelName(version) {
         "bayes-page-v1": "Bayesian · page",
         "bayes-domain-v1": "Bayesian · domain",
         "bayes-hierarchical-v1": "Bayesian · hierarchical",
-        "bayes-history-context-v1": "Bayesian History + Context"
+        "bayes-history-context-v1": "Bayesian History + Context",
+        "learned-combiner-full-v1": "Learned combiner"
     })[version] || version;
 }
 
@@ -439,8 +440,9 @@ function formatSignedMetric(value) {
 
 function sortModels(models) {
     const order = [
-        "bayes-domain-v1",
+        "learned-combiner-full-v1",
         "mru-v1",
+        "bayes-domain-v1",
         "frecency-v1",
         "bayes-page-v1",
         "bayes-hierarchical-v1",

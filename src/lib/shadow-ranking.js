@@ -1,3 +1,6 @@
+import { learnedCombinerScores, withFittedProbabilities } from "./learned-combiner.js";
+import { LEARNED_COMBINER_FULL_V1 } from "./learned-combiner-weights.js";
+
 const MAX_CANDIDATES = 1000;
 const SOFTMAX_SPREAD = 4;
 
@@ -24,7 +27,11 @@ export const SHADOW_MODEL_VERSIONS = Object.freeze({
     historyContextW4Page: "history-context-w4-page-v1",
     rrfMruBayesPage: "rrf-mru-bayes-page-v1",
     rrfMruContextDomain: "rrf-mru-context-domain-v1",
-    mruMinuteThenHistory: "mru-minute-then-history-v1"
+    mruMinuteThenHistory: "mru-minute-then-history-v1",
+    // Conditional logit over recency, tab-strip structure and the behavioural
+    // scores, fitted on V3 replay rows (docs/PREDICTION_REPLAY.md, "Learned
+    // combiner"). Frozen weights; a refit is a new version.
+    learnedCombinerFull: "learned-combiner-full-v1"
 });
 
 // Reciprocal-rank fusion constant; the conventional value, not tuned.
@@ -139,6 +146,15 @@ export function buildShadowPredictions(candidates, { currentTabId = null } = {})
         const history = Number.isFinite(candidate.pageHistoryScore) ? candidate.pageHistoryScore : -50;
         return minute + 1 / (1 + Math.exp(-history / 10));
     }, { identityResolution: "page" }));
+
+    // Learned combiner: rankBy for order and tie-breaks like every other
+    // model, then the fitted softmax as its confidence, since calibrated
+    // probabilities are part of what the exposure gate checks.
+    const combinerScores = learnedCombinerScores(eligible, current, LEARNED_COMBINER_FULL_V1);
+    addModel(models, SHADOW_MODEL_VERSIONS.learnedCombinerFull, withFittedProbabilities(
+        rankBy(eligible, candidate => combinerScores.get(candidate.tabId), { identityResolution: "tab" }),
+        combinerScores
+    ));
 
     return {
         sourceTabId: Number.isFinite(Number(currentTabId)) ? Number(currentTabId) : null,

@@ -8,6 +8,7 @@ import {
     DIAGNOSTICS_ROLLUP_KEY,
     RANKING_STUDY_COHORT,
     DIAGNOSTICS_SETTING_KEY,
+    EXPOSURE_PRIMARY_MODEL,
     RankingDiagnostics,
     summarizeRankingDiagnostics
 } from "../../src/lib/ranking-diagnostics.js";
@@ -252,7 +253,7 @@ test("aggregate report excludes outcomes from earlier unversioned cohorts", () =
 
     assert.equal(summary.study.outcomes, 1);
     assert.equal(summary.study.cohort, RANKING_STUDY_COHORT);
-    assert.equal(summary.models.find(model => model.modelVersion === "bayes-domain-v1").hit1, 1);
+    assert.equal(summary.models.find(model => model.modelVersion === EXPOSURE_PRIMARY_MODEL).hit1, 1);
 });
 
 test("aggregate report gates exposure on two winning windows, coverage, calibration, and latency", () => {
@@ -276,7 +277,7 @@ test("aggregate report gates exposure on two winning windows, coverage, calibrat
     });
 
     const summary = summarizeRankingDiagnostics(records);
-    const primary = summary.models.find(model => model.modelVersion === "bayes-domain-v1");
+    const primary = summary.models.find(model => model.modelVersion === EXPOSURE_PRIMARY_MODEL);
 
     assert.equal(summary.study.outcomes, 101);
     assert.equal(summary.study.eligibleOutcomes, 100);
@@ -323,7 +324,7 @@ function studyOutcome({
         sessionAgeBand,
         censorReason: "",
         models: [
-            outcomeModel("bayes-domain-v1", primaryHit, 0.8),
+            outcomeModel(EXPOSURE_PRIMARY_MODEL, primaryHit, 0.8),
             outcomeModel("mru-v1", mruHit, 0.5),
             outcomeModel("frecency-v1", frecencyHit, 0.4)
         ]
@@ -469,6 +470,6 @@ test("a failed storage write can retry without losing outcomes or double-countin
     diagnostics.record(studyOutcome({ timestamp: now + 1, primaryHit: false }));
     const summary = await diagnostics.getSummary();
     assert.equal(summary.study.outcomes, 2);
-    assert.equal(summary.models.find(model => model.modelVersion === "bayes-domain-v1").hit1, 0.5);
+    assert.equal(summary.models.find(model => model.modelVersion === EXPOSURE_PRIMARY_MODEL).hit1, 0.5);
     assert.equal(decodeRankingDetails(local.values[DIAGNOSTICS_BUFFER_KEY]).length, 2);
 });

@@ -803,9 +803,15 @@ function finalizeSegments(segments) {
     }));
 }
 
+// The model the exposure gate judges. bayes-domain-v1 held this seat until
+// 2026-11-04, when it trailed MRU by 13 top-1 points on V3 and the learned
+// combiner beat MRU on top-3 and MRR in replay holdouts. The gate still needs
+// two live winning windows; a replay result never opens it.
+export const EXPOSURE_PRIMARY_MODEL = SHADOW_MODEL_VERSIONS.learnedCombinerFull;
+
 function evaluateExposureGate(models, study, settings) {
     const byVersion = new Map(models.map(model => [model.modelVersion, model]));
-    const primary = byVersion.get(SHADOW_MODEL_VERSIONS.bayesDomain);
+    const primary = byVersion.get(EXPOSURE_PRIMARY_MODEL);
     const mru = byVersion.get(SHADOW_MODEL_VERSIONS.mru);
     const frecency = byVersion.get(SHADOW_MODEL_VERSIONS.frecency);
     const reasons = [];
@@ -836,7 +842,7 @@ function evaluateExposureGate(models, study, settings) {
     return {
         ready: reasons.length === 0,
         automaticUiChange: false,
-        primaryModel: SHADOW_MODEL_VERSIONS.bayesDomain,
+        primaryModel: EXPOSURE_PRIMARY_MODEL,
         baselineModels: [SHADOW_MODEL_VERSIONS.mru, SHADOW_MODEL_VERSIONS.frecency],
         winningWindows,
         requiredWinningWindows: settings.requiredWinningWindows,
