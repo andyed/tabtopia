@@ -4,6 +4,16 @@
 
 # Tabtopia
 
+> [!WARNING]
+> **Read before installing: Tabtopia requires broad access to your browsing.**
+> It requests `<all_urls>`, history, tabs, bookmarks, and script-injection access.
+> This gives the extension the ability to read and change page content across
+> sites Chrome permits, including signed-in pages. It records browsing activity
+> while enabled, not just when you open Tabtopia or click its toolbar button.
+> Install it only if you are comfortable trusting it with that access. Read
+> [Permissions and privacy](#permissions-and-privacy) before loading the extension
+> or connecting an agent.
+
 ## Overview
 Tabtopia turns browsing history into an information landscape. Instead of asking you to remember the title of one page, it preserves the useful context around it: the session, nearby pages, branches, and returns that formed a route.
 
@@ -13,6 +23,91 @@ It also ships an **MCP server** (`mcp/`) that gives a personal agent — Claude
 Code, Codex CLI, Gemini CLI, anything that speaks
 [MCP](https://modelcontextprotocol.io) — live awareness of your browsing
 context.
+
+## Permissions and privacy
+
+**The current manifest requests these permissions as non-optional, including for
+extension-only use.** The optional MCP companion is not what grants broad
+browser access. The manifest requests `<all_urls>` host access and loads content
+scripts at `document_start` on matching pages. The separate `activeTab`
+permission does **not** limit that access to the selected tab or require a click
+before collection starts. Chrome still blocks access to certain protected pages.
+
+### What you are granting
+
+The [manifest](manifest.json) is the source of truth. Permissions describe what
+the extension can access, not a guarantee that it will only use the specific
+features listed below.
+
+| Requested access | What it enables and how Tabtopia uses it |
+|---|---|
+| `<all_urls>`, `scripting`, `activeTab` | Access to page content and the ability to run scripts on permitted sites. Tabtopia captures navigation context and page metadata, and extracts page text for summaries and MCP reads, including from signed-in pages. |
+| `history` | Access to Chrome's browsing-history API, including the ability to read and change history. Tabtopia reads visits to reconstruct trails and rank destinations. |
+| `tabs`, `windows` | Visibility into open tabs, URLs, titles, window layout, focus, and audio state, plus tab/window management. Tabtopia tracks engagement and provides controls to switch, move, and close tabs. |
+| `bookmarks` | Read and change bookmarks. Tabtopia shows saved pages and can create bookmarks through its UI. |
+| `webNavigation`, `webRequest` | Observe navigation and network-request metadata. Current request listeners inspect main-frame requests, referrers, and redirects to reconstruct navigation context. |
+| `storage` | Save browsing records, settings, cached metadata, and summaries in the extension's local browser-profile storage. |
+| `favicon`, `ai` | Site icons and Chrome's built-in on-device summarization, where available. |
+
+The extension also replaces Chrome's new-tab page with Tabtopia.
+
+### What the current code collects
+
+- URLs and page titles, visit/navigation events, tab and window arrangement,
+  focus and dwell time, and audio-playback state.
+- Clicked and right-clicked link text, destinations, surrounding text, referrers,
+  opener relationships, and candidate hero-image metadata.
+- Form-submission metadata and **search terms**. The form handler reads the
+  first input identified as search-like by its type, name, or placeholder. This
+  broad match can capture sensitive text in an unexpected field; do not assume
+  every form value is excluded. URLs and page text can also contain private data.
+- Page text for summaries and, when the MCP companion is connected, page-content
+  requests. Signed-in mail, work documents, and other private pages are within
+  the scope of the access you are granting, where Chrome permits it.
+
+### Where the data goes, and how to limit exposure
+
+Browsing records and summaries are saved in `chrome.storage.local`. Local
+storage does not make this a network-free extension: for example, the Home view
+fetches Techmeme's public RSS feed, and the optional local archive/search service
+on `127.0.0.1:8889` receives title-based search queries.
+
+### AI-agent access can expose personal data, even with a local model
+
+**Connecting MCP gives your AI client access to potentially sensitive browsing
+data.** Tool results can include titles, URLs, activity, and requested page text
+from signed-in pages. The client and the model it uses may receive that data.
+With the default configuration, the Tabtopia bridge transports it through a
+loopback daemon on your machine. Whether the client sends it to a cloud model
+provider or another service depends on that client's integrations, settings,
+and policies. A local bridge does not guarantee that the full AI workflow stays
+local.
+
+**Running the model locally does not eliminate the risk.** The client may retain
+sensitive results in conversation history, logs, or saved files. Malicious page
+content can also try to manipulate the agent through prompt injection. If the
+agent follows those instructions, it could expose private data in its output or
+through other enabled tools, such as messaging, file-writing, or network tools.
+Tabtopia's MCP tools do not drive the browser, but their read-only browser access
+does not restrict what the rest of the agent can do. `get_tab_content` labels
+page content as untrusted; that warning is not a guarantee that a client or
+model will handle it safely.
+
+Named MCP captures are saved separately on disk. The daemon's Origin check is
+not protection against other native processes on your machine. Review your AI
+client's data handling, retention, tool permissions, and approval controls
+before connecting it. Treat page-derived text as untrusted data, not instructions.
+
+Consider a dedicated Chrome profile that excludes sensitive browsing. Chrome's
+site-access controls can limit page access, but may break collection and do not
+remove the separate history, tabs, or bookmarks permissions. Disable Tabtopia to
+stop future collection; disabling it does not erase stored records. Uninstalling
+clears its extension storage, but does not delete MCP captures or agent logs.
+
+For implementation details, see [content capture](src/content/content.js), the
+[background worker](src/background.js), and the [MCP setup and security
+notes](mcp/README.md). [PRIVACY.md](PRIVACY.md) is an older draft with open TODOs,
+not a finalized privacy policy.
 
 ## Choose your setup
 
@@ -76,9 +171,13 @@ your working state — the only write), and `get_tab_content` (read the DOM text
 of a tab you already have open, including logged-in pages a plain fetch can't
 see).
 
-All MCP traffic binds `127.0.0.1`; the extension↔daemon socket is gated by a
-`chrome-extension://` Origin allowlist; MCP data never leaves your machine. One
-runtime dependency. Setup and architecture: [`mcp/README.md`](mcp/README.md).
+The default MCP bridge uses `127.0.0.1`; the extension↔daemon socket is gated by
+a `chrome-extension://` Origin allowlist. This keeps the bridge transport local,
+but your MCP client may send tool results to a remote model provider. Even a
+local model can expose personal data through retained logs, outputs, or other
+enabled agent tools. Review the [permissions and privacy
+implications](#permissions-and-privacy) before enabling it. One runtime
+dependency. Setup and architecture: [`mcp/README.md`](mcp/README.md).
 Ready-made `browser-now` skills ship for
 [Codex and other agent-skill clients](.agents/skills/browser-now/SKILL.md) and
 [Claude Code](.claude/skills/browser-now/SKILL.md), so the agent knows when to
@@ -196,6 +295,10 @@ The underlying synchronization and history trail system can be leveraged for var
 
 
 ## Installation
+
+**Before installing, read [Permissions and privacy](#permissions-and-privacy).**
+Chrome's broad access warnings reflect real capabilities of this extension.
+Loading it unpacked does not reduce those permissions.
 
 ### Extension only
 
