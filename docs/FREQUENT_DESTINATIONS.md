@@ -7,19 +7,23 @@ semantic context, GitHub-star imports or the predictive recommendation experimen
 ## Interaction
 
 Up to eight compact favicon controls sit in Home's header, alongside its counts.
-The badge counts open tab instances across normal windows in the current profile; duplicate URLs count
-separately. No badge means zero. One tab switches to that window and tab; zero
-opens the preferred URL in the Home tab; multiple tabs open a chooser.
-Arrow Down opens the chooser/settings for any tile. Edit exposes settings without
-requiring a context-menu gesture. Names appear on hover/focus and in accessible
-labels. Favicon failures use the existing local letter fallback.
+The badge counts open tab instances across normal windows in the current
+profile; duplicate URLs count separately. No badge means zero. One tab switches
+to that window and tab; zero opens the preferred URL in the Home tab; multiple
+tabs open a chooser. Arrow Down opens the chooser/settings for any tile. A
+pencil glyph reveals settings on hover or keyboard focus (always shown on touch
+devices). Names appear on hover/focus and in accessible labels. Favicon failures
+use the existing local letter fallback.
 
-The chooser groups tabs by window, puts this window first and orders each window's
-tabs by last access. Enter selects, arrows navigate tab rows, Escape closes and
-returns focus. Outside click dismisses. Counts and lists follow the existing
-controller's debounced browser listeners. A disappearing focused row transfers
-focus to the nearest remaining row. Open destination is an explicit alternative
-to switching. Titles and URLs are inserted as text or validated values.
+The chooser groups tabs by window, puts this window first and orders each
+window's tabs by last access. Enter selects, arrows navigate tab rows, Escape
+closes and returns focus. Outside click dismisses. Counts and lists follow the
+existing controller's debounced browser listeners. A disappearing focused row
+transfers focus to the nearest remaining row. The destination name is a native
+hyperlink to the saved URL, preserving the browser’s normal modifier-click,
+middle-click and context-menu navigation. The tab chooser keeps pinning, hiding
+and URL settings behind its pencil glyph. Titles and URLs are inserted as text
+or validated values.
 
 Edit offers pin/unpin, hide/restore, and a preferred opening URL constrained to
 the same destination. URLs retain path, query and fragment. Nothing invents an

@@ -9,13 +9,22 @@ const el = (tag, className, text) => {
 export function createFrequentBank() {
   const root = el("section", "frequent-bank");
   root.setAttribute("aria-label", "Frequent destinations");
-  let model = { items: [] }, handlers = {}, openKey = null, panel = null;
+  let model = { items: [] }, handlers = {}, openKey = null, panel = null, editing = false;
   let focusKey = null, focusIndex = 0, returnKey = null, message = "", busy = false;
   const drafts = new Map();
   function button(text, key, run, className = "frequent-bank__command") {
     const node = el("button", className, text); node.type = "button";
     node.dataset.frequentFocus = key;
     node.addEventListener("click", run); return node;
+  }
+  function glyph(label, key, run, kind, className = "frequent-bank__glyph") {
+    const node = button("", key, run, className);
+    node.setAttribute("aria-label", label); node.title = label;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(svg.namespaceURI, "path");
+    path.setAttribute("d", kind === "edit" ? "M15 5l4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15z" : "M6 6l12 12M18 6L6 18");
+    svg.append(path); node.append(svg); return node;
   }
   function focus(key) {
     [...root.querySelectorAll("[data-frequent-focus]")]
@@ -27,10 +36,10 @@ export function createFrequentBank() {
     root.querySelectorAll("[aria-expanded]").forEach(node => node.setAttribute("aria-expanded", "false"));
     if (restore) focus(key);
   }
-  function show(key, triggerKey) {
-    openKey = key; returnKey = triggerKey; message = "";
+  function show(key, triggerKey, edit = false) {
+    editing = edit; openKey = key; returnKey = triggerKey; message = "";
     paint(); restore();
-    (panel?.querySelector("[data-tab-row]") || panel?.querySelector("button, input"))?.focus();
+    (panel?.querySelector("[data-tab-row]") || panel?.querySelector("a, button, input"))?.focus();
   }
   async function act(action) {
     if (busy) return;
@@ -97,20 +106,20 @@ export function createFrequentBank() {
       if (count > 1) { const chevron = el("span", "frequent-bank__chevron", "⌄"); chevron.setAttribute("aria-hidden", "true"); tile.append(chevron); }
       const name = el("span", "frequent-bank__name", item.name); name.setAttribute("aria-hidden", "true"); tile.append(name);
       tile.addEventListener("keydown", event => {
-        if (event.key === "ArrowDown") { event.preventDefault(); show(item.key, triggerKey); }
+        if (event.key === "ArrowDown") { event.preventDefault(); show(item.key, triggerKey, count === 0); }
       });
       tiles.append(tile);
     }
     bar.append(tiles);
-    const edit = button("Edit", "edit", () => show("manage", "edit"), "frequent-bank__edit");
+    const edit = glyph("Edit frequent destinations", "edit", () => show("manage", "edit"), "edit", "frequent-bank__glyph frequent-bank__edit");
     edit.setAttribute("aria-label", "Edit frequent destinations"); edit.setAttribute("aria-haspopup", "dialog");
-    edit.setAttribute("aria-expanded", String(openKey === "manage")); bar.append(edit);
+    edit.setAttribute("aria-expanded", String(openKey === "manage" || editing && openKey !== null)); bar.append(edit);
     root.replaceChildren(bar);
     if (!openKey) return;
     const item = model.items?.find(value => value.key === openKey);
-    if (!item && openKey !== "manage") { openKey = "manage"; returnKey = "edit"; }
+    if (!item && openKey !== "manage") { openKey = "manage"; returnKey = "edit"; editing = false; }
     panel = el("div", "frequent-bank__panel"); panel.setAttribute("popover", "auto");
-    panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", item ? `${item.name} tabs` : "Edit frequent destinations");
+    panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", item ? `${item.name}${editing ? " settings" : " tabs"}` : "Edit frequent destinations");
     const currentPanel = panel;
     panel.addEventListener("beforetoggle", event => {
       if (panel !== currentPanel || event.newState !== "closed") return;
@@ -127,9 +136,18 @@ export function createFrequentBank() {
       rows[next].focus();
     });
     const heading = el("div", "frequent-bank__panel-heading");
-    heading.append(el("h3", "", item ? `${item.name} · ${item.tabs.length} open` : "Frequent destinations"), button("Close", "close", () => close()));
-    panel.append(heading);
+    const title = el("h3", "");
     if (item) {
+      const link = el("a", "frequent-bank__destination", item.name);
+      link.href = item.url;
+      link.dataset.frequentFocus = `destination-link:${item.key}`;
+      title.append(link);
+    } else title.textContent = "Frequent destinations";
+    heading.append(title);
+    if (item && !editing) heading.append(glyph(`Edit ${item.name}`, "settings", () => show(item.key, returnKey, true), "edit", "frequent-bank__glyph frequent-bank__edit"));
+    heading.append(glyph("Close", "close", () => close(), "close"));
+    panel.append(heading);
+    if (item && !editing) {
       let previousWindow = null;
       for (const tab of item.tabs) {
         if (previousWindow !== tab.windowId) {
@@ -139,7 +157,7 @@ export function createFrequentBank() {
         const row = button(tab.title, `tab:${tab.id}`, () => void act({ verb: "switch", target: { tabId: tab.id, windowId: tab.windowId } }), "frequent-bank__tab");
         row.dataset.tabRow = ""; row.title = tab.url; panel.append(row);
       }
-      panel.append(button(`Open ${item.name}`, `open:${item.key}`, () => void act({ verb: "open", target: { url: item.url } })));
+    } else if (item) {
       const settings = el("div", "frequent-bank__settings");
       settings.append(button(item.pinned ? "Unpin" : "Pin", "pin", () => void change({ type: item.pinned ? "unpin" : "pin", key: item.key, url: item.url })),
         button("Hide", "hide", () => void change({ type: "hide", key: item.key })));
@@ -147,7 +165,7 @@ export function createFrequentBank() {
     } else {
       for (const destination of model.items || []) {
         const row = el("div", "frequent-bank__settings"); row.append(el("span", "", destination.name));
-        const editDestination = button("Edit", `settings:${destination.key}`, () => show(destination.key, "edit"));
+        const editDestination = glyph(`Edit ${destination.name}`, `settings:${destination.key}`, () => show(destination.key, "edit", true), "edit", "frequent-bank__glyph frequent-bank__edit");
         editDestination.setAttribute("aria-label", `Edit ${destination.name}`);
         row.append(editDestination);
         panel.append(row);
@@ -163,7 +181,7 @@ export function createFrequentBank() {
       if (!panel.matches(":popover-open")) panel.showPopover();
       const trigger = [...root.querySelectorAll("[data-frequent-focus]")].find(node => node.dataset.frequentFocus === returnKey) || root;
       const rect = trigger.getBoundingClientRect();
-      panel.style.left = `${Math.max(12, Math.min(rect.left, innerWidth - Math.min(420, innerWidth - 24) - 12))}px`;
+      panel.style.left = `${Math.max(12, Math.min(rect.left, innerWidth - Math.min(360, innerWidth - 24) - 12))}px`;
       panel.style.top = `${Math.max(12, Math.min(rect.bottom + 8, innerHeight - panel.offsetHeight - 12))}px`;
     }
     if (focusKey) {

@@ -1892,16 +1892,26 @@ h2.home-takeover__panel-label {
 .frequent-bank__chevron { position: absolute; right: 5px; bottom: 1px; color: var(--home-route); font-size: 14px; }
 .frequent-bank__name { pointer-events: none; display: none; position: absolute; top: 100%; left: 0; z-index: 2; padding: 3px 7px; white-space: nowrap; background: var(--home-terrain); color: var(--home-paper); border: 1px solid var(--home-line); font-size: 12px; }
 .frequent-bank__tile:hover .frequent-bank__name, .frequent-bank__tile:focus-visible .frequent-bank__name { display: block; }
-.frequent-bank__edit { min-width: 44px; min-height: 44px; flex-shrink: 0; background: transparent; color: var(--home-muted); border: 0; cursor: pointer; }
+.frequent-bank__glyph { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; padding: 0; background: transparent; color: var(--home-muted); border: 0; cursor: pointer; }
+.frequent-bank__glyph svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.frequent-bank__edit { opacity: 0; }
+.frequent-bank__bar:hover > .frequent-bank__edit,
+.frequent-bank__panel-heading:hover > .frequent-bank__edit,
+.frequent-bank__settings:hover > .frequent-bank__edit,
+.frequent-bank__edit:focus-visible { opacity: 1; }
+@media (hover: none) { .frequent-bank__edit { opacity: 1; } }
 .frequent-bank button:hover { border-color: var(--home-route); }
-.frequent-bank button:focus-visible, .frequent-bank input:focus-visible { outline: 2px solid var(--home-paper); outline-offset: 3px; }
-.frequent-bank__panel { position: fixed; inset: auto; margin: 0; width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 16px; background: var(--home-terrain); color: var(--home-paper); border: 1px solid var(--home-line); border-radius: 8px; box-shadow: 0 12px 40px #0009; font: 15px/1.4 "Avenir Next", system-ui, sans-serif; }
+.frequent-bank button:focus-visible, .frequent-bank input:focus-visible, .frequent-bank a:focus-visible { outline: 2px solid var(--home-paper); outline-offset: 3px; }
+.frequent-bank__panel { position: fixed; inset: auto; margin: 0; width: min(360px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 8px 12px 12px; background: var(--home-terrain); color: var(--home-paper); border: 1px solid var(--home-line); border-radius: 2px; border-top: 2px solid var(--home-route); box-shadow: 0 8px 24px #0006; font: inherit; font-size: 14px; }
 .frequent-bank__panel::backdrop { background: transparent; }
 .frequent-bank__panel-heading, .frequent-bank__settings { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-.frequent-bank__panel h3 { font-size: 16px; margin: 0; overflow-wrap: anywhere; }
+.frequent-bank__panel h3 { flex: 1; font: 700 13px/1.4 "SFMono-Regular", Menlo, Consolas, monospace; margin: 0; overflow-wrap: anywhere; }
+.frequent-bank__destination { display: inline-flex; align-items: center; min-height: 44px; color: var(--home-route); text-decoration: underline; text-underline-offset: 3px; }
+.frequent-bank__panel-heading { border-bottom: 1px solid var(--home-line); }
 .frequent-bank__command, .frequent-bank__tab { min-height: 44px; min-width: 44px; border: 1px solid var(--home-line); border-radius: 4px; color: var(--home-paper); background: transparent; padding: 8px 12px; cursor: pointer; }
-.frequent-bank__tab { display: block; width: 100%; text-align: left; margin-bottom: 4px; overflow-wrap: anywhere; }
-.frequent-bank__window { font-size: 12px; color: var(--home-muted); margin: 16px 0 6px; padding-left: 8px; border-left: 3px solid var(--window-color); }
+.frequent-bank .frequent-bank__tab { display: block; width: 100%; text-align: left; margin: 0; padding: 10px 2px; border: 0; border-bottom: 1px solid var(--home-line); border-radius: 0; font: 600 22px/1.15 "Barlow Condensed", "Avenir Next", sans-serif; overflow-wrap: anywhere; }
+.frequent-bank__tab:hover { color: var(--home-route); background: var(--home-terrain-high); }
+.frequent-bank__window { font: 600 11px/1.4 "SFMono-Regular", Menlo, Consolas, monospace; color: var(--home-muted); margin: 12px 0 4px; padding-left: 8px; border-left: 3px solid var(--window-color); }
 .frequent-bank__settings { margin-top: 12px; }
 .frequent-bank__settings > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .frequent-bank__form { display: flex; align-items: end; gap: 8px; margin-top: 16px; }

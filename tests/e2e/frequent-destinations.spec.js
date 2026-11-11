@@ -122,3 +122,38 @@ test('outside dismissal stays dismissed after refresh; an open panel repositions
   await expect(panel(page)).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Edit frequent destinations", exact: true })).toHaveAttribute("aria-expanded", "false");
 });
+
+test('destination links use native navigation and chooser settings stay behind the pencil', async ({ context, extensionId, server }) => {
+  const alpha = await context.newPage(); await alpha.goto(server + '/alpha');
+  const beta = await context.newPage(); await beta.goto(server + '/beta');
+  const page = await prepare(context, extensionId, [server + '/alpha#saved']);
+  const edit = page.getByRole('button', { name: 'Edit frequent destinations', exact: true });
+  await page.mouse.move(0, 0);
+  await expect(edit).toHaveCSS('opacity', '0');
+  await page.locator('.frequent-bank__bar').hover();
+  await expect(edit).toHaveCSS('opacity', '1');
+  await page.mouse.move(0, 0);
+  await tile(page).focus(); await page.keyboard.press('Tab');
+  await expect(edit).toBeFocused(); await expect(edit).toHaveCSS('opacity', '1');
+  await tile(page).click();
+  const link = panel(page).getByRole('link', { name: new URL(server).host, exact: true });
+  await expect(link).toHaveAttribute('href', server + '/alpha#saved');
+  await link.focus();
+  await page.evaluate(() => window.tabtopiaStartPageRecognition.refresh());
+  await expect(link).toBeFocused();
+  await expect(panel(page).getByLabel('Opening URL')).toHaveCount(0);
+  await expect(panel(page).getByRole('button', { name: /^Open / })).toHaveCount(0);
+  await expect(panel(page).getByRole('button', { name: 'Hide', exact: true })).toHaveCount(0);
+  for (const options of [{ button: 'middle' }, { modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] }]) {
+    const opened = context.waitForEvent('page');
+    await link.click(options);
+    const destination = await opened;
+    await expect(destination).toHaveURL(server + '/alpha#saved');
+    await expect(page).toHaveURL(/newtab.html#\/home$/);
+    await destination.close();
+  }
+  await panel(page).getByRole('button', { name: `Edit ${new URL(server).host}`, exact: true }).click();
+  await expect(panel(page).getByLabel('Opening URL')).toBeVisible();
+  await link.click();
+  await expect(page).toHaveURL(server + '/alpha#saved');
+});
