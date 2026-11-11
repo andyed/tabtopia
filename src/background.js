@@ -176,7 +176,9 @@ setRequestHandler(async (url, { view = "text" } = {}) => {
     if (!["text", "outline", "interactive"].includes(view)) {
         throw new Error("view must be text, outline, or interactive");
     }
-    const [tab] = await chrome.tabs.query({ url });
+    // tabs.query({ url }) uses match patterns, not exact URLs: fragments do
+    // not match and literal '*' characters act as wildcards.
+    const tab = (await chrome.tabs.query({})).find(candidate => candidate.url === url);
     if (!tab) throw new Error("tab not open");
     const content = view === "text"
         ? await extractTabContentInWorker(url, { exactOnly: true })
@@ -3540,8 +3542,8 @@ async function extractTabContentInWorker(url, { exactOnly = false } = {}) {
             return null;
         }
 
-        // Strategy 1: Find active tab with this URL
-        let tabs = await chrome.tabs.query({ url });
+        // Strategy 1: Compare complete URLs, including fragments and literal '*'.
+        let tabs = (await chrome.tabs.query({})).filter(tab => tab.url === url);
 
         // Strategy 2: If exact match fails, try domain-based search
         // (skipped for exactOnly callers: a same-domain tab is not the tab
