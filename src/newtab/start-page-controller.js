@@ -1,3 +1,4 @@
+import { buildFrequentDestinations, FREQUENT_PREFS_KEY, FREQUENT_ORDER_KEY } from "../lib/frequent-destinations.js";
 import { readRecentContext, refreshRecentContext } from "../lib/recent-context-provider.js";
 import { flattenBookmarkTree } from "../lib/bookmark-intent.js";
 import { HOME_RECOMMENDATION_PREFS_KEY, readHomeRecommendationPreferences, collectHomeRecommendationIdentities } from "../lib/home-recommendations.js";
@@ -67,7 +68,7 @@ export function createStartPageController({
 
   function installListeners() {
     listen(chrome.storage?.onChanged, (changes, area) => {
-      if (area === "local" && (changes.tabtopiaContextHiddenSitesV1 || changes[HOME_RECOMMENDATION_PREFS_KEY])) scheduleRefresh();
+      if (area === "local" && (changes[FREQUENT_PREFS_KEY] || changes.tabtopiaContextHiddenSitesV1 || changes[HOME_RECOMMENDATION_PREFS_KEY])) scheduleRefresh();
     });
     listen(chrome.tabs.onCreated, () => scheduleRefresh());
     listen(chrome.tabs.onRemoved, () => scheduleRefresh());
@@ -264,6 +265,16 @@ export async function collectStartPageState(now = Date.now()) {
     limit: HABIT_DESTINATION_DEFAULTS.resultLimit
   });
 
+  const [frequentPrefs, frequentOrder] = await Promise.all([
+    chrome.storage.local.get(FREQUENT_PREFS_KEY).catch(() => ({})),
+    chrome.storage.session.get(FREQUENT_ORDER_KEY).catch(() => ({}))
+  ]);
+  const frequentDestinations = buildFrequentDestinations({ habitDestinations, windows,
+    preferences: frequentPrefs[FREQUENT_PREFS_KEY], order: frequentOrder[FREQUENT_ORDER_KEY], currentWindowId: currentWindow?.id, now });
+  if (JSON.stringify(frequentOrder[FREQUENT_ORDER_KEY]) !== JSON.stringify(frequentDestinations.order)) {
+    await chrome.storage.session.set({ [FREQUENT_ORDER_KEY]: frequentDestinations.order }).catch(() => {});
+  }
+
   const identities = collectHomeRecommendationIdentities({ context: recentContextSnapshot,
     history: historyPool, bookmarks: recommendationBookmarks, preferences: recommendationPreferences });
   const recommendationFeedback = await chrome.runtime.sendMessage({
@@ -284,6 +295,7 @@ export async function collectStartPageState(now = Date.now()) {
     recognition,
     forecast,
     habitDestinations,
+    frequentDestinations,
     archiveSnapshot: currentArchiveSnapshot,
     archiveQuery,
     techmemeSnapshot,

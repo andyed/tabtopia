@@ -1,3 +1,4 @@
+import { createFrequentBank } from "./frequent-bank.js";
 import { HOME_TITLE_LIMITS, truncateHomeTitle } from "../lib/home-title.js";
 import { activityUrlLabel, buildActivityJourney } from "../lib/activity-journey.js";
 import { createLetterFavicon, getLocalFaviconUrl } from "./utility.js";
@@ -110,6 +111,12 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   ];
   fragment.append(renderHeader(featuredItems.length ? { ...safeModel, stateLabel: "For now" } : safeModel, mode, titleId, tallies));
 
+  if (!safeModel.freshOverride && safeModel.frequentDestinations) {
+    root.__frequentBank ||= createFrequentBank();
+    root.__frequentBank.update(safeModel.frequentDestinations, handlers);
+    fragment.append(root.__frequentBank.root);
+  }
+
   const errorText = errorMessage(safeModel.error);
   if (errorText) fragment.append(renderError(errorText));
 
@@ -175,6 +182,7 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
 
   fragment.append(renderUtilities(safeModel, handlers, status), status);
   root.replaceChildren(fragment);
+  root.__frequentBank?.restore();
   installTitlePeek(root);
   if (featuredItems.length) observeFeatured(root, featuredItems, handlers.onFeaturedVisible);
   return root;

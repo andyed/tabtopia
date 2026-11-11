@@ -1,3 +1,4 @@
+import { updateFrequentPreference } from "../lib/frequent-destinations.js";
 import { setContextSiteHidden } from "../lib/recent-context-provider.js";
 import { buildHomeRecommendations } from "../lib/home-recommendations.js";
 import { stateDisplayName } from "../lib/start-page-state.js";
@@ -88,6 +89,7 @@ async function restoreCachedHome() {
     ...stored.model,
     // Recommendations need current preferences and feedback before exposure.
     featuredItems: [],
+    frequentDestinations: null,
     loading: true,
     stale: true,
     error: null,
@@ -185,6 +187,7 @@ function handleStartPageUpdate({ snapshot, recognition, forecast, habitDestinati
   const featuredItems = candidates;
   const feed = {
     ...baseFeed,
+    frequentDestinations: extra.frequentDestinations,
     featuredItems,
     recommendationArm: arm,
     recentContext: extra.recentContextSnapshot,
@@ -362,6 +365,10 @@ function renderHome(model) {
       onSnoozeRecommendation: snoozeRecommendation,
       onUndoSnooze: undoRecommendationSnooze,
       onAction: handleHomeAction,
+      onFrequentPreference: async change => {
+        await updateFrequentPreference(change);
+        await controller?.refresh();
+      },
       onStartFresh: renderFreshHome,
       onShowSuggested: renderSuggestedHome,
       onOpenTreemap: openTreemap
