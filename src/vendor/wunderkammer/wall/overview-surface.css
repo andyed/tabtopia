@@ -1,0 +1,6 @@
+/* One viewport-sized picture, below the unchanged tile controls and headings.
+   Each image hands off independently, only after its pixels have been drawn. */
+.overview-surface { position: absolute; inset: 0 auto auto 0; pointer-events: none; transform-origin: 0 0; will-change: transform; }
+.overview-surface[hidden] { display: none; }
+.tile.overview-painted { background: transparent; }
+.tile.overview-painted > img { visibility: hidden; }

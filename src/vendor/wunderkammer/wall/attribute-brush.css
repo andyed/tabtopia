@@ -1,0 +1,119 @@
+/* Attribute brush: a transient lens over existing tiles. It lives in the
+ * screen-space stage and never changes the wall's layout or camera bounds. */
+
+.facet-heading {
+  min-height: 40px;
+  min-width: 40px;
+  padding: 6px 8px;
+  margin: -6px -8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.facet-heading:hover,
+.facet-heading[aria-pressed="true"] { border-color: rgba(var(--accent-rgb), .5); background: rgba(var(--accent-rgb), .08); }
+.facet-heading:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+
+/* Tile imagery receives the wash; captions remain opaque and readable. */
+.tile.brush-wash,
+.tile.brush-match,
+.tile.brush-miss { isolation: isolate; }
+.tile.brush-unknown { --brush-color: #a6a6b8; --brush-rgb: 166, 166, 184; }
+.tile.brush-wash::before,
+.tile.brush-match::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: rgba(var(--brush-rgb, 166, 166, 184), var(--brush-alpha, .14));
+  mix-blend-mode: screen;
+}
+.tile.brush-wash::after,
+.tile.brush-match::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0 0 auto;
+  height: calc(2px * var(--label-scale, 1));
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--brush-color, var(--accent-text)), var(--brush-color-2, var(--brush-color, var(--accent-text))));
+  opacity: .9;
+}
+.tile.brush-miss img { opacity: .42; transition: opacity .16s linear; }
+.brush-item-value { position: absolute; z-index: 3; top: calc(4px * var(--label-scale, 1)); right: calc(4px * var(--label-scale, 1)); max-width: 95%; padding: calc(2px * var(--label-scale, 1)) calc(4px * var(--label-scale, 1)); background: var(--scrim); color: var(--text); font-size: calc(11px * var(--label-scale, 1)); line-height: 1.2; pointer-events: none; overflow: hidden; white-space: nowrap; border-bottom: calc(2px * var(--label-scale, 1)) solid var(--brush-color); }
+.tile.brush-match { border-color: var(--brush-color, var(--accent-text)); }
+.tile.brush-focus { box-shadow: inset 0 0 0 calc(1px * var(--label-scale, 1)) var(--brush-color, var(--accent-text)); }
+.tile.brush-wash .cap,
+.tile.brush-match .cap,
+.tile.brush-miss .cap { z-index: 3; }
+
+.brush-legend {
+  position: absolute;
+  z-index: 10;
+  top: 10px;
+  left: 10px;
+  display: grid;
+  gap: 5px;
+  width: min(440px, calc(100% - 20px));
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--accent-rgb), .5);
+  border-radius: 6px;
+  background: rgba(13, 13, 22, .96);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.25;
+  pointer-events: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
+}
+.brush-legend[hidden] { display: none; }
+.brush-legend-head,
+.brush-legend-foot,
+.brush-scale { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brush-legend-head strong { color: var(--text); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brush-sort-note,
+.brush-legend-foot { color: var(--muted); font-size: 13px; }
+.brush-sort-note { overflow-wrap: anywhere; }
+.brush-scale { flex-wrap: wrap; }
+.brush-scale-label { color: var(--text); white-space: nowrap; font-size: 13px; }
+.brush-gradient {
+  flex: 1 1 96px;
+  min-width: 96px;
+  height: 10px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--brush-gradient, #43d9ff, #ff7b72));
+  border: 1px solid var(--muted);
+}
+.brush-key { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin-right: 3px; white-space: nowrap; }
+.brush-key > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brush-key i { display: block; width: 12px; height: 12px; flex: 0 0 12px; border-radius: 50%; background: var(--brush-color); border: 1px solid var(--muted); }
+.brush-more { color: var(--muted); font-size: 13px; }
+.brush-clear {
+  min-height: 40px;
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid rgba(var(--accent-rgb), .55);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.brush-clear:hover { background: rgba(var(--accent-rgb), .16); }
+.brush-clear:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+
+@media (max-width: 700px) {
+  .brush-legend { top: 8px; left: 8px; width: min(420px, calc(100% - 16px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile.brush-miss img { transition: none; }
+}

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Compare · Wunderkammer</title>
+  <link rel="icon" href="brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="wall.css">
+  <link rel="stylesheet" href="comparison.css">
+
+</head>
+<body class="comparison-app">
+  <header class="compare-header">
+    <a class="wordmark" href="../"><img src="brand/lockup-dark.svg" alt="wunderkammer" width="208" height="20"> <span>/ compare</span></a>
+    <div class="header-actions"><button id="recipe-open">Comparison recipe</button><button id="copy-link">Copy view</button></div>
+  </header>
+  <main>
+    <section class="question-bar" aria-labelledby="question">
+      <div><h1 id="question">Loading the collection…</h1><p id="coverage">Reading the existing Wunderkammer index.</p></div>
+      <label id="preset-control" hidden>Starting point<select id="preset"></select></label>
+    </section>
+    <div id="notice" role="status" hidden></div>
+    <section id="observations" class="observations-panel" aria-labelledby="observations-title" hidden>
+      <div class="panel-heading"><div><h2 id="observations-title">Observations</h2><p>Written by the recipe's author. The figures beside each one are computed from this collection.</p></div></div>
+      <p id="observations-stale" class="observations-stale" hidden><span id="observations-stale-text"></span> <button id="observations-restore" type="button">Return to that comparison</button></p>
+      <ol id="observation-list" class="observation-list"></ol>
+    </section>
+    <details id="scope-panel" class="scope-panel" open><summary>Shape the collection <span>Search, groups & comparison</span></summary>
+    <section class="compare-controls" aria-label="Comparison scope">
+      <label class="query-label">Within this collection<input id="compare-search" type="search" placeholder="Search titles, sources, notes…" autocomplete="off"></label>
+      <label>Separate in depth<select id="group-by"></select></label>
+      <label>Compare<select id="measure"></select></label>
+      <label>Values<select id="metric"><option value="share">Share of each group</option><option value="count">Item counts</option></select></label>
+      <label>Order categories<select id="category-sort"><option value="difference">First–last difference</option><option value="total">Most represented</option><option value="name">Name</option></select></label>
+      <label>Categories<select id="category-limit"><option>6</option><option selected>10</option><option>14</option><option>20</option></select></label>
+    </section>
+    <section class="cohort-strip" aria-label="Comparison groups"><span>Groups</span><div id="group-options"></div></section>
+    </details>
+    <div class="compare-workspace">
+      <section class="depth-panel" aria-label="Spatial comparison">
+        <div class="panel-heading"><h2 id="scene-title">Walls</h2><span id="scene-summary"></span></div>
+        <div id="comparison-stage"><p class="scene-loading">Preparing the depth view…</p></div>
+        <div class="depth-toolbar">
+          <div class="view-modes" role="group" aria-label="Camera view"><button data-view="walls" aria-pressed="true">Walls</button><button data-view="depth" aria-pressed="false">Depth chart</button><button data-view="front" aria-pressed="false">Aligned</button><button data-view="terraces" aria-pressed="false">Terraces</button></div>
+          <label class="walk-label" id="walk-control" hidden>Walk aisle <input id="aisle-travel" type="range" min="0" max="100" value="0" aria-label="Walk aisle"><output id="aisle-position">Entrance</output></label>
+          <label class="spread-label">Spread <input id="depth-spread" type="range" min="0" max="100" value="65"></label>
+          <label>Slice<select id="depth-slice"><option value="">All groups</option></select></label>
+          <button id="reset-camera">Fit</button>
+        </div>
+        <p class="scene-help" id="scene-help">Drag to orbit · scroll or pinch to zoom · select a column to inspect its items. Arrow keys orbit; Home fits. Artwork strips are samples; exact items appear below.</p>
+      </section>
+      <section class="distribution-panel" aria-labelledby="distribution-title">
+        <div class="panel-heading"><h2 id="distribution-title">Exact comparison</h2><button id="clear-selection" disabled>Clear selection</button></div>
+        <div id="comparison-matrix" class="matrix-scroll"></div>
+        <p id="counting-policy" class="policy"></p>
+        <details class="data-notes"><summary>Coverage & counting</summary><div id="data-notes"></div></details>
+      </section>
+      <section class="evidence-panel" aria-labelledby="evidence-title">
+        <div class="panel-heading"><div><h2 id="evidence-title">Items behind the comparison</h2><p id="evidence-summary"></p></div><div class="evidence-actions"><button id="copy-evidence">Copy evidence</button><button id="previous-items" aria-label="Previous items">←</button><span id="evidence-page"></span><button id="next-items" aria-label="Next items">→</button></div></div>
+        <div id="evidence-items"></div>
+      </section>
+    </div>
+  </main>
+  <dialog id="recipe-dialog" aria-labelledby="recipe-title">
+    <form method="dialog" class="dialog-heading"><h2 id="recipe-title">A question, expressed as a comparison</h2><button aria-label="Close comparison recipe">Close</button></form>
+    <p>Edit or paste a recipe, or an observations envelope (format wunderkammer.observations). The view, exact counts, and evidence all use this description.</p>
+    <details class="url-recipe"><summary>Compose a targeted view with URL parameters</summary><p>This live link uses the current index on each visit. Copy view also records the source revision and camera.</p><label for="live-url">Live comparison URL</label><textarea id="live-url" readonly rows="3"></textarea><button id="copy-live-url">Copy live URL</button></details>
+    <label for="recipe-text">Comparison recipe (JSON)</label><textarea id="recipe-text" spellcheck="false"></textarea>
+    <p id="recipe-error" role="alert"></p>
+    <div class="dialog-actions"><button id="copy-recipe">Copy recipe</button><button id="download-recipe">Download recipe</button><button id="apply-recipe" class="primary">Apply recipe</button></div>
+  </dialog>
+  <dialog id="item-dialog" aria-labelledby="item-title">
+    <form method="dialog" class="dialog-heading"><h2 id="item-title"></h2><button aria-label="Close item">Close</button></form>
+    <div id="item-content"></div>
+  </dialog>
+  <div class="sr-only" id="announcement" aria-live="polite"></div>
+  <script type="module" src="comparison-app.mjs"></script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wunderkammer</title>
+<link rel="icon" href="wall/brand/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="wall/wall.css">
+<link rel="stylesheet" href="wall/attribute-brush.css">
+<link rel="stylesheet" href="wall/reader-lift.css">
+<link rel="stylesheet" href="wall/overview-surface.css">
+<link rel="stylesheet" href="wall/aisle.css">
+<link rel="stylesheet" href="wall/float.css">
+  <link rel="stylesheet" href="wall/spatial/spatial.css">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="../../newtab/fonts.css">
+<link rel="stylesheet" href="../../newtab/wunderkammer-theme.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="main-controls">
+  <img class="brand-mark" src="wall/brand/mark.svg" alt="" width="15" height="19">
+  <span class="brand">wunderkammer</span>
+  <button class="btn" id="toggle-rail" type="button" aria-label="Filters" aria-controls="rail" aria-expanded="true">☰</button>
+  <input class="search" id="search" type="search" placeholder="Search" autocomplete="off" aria-label="Search titles, notes, tags">
+  <select class="select" id="group" aria-label="Group by"></select>
+  <div class="arrange" id="arrange" role="group" aria-label="Arrangement" hidden>
+    <button class="btn" type="button" data-arrange="wall" aria-pressed="true" aria-label="Grouped wall"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2" width="7" height="5" rx="1"/><rect x="10" y="2" width="4.5" height="5" rx="1"/><rect x="1.5" y="9" width="4.5" height="5" rx="1"/><rect x="7.5" y="9" width="7" height="5" rx="1"/></svg></button>
+    <button class="btn" type="button" data-arrange="grid" aria-pressed="false" aria-label="Similarity grid"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="3.5" height="3.5"/><rect x="6.25" y="1.5" width="3.5" height="3.5"/><rect x="11" y="1.5" width="3.5" height="3.5"/><rect x="1.5" y="6.25" width="3.5" height="3.5"/><rect x="6.25" y="6.25" width="3.5" height="3.5"/><rect x="11" y="6.25" width="3.5" height="3.5"/><rect x="1.5" y="11" width="3.5" height="3.5"/><rect x="6.25" y="11" width="3.5" height="3.5"/><rect x="11" y="11" width="3.5" height="3.5"/></svg></button>
+    <button class="btn" type="button" data-arrange="map" aria-pressed="false" aria-label="Similarity map"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="4" r="1.6"/><circle cx="6" cy="2.5" r="1.2"/><circle cx="5" cy="7" r="1.4"/><circle cx="11" cy="9" r="1.6"/><circle cx="13.5" cy="12.5" r="1.3"/><circle cx="9.5" cy="12.5" r="1.2"/><circle cx="12.5" cy="4.5" r="1"/><circle cx="2.5" cy="12" r="1"/></svg></button>
+  </div>
+  <select class="select" id="sort-key" aria-label="Sort within groups"></select>
+  <button class="btn" id="sort-direction" type="button" aria-label="Sort ascending">↑</button>
+  <select class="select" id="attribute-lens" aria-label="Attribute lens"></select>
+  <div class="zoomctl">
+    <button class="btn" id="tour" type="button" aria-pressed="false" aria-label="Tour: fly through the collection">⟳</button>
+    <button class="btn" id="view-3d" type="button" aria-pressed="false" aria-label="3D space: every item placed on three axes, or stacked by group">3D</button>
+    <button class="btn" id="view-aisle" type="button" aria-pressed="false" aria-label="Album aisle">▥</button>
+    <button class="btn" id="zoom-out" type="button" aria-label="Zoom out">−</button>
+    <button class="btn" id="zoom-fit" type="button" aria-label="Fit">⊡</button>
+    <button class="btn" id="zoom-in" type="button" aria-label="Zoom in">+</button>
+  </div>
+  <select class="select pan-behavior" id="pan-behavior" aria-label="Pan behavior" hidden>
+    <option value="free">Free pan</option>
+    <option value="bounded">Bounded pan</option>
+    <option value="edge">Edge zoom</option>
+  </select>
+  <button class="btn" id="copy-view" type="button" aria-label="Copy link">⎘</button>
+  <button class="btn" id="copy-live-view" type="button" aria-label="Copy live view link">↗</button>
+  <span class="count" id="count" role="status" aria-live="polite"></span>
+  </div>
+</header>
+
+<div id="link-status" role="status" hidden><span id="link-message"></span> <button class="btn" id="new-view" type="button">New view</button></div>
+
+<nav class="rail" id="rail" aria-label="Filters"></nav>
+
+<section id="scope-bar" class="scope-bar" aria-label="Working scope" hidden>
+  <button class="btn" id="scope-back" type="button" aria-label="Back">‹</button>
+  <div id="scope-summary"></div>
+  <button class="btn" id="scope-clear" type="button" aria-label="All content">×</button>
+</section>
+<section id="context-clusters" class="context-clusters" aria-label="Alternate clusters outside the current scope" hidden>
+  <div class="context-heading"><strong>Outside this scope</strong><span id="context-preview" role="status"></span></div>
+  <div id="context-list"></div>
+</section>
+
+<main class="stage" id="stage">
+  <div class="bg-plane" id="bg-plane" hidden></div>
+  <div class="canvas" id="canvas"></div>
+  <div class="sp-host" id="sp-host" hidden></div>
+  <div class="aisle-host" id="aisle-host" hidden></div>
+  <div class="float-host" id="float-host" hidden></div>
+  <div class="row-title" id="row-title" hidden>
+    <button class="rt-focus" type="button"><strong></strong><span class="n"></span><span class="pos"></span></button>
+    <button class="rt-next" type="button" aria-label="Next group">›</button>
+    <button id="group-filter" type="button" aria-label="Filter to this group">⊙</button>
+  </div>
+  <div class="review-tip" id="review-tip"><select class="select" id="lens-value" aria-label="Highlight value" hidden></select></div>
+  <span class="edge-feedback sr-only" id="edge-feedback" role="status"></span>
+  <button class="btn edge-undo" id="edge-undo" type="button" hidden aria-label="Undo edge zoom">↶</button>
+  <button class="btn tray-return" id="tray-return" type="button" hidden aria-label="Return to collection">↶</button>
+  <button class="btn tray-filter" id="tray-filter" type="button" hidden aria-label="Filter to approached group">⊙</button>
+</main>
+
+<aside class="detail" id="detail" aria-label="Clip detail"></aside>
+
+<div class="empty hidden" id="empty"></div>
+
+
+
+<script type="module" src="wall/wall.mjs"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+/* Tabtopia skin over the unmodified collection layout and controls. */
+:root { --bg: #09110f; --panel: #0d1b17; --panel-2: #14241f; --text: #f2ebd8; --muted: #b9c9bf; --accent-rgb: 159,247,210; --accent-text: #9ff7d2; --accent-on: #09110f; --border: #46685b; --scrim: rgba(9,17,15,.96); }
+html, body { font-family: 'Avenir Next', Avenir, system-ui, sans-serif; }
+.brand, .group-label, .detail h2 { font-family: 'Barlow Condensed', 'Avenir Next', sans-serif; }
+.brand, .brand-mark { display: none; }
+.btn, .select, .search { border-radius: 2px; }
+#copy-view, #copy-live-view { display: none; }
+.tile.broken::before { content: 'Image unavailable'; color: var(--muted); font-size: 13px; display: grid; place-items: center; width: 100%; height: 100%; background: var(--panel); }
+@media (max-width: 700px) { .main-controls .search { min-width: 120px; } }
+
+/* Collection authoring is outside the extension viewer. */
+#empty code { display: none; }

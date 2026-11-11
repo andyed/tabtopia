@@ -1,0 +1,127 @@
+/* wunderkammer — spatial view.
+ *
+ * Contrast: every readable string here clears 8:1 against the ground it sits
+ * on. The card ground is #0d1017; --sp-ink #e8e6da measures 15.19:1 and the
+ * metadata tier #b0aea2 measures 8.54:1. A third, dimmer tier does not fit above
+ * the floor on this ground, so secondary text separates by size and letter-
+ * spacing instead of by contrast.
+ */
+
+.sp-host {
+  position: absolute; inset: 0;
+  background: #07070d;
+  overflow: hidden;
+  touch-action: none;
+}
+.sp-host[hidden] { display: none !important; }
+
+#sp-webgl, #sp-css3d { position: absolute; inset: 0; }
+#sp-webgl { z-index: 1; }
+#sp-css3d { z-index: 2; pointer-events: none; }
+#sp-css3d .sp-card, #sp-css3d .sp-card * { pointer-events: auto; }
+#sp-css3d:focus { outline: none; }
+
+.sp-card, .sp-dcard {
+  width: 340px;
+  box-sizing: border-box;
+  aspect-ratio: var(--tile-aspect, 4 / 3);
+  background: #0d1017;
+  border: 1px solid rgba(127, 223, 255, 0.5);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.75);
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+/* Keyboard selection is heavier than hover, not lighter: it is the only
+ * position indicator a keyboard user has. */
+.sp-card[aria-selected="true"] {
+  outline: 4px solid #ffd166;
+  outline-offset: 3px;
+  border-color: #ffd166;
+}
+.sp-card.broken { border-color: #ff8a8a; }
+
+.sp-thumb {
+  display: block; width: 100%;
+  aspect-ratio: var(--tile-aspect, 4 / 3);
+  object-fit: cover;
+  background: #1b2430;
+}
+.sp-body { visibility: hidden; position: absolute; inset: auto 0 0; padding: 8px 10px; background: #0d1017; max-height: 40%; overflow: hidden; }
+.sp-t {
+  font-size: 15px; line-height: 1.28; font-weight: 600;
+  color: #e8e6da;                       /* 15.19:1 on #0d1017 */
+  overflow-wrap: anywhere;
+}
+.sp-m {
+  margin-top: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; letter-spacing: 0.03em;
+  color: #b0aea2;                       /* 8.54:1 on #0d1017 */
+}
+.sp-edit {
+  display: inline-block; margin-top: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #8fd9ff;                       /* 12.27:1 on #0d1017 */
+  text-decoration: underline;
+}
+
+.sp-pile-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center;
+  color: #e8e6da;                       /* 16.04:1 on #07070d */
+  white-space: nowrap;
+  text-shadow: 0 2px 10px #07070d, 0 0 3px #07070d;
+  pointer-events: none;
+}
+.sp-pile-label .n { font-size: 26px; letter-spacing: 0.1em; text-transform: uppercase; }
+.sp-pile-label .c { font-size: 20px; color: #8fd9ff; margin-left: 10px; }
+
+.sp-back { position: absolute; z-index: 4; top: 12px; left: 12px; background: #0d1017; color: #e8e6da; }
+.sp-back[hidden] { display: none; }
+
+.sp-card:hover .sp-body, .sp-card[aria-selected="true"] .sp-body { visibility: visible; }
+
+
+/* --- Drawable card host (lib/cards.js) -----------------------------------
+ * Near-tier tiles are drawn from these cards rather than from thumbnails, so
+ * the text in a tile stays in find-in-page and Cmd+F can move the camera.
+ *
+ * The host CANNOT be hidden. `opacity: 0`, `visibility: hidden`,
+ * `clip-path: inset(100%)` and `left: -100vw` all make drawElementImage a
+ * silent no-op — it returns a matrix and paints nothing, no exception. So the
+ * veil is `opacity: 0.01`, which paints in full and was measured to keep
+ * painting while an opaque canvas covers it (#sp-webgl does, at z-index 1).
+ *
+ * Do not give .card-host a height that grows with the card count, and do not
+ * un-stack .sp-dcard: a host taller than the viewport loses paint records for
+ * its entire subtree. cards.js sets the stacking inline for that reason.
+ *
+ * Contrast is inherited from the .sp-card rules above — same #0d1017 ground,
+ * same 15.19:1 and 8.54:1 inks — because a tile's text is read at 256px and is
+ * subject to the same 8:1 floor as the overlay card it is a copy of.
+ */
+canvas.card-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  opacity: 0.01;
+  pointer-events: none;
+  overflow: hidden;
+}
+.sp-dcard { aspect-ratio: auto; }   /* cards.js sets an explicit height */
+
+/* The overlay card hides its body until hover or selection, because on an
+ * overlay the body is a disclosure. On a drawable card the body IS the point —
+ * the title band is what a tile gains over a thumbnail, and what find-in-page
+ * matches against — so it is always shown. Same #0d1017 ground and the same
+ * 15.19:1 / 8.54:1 inks, so the 8:1 floor holds at 256px and at 64px.        */
+.sp-dcard .sp-body { visibility: visible; }
+/* The Obsidian link belongs on cards a user can click. A drawable is painted
+ * into a texture and cannot be clicked, and at 64px the link is noise across
+ * the band, so it is hidden here — the DOM overlay still carries it, which is
+ * the invariant. */
+.sp-dcard .sp-edit { display: none; }

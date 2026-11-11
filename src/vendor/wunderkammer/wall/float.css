@@ -1,0 +1,61 @@
+/* Floating space: a full-stage presentation of the whole corpus; scope dims in place. */
+.float-host { position:absolute; inset:0; overflow:hidden; min-width:0; background:#050510; color:#f3f3f7; isolation:isolate; }
+.float-host[hidden] { display:none; }
+.float-canvas { display:block; width:100%; height:100%; touch-action:none; cursor:grab; }
+.float-canvas:focus-visible { outline:3px solid #aaffaa; outline-offset:-4px; }
+.float-labels { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.float-label { position:absolute; left:0; top:0; display:block; max-width:220px; padding:4px 8px; border:1px solid #697476; border-radius:5px; background:#050510; color:#f3f3f7; font:600 14px/1.3 system-ui,sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; will-change:transform; }
+.float-label-shelf { font-size:16px; max-width:360px; }
+.float-label-axis { max-width:360px; }
+.float-label[hidden] { display:none; }
+.float-toolbar { position:absolute; bottom:34px; left:12px; right:12px; display:flex; flex-wrap:wrap; align-items:end; gap:8px 12px; max-width:920px; margin:auto; padding:10px 12px; border:1px solid #697476; border-radius:8px; background:#050510; font:16px/1.3 system-ui,sans-serif; }
+.float-toolbar label { display:flex; flex-direction:column; gap:4px; min-width:0; color:#f3f3f7; }
+.arrange-menu { display:flex; flex-wrap:wrap; gap:0; margin:0; padding:0; border:0; min-width:0; }
+.arrange-menu legend { padding:0 0 4px; color:#f3f3f7; font:16px/1.3 system-ui,sans-serif; float:left; width:100%; }
+.arrange-menu label { position:relative; display:block; }
+.arrange-menu input { position:absolute; inset:0; margin:0; opacity:0; cursor:pointer; }
+.arrange-menu span { display:block; box-sizing:border-box; min-width:44px; min-height:44px; padding:11px 12px; border:1px solid #697476; margin-left:-1px; background:#141421; color:#f3f3f7; text-align:center; white-space:nowrap; }
+.arrange-menu label:first-of-type span { border-radius:5px 0 0 5px; margin-left:0; }
+.arrange-menu label:last-of-type span { border-radius:0 5px 5px 0; }
+.arrange-menu input:checked + span { background:#f3f3f7; color:#050510; font-weight:600; }
+.arrange-menu input:focus-visible + span { outline:3px solid #aaffaa; outline-offset:2px; position:relative; z-index:1; }
+.float-axes { display:flex; gap:8px; flex:1 1 330px; min-width:0; }
+.float-axes[hidden] { display:none; }
+.float-axes label { flex:1 1 0; }
+/* Axis ticks are many and secondary: no frame, but the same opaque ground, so
+   a tick over a cover keeps its contrast. */
+.float-label-tick { border-color:transparent; padding:2px 6px; font-weight:500; }
+.float-toolbar select,.float-toolbar button { box-sizing:border-box; min-height:44px; min-width:44px; border:1px solid #697476; border-radius:5px; padding:8px; background:#141421; color:#f3f3f7; font:16px/1.3 system-ui,sans-serif; }
+.float-toolbar select { width:100%; text-overflow:ellipsis; }
+.float-toolbar button { cursor:pointer; flex:0 0 auto; }
+.float-toolbar select:focus-visible,.float-toolbar button:focus-visible { outline:3px solid #aaffaa; outline-offset:2px; }
+.float-toolbar :disabled { color:#bcbcc9; cursor:default; }
+.float-scope { flex:1 0 100%; color:#f3f3f7; font-size:14px; }
+.float-help { position:absolute; left:12px; right:12px; bottom:5px; margin:0; text-align:center; font:16px/1.3 system-ui,sans-serif; color:#f3f3f7; background:#050510; pointer-events:none; }
+.float-status { position:absolute; top:12px; left:12px; right:12px; z-index:1; margin:0; padding:12px; border:1px solid #697476; border-radius:6px; color:#f3f3f7; background:#141421; font:16px/1.45 system-ui,sans-serif; }
+.float-status[hidden] { display:none; }
+/* The detail pane overlays the stage's right edge on wide screens; keep the controls beside it. */
+@media (min-width:801px) {
+  body.detail-open .float-toolbar, body.detail-open .float-help { right:calc(var(--detail-size) + 12px); }
+}
+@media (max-width:600px) {
+  .float-toolbar { left:8px; right:8px; bottom:8px; gap:6px 8px; padding:8px; }
+  .arrange-menu { flex:1 0 100%; }
+  .arrange-menu legend { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .arrange-menu label { flex:1 1 0; }
+  .float-axes { flex:1 0 100%; gap:6px; }
+  .float-axes > label > span { font-size:14px; }
+  .float-help { display:none; }
+}
+
+/* The stacks' copy of the menu (wall.mjs stacksMenu): a strip along the stage's
+   foot, with the menu where the floating space's toolbar puts it. The stacks
+   host ends above the strip, so stacks fit above it rather than under it. */
+.sp-arrange { position:absolute; left:0; right:0; bottom:0; z-index:5; box-sizing:border-box; padding:10px max(25px, calc((100% - 920px) / 2 + 13px)); border-top:1px solid #697476; background:#050510; color:#f3f3f7; font:16px/1.3 system-ui,sans-serif; }
+.sp-arrange[hidden] { display:none; }
+#stage > .sp-host { bottom:var(--sp-arrange-h, 0px); }
+@media (max-width:600px) {
+  .sp-arrange { padding:8px 17px; }
+  /* Six arrangements share one row on a 390 px phone: 44 px targets, narrower padding. */
+  .arrange-menu span { padding:11px 6px; }
+}

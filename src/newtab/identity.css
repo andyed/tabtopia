@@ -426,3 +426,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Reserve the optional visual collection's place before its local count resolves. */
+.hero-navigation-slot { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; }
+.view-toggle .hero-navigation { display: grid; place-items: center; width: 44px; height: 44px; min-width: 44px; min-height: 44px; }

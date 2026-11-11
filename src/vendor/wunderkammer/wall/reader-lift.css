@@ -1,0 +1,23 @@
+/* A maximum of one traveling image and one decode crossfade. Neither is an
+   activation target or a second accessible representation of the selected item. */
+.reader-lift-ghost {
+  position: fixed;
+  z-index: 1000;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  /* Both contain endpoints use their painted rectangle. A cropped source may
+     use its full box; cover lets the crop open out as that box grows. */
+  object-fit: cover;
+  transform-origin: 0 0;
+  pointer-events: none;
+  user-select: none;
+  contain: layout paint;
+  will-change: transform, opacity;
+}
+.reader-image-fade { z-index: 999; }
+@media (prefers-reduced-motion: reduce) {
+  .reader-lift-ghost { animation: none; }
+}
