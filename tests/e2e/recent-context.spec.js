@@ -139,7 +139,7 @@ test("featured click follows canonical same-tab navigation and records qualified
 for (const state of ["empty", "offline"]) test(`${state} context falls back to usable Home`, async ({ context, extensionId, server }) => {
   const page = await prepare(context, extensionId, server, { state, enabled: false });
   await expect(featured(page)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "All tabs", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "All tabs", exact: true })).toBeVisible();
   expect((await summary(page)).detailCount).toBe(0);
 });
 

@@ -115,7 +115,7 @@ test.describe("development home takeover", () => {
     const home = page.locator("#startPageHome");
     await expect(home).toBeVisible();
     await expect(home).toHaveAttribute("aria-busy", "false");
-    await home.getByRole("button", { name: "All tabs" }).click();
+    await home.getByRole("link", { name: "All tabs" }).click();
 
     await expect(page).toHaveURL(/newtab\.html#\/treemap$/);
     await expect(home).toBeHidden();
@@ -140,7 +140,7 @@ test.describe("development home takeover", () => {
     await showOtherRoutes(home);
     await expect(home.getByText("Revisit proof", { exact: true }).first()).toBeVisible();
 
-    await home.getByRole("button", { name: "All tabs" }).click();
+    await home.getByRole("link", { name: "All tabs" }).click();
     await expect(home).toBeHidden();
     await page.evaluate(() => chrome.bookmarks.create({
       title: "Hash revisit proof",
@@ -521,7 +521,7 @@ test.describe("development home takeover", () => {
     await home.getByRole("button", { name: "Show suggested" }).click();
     await expect(home).toHaveAttribute("data-mode", "engaged");
 
-    await home.getByRole("button", { name: "All tabs" }).click();
+    await home.getByRole("link", { name: "All tabs" }).click();
     await expect(newtab).toHaveURL(/#\/treemap$/);
     await expect(home).toBeHidden();
     await expect(newtab.locator('#treemap .cell[aria-label="Alpha Page"]')).toBeVisible();
@@ -551,8 +551,11 @@ test.describe("development home takeover", () => {
     await expect(home.locator('[data-action-id^="page:"]')).toHaveCount(1);
     const destination = home.locator('[data-action-id^="page:"]').first();
     await showOtherRoutes(home);
-    await expect(destination.getByText("Habit", { exact: true })).toBeVisible();
-    await expect(destination.getByText("Star", { exact: true })).toBeVisible();
+    // Evidence remains merged in the model; Home shows only one visible cue.
+    const sources = await newtab.evaluate(() => window.tabtopiaStartPageHome.model.actions
+      .find(action => action.id.startsWith("page:")).sources);
+    expect(sources).toEqual(expect.arrayContaining(["habit", "star"]));
+    await expect(destination.locator(".home-takeover__source, .home-takeover__reason")).toHaveCount(1);
     await expect(destination).toHaveAttribute("data-verb", "switch");
 
     await destination.click();

@@ -1,3 +1,4 @@
+import { createHomeGlyph } from "./home-glyph.js";
 import { createLetterFavicon, getLocalFaviconUrl, getWindowColor } from "./utility.js";
 
 const el = (tag, className, text) => {
@@ -20,11 +21,7 @@ export function createFrequentBank() {
   function glyph(label, key, run, kind, className = "frequent-bank__glyph") {
     const node = button("", key, run, className);
     node.setAttribute("aria-label", label); node.title = label;
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS(svg.namespaceURI, "path");
-    path.setAttribute("d", kind === "edit" ? "M15 5l4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15z" : "M6 6l12 12M18 6L6 18");
-    svg.append(path); node.append(svg); return node;
+    node.append(createHomeGlyph(kind)); return node;
   }
   function focus(key) {
     [...root.querySelectorAll("[data-frequent-focus]")]

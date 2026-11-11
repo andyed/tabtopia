@@ -1919,3 +1919,38 @@ h2.home-takeover__panel-label {
 .frequent-bank__form input { box-sizing: border-box; display: block; margin-top: 5px; min-height: 44px; width: 100%; border: 1px solid var(--home-line); border-radius: 4px; background: var(--home-ink); color: var(--home-paper); padding: 8px; font: inherit; font-size: 14px; }
 .frequent-bank__status { color: var(--home-muted); margin: 12px 0 0; }
 .frequent-bank__status:empty { display: none; }
+
+/* Home polish: quiet controls and a header with stable loading geometry. */
+.home-takeover__header { position: relative; padding-bottom: 24px; }
+.home-takeover__header--frequent { display: grid; grid-template-columns: minmax(0, 414px) minmax(0, 1fr) auto; }
+.home-takeover__header--frequent .frequent-bank { width: 100%; min-height: 44px; }
+.home-takeover__header--frequent .frequent-bank__bar { align-items: flex-start; }
+.home-takeover__metrics { min-height: 24px; min-width: 0; max-width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.home-takeover__metric { flex-shrink: 0; }
+.home-takeover__metric-count { min-width: 2ch; }
+.home-takeover__cache-note { position: absolute; bottom: 0; right: 0; width: auto; margin: 0; font-size: 11px; }
+.home-takeover__destination-only { grid-template-columns: minmax(0, 1fr); }
+.home-takeover__destination-only > .home-takeover__verb { display: none; }
+.home-takeover .home-takeover__glyph { display: inline-grid; place-items: center; width: 44px; min-width: 44px; height: 44px; min-height: 44px; flex: 0 0 44px; padding: 0; border: 0; border-radius: 2px; background: transparent; color: var(--home-muted); }
+.home-takeover__glyph svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.home-takeover__glyph:hover { color: var(--home-route); }
+.home-takeover__context-undo { border: 0; background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+.home-takeover__utility-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 12px; color: var(--home-route); text-decoration: underline; text-underline-offset: 3px; }
+.home-takeover__utility-link:focus-visible { outline: 3px solid var(--home-focus); outline-offset: 4px; }
+@media (hover: hover) and (pointer: fine) {
+  .home-takeover__recommendation-controls .home-takeover__glyph { opacity: 0; }
+  .home-takeover__featured-row:hover .home-takeover__glyph,
+  .home-takeover__recommendation-controls:focus-within .home-takeover__glyph { opacity: 1; }
+}
+@media (max-width: 1200px) {
+  .home-takeover__header--frequent { grid-template-columns: minmax(0, 1fr); }
+  .home-takeover__header--frequent .home-takeover__flow-cue { display: none; }
+  .home-takeover__header--frequent .frequent-bank { max-width: 414px; }
+}
+@media (max-width: 520px) {
+  .home-takeover__header--frequent .frequent-bank { min-height: 44px; }
+  .home-takeover__header--frequent .frequent-bank__tiles { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .home-takeover__header--frequent .frequent-bank__tile:focus-visible { outline-offset: -2px; }
+  .home-takeover__featured-row { grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; }
+  .home-takeover__recommendation-controls { flex-direction: column; gap: 0; }
+}

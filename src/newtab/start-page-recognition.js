@@ -355,6 +355,8 @@ function renderHome(model) {
     const focusedAlternatives = root.contains(document.activeElement)
       && document.activeElement?.matches(".home-takeover__alternatives");
     const otherRoutesOpen = root.querySelector(".home-takeover__other-routes")?.open;
+    // Undo may outlive an older in-flight snapshot; its eventual restore is
+    // still an explicit command, even while keyboard focus remains on Home.
     renderHomeTakeover(root, { ...model, undoHiddenHost: lastHiddenContextHost,
       undoSnoozed: lastSnoozedRecommendation?.title, recommendationFeedbackMessage }, {
       onFeaturedVisible: items => recordFeaturedImpression(items, model),
@@ -372,7 +374,7 @@ function renderHome(model) {
       onStartFresh: renderFreshHome,
       onShowSuggested: renderSuggestedHome,
       onOpenTreemap: openTreemap
-    });
+    }, { force: Boolean(recommendationRestorePage) });
     const otherRoutes = root.querySelector(".home-takeover__other-routes");
     if (otherRoutes && otherRoutesOpen) otherRoutes.open = true;
     if (focusedRecommendation) {

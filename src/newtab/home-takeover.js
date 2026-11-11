@@ -1,3 +1,5 @@
+import { createHomeRenderGate } from "./home-render-gate.js";
+import { createHomeGlyph } from "./home-glyph.js";
 import { createFrequentBank } from "./frequent-bank.js";
 import { HOME_TITLE_LIMITS, truncateHomeTitle } from "../lib/home-title.js";
 import { activityUrlLabel, buildActivityJourney } from "../lib/activity-journey.js";
@@ -43,8 +45,16 @@ export function createHomeTakeoverRoot(parent = document.body) {
  * renderer does not navigate, mutate prediction state, or claim success on
  * behalf of the canonical controller.
  */
-export function renderHomeTakeover(root, model = {}, handlers = {}) {
+export function renderHomeTakeover(root, model = {}, handlers = {}, options = {}) {
   if (!root?.replaceChildren) throw new TypeError("A render root is required");
+  root.__homeRenderGate ||= createHomeRenderGate(root, (nextModel, nextHandlers) => paintHomeTakeover(root, nextModel, nextHandlers));
+  return root.__homeRenderGate.request(model, handlers, options);
+}
+
+function paintHomeTakeover(root, model, handlers) {
+  const openDetails = [...root.querySelectorAll("details")].map(node => node.open);
+  const focused = root.contains(document.activeElement) ? document.activeElement : null;
+  const focusKey = focused && (focused.dataset.recommendationFocus || focused.dataset.actionId || focused.getAttribute("aria-label") || focused.textContent);
   disposeTitlePeek(root);
   root.__contextVisibilityCleanup?.();
 
@@ -93,9 +103,6 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   status.setAttribute("aria-atomic", "true");
 
   const fragment = document.createDocumentFragment();
-  if (safeModel.stale) {
-    fragment.append(element("p", "home-takeover__cache-note", "Last view · updating"));
-  }
   // The header reports what the surface is holding right now — counts computed
   // from the model itself, not narration about what the page is for. Labels
   // must agree with the section rails below ("stars" ↔ GitHub stars,
@@ -111,7 +118,16 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
   ];
   const header = renderHeader(featuredItems.length ? { ...safeModel, stateLabel: "Home" } : safeModel, mode, titleId, tallies);
   fragment.append(header);
+  if (safeModel.stale) header.append(element("p", "home-takeover__cache-note", "Last view · updating"));
 
+  if (!safeModel.freshOverride) {
+    header.classList.add("home-takeover__header--frequent");
+  }
+  if (!safeModel.freshOverride && !safeModel.frequentDestinations) {
+    const placeholder = element("div", "frequent-bank frequent-bank--placeholder");
+    placeholder.setAttribute("aria-hidden", "true");
+    header.prepend(placeholder);
+  }
   if (!safeModel.freshOverride && safeModel.frequentDestinations) {
     root.__frequentBank ||= createFrequentBank();
     root.__frequentBank.update(safeModel.frequentDestinations, handlers);
@@ -184,7 +200,13 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
 
   fragment.append(renderUtilities(safeModel, handlers, status), status);
   root.replaceChildren(fragment);
+  [...root.querySelectorAll("details")].forEach((node, index) => { node.open = openDetails[index] || false; });
   root.__frequentBank?.restore();
+  if (focusKey && !focused?.closest(".frequent-bank")) {
+    [...root.querySelectorAll("a, button, summary, input")].find(node =>
+      (node.dataset.recommendationFocus || node.dataset.actionId || node.getAttribute("aria-label") || node.textContent) === focusKey
+    )?.focus({ preventScroll: true });
+  }
   installTitlePeek(root);
   if (featuredItems.length) observeFeatured(root, featuredItems, handlers.onFeaturedVisible);
   return root;
@@ -204,7 +226,7 @@ function renderFeatured(items, model, handlers, status, renderId) {
     const row = element("li", "home-takeover__featured-row");
     const action = normalizeAction(item, item.rank - 1, item.verb || "open");
     const link = createActionLink(action, { onAction: handlers.onFeaturedAction || handlers.onAction }, status, {
-      className: "home-takeover__featured-link", titleLimit: 120, showReason: true, reasonLimit: 2
+      className: "home-takeover__featured-link", titleLimit: 120, showReason: true
     });
     link.dataset.contextRank = String(item.rank);
     link.dataset.recommendationFocus = `open:${item.identity || item.url}`;
@@ -219,6 +241,8 @@ function renderFeatured(items, model, handlers, status, renderId) {
     snooze.dataset.recommendationFocus = `snooze:${item.identity || item.url}`;
     snooze.setAttribute("aria-label", `Snooze ${item.title} for one day`);
     wireCommand(snooze, handlers.onSnoozeRecommendation, item, status, { working: "Snoozing…", failed: "Could not snooze this destination. Try again." });
+    decorateGlyph(snooze, "snooze");
+    decorateGlyph(hide, "hide");
     controls.append(snooze, hide);
     row.append(link, controls);
     list.append(row);
@@ -268,7 +292,7 @@ function renderHeader(model, mode, titleId, tallies = []) {
   header.append(title, flow);
 
   const shown = model.freshOverride ? [] : tallies.filter(([, count]) => count > 0);
-  if (shown.length > 0) {
+  if (!model.freshOverride) {
     const metrics = element("p", "home-takeover__metrics");
     shown.forEach(([label, count]) => {
       const metric = element("span", "home-takeover__metric");
@@ -628,13 +652,12 @@ function createActivitySwitchLink(activity, handlers, status) {
   const { action } = activity;
   const link = createNavigationAnchor(action, "home-takeover__action home-takeover__activity-action");
   const copy = element("span", "home-takeover__action-copy");
-  if (action.domain) copy.append(element("span", "home-takeover__domain", action.domain));
-  const sourceList = element("ul", "home-takeover__sources");
-  sourceList.setAttribute("aria-label", "Suggestion sources");
-  action.sources.forEach(source => sourceList.append(element("li", "home-takeover__source", sourceLabel(source))));
-  copy.append(sourceList);
-  const detail = action.reasons[0] || activity.summary;
+  const detail = primaryReason(action.reasons.filter(reason => reason !== activity.summary));
   if (detail) copy.append(element("span", "home-takeover__reason", detail));
+  else {
+    const source = action.sources.find(value => value === "foreign") || action.sources.find(value => value !== "activity");
+    if (source) copy.append(element("span", "home-takeover__source", sourceLabel(source)));
+  }
   link.append(element("span", "home-takeover__verb", verbLabel(action.verb)), copy);
   prepareTitleAnchor(link, action.title, action.verb);
 
@@ -984,7 +1007,9 @@ function renderUtilities(model, handlers, status) {
   } else {
     appendCommand(controls, "Start fresh", handlers.onStartFresh, model, status, "home-takeover__utility-action");
   }
-  appendCommand(controls, "All tabs", handlers.onOpenTreemap, model, status, "home-takeover__utility-action");
+  const allTabs = element("a", "home-takeover__utility-link", "All tabs");
+  allTabs.href = "#/treemap";
+  controls.append(allTabs);
 
   if (controls.childElementCount === 0) footer.hidden = true;
   footer.append(controls);
@@ -1070,13 +1095,16 @@ function createActionLink(action, handlers, status, options = {}) {
   ));
   if (action.domain) copy.append(element("span", "home-takeover__domain", action.domain));
 
-  const sourceList = element("ul", "home-takeover__sources");
-  sourceList.setAttribute("aria-label", options.sourceLabel || "Suggestion sources");
-  action.sources.forEach(source => sourceList.append(element("li", "home-takeover__source", sourceLabel(source))));
-  copy.append(sourceList);
-
-  if (options.showReason && action.reasons.length > 0) {
-    copy.append(element("span", "home-takeover__reason", action.reasons.slice(0, options.reasonLimit || 1).join(" · ")));
+  // Prefer a specific relationship or provenance over another frequency tally.
+  // Keep the full evidence in the model; this is only the visible cue.
+  const reason = primaryReason(action.reasons);
+  if (options.showReason && reason) {
+    copy.append(element("span", "home-takeover__reason", reason));
+  } else {
+    const sourceList = element("ul", "home-takeover__sources");
+    sourceList.setAttribute("aria-label", options.sourceLabel || "Suggestion source");
+    sourceList.append(element("li", "home-takeover__source", sourceLabel(action.sources.find(source => source === "foreign") || action.sources[0])));
+    copy.append(sourceList);
   }
 
   link.append(verb, copy);
@@ -1089,6 +1117,10 @@ function createActionLink(action, handlers, status, options = {}) {
     context: action
   });
   return link;
+}
+
+function primaryReason(reasons) {
+  return reasons.find(text => !/^(?:Frequently revisited|Visited \d+ times|Last visited\b)/i.test(text)) || reasons[0];
 }
 
 function createNavigationAnchor(action, className) {
@@ -1128,6 +1160,7 @@ function createHomeTitleElement(tagName, className, title, maxGraphemes) {
 }
 
 function prepareTitleAnchor(anchor, title, verb = "") {
+  if (anchor.querySelector(":scope > .home-takeover__verb")?.textContent === "Open") anchor.classList.add("home-takeover__destination-only");
   anchor.dataset.homeTitleAnchor = "true";
   anchor.dataset.fullTitle = truncateHomeTitle(title).full;
   if (anchor.matches("a, button")) {
@@ -1289,7 +1322,16 @@ function appendCommand(parent, label, callback, payload, status, className) {
     working: `${label}…`,
     failed: `${label} did not complete. Try again.`
   });
+  const glyph = { "Show alternatives": "alternatives", "Start fresh": "fresh" }[label];
+  if (glyph) decorateGlyph(button, glyph);
   parent.append(button);
+}
+
+function decorateGlyph(button, kind) {
+  const label = button.getAttribute("aria-label") || button.textContent;
+  button.setAttribute("aria-label", label); button.title = label;
+  button.classList.add("home-takeover__glyph");
+  button.replaceChildren(createHomeGlyph(kind));
 }
 
 function wireCommand(button, callback, payload, status, messages) {

@@ -73,3 +73,9 @@ exclusion, preferences, bounds and credential/scheme rejection. Chromium tests
 cover zero/one/many tabs, real window focus, duplicate URLs, keyboard and live
 closure recovery, preference persistence, narrow layout, favicon fallback,
 resize and outside dismissal. No human performance benefit has been measured.
+
+## Backlog
+
+- Clearer tab identification: disambiguate duplicate tab titles with a short URL
+  path, and show audio and pinned indicators when relevant. Keep native destination
+  hyperlinks and the compact chooser; this work is not implemented yet.
