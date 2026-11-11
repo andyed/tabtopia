@@ -70,7 +70,11 @@ test('management saves a preferred URL, hides and restores destinations', async 
 test('eight destinations, fallback icons and flyout fit a narrow viewport', async ({ context, extensionId, server }) => {
   const urls = [server + '/alpha', ...Array.from({ length: 7 }, (_, i) => `https://site${i}.example.test/`)];
   const page = await prepare(context, extensionId, urls);
+  await expect(page.locator('.home-takeover__header > .frequent-bank')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
+  for (const box of await page.locator('.frequent-bank__tile, .frequent-bank__edit').evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { width: r.width, height: r.height }; }))) {
+    expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+  }
   await tile(page).focus(); await page.keyboard.press('ArrowDown');
   await expect(panel(page)).toBeVisible();
   await page.locator('.frequent-bank__favicon').evaluateAll(images => images.forEach(image => image.dispatchEvent(new Event('error'))));
@@ -112,7 +116,7 @@ test('outside dismissal stays dismissed after refresh; an open panel repositions
   await page.getByRole('button', { name: 'Edit frequent destinations', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 600 });
   await expect.poll(() => panel(page).evaluate(node => node.getBoundingClientRect().right <= innerWidth)).toBe(true);
-  await page.locator('.frequent-bank__label').click();
+  await page.locator('#tabSearch').click();
   await expect(panel(page)).not.toBeVisible();
   await page.evaluate(() => window.tabtopiaStartPageRecognition.refresh());
   await expect(panel(page)).not.toBeVisible();

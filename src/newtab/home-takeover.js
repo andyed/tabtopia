@@ -109,12 +109,14 @@ export function renderHomeTakeover(root, model = {}, handlers = {}) {
     ["stars", githubStarItems.length],
     ["techmeme", techmemeItems.length]
   ];
-  fragment.append(renderHeader(featuredItems.length ? { ...safeModel, stateLabel: "For now" } : safeModel, mode, titleId, tallies));
+  const header = renderHeader(featuredItems.length ? { ...safeModel, stateLabel: "Home" } : safeModel, mode, titleId, tallies);
+  fragment.append(header);
 
   if (!safeModel.freshOverride && safeModel.frequentDestinations) {
     root.__frequentBank ||= createFrequentBank();
     root.__frequentBank.update(safeModel.frequentDestinations, handlers);
-    fragment.append(root.__frequentBank.root);
+    header.classList.add("home-takeover__header--frequent");
+    header.prepend(root.__frequentBank.root);
   }
 
   const errorText = errorMessage(safeModel.error);

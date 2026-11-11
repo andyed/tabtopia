@@ -78,7 +78,6 @@ export function createFrequentBank() {
     const oldPanel = panel; panel = null;
     oldPanel?.hidePopover();
     const bar = el("div", "frequent-bank__bar");
-    bar.append(el("h2", "frequent-bank__label", "Frequent"));
     const tiles = el("div", "frequent-bank__tiles");
     for (const item of model.items || []) {
       const count = item.tabs.length;

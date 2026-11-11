@@ -6,8 +6,8 @@ semantic context, GitHub-star imports or the predictive recommendation experimen
 
 ## Interaction
 
-Up to eight favicon tiles sit below Home's header. The badge counts open tab
-instances across normal windows in the current profile; duplicate URLs count
+Up to eight compact favicon controls sit in Home's header, alongside its counts.
+The badge counts open tab instances across normal windows in the current profile; duplicate URLs count
 separately. No badge means zero. One tab switches to that window and tab; zero
 opens the preferred URL in the Home tab; multiple tabs open a chooser.
 Arrow Down opens the chooser/settings for any tile. Edit exposes settings without

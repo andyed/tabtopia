@@ -1881,17 +1881,18 @@ h2.home-takeover__panel-label {
 }
 
 /* Frequent destinations: live multiplicity, stable spatial order. */
-.frequent-bank { max-width: 1680px; margin: 0 auto 24px; }
-.frequent-bank__bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.frequent-bank__label { color: var(--home-muted); font-size: 12px; font-weight: 600; line-height: 1.4; text-transform: uppercase; letter-spacing: .12em; margin: 0; }
-.frequent-bank__tiles { display: flex; gap: 8px; flex-wrap: wrap; }
-.frequent-bank__tile { position: relative; width: 64px; height: 56px; display: grid; place-items: center; border: 1px solid var(--home-line); border-radius: 6px; background: var(--home-terrain); color: var(--home-paper); cursor: pointer; }
-.frequent-bank__favicon { width: 28px; height: 28px; }
+.home-takeover__header--frequent .home-takeover__title { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.home-takeover__header--frequent { flex-wrap: wrap; }
+.frequent-bank { min-width: 0; max-width: 100%; margin: 0; }
+.frequent-bank__bar { display: flex; align-items: center; gap: 4px; }
+.frequent-bank__tiles { display: flex; gap: 2px; flex-wrap: wrap; min-width: 0; }
+.frequent-bank__tile { position: relative; width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--home-paper); cursor: pointer; }
+.frequent-bank__favicon { width: 24px; height: 24px; }
 .frequent-bank__count { position: absolute; right: 3px; top: 2px; min-width: 17px; padding: 0 3px; border-radius: 4px; background: var(--home-route); color: var(--home-ink); font-size: 11px; font-weight: 800; line-height: 17px; }
 .frequent-bank__chevron { position: absolute; right: 5px; bottom: 1px; color: var(--home-route); font-size: 14px; }
 .frequent-bank__name { pointer-events: none; display: none; position: absolute; top: 100%; left: 0; z-index: 2; padding: 3px 7px; white-space: nowrap; background: var(--home-terrain); color: var(--home-paper); border: 1px solid var(--home-line); font-size: 12px; }
 .frequent-bank__tile:hover .frequent-bank__name, .frequent-bank__tile:focus-visible .frequent-bank__name { display: block; }
-.frequent-bank__edit { min-width: 44px; min-height: 44px; margin-left: auto; background: transparent; color: var(--home-muted); border: 0; cursor: pointer; }
+.frequent-bank__edit { min-width: 44px; min-height: 44px; flex-shrink: 0; background: transparent; color: var(--home-muted); border: 0; cursor: pointer; }
 .frequent-bank button:hover { border-color: var(--home-route); }
 .frequent-bank button:focus-visible, .frequent-bank input:focus-visible { outline: 2px solid var(--home-paper); outline-offset: 3px; }
 .frequent-bank__panel { position: fixed; inset: auto; margin: 0; width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 16px; background: var(--home-terrain); color: var(--home-paper); border: 1px solid var(--home-line); border-radius: 8px; box-shadow: 0 12px 40px #0009; font: 15px/1.4 "Avenir Next", system-ui, sans-serif; }
@@ -1908,10 +1909,3 @@ h2.home-takeover__panel-label {
 .frequent-bank__form input { box-sizing: border-box; display: block; margin-top: 5px; min-height: 44px; width: 100%; border: 1px solid var(--home-line); border-radius: 4px; background: var(--home-ink); color: var(--home-paper); padding: 8px; font: inherit; font-size: 14px; }
 .frequent-bank__status { color: var(--home-muted); margin: 12px 0 0; }
 .frequent-bank__status:empty { display: none; }
-@media (max-width: 520px) {
-  .frequent-bank__bar { gap: 8px; }
-  .frequent-bank__label { flex: 1; order: 0; }
-  .frequent-bank__edit { order: 1; }
-  .frequent-bank__tiles { order: 2; width: 100%; }
-  .frequent-bank__tile { width: 56px; }
-}

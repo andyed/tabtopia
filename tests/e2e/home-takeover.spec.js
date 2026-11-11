@@ -462,7 +462,7 @@ test.describe("development home takeover", () => {
       title,
       url: `https://example.com/${slug}`
     }))));
-    await expect(home.getByRole("heading", { name: "For now", exact: true })).toBeVisible();
+    await expect(home.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
     await showOtherRoutes(home);
     await expect(home.getByRole("heading", { name: "Side routes" })).toBeVisible();
     await expect(home.getByText("Keep the thread moving", { exact: true })).toHaveCount(0);

@@ -74,8 +74,9 @@ test("featured context leads Home, respects exclusions, and fits desktop and nar
   await expect(featured(page)).toContainText("Techmeme");
   await expect(featured(page)).not.toContainText("Excluded example");
   const sections = await page.locator("#startPageHome > section").evaluateAll(nodes => nodes.map(n => n.className));
-  expect(sections[0]).toContain("frequent-bank");
-  expect(sections[1]).toContain("featured");
+  expect(sections[0]).toContain("featured");
+  await expect(page.locator(".home-takeover__header > .frequent-bank")).toBeVisible();
+  await expect(page.getByText("For now", { exact: true })).toHaveCount(0);
   await expect.poll(async () => (await summary(page)).arms.balanced.impressions).toBeGreaterThan(0);
   await checkLayout(page, "/tmp/histospire-context-desktop.png");
   await page.setViewportSize({ width: 390, height: 844 });
