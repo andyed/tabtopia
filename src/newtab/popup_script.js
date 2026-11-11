@@ -2,7 +2,7 @@
  * Lightweight treemap visualization for Chrome extension popup
  */
 
-import { getWindowColor } from "./utility.js";
+import { createLetterFavicon, getWindowColor } from "./utility.js";
 
 document.addEventListener("DOMContentLoaded", () => {
     // Get DOM elements
@@ -178,16 +178,15 @@ document.addEventListener("DOMContentLoaded", () => {
             .data(hierarchy.children)
             .enter()
             .append("g")
-            .attr("class", "window")
+            .attr("class", d => `window${d.data.focused ? " is-focused" : ""}`)
+            .style("--window-tint", d => `hsl(${getWindowColor(d.data.id).hue}, 35%, 60%)`)
             .attr("transform", d => `translate(${d.x0},${d.y0})`);
         
         // Add window background
         windows.append("rect")
+            .attr("class", "window-frame")
             .attr("width", d => d.x1 - d.x0)
             .attr("height", d => d.y1 - d.y0)
-            .attr("fill", d => getWindowColor(d.data.id).background)
-            .attr("stroke", d => getWindowColor(d.data.id).getBorder(d.data.focused))
-            .attr("stroke-width", d => d.data.focused ? 2 : 1)
             .attr("rx", 3)
             .attr("ry", 3);
         
@@ -204,7 +203,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 .data(windowNode.children || [])
                 .enter()
                 .append("g")
-                .attr("class", "cell")
+                .attr("class", d => `cell${d.data.active ? " is-active" : ""}`)
+                // Preserve recency order while keeping the fill inside the dark palette.
+                .style("--tab-tint", d => `${30 - 18 * d.data.index / Math.max(1, d.data.totalInWindow - 1)}%`)
+                .attr("role", "button")
+                .attr("aria-label", d => d.data.title)
                 .attr("tabindex", "0") // Make focusable
                 .attr("transform", d => `translate(${d.x0 - windowNode.x0},${d.y0 - windowNode.y0})`)
                 .on("click", handleTabClick)
@@ -221,12 +224,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     cell.append("rect")
                         .attr("width", width)
                         .attr("height", height)
-                        .attr("fill", d => getColorForTab(d.data))
                         .attr("rx", 2)
-                        .attr("ry", 2)
-                        // Add a stroke for active tabs
-                        .attr("stroke", d => d.data.active ? "#ffffff" : "none")
-                        .attr("stroke-width", d => d.data.active ? 1 : 0);
+                        .attr("ry", 2);
                     
                     // Favicon
                     cell.append("image")
@@ -235,6 +234,12 @@ document.addEventListener("DOMContentLoaded", () => {
                         .attr("y", height / 2 - 8)
                         .attr("width", 16)
                         .attr("height", 16)
+                        .on("error", function(event, d) {
+                            // A stale favicon URL should not leave a broken-image glyph.
+                            if (this.dataset.fallback) return;
+                            this.dataset.fallback = "true";
+                            d3.select(this).attr("href", getLetterFavicon(d.data.url));
+                        })
                         .attr("href", d => d.data.favIconUrl || getLetterFavicon(d.data.url));
                 });
         });
@@ -250,65 +255,9 @@ document.addEventListener("DOMContentLoaded", () => {
      * Generate letter-based favicon for URLs without an icon
      */
     function getLetterFavicon(url) {
-        try {
-            // Get first letter of domain
-            let letter = "?";
-            
-            if (url.startsWith("chrome://")) {
-                const parts = url.split("/");
-                letter = parts[2] ? parts[2].charAt(0).toUpperCase() : "C";
-            } 
-            else if (url.startsWith("file://")) {
-                letter = "F";
-            }
-            else {
-                try {
-                    const domain = new URL(url).hostname;
-                    letter = domain.charAt(0).toUpperCase();
-                } catch (e) {
-                    letter = url.charAt(0).toUpperCase();
-                }
-            }
-            
-            // Generate color based on letter
-            const colors = [
-                "#F44336", "#E91E63", "#9C27B0", "#673AB7", "#3F51B5", 
-                "#2196F3", "#03A9F4", "#00BCD4", "#009688", "#4CAF50",
-                "#8BC34A", "#CDDC39", "#FFC107", "#FF9800", "#FF5722"
-            ];
-            
-            const colorIndex = letter.charCodeAt(0) % colors.length;
-            const color = colors[colorIndex];
-            
-            // Create SVG data URI
-            const svg = `
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-                    <rect width="16" height="16" fill="${color}" rx="2" ry="2"/>
-                    <text x="8" y="12" font-family="Arial, sans-serif" font-size="10" 
-                          fill="white" text-anchor="middle" font-weight="bold">${letter}</text>
-                </svg>
-            `;
-            
-            return `data:image/svg+xml;base64,${btoa(svg)}`;
-        } catch (error) {
-            console.error("Error generating letter favicon:", error);
-            return "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjNzU3NTc1IiByeD0iMiIgcnk9IjIiLz48dGV4dCB4PSI4IiB5PSIxMiIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEwIiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC13ZWlnaHQ9ImJvbGQiPj88L3RleHQ+PC9zdmc+";
-        }
+        return createLetterFavicon(url);
     }
-    
-    /**
-     * Get color for a tab based on its state and recency
-     */
-    function getColorForTab(tab) {
-        if (!tab || !tab.windowId) return "#999999";
-        
-        // Use the imported getWindowColor function
-        const windowColor = getWindowColor(tab.windowId);
-        
-        // Return tab color based on activity and index
-        return windowColor.getTabColor(tab.index, tab.active);
-    }
-    
+
     /**
      * Show loading state
      */
@@ -374,6 +323,22 @@ document.addEventListener("DOMContentLoaded", () => {
         window.close();
     }
     
+    function renderTooltipContent(tabData, keyboard = false) {
+        const title = document.createElement("div");
+        title.className = "tooltip-title";
+        title.textContent = tabData.title;
+        const url = document.createElement("div");
+        url.className = "tooltip-url";
+        url.textContent = tabData.url;
+        tooltip.replaceChildren(title, url);
+        if (keyboard) {
+            const hint = document.createElement("div");
+            hint.className = "tooltip-hint";
+            hint.textContent = "Press Enter to activate";
+            tooltip.append(hint);
+        }
+    }
+
     /**
      * Show tooltip with tab info
      */
@@ -386,10 +351,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         
         tooltip.style.display = "block";
-        tooltip.innerHTML = `
-            <div>${tabData.title}</div>
-            <div style="font-size:10px; color:#9e9e9e; margin-top:4px; overflow:hidden; text-overflow:ellipsis;">${tabData.url}</div>
-        `;
+        renderTooltipContent(tabData);
         
         // Position tooltip differently depending on whether it was triggered by mouse or keyboard
         if (event) {
@@ -432,11 +394,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
         tooltip.style.display = "block";
         tooltip.classList.add("keyboard-tooltip");
-        tooltip.innerHTML = `
-            <div><strong>${tabData.title}</strong></div>
-            <div style="font-size:10px; color:#9e9e9e; margin-top:4px; overflow:hidden; text-overflow:ellipsis;">${tabData.url}</div>
-            <div style="margin-top:8px; font-size:11px; color:#aaa;">Press Enter to activate</div>
-        `;
+        renderTooltipContent(tabData, true);
         
         // Position tooltip near the focused cell
         const rect = event.target.getBoundingClientRect();
