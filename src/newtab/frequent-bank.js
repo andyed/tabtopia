@@ -134,7 +134,7 @@ export function createFrequentBank() {
       let previousWindow = null;
       for (const tab of item.tabs) {
         if (previousWindow !== tab.windowId) {
-          const label = el("p", "frequent-bank__window", tab.windowFocused ? "This window" : `Window ${tab.windowId}`);
+          const label = el("p", "frequent-bank__window", tab.windowFocused ? "This window" : `Window ${tab.windowNumber}`);
           label.style.setProperty("--window-color", getWindowColor(tab.windowId)); panel.append(label); previousWindow = tab.windowId;
         }
         const row = button(tab.title, `tab:${tab.id}`, () => void act({ verb: "switch", target: { tabId: tab.id, windowId: tab.windowId } }), "frequent-bank__tab");

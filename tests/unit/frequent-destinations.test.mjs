@@ -27,6 +27,7 @@ test("service hosts and ports remain distinct; duplicate URL tab instances remai
     { id: 9, incognito: true, tabs: [{ id: 5, url: 'https://mail.google.com/' }] }
   ] });
   assert.deepEqual(result.items[0].tabs.map(x => x.id), [2, 1]);
+  assert.deepEqual(result.items[0].tabs.map(x => x.windowNumber), [1, 2]);
   assert.equal(result.items[1].tabs.length, 0);
   assert.equal(result.items[2].tabs.length, 1);
   assert.equal(result.items[0].url, preferences.pins[0].url);

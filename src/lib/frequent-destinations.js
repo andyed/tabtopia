@@ -52,11 +52,12 @@ export function buildFrequentDestinations({ habitDestinations, windows = [], pre
     if (ia >= 0 || ib >= 0) return (ia < 0 ? Infinity : ia) - (ib < 0 ? Infinity : ib);
     return b.score - a.score || a.key.localeCompare(b.key);
   }).slice(0, FREQUENT_LIMIT);
+  const windowIds = windows.filter(window => !window.incognito).map(window => window.id).sort((a, b) => a - b);
   const items = ordered.map(item => {
     const tabs = windows.filter(window => !window.incognito).flatMap(window => (window.tabs || [])
       .filter(tab => !tab.incognito && destinationKey(tab.url) === item.key && Number.isInteger(tab.id))
       .map(tab => ({ id: tab.id, windowId: window.id, url: tab.url, title: tab.title || tab.url,
-        lastAccessed: Number(tab.lastAccessed || 0), windowFocused: currentWindowId === undefined ? Boolean(window.focused) : window.id === currentWindowId })));
+        lastAccessed: Number(tab.lastAccessed || 0), windowNumber: windowIds.indexOf(window.id) + 1, windowFocused: currentWindowId === undefined ? Boolean(window.focused) : window.id === currentWindowId })));
     tabs.sort((a, b) => Number(b.windowFocused) - Number(a.windowFocused)
       || a.windowId - b.windowId || b.lastAccessed - a.lastAccessed || a.id - b.id);
     return { key: item.key, name: destinationName(item.key), url: prefs.urls[item.key] || item.url,

@@ -99,7 +99,7 @@ test('duplicate URLs in separate windows stay distinct and switching focuses the
     await expect(tile(page)).toHaveAttribute('aria-label', /2 open tabs/);
     await tile(page).click();
     await expect(panel(page).getByText('This window', { exact: true })).toBeVisible();
-    await expect(panel(page).getByText(`Window ${other.id}`, { exact: true })).toBeVisible();
+    await expect(panel(page).getByText("Window 2", { exact: true })).toBeVisible();
     await expect(panel(page).locator('[data-tab-row]')).toHaveCount(2);
     await page.screenshot({ path: '/tmp/tabtopia-frequent-tabs.png' });
     await panel(page).locator(`[data-frequent-focus="tab:${other.tabId}"]`).click();
