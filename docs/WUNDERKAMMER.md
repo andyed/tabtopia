@@ -75,6 +75,15 @@ all images from one HTTP/1.1 origin; its six-connection queue is deliberately
 different from a real collection spread across image hosts. It is a sensitivity
 experiment, not a reproduction of an individual user's loading time.
 
+Add `--interactions` to measure idle, pan, zoom, fit, search, regrouping and
+detail opening after images have settled. Each scenario reports CPU/layout
+cost, long tasks and available Event Timing observations. `scenarioMs` includes
+scripted input pacing and a 450 ms debounce/presentation wait; it is not input
+latency. `inputBlockMs` covers observed input queueing and handler execution;
+`inputToPaintMs` also includes headless presentation and is not a physical-device
+responsiveness claim. Wheel and programmatic select changes may have no Event
+Timing observations; their CPU counters and named spans remain usable.
+
 The report separates host readiness, first visible image, 95% visible images,
 and `window.wunderkammer.whenStill()` completion. Image milestones are relative
 to iframe navigation; host readiness and total elapsed time are relative to host

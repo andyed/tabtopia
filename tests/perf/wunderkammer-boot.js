@@ -9,6 +9,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
+const { measureInteractions } = require('./wunderkammer-interactions');
 const args = process.argv.slice(2);
 const arg = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
 const runs = Number(arg('--runs', 3)), timeout = Number(arg('--timeout-ms', 45000));
@@ -134,6 +135,8 @@ async function main() {
             styleMs: round(metrics.RecalcStyleDuration * 1000), taskMs: round(metrics.TaskDuration * 1000), heapMB: round(metrics.JSHeapUsedSize / 1048576) },
           pageErrors: errors, app };
         report.runs.push(row);
+        if (args.includes('--interactions') && settlement.ok) row.interactions = await measureInteractions(page, frame, cdp);
+        row.pageErrors = errors;
         console.log(JSON.stringify({ mode, run, readyMs, elapsedMs, settled: settlement.ok, firstImageFrameMs: row.firstImageFrameMs, images95FrameMs: row.images95FrameMs, final: last, network: row.imageNetwork, cpu: row.cpu }));
         await fs.mkdir(path.dirname(out), { recursive: true });
         await fs.writeFile(out, JSON.stringify(report, null, 2));
