@@ -8,9 +8,11 @@ semantic context, GitHub-star imports or the predictive recommendation experimen
 
 Up to eight compact favicon controls sit in Home's header, alongside its counts.
 The badge counts open tab instances across normal windows in the current
-profile; duplicate URLs count separately. No badge means zero. One tab switches
-to that window and tab; zero opens the preferred URL in the Home tab; multiple
-tabs open a chooser. Arrow Down opens the chooser/settings for any tile. A
+profile; duplicate URLs count separately. Zero open tabs has a dotted border;
+open destinations have a solid border. Counts appear only for two or more tabs;
+zero and one have no badge. Exact counts remain in tooltips and accessible labels.
+One tab switches to that window and tab; zero opens the preferred URL in the Home
+tab; multiple tabs open a chooser. Arrow Down opens the chooser/settings for any tile. A
 pencil glyph reveals settings on hover or keyboard focus (always shown on touch
 devices). Names appear on hover/focus and in accessible labels. Favicon failures
 use the existing local letter fallback.

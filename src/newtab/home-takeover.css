@@ -1886,7 +1886,8 @@ h2.home-takeover__panel-label {
 .frequent-bank { min-width: 0; max-width: 100%; margin: 0; }
 .frequent-bank__bar { display: flex; align-items: center; gap: 4px; }
 .frequent-bank__tiles { display: flex; gap: 2px; flex-wrap: wrap; min-width: 0; }
-.frequent-bank__tile { position: relative; width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--home-paper); cursor: pointer; }
+.frequent-bank__tile { position: relative; width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; border: 1px solid var(--home-muted); border-radius: 6px; background: transparent; color: var(--home-paper); cursor: pointer; }
+.frequent-bank__tile--closed { border-style: dotted; }
 .frequent-bank__favicon { width: 24px; height: 24px; }
 .frequent-bank__count { position: absolute; right: 3px; top: 2px; min-width: 17px; padding: 0 3px; border-radius: 4px; background: var(--home-route); color: var(--home-ink); font-size: 11px; font-weight: 800; line-height: 17px; }
 .frequent-bank__chevron { position: absolute; right: 5px; bottom: 1px; color: var(--home-route); font-size: 14px; }

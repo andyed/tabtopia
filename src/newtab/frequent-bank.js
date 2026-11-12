@@ -93,13 +93,14 @@ export function createFrequentBank() {
         else if (count === 1) void act({ verb: "switch", target: { tabId: item.tabs[0].id, windowId: item.tabs[0].windowId } });
         else void act({ verb: "open", target: { url: item.url } });
       }, "frequent-bank__tile");
+      tile.classList.toggle("frequent-bank__tile--closed", count === 0);
       tile.title = `${item.name} · ${count} open tab${count === 1 ? "" : "s"}`;
       tile.setAttribute("aria-label", `${item.name}, ${count} open tab${count === 1 ? "" : "s"}, ${count > 1 ? "choose tab" : count ? "switch to tab" : "open destination"}`);
       if (count > 1) { tile.setAttribute("aria-haspopup", "dialog"); tile.setAttribute("aria-expanded", String(openKey === item.key)); }
       const image = el("img", "frequent-bank__favicon"); image.alt = ""; image.src = getLocalFaviconUrl(item.url);
       image.addEventListener("error", () => { image.src = createLetterFavicon(item.url); }, { once: true });
       tile.append(image);
-      if (count) { const badge = el("span", "frequent-bank__count", count > 99 ? "99+" : String(count)); badge.setAttribute("aria-hidden", "true"); tile.append(badge); }
+      if (count > 1) { const badge = el("span", "frequent-bank__count", count > 99 ? "99+" : String(count)); badge.setAttribute("aria-hidden", "true"); tile.append(badge); }
       if (count > 1) { const chevron = el("span", "frequent-bank__chevron", "⌄"); chevron.setAttribute("aria-hidden", "true"); tile.append(chevron); }
       const name = el("span", "frequent-bank__name", item.name); name.setAttribute("aria-hidden", "true"); tile.append(name);
       tile.addEventListener("keydown", event => {
