@@ -1,6 +1,7 @@
 import { heroCollection, HERO_COLLECTION_THRESHOLD } from '../lib/hero-collection.js';
 import { watchHeroInventory } from './hero-inventory.js';
 import { mount } from '../vendor/wunderkammer/wall/embed.mjs';
+import { pruneHeroPreviews } from '../lib/hero-preview-cache.js';
 
 const main = document.getElementById('hero-main');
 const host = document.getElementById('hero-viewer');
@@ -34,6 +35,7 @@ async function show(inventory) {
   }
 }
 const stop = watchHeroInventory(inventory => {
+  void pruneHeroPreviews(inventory.items.map(item => item.src));
   count.textContent = `${inventory.count} images`;
   if (!inventory.available || !view) { void show(inventory); return; }
   if (heroCollection(inventory).corpus.revision !== signature) {

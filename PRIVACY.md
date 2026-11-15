@@ -2,6 +2,7 @@
 
 **Working draft — not a published store policy.** Original 1.3.0 review:
 2026-08-17. Network, image access, and agent-boundary clarifications: 2026-11-10.
+Local gallery preview-cache clarification: 2026-11-15.
 The remaining TODOs and older retention figures still need a complete release audit.
 
 Items marked **TODO** need a decision before this can be submitted to the Chrome
@@ -24,7 +25,7 @@ model provider; local transport is not a promise that agent use stays on-device.
 
 ## What Tabtopia records
 
-All of this is written to `chrome.storage.local`, which is per-profile, per-device
+Browsing records are written to `chrome.storage.local`, which is per-profile, per-device
 storage. Tabtopia does not use `chrome.storage.sync`, so none of it is uploaded to
 your Google account or shared between your devices.
 
@@ -42,6 +43,12 @@ access. They report:
 - The text and destination of links you click
 - Candidate hero images, stored as image URLs and metadata such as alt text.
   Displaying them can load image files from the original website or CDN.
+- Opening Wunderkammer can also store small image previews in the extension's
+  local IndexedDB: at most 256 previews / 16 MiB, with 24-hour freshness checked
+  on use and pruning. Preview downloads omit cookies and referrers. The cache
+  is populated only while viewing the gallery, is never uploaded, and is pruned
+  when the corresponding hero metadata is removed, even with the gallery closed.
+  Clearing hero metadata also clears these previews.
 
 Hero-image collection needs access to page metadata and images. Broad site
 access enables automatic collection across sites; restricting access limits

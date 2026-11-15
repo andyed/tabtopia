@@ -28,6 +28,7 @@ import { OverviewSurface, overviewSource, loadOverviewImage } from './overview-s
 import { spriteCovers, isSpriteSource } from './sprite-covers.mjs';
 import { animateLayout, captureLayoutMotion, movingNodes } from './layout-motion.mjs';
 import { createImageWork } from './image-work.mjs';
+import { loadImage } from './image-loading.mjs';
 import { ViewStateStore, mergePileState } from './view-state.mjs';
 import { perf } from './instrument.mjs';
 import { collectionSource, loadCollection, collectionViewState, notifyEmbedder, FROM_PARENT } from './collection-source.mjs';
@@ -649,15 +650,28 @@ function selectCluster(cluster, add) {
 }
 let filterFrame = 0;
 function applyFilters(opts) { return perf.span('filter', () => applyFiltersNow(opts)); }
-function applyFiltersNow({ restore = null } = {}) {
-  if (!restore) state.layoutAspect = null;
-  cancelAnimationFrame(filterFrame);
+function applyFiltersNow({ restore = null, reuseSearchLayout = false } = {}) {
+  const previous = state.filtered;
   if (!state.query.trim()) state.contextBase = null; // no search, no pre-search place
-  setBackgroundRevealed(false);
   state.filtered = perf.span('filter/scope', () => filterScope(state.clips, state));
   state.clusters = perf.span('filter/clusters', () => contextClusters(state.clips, state.filtered, state.facetLabels, state.active));
   perf.span('filter/scope-ui', () => { renderScope(); renderContext(); buildFacetRail(); });
   invalidatePreview(); clearTrayReturn();
+  // A query can change without changing the ordered results. Keep scope UI
+  // and URL/history current, but preserve the camera, pixels and image work.
+  // Only continuing nonempty searches opt in: entering/leaving search changes
+  // the context plane and may change the stage's size.
+  const unchanged = reuseSearchLayout && !restore && !state.flatDirty && !state.spatialOn
+    && previous.length === state.filtered.length && previous.every((clip, i) => clip === state.filtered[i]);
+  const bounds = unchanged ? el.stage.getBoundingClientRect() : null;
+  if (unchanged && renderedStage?.w === bounds.width && renderedStage?.h === bounds.height) {
+    perf.count('search/layout-reused');
+    renderCount(); renderScopeEmpty();
+    return;
+  }
+  if (!restore) state.layoutAspect = null;
+  cancelAnimationFrame(filterFrame);
+  setBackgroundRevealed(false);
   if (state.selected && !state.filtered.some(c => c.id === state.selected)) closeDetail();
   state.flatDirty = state.spatialDirty = state.aisleDirty = state.floatDirty = true;
   // Scope is authoritative now; a hidden presentation materializes on entry.
@@ -1744,7 +1758,7 @@ function revealTiles(r, tileEls, positions, load) {
       && positions === (node.classList.contains('bg') ? state.bgPositions : state.positions);
     imageWork.add(node, p.w * p.h * viewport.scale ** 2,
       current,
-      async () => {
+      async signal => {
         // A preceding job may have exchanged the image while this one queued.
         const img = p.img;
         if (!img || node.firstElementChild !== img || (img.srcset && img.sizes === sizes && !img.dataset.src)) return;
@@ -1753,10 +1767,9 @@ function revealTiles(r, tileEls, positions, load) {
         // a bounded worker decodes its replacement, then exchange only pixels.
         if (img.naturalWidth > 0 && img.dataset.srcset) {
           const next = img.cloneNode(false);
-          next.sizes = sizes; next.srcset = img.dataset.srcset;
-          if (img.dataset.src) next.src = img.dataset.src;
+          const src = img.dataset.src || img.src;
           delete next.dataset.src;
-          try { await next.decode(); } catch { return; }
+          try { await loadImage(next, { src, srcset: img.dataset.srcset, sizes, signal }); } catch { return; }
           if (!current() || node.firstElementChild !== img
             || sizes !== `${Math.max(1, Math.ceil(p.w * viewport.scale))}px`) return;
           next.addEventListener('error', () => node.classList.add('broken'), { once: true });
@@ -1764,10 +1777,12 @@ function revealTiles(r, tileEls, positions, load) {
           overview.replaceImage(node, next);
           return;
         }
-        if (img.dataset.srcset) { img.sizes = sizes; img.srcset = img.dataset.srcset; }
-        else p.loaded = true;
-        if (img.dataset.src) { img.src = img.dataset.src; delete img.dataset.src; }
-        try { await img.decode(); } catch {} // The tile's existing error placeholder is authoritative.
+        try {
+          await loadImage(img, { src: img.dataset.src || img.src, srcset: img.dataset.srcset, sizes, signal });
+          delete img.dataset.src; p.loaded = !img.dataset.srcset;
+        } catch (error) {
+          if (error.name !== 'AbortError') { delete img.dataset.src; p.loaded = true; }
+        }
       });
   }
 }
@@ -2494,8 +2509,9 @@ function applySearch() {
   // Search is the first focus: the place you searched from becomes the context
   // plane, results are the focus, and matches light up where they were.
   if (!state.query.trim() && el.search.value.trim()) state.contextBase = { clips: state.filtered.slice(), label: scopeLabel() };
+  const reuseSearchLayout = !!state.query.trim() && !!el.search.value.trim();
   state.query = el.search.value;
-  applyFilters();
+  applyFilters({ reuseSearchLayout });
 }
 
 el.group.addEventListener('change', () => {

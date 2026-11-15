@@ -36,6 +36,30 @@ those image requests to those hosts. The viewer sends no referrer. Native source
 links navigate normally. There is no image proxy or guarantee that retained URLs
 will remain available.
 
+The flat gallery creates local WebP previews on demand, capped at 512 px on the
+long edge. IndexedDB holds at most 256 previews / 16 MiB; each preview expires
+after 24 hours (checked on use and pruning). A source download is capped at
+8 MiB for preview generation, and each encoded preview at 128 KiB. No images
+are fetched to fill this cache while the gallery is closed. The service worker
+only prunes previews when hero metadata is removed or expires from retention,
+including when the gallery is closed; clearing hero metadata clears its previews.
+
+The overview uses these previews. Native responsive images retain the original
+as their larger-size candidate, and details retain original image URLs. Preview
+requests omit cookies and referrers; if permission, CORS or conversion prevents
+preview generation, the viewer falls back to ordinary image loading. If persistent
+storage is unavailable, previews can still live for the current view. Initial
+preview creation has a cost; the main benefit is repeat visits and avoiding
+repeated full-size downloads/decodes. Spatial modes still use their upstream
+image-loading paths and are not covered by the flat preview optimization.
+
+Flat image loads have an eight-second deadline. Failed/expired sources show the
+existing placeholder; reloading the gallery retries them. A new layout cancels
+obsolete DOM loading jobs so they cannot block its visible images. Continuing
+searches with identical ordered results preserve their layout and camera while
+updating query, scope and history; changed results and restored views still lay
+out normally.
+
 The flat wall works without WebGL. Spatial views need WebGL; textured rendering
 also depends on the image host's CORS policy. A flat-wall image loading does not
 establish that its host permits use as a WebGL texture.
@@ -61,6 +85,10 @@ untrusted text against the bundled collection validator. Run it on BIGFU.
 synthetic images and page URLs. It checks storage updates, stable navigation,
 native links, literal hostile titles, local script loading, empty and failed-image
 states, narrow rendering, settled successful covers and spatial-view startup.
+It also checks persisted-preview reuse, original-image detail access, deletion
+with the gallery closed, storage/fetch fallback, image deadlines and equivalent
+searches. `tests/unit/hero-preview-cache.test.mjs` checks retention budgets,
+deadline cancellation and queue release; run it on BIGFU.
 
 ### Startup performance
 
@@ -78,6 +106,11 @@ The default fixture uses synthetic URLs and small locally served SVGs. Add
 all images from one HTTP/1.1 origin; its six-connection queue is deliberately
 different from a real collection spread across image hosts. It is a sensitivity
 experiment, not a reproduction of an individual user's loading time.
+
+Add `--warm-preview` to reopen each collection in a new page within the same
+browser context, retaining IndexedDB but clearing HTTP cache. Reports label
+these visits `cold` and `cached-preview`. Image-network accounting includes
+preview fetches as well as native image requests; blob URLs are excluded.
 
 Add `--interactions` to measure idle, pan, zoom, fit, search, regrouping and
 detail opening after images have settled. Each scenario reports CPU/layout

@@ -1,3 +1,4 @@
+import { loadImage } from './image-loading.mjs';
 /** A bounded picture of the flat wall. Geometry, focus and hit targets remain
  * owned by the real tiles; this surface replaces only successfully drawn images.
  * Feed setViewport the visible pose, not the destination of a CSS transition. */
@@ -89,39 +90,25 @@ export function overviewSource(clip = {}) {
 
 /** Each worker owns at most one decoder. Completed large images become bounded
  * bitmaps; original Image resources are released after that handoff. */
-export function loadOverviewImage(src, { signal, maxEdge = 96 } = {}) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.decoding = 'async';
-    let finished = false;
-    const clean = () => { image.onload = image.onerror = null; signal?.removeEventListener('abort', abort); };
-    const abort = () => {
-      if (finished) return;
-      finished = true; clean(); image.removeAttribute('src');
-      reject(new DOMException('Image request cancelled', 'AbortError'));
-    };
-    signal?.addEventListener('abort', abort, { once: true });
-    if (signal?.aborted) { abort(); return; }
-    image.onerror = () => { if (finished) return; finished = true; clean(); reject(new Error('Overview image unavailable')); };
-    image.onload = async () => {
-      try {
-        await image.decode();
-        if (finished) return;
-        const ratio = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
-        let resource = image;
-        if (typeof createImageBitmap === 'function' && ratio < 1) {
-          resource = await createImageBitmap(image, { resizeWidth: Math.max(1, Math.round(image.naturalWidth * ratio)),
-            resizeHeight: Math.max(1, Math.round(image.naturalHeight * ratio)), resizeQuality: 'low' });
-        }
-        if (finished) { if (resource !== image) resource.close(); return; }
-        finished = true; clean();
-        const width = resource.width || image.naturalWidth, height = resource.height || image.naturalHeight;
-        if (resource !== image) image.removeAttribute('src');
-        resolve({ image: resource, width, height, close: () => resource === image ? image.removeAttribute('src') : resource.close() });
-      } catch (error) { if (!finished) { finished = true; clean(); image.removeAttribute('src'); reject(error); } }
-    };
-    image.src = src;
-  });
+export async function loadOverviewImage(src, { signal, maxEdge = 96 } = {}) {
+  const image = new Image(); image.decoding = 'async';
+  await loadImage(image, { src, signal });
+  let resource = image;
+  try {
+    signal?.throwIfAborted();
+    const ratio = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+    if (typeof createImageBitmap === 'function' && ratio < 1) {
+      resource = await createImageBitmap(image, { resizeWidth: Math.max(1, Math.round(image.naturalWidth * ratio)),
+        resizeHeight: Math.max(1, Math.round(image.naturalHeight * ratio)), resizeQuality: 'low' });
+    }
+    signal?.throwIfAborted();
+    const width = resource.width || image.naturalWidth, height = resource.height || image.naturalHeight;
+    if (resource !== image) image.removeAttribute('src');
+    return { image: resource, width, height, close: () => resource === image ? image.removeAttribute('src') : resource.close() };
+  } catch (error) {
+    if (resource !== image) resource.close();
+    image.removeAttribute('src'); throw error;
+  }
 }
 
 export class OverviewSurface {
@@ -625,7 +612,7 @@ export class OverviewSurface {
       // Skip images whose watch already ended (handoff over) or that the host
       // has meanwhile started itself.
       if (!this._imageWatches.has(img) || img.getAttribute('src') || !img.dataset?.src) continue;
-      img.src = img.dataset.src;
+      void loadImage(img, { src: img.dataset.src, srcset: img.dataset.srcset, sizes: img.sizes }).catch(() => {});
     }
     if (queue.length) this._srcFrame = this._raf(() => this._startLoads());
   }

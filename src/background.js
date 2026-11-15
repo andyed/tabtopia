@@ -21,6 +21,7 @@
 
 // Import utility functions
 import "./logging.js";
+import "./lib/hero-preview-cache.js"; // Cache retention only; no background image downloads.
 import { extractSearchQuery, isLikelyRedirect } from "./lib/url-utils.js";
 import { pushSnapshot, setRequestHandler } from "./bridge-client.js";
 import {

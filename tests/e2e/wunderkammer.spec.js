@@ -109,3 +109,88 @@ test('narrow viewport, failed image and spatial view remain usable without remot
   await expect(wall(page).locator('body')).toHaveAttribute('data-view-mode', 'float');
   await expect(wall(page).locator('#float-host canvas')).toBeVisible();
 });
+
+test('cached previews survive reload without image-host requests; details retain the original', async ({ context, extensionId, server }) => {
+  const page = await seed(context, extensionId, server, 21);
+  const requests = [];
+  context.on('request', request => { if (/hero-\d+\.svg$/.test(request.url())) requests.push(request.url()); });
+  await page.goto(`chrome-extension://${extensionId}/src/newtab/wunderkammer.html`);
+  await expect(wall(page).locator('body')).toHaveAttribute('data-view-ready', 'true');
+  await settled(page);
+  expect(requests.length).toBeGreaterThan(0);
+  requests.length = 0;
+  await page.reload();
+  await expect(wall(page).locator('body')).toHaveAttribute('data-view-ready', 'true');
+  await settled(page);
+  expect(requests).toEqual([]);
+  const tile = wall(page).getByRole('button', { name: 'Hero 20', exact: true });
+  await tile.focus(); await tile.press('Enter');
+  await expect(wall(page).locator('#detail')).toContainText('Hero 20');
+  await expect.poll(() => requests.some(u => u.endsWith('/hero-20.svg'))).toBe(true);
+  // The service worker must prune bytes even after the gallery closes.
+  await page.goto(`chrome-extension://${extensionId}/src/options/options.html`);
+  await page.evaluate(() => chrome.storage.local.remove('heroImages'));
+  await expect.poll(() => page.evaluate(() => new Promise((resolve, reject) => {
+    const open = indexedDB.open('tabtopia-hero-previews-v1');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result, request = db.transaction('previews').objectStore('previews').count();
+      request.onsuccess = () => { db.close(); resolve(request.result); };
+    };
+  }))).toBe(0);
+});
+
+test('equivalent searches preserve layout and camera while query, results and clearing stay correct', async ({ context, extensionId, server }) => {
+  await context.addInitScript(() => { window.__cwPerfEnable = true; });
+  const page = await seed(context, extensionId, server, 21);
+  await page.goto(`chrome-extension://${extensionId}/src/newtab/wunderkammer.html`);
+  await expect(wall(page).locator('body')).toHaveAttribute('data-view-ready', 'true');
+  await settled(page);
+  const frame = page.frames().find(f => f.url().includes('/vendor/wunderkammer/index.html'));
+  await wall(page).locator('#search').fill('Her');
+  await expect(wall(page).locator('#scope-summary')).toContainText('Her'); await settled(page);
+  const before = await frame.evaluate(() => {
+    window.__cwPerf.reset();
+    return { styles: [...document.querySelectorAll('#canvas > .tile')].map(t => [t.style.width, t.style.height, t.style.transform]), view: window.wunderkammerFloatDebug().view.flat.view };
+  });
+  await wall(page).locator('#search').fill('Hero');
+  await expect(wall(page).locator('#scope-summary')).toContainText('Hero'); await settled(page);
+  const after = await frame.evaluate(() => ({ styles: [...document.querySelectorAll('#canvas > .tile')].map(t => [t.style.width, t.style.height, t.style.transform]), perf: window.__cwPerf.snapshot(), view: window.wunderkammerFloatDebug().view.flat.view }));
+  expect(after.styles).toEqual(before.styles);
+  expect(after.perf.counters['search/layout-reused']).toBe(1);
+  expect(after.perf.spans.render).toBeUndefined();
+  expect(after.view).toEqual(before.view);
+  await wall(page).locator('#search').fill('Hero 20');
+  await expect(wall(page).locator('#canvas > .tile')).toHaveCount(1);
+  await wall(page).locator('#search').fill('');
+  await expect(wall(page).locator('#canvas > .tile')).toHaveCount(21);
+  await settled(page);
+});
+
+test('a stalled image becomes a placeholder within the loading deadline', async ({ context, extensionId, server }) => {
+  const page = await seed(context, extensionId, server, 21);
+  await context.route('**/hero-0.svg', () => {});
+  await page.goto(`chrome-extension://${extensionId}/src/newtab/wunderkammer.html`);
+  await expect(wall(page).locator('body')).toHaveAttribute('data-view-ready', 'true');
+  const broken = wall(page).getByRole('button', { name: '<img src=x onerror=alert(1)> Fixture', exact: true });
+  await expect(broken).toHaveClass(/broken/, { timeout: 12000 });
+  await settled(page);
+});
+
+test('preview storage or fetch failures preserve native image fallback', async ({ context, extensionId, server }) => {
+  await context.addInitScript(() => {
+    // Simulate private-mode/storage denial without touching the profile.
+    indexedDB.open = () => { throw new Error('Storage unavailable'); };
+  });
+  const page = await seed(context, extensionId, server, 21);
+  await context.route('**/hero-0.svg', route => route.request().resourceType() === 'fetch'
+    ? route.abort('accessdenied')
+    : route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="green"/></svg>' }));
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`chrome-extension://${extensionId}/src/newtab/wunderkammer.html`);
+  await expect(wall(page).locator('body')).toHaveAttribute('data-view-ready', 'true');
+  await settled(page);
+  const tile = wall(page).getByRole('button', { name: '<img src=x onerror=alert(1)> Fixture', exact: true });
+  await expect(tile).not.toHaveClass(/broken/);
+  expect(errors).toEqual([]);
+});

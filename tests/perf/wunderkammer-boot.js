@@ -54,7 +54,9 @@ async function main() {
       records: Object.keys(store).length, distinctImageURLs: sourceURLs.size, controlImageDelayMs: imageDelayMs },
     method: 'Shipped host and iframe over HTTP; read-only chrome.storage shim; fresh contexts; 1440x900 DPR2; CPU/network only, no GPU claims. Real-host runs use empty cache/cookies. Instant control substitutes small SVGs, preserving layout and image count.', runs: [] };
   report.sourceHashEncoding = 'UTF-8, CRLF normalized to LF';
-  for (const name of ['src/newtab/wunderkammer.js', 'src/lib/hero-collection.js', 'src/vendor/wunderkammer/wall/wall.mjs', 'src/vendor/wunderkammer/wall/overview-surface.mjs']) {
+  for (const name of ['src/newtab/wunderkammer.js', 'src/lib/hero-collection.js', 'src/lib/hero-preview-cache.js',
+    'src/vendor/wunderkammer/wall/wall.mjs', 'src/vendor/wunderkammer/wall/overview-surface.mjs',
+    'src/vendor/wunderkammer/wall/image-loading.mjs', 'src/vendor/wunderkammer/wall/image-work.mjs']) {
     report.source[name] = crypto.createHash('sha256').update((await fs.readFile(path.join(root, name), 'utf8')).replace(/\r\n/g, '\n')).digest('hex');
   }
   try {
@@ -88,12 +90,16 @@ async function main() {
           window.__bootTimer = setInterval(tick, 100);
           window.__bootTick = tick;
         }, { store: runStore });
+        for (const phase of args.includes('--warm-preview') ? ['cold', 'cached-preview'] : ['cold']) {
         const page = await context.newPage(), cdp = await context.newCDPSession(page);
         await cdp.send('Performance.enable'); await cdp.send('Network.enable');
+        if (phase === 'cached-preview') await cdp.send('Network.clearBrowserCache');
+        const initialMetrics = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
         const requests = new Map(); let errors = 0;
         page.on('pageerror', () => errors++);
         cdp.on('Network.requestWillBeSent', e => {
-          if (e.type === 'Image' && (!e.request.url.startsWith(origin + '/') || e.request.url.includes('/__perf__/'))) {
+          if (['Image', 'Fetch'].includes(e.type) && /^https?:/.test(e.request.url)
+            && (!e.request.url.startsWith(origin + '/') || e.request.url.includes('/__perf__/'))) {
             requests.set(e.requestId, { key: e.request.url, start: e.timestamp, bytes: 0 });
           }
         });
@@ -121,7 +127,7 @@ async function main() {
         const rows = [...requests.values()], durations = rows.filter(r => Number.isFinite(r.ms)).map(r => r.ms).sort((a, b) => a - b);
         const last = app.samples.at(-1), first = app.samples.find(s => s.shown > 0);
         const p95 = app.samples.find(s => s.ready && s.visible > 0 && s.shown / s.visible >= .95);
-        const row = { mode, run, readyMs, elapsedMs, settlement,
+        const row = { mode, phase, run, readyMs, elapsedMs, settlement,
           // Samples are iframe navigation-relative, not host navigation-relative.
           firstImageFrameMs: first ? round(first.ms) : null, images95FrameMs: p95 ? round(p95.ms) : null,
           final: last, imageNetwork: { requests: rows.length, distinctURLs: new Set(rows.map(r => r.key)).size,
@@ -131,15 +137,17 @@ async function main() {
             statuses: rows.reduce((o, r) => { const k = r.status || 'no-response'; o[k] = (o[k] || 0) + 1; return o; }, {}),
             p50Ms: durations[Math.floor(durations.length * .5)] ?? null, p95Ms: durations[Math.floor(durations.length * .95)] ?? null,
             maxMs: durations.at(-1) ?? null },
-          cpu: { scriptMs: round(metrics.ScriptDuration * 1000), layoutMs: round(metrics.LayoutDuration * 1000),
-            styleMs: round(metrics.RecalcStyleDuration * 1000), taskMs: round(metrics.TaskDuration * 1000), heapMB: round(metrics.JSHeapUsedSize / 1048576) },
+          cpu: { scriptMs: round((metrics.ScriptDuration - initialMetrics.ScriptDuration) * 1000), layoutMs: round((metrics.LayoutDuration - initialMetrics.LayoutDuration) * 1000),
+            styleMs: round((metrics.RecalcStyleDuration - initialMetrics.RecalcStyleDuration) * 1000), taskMs: round((metrics.TaskDuration - initialMetrics.TaskDuration) * 1000), heapMB: round(metrics.JSHeapUsedSize / 1048576) },
           pageErrors: errors, app };
         report.runs.push(row);
         if (args.includes('--interactions') && settlement.ok) row.interactions = await measureInteractions(page, frame, cdp);
         row.pageErrors = errors;
-        console.log(JSON.stringify({ mode, run, readyMs, elapsedMs, settled: settlement.ok, firstImageFrameMs: row.firstImageFrameMs, images95FrameMs: row.images95FrameMs, final: last, network: row.imageNetwork, cpu: row.cpu }));
+        console.log(JSON.stringify({ mode, phase, run, readyMs, elapsedMs, settled: settlement.ok, firstImageFrameMs: row.firstImageFrameMs, images95FrameMs: row.images95FrameMs, final: last, network: row.imageNetwork, cpu: row.cpu }));
         await fs.mkdir(path.dirname(out), { recursive: true });
         await fs.writeFile(out, JSON.stringify(report, null, 2));
+        await page.close();
+        }
         await context.close();
       }
     }

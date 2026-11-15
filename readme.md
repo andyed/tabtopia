@@ -132,7 +132,9 @@ access on all sites. If you restrict access to selected sites or on-click access
 collection is limited to pages where Chrome permits the extension to run.
 Reload an already-open page after granting access so its content scripts load.
 
-Tabtopia stores image URLs and metadata locally. Displaying an image can request
+Tabtopia stores image URLs and metadata locally. The Wunderkammer gallery also
+keeps a bounded local thumbnail cache for faster repeat visits; clearing hero
+metadata clears those thumbnails. Displaying an image can request
 it from its original website or CDN; local storage does not mean every image is
 available offline. Broad site access also enables other page-context features—it
 is not an image-only permission. Chrome's
