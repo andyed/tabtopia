@@ -17,7 +17,7 @@ export const COLLECTION_LIMITS = Object.freeze({ clips: 50000, problems: 25, she
 const TOP = ['format', 'version', 'corpus', 'ui', 'facetTypes', 'images', 'viewState', 'sheets', 'facets', 'clips'];
 /** Keys a wunderkammer server payload carries that a portable document must not. */
 const SERVER_ONLY = new Set(['vault', 'adapters', 'generated']);
-const CLIP = ['id', 'url', 'title', 'cover', 'coverVariants', 'detailCover', 'media', 'sheetSlots', 'sourceUrl', 'sourceLabel',
+const CLIP = ['id', 'url', 'title', 'cover', 'coverVariants', 'detailCover', 'media', 'video', 'sheetSlots', 'sourceUrl', 'sourceLabel',
   'note', 'tags', 'props', 'source', 'kind', 'captured', 'palette', 'projection'];
 const UI = ['title', 'defaultGroup', 'facetOrder', 'facetLabels', 'hiddenFacets', 'nouns'];
 const FACET_TYPES = ['categorical', 'ordinal', 'numeric', 'date'];
@@ -87,6 +87,21 @@ export function validateCollection(input, { baseUrl = null } = {}) {
       problem(path, 'must be an http(s), data:image/ or blob: URL'); return null;
     }
     return url.protocol === 'data:' ? value : url.href;
+  };
+  /**
+   * A video source: http(s) or blob:, after resolving relative paths. No data:
+   * URLs: a clip worth playing is too large to inline, and a document that
+   * inlines one is a document nobody can read.
+   */
+  const video = (value, path) => {
+    if (text(value, path, { max: 4096 }) === null) return null;
+    let url;
+    try { url = baseUrl ? new URL(value, baseUrl) : new URL(value); } catch {
+      if (!baseUrl && !/^[a-z][a-z0-9+.-]*:/i.test(value) && !value.startsWith('//')) return value;
+      problem(path, 'must be a valid URL'); return null;
+    }
+    if (!['http:', 'https:', 'blob:'].includes(url.protocol)) { problem(path, 'must be an http(s) or blob: URL'); return null; }
+    return url.href;
   };
   /** A link a person can follow: http(s) only. */
   const link = (value, path) => {
@@ -240,6 +255,7 @@ export function validateCollection(input, { baseUrl = null } = {}) {
         if (!Array.isArray(clip.media) || clip.media.length > 32) problem(`${path}.media`, 'must be an array of at most 32 { src } objects');
         else c.media = clip.media.map((m, j) => keys(m, `${path}.media[${j}]`, ['src']) ? { src: image(m.src, `${path}.media[${j}].src`) } : null);
       }
+      if (clip.video !== undefined) c.video = video(clip.video, `${path}.video`);
       if (clip.sheetSlots !== undefined) {
         const p = `${path}.sheetSlots`, L = COLLECTION_LIMITS;
         if (!out.sheets) problem(p, 'needs a top-level sheets list to point into');
@@ -323,10 +339,10 @@ export function validateCollection(input, { baseUrl = null } = {}) {
 }
 
 /**
- * Every image source a collection names, as [path, src] pairs: each clip's
- * cover, detailCover, coverVariants and media, then the sheet pages. A check
- * that a document's files exist walks this list, so a new image field is
- * added here once rather than in each checker.
+ * Every media source a collection names, as [path, src] pairs: each clip's
+ * cover, detailCover, coverVariants, media and video, then the sheet pages. A
+ * check that a document's files exist walks this list, so a new media field
+ * is added here once rather than in each checker.
  */
 export function collectionImages(collection) {
   const found = [];
@@ -337,6 +353,7 @@ export function collectionImages(collection) {
     add(`${at}.detailCover`, clip?.detailCover);
     for (const [j, v] of (clip?.coverVariants || []).entries()) add(`${at}.coverVariants[${j}].src`, v?.src);
     for (const [j, m] of (clip?.media || []).entries()) add(`${at}.media[${j}].src`, m?.src);
+    add(`${at}.video`, clip?.video);
   }
   for (const [i, sheet] of (collection.sheets || []).entries()) add(`sheets[${i}].src`, sheet?.src);
   return found;

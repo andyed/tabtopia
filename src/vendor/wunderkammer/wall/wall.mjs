@@ -40,6 +40,10 @@ import { NEUTRAL_NOUNS, collectionNouns, counted } from './nouns.mjs';
 /** `?chrome=none` shows the stage alone, for stills (docs/SHOTS.md). Set
  * before the first layout, so the stage is measured at its full size. */
 const CHROMELESS = new URL(location.href).searchParams.get('chrome') === 'none';
+// Details on zoom is off unless the address asks for it. It was on from 0.1.0
+// and put away on 2026-11-14 as not working in use; TODO.md has what to settle
+// before it comes back. `?zoomdetail=on` is how its tests and that work run it.
+const ZOOM_DETAIL = new URL(location.href).searchParams.get('zoomdetail') === 'on';
 if (CHROMELESS) document.documentElement.dataset.chrome = 'none';
 /** A still's figure layer (wall/figure.mjs): a caption band under the stage, on by
  * default with chrome=none; figure=none leaves the stage alone. The band's
@@ -591,6 +595,11 @@ function viewNotes() {
       const order = state.float.describeFront();
       view = `Cloud${lead || order ? ': ' : ''}${[lead, order && (lead ? `each ${order}` : order)].filter(Boolean).join('; ')}`;
       name = 'Cloud';
+    } else if (arrangement === 'sphere') {
+      const { facing, cap } = state.float.sphereOptions();
+      const shape = facing === 'in' ? `facing in${cap ? `, open ${cap}°` : ''}` : cap ? `open ${cap}°` : '';
+      view = `Sphere${shape ? ` (${shape})` : ''}: lightest at the top, darkest at the bottom, hue around`;
+      brief = 'Sphere: lightness up, hue around'; name = 'Sphere';
     }
     else { view = `Placed by dominant colour in ${ARRANGEMENT_LABELS[arrangement]}`; name = ARRANGEMENT_LABELS[arrangement]; }
   } else if (state.mode === 'flat') {
@@ -1992,6 +2001,8 @@ function endPreview({ silent = false } = {}) {
 }
 
 /* Details on zoom (ledger idea 27; rule in zoom-detail.mjs) ----------------
+ * OFF BY DEFAULT since 2026-11-14 (see ZOOM_DETAIL above and TODO.md).
+ *
  * Zooming in until one cover dominates the free view previews it in the pane
  * with no click; zooming out ends that preview. It is decided only once the
  * camera has been still for ZOOM_DETAIL_QUIET after a zoom lands, never per
@@ -2009,6 +2020,7 @@ let zoomDetailTimer = 0;
 let zoomDismissed = null;
 function scheduleZoomDetail() {
   clearTimeout(zoomDetailTimer); zoomDetailTimer = 0;
+  if (!ZOOM_DETAIL) return;
   if (state.spatialOn || viewport.zooming) return;          // a pinch's end calls back here once more
   const wait = Math.max(0, viewport.settlesAt - performance.now()) + ZOOM_DETAIL_QUIET;
   zoomDetailTimer = setTimeout(applyZoomDetail, wait);
@@ -2159,7 +2171,15 @@ function renderDetail(clip) {
   // detailCover file still wins.
   const sprite = !clip.detailCover && spriteCovers.has(clip);
   const cover = clip.detailCover || clip.cover || clip.media?.[0]?.src;
-  if (cover || sprite) {
+  if (clip.video) {
+    // A video item plays here, muted and looping as on its tile, with controls
+    // for sound and scrubbing; its cover is the poster until the first frame.
+    const video = document.createElement('video');
+    video.muted = true; video.loop = true; video.autoplay = true; video.playsInline = true; video.controls = true;
+    if (cover) video.poster = cover;
+    video.src = clip.video;
+    d.append(video);
+  } else if (cover || sprite) {
     const img = document.createElement('img');
     img.alt = '';
     img.decoding = 'async';

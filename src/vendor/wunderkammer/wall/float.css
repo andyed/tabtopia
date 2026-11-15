@@ -19,9 +19,9 @@
 .arrange-menu label:last-of-type span { border-radius:0 5px 5px 0; }
 .arrange-menu input:checked + span { background:#f3f3f7; color:#050510; font-weight:600; }
 .arrange-menu input:focus-visible + span { outline:3px solid #aaffaa; outline-offset:2px; position:relative; z-index:1; }
-.float-axes { display:flex; gap:8px; flex:1 1 330px; min-width:0; }
-.float-axes[hidden] { display:none; }
-.float-axes label { flex:1 1 0; }
+.float-axes,.float-sphere { display:flex; gap:8px; flex:1 1 330px; min-width:0; }
+.float-axes[hidden],.float-sphere[hidden] { display:none; }
+.float-axes label,.float-sphere label { flex:1 1 0; }
 /* Axis ticks are many and secondary: no frame, but the same opaque ground, so
    a tick over a cover keeps its contrast. */
 .float-label-tick { border-color:transparent; padding:2px 6px; font-weight:500; }
@@ -43,8 +43,8 @@
   .arrange-menu { flex:1 0 100%; }
   .arrange-menu legend { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
   .arrange-menu label { flex:1 1 0; }
-  .float-axes { flex:1 0 100%; gap:6px; }
-  .float-axes > label > span { font-size:14px; }
+  .float-axes,.float-sphere { flex:1 0 100%; gap:6px; }
+  .float-axes > label > span,.float-sphere > label > span { font-size:14px; }
   .float-help { display:none; }
 }
 

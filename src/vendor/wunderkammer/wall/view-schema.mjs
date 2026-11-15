@@ -1,5 +1,5 @@
 /** Portable view contract, shared by the browser and immutable snapshot endpoint. */
-import { ARRANGEMENTS, validAxes, isFront } from './float-space.mjs';
+import { ARRANGEMENTS, validAxes, isFront, validSphere } from './float-space.mjs';
 export const MAX_VIEW_BYTES = 4 * 1024 * 1024;
 /** Most items one view may light by identity (`ui.lit`, `lit=` in a live link). */
 export const MAX_LIT = 10000;
@@ -52,6 +52,7 @@ export function validateView(v) {
   if (v.float !== undefined && v.float !== null) {
     const f = v.float, distance = vec(f.position) && vec(f.target) ? Math.hypot(...f.position.map((n, i) => n - f.target[i])) : NaN;
     if (!obj(f) || f.version !== 1 || !ARRANGEMENTS.includes(f.arrangement) || !(f.axes === undefined || validAxes(f.axes)) || !(f.front === undefined || isFront(f.front))
+        || !(f.sphere === undefined || validSphere(f.sphere))
         || !vec(f.position) || !vec(f.target) || [...f.position, ...f.target].some(n => Math.abs(n) > 1e6)
         || !(distance >= .1 && distance <= 1e5)
         || typeof f.fitted !== 'boolean' || !(f.selection === null || str(f.selection))) fail();

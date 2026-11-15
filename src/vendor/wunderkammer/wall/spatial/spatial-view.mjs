@@ -26,12 +26,55 @@ import { HybridField } from './lib/hybrid.js';
 import { PileLayout } from './lib/piles.js';
 import { FieldNavigator } from './lib/navigate.js';
 import { CardHost, supported as drawableSupported } from './lib/cards.js';
-import { RETRY } from './lib/atlas.js';
+import { RETRY, taintsCanvas } from './lib/atlas.js';
 import { spriteCovers } from '../sprite-covers.mjs';
 import { RowMotion } from './lib/motion.js';
 import { groupBy, layout, SIMILARITY, isSimilarity } from '../layout.mjs';
 import { spreadScale, HOVER_PX } from '../similarity-layout.mjs';
 import { perf } from '../instrument.mjs';
+import { VideoTiles, fieldPlacement } from '../video-tiles.mjs';
+
+/** How long the cards must go without a repaint before find is armed. Covers
+ * arrive in bursts a second or more apart on a cold cache, and those are
+ * waited for by name; this is the margin for a repaint nobody listed. */
+const FIND_QUIET_MS = 400;
+/** The longest find stays off waiting for covers whose page never answers. */
+const FIND_WORK_TIMEOUT_MS = 15000;
+// A card that repaints by itself is not answering a find. An animated cover
+// (GIF, APNG, an animated SVG) repaints its card on every frame, and nothing
+// on the paint event tells that from a match. A card that repaints this many
+// times, each within RESTLESS_GAP_MS of the last, is animating: it is left
+// out of find for the life of the field. Measured on a 544-item wall: an
+// animated PNG repainted its card 20 times a second, two GIFs 1 to 4 times.
+const RESTLESS_PAINTS = 5;
+const RESTLESS_GAP_MS = 3000;
+// Only a paint of a few cards counts toward that. While a wall loads, the
+// browser repaints nearly every card together, over and over (543 of 544, a
+// dozen times in two seconds), and counting those marked the whole wall
+// restless. In paints of up to this many cards, 535 of the 544 appeared at
+// most once, 6 twice, and the three animated ones 13 to 481 times.
+const RESTLESS_SET = 8;
+// A capture is followed by a repaint of the captured card when its cover had
+// not been decoded yet: drawing the card decodes the image, and the card is
+// painted again with it. On the 544-item wall those came 0.8 to 1.4 s after a
+// camera move, 19 to 33 cards at a time, long after the capture call returned.
+// A card does not answer a find for this long after we captured it.
+const CAPTURE_ECHO_MS = 3000;
+/** How far from the camera a tile gets a near-tier slot, in world units. */
+const NEAR_DISTANCE = 3200;
+/** The edge of a far-tier tile in its atlas (AtlasPair's `farPx`). */
+const FAR_TILE_PX = 64;
+// A card is authored at this size, with a 15 px title (spatial.css .sp-t).
+const CARD_W = 340, CARD_H = 255, CARD_TITLE_PX = 15;
+// Semantic zoom for the title band: a tile wears it only while that title
+// reaches this many CSS px on screen. Below it the band is a smear across the
+// picture, so the tile is the bare cover and the title waits for hover.
+const LABEL_MIN_TITLE_PX = 7;
+// A tile already labelled keeps its band down to this fraction of the
+// cutoff, so one sitting on the line does not flicker as the camera drifts.
+const LABEL_KEEP = 0.9;
+// Tiles redrawn per frame when they cross the cutoff. A capture is the cost.
+const RELABEL_PER_FRAME = 24;
 
 
 
@@ -255,10 +298,15 @@ export class SpatialView {
             ? (this.piles.spreadPile >= 0 ? this.piles.piles[this.piles.spreadPile].indices
               : this.piles.piles.flatMap((_, i) => this.piles.faceOf(i))) : [];
           for (const i of readable) this.field.atlases.request(i, 'near', now);
+          if (this.cardHost && this.field.atlases.sourcePathBlank) this.host.classList.remove('sp-cards');
+          this._reachOpenStack(h);
+          this._labelPass(h);
           const endPass = perf.begin('spatial/pass');
           this.field.update(this.camera, now);
           this.hybrid.update(this.camera);
+          this._labelPool();
           this.hybrid.sort(this.camera);
+          this.videos?.update(this.camera);
           endPass();
           // Keep group names readable and steady at every zoom level.
           const focal = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
@@ -338,12 +386,24 @@ export class SpatialView {
   _replaceField() {
     this._dirty = true;
     this.hybrid?.dispose();
+    this.videos?.dispose();
+    this.videos = null;
     this.field?.dispose();
     this.cardHost?.dispose();
     this.cardHost = null;
     this._lastFind = -1;
     this._lastFindKey = '';
     this._findArmed = false;
+    // Cards that repaint by themselves (_answering), the run of repaints that
+    // gets a card there, cards on trial after their cover lands, each drawable
+    // card's cover, and when we last captured each card.
+    this._restless = new Set();
+    this._streaks = new Map();
+    this._trial = new Map();
+    this._cardImgs = new Map();
+    this._coverSeen = new Map();
+    this._capturedAt = new Map();
+    this._cardGen = (this._cardGen ?? 0) + 1;
     this._unsubscribePaint?.();
     this._unsubscribePaint = null;
 
@@ -360,12 +420,21 @@ export class SpatialView {
     // permanently. The normal path is safe (wall.mjs unhides before calling
     // setClips) and this guard covers the constructor's first, empty build.
     const drawable = (window.__cwDrawable ?? drawableSupported()) && !this.host.hidden;
+    // Sheet-covered cards whose cover is in and painted (_adoptCovered).
+    this._cardCovered = new Set();
+    // Which items are big enough on screen to wear their title band
+    // (_labelPass), and the ones whose near tile is waiting to be redrawn.
+    this._labelled = new Uint8Array(Math.max(1, clips.length));
+    this._relabel = new Set();
+    this._stackLabelled = 0;
     if (drawable && clips.length) {
+      // Covers a card will still receive after build() returns (_buildCard).
+      this._cardWork = [];
       this.cardHost = new CardHost({
         container: this.host,
         count: clips.length,
-        width: 340,
-        height: 255,
+        width: CARD_W,
+        height: CARD_H,
         // NOT `sp-card`: that class is the DOM-overlay pool, and both the
         // tests and the CSS3D layer select on it. A drawable card is never an
         // overlay. It shares the visual rules via a grouped selector instead.
@@ -375,19 +444,22 @@ export class SpatialView {
         // have no CORS headers.
         build: (i, el) => this._buildCard(i, el, { proxyHero: true }),
       });
-      // `settled()` waits for the hero images, which is when the find
-      // handler below can be armed: an <img> finishing load repaints its card
-      // and is indistinguishable from a find match at the event level.
-      const host = this.cardHost;
-      host.settled().then(() => { if (this.cardHost === host) this._findArmed = true; });
+      const work = this._cardWork;
+      this._cardWork = null;
+      void this._armFind(this.cardHost, work);
     }
+    // Tiles drawn from cards wear their title band, so the pool's cards show
+    // theirs too (spatial.css). Off again if the card path turns out blank
+    // and the tiles fall back to plain covers (see the frame loop).
+    this.host.classList.toggle('sp-cards', !!this.cardHost);
 
+    this._nearReach = null;
     this.field = new TileField({
       scene: this.scene,
       // The atlas requires nonzero backing dimensions. An empty filter still
       // has zero active instances, so it cannot render or navigate a phantom.
       count: Math.max(1, clips.length),
-      nearDistance: 3200,
+      nearDistance: NEAR_DISTANCE,
       nearSlots: 256,
       resolve: (i, tier) => {
         const src = sourceFor(clips[i], tier === 'near' ? 256 : 64);
@@ -406,17 +478,15 @@ export class SpatialView {
       // of a collection's full-size level (~45 Mpx for the Psychodeli example,
       // over the decode budget, so pages evicted each other and tiles ran out
       // of retries), and the closest ones become DOM cards with the full cell.
+      // With a card host, a near tile big enough to read is drawn from its
+      // card, title band included; see _nearSource for the rest. The far tier
+      // stays the cell or the file: at that size the label goes.
       resolveSource: this.cardHost || spriteCovers.available
         ? (i, tier) => {
-          if (spriteCovers.has(clips[i])) {
-            // No cell (its page failed): null takes the image path to the clip's file.
-            const need = tier === 'near' ? 160 : 64;
-            return spriteCovers.serves(clips[i], need) ? spriteCovers.source(clips[i], need) ?? RETRY : null;
-          }
-          if (!this.cardHost || tier !== 'near' || this.host.hidden) return null;
-          this._capturing = true;
-          try { return this.cardHost?.capture(i) ?? null; }
-          finally { queueMicrotask(() => { this._capturing = false; }); }
+          if (tier === 'near') return this._nearSource(i);
+          // No cell (its page failed): null takes the image path to the clip's file.
+          return spriteCovers.has(clips[i]) && spriteCovers.serves(clips[i], 64)
+            ? spriteCovers.source(clips[i], 64) ?? RETRY : null;
         }
         : null,
     });
@@ -425,6 +495,15 @@ export class SpatialView {
     this.field.setMotion(this.motion);
     // Per-slot atlas uploads instead of the whole canvas per flush (atlas.js).
     this.field.setRenderer(this.webglRenderer);
+    // Items with a video play it over their cover (video-tiles.mjs); each
+    // presented frame asks for a render, so the on-demand loop keeps up.
+    this.videos = new VideoTiles({
+      scene: this.scene, placement: fieldPlacement(this.field),
+      sourceOf: (i) => clips[i]?.video || null,
+      keyOf: (i) => keyOfClip(clips[i]),
+      onFrame: () => this.invalidate(),
+      standIns: () => [...(this.hybrid?.live || [])].map(([i, entry]) => [i, entry.el.querySelector('video')]).filter(([, v]) => v),
+    });
 
     this.piles = new PileLayout({
       field: this.field, surface: this.surface, maxVisibleInPile: 8,
@@ -462,9 +541,16 @@ export class SpatialView {
     // than flying to a guessed single match. Scope is untouched either way:
     // this moves the camera and the selection, never `state.filtered`.
     if (this.cardHost) {
-      this._unsubscribePaint = this.cardHost.onPaint((indices) => {
-        if (!this._findArmed || this._capturing) return;
-        if (!indices.length || indices.length === this.clips.length) return;
+      this._unsubscribePaint = this.cardHost.onPaint((painted) => {
+        const now = performance.now();
+        this._adoptCovered(painted);
+        const whole = !painted.length || painted.length === this.clips.length;
+        // The cards that could be answering a find; one repainting for a
+        // reason of its own is not.
+        const indices = whole ? painted : this._answering(painted, now);
+        if (!indices.length) return;
+        this._cardPaintAt = now;
+        if (!this._findArmed || this._capturing || whole) return;
         const key = indices.join(',');
         if (key === this._lastFindKey) return;
         this._lastFindKey = key;
@@ -481,6 +567,259 @@ export class SpatialView {
 
 
 
+  /**
+   * What an item's near tile is drawn from: a source to draw now, RETRY, or
+   * null for the image path to the clip's file.
+   *
+   * With a card host, an item big enough to read (_labelPass) is its card,
+   * title band and all; a sheet-covered one only once the card has its cover
+   * (_adoptCovered), because a capture before then is a band under an empty
+   * hero. An item too small to read is the bare cover: the cell for a
+   * sheet-covered item, as without a card host, and otherwise the image the
+   * card already holds, which is decoded and needs no request.
+   *
+   * `_capturing` brackets our own drawElementImage calls: a capture repaints
+   * the card, and a repaint is indistinguishable from a find at the event
+   * level.
+   */
+  _nearSource(i) {
+    const clip = this.clips[i];
+    const sprite = spriteCovers.has(clip);
+    if (this.cardHost && !this.host.hidden) {
+      if (this._labelled[i] && (!sprite || this._cardCovered.has(i))) {
+        const shot = this._capture(i);
+        // A sheet cover has no file for the image path: fall back to its cell.
+        if (shot || !sprite) return shot;
+      } else if (!sprite) {
+        const img = this._cardImage(i);
+        // A cover the atlas would refuse (an SVG with a foreignObject taints
+        // it) is shown through its card, which captures clean, band and all.
+        // The alternative is a hole where every other tile has a picture.
+        if (img && taintsCanvas(img)) return this._capture(i);
+        return img;
+      }
+    }
+    if (!sprite) return null;
+    // The near tier asks for 160 px, not its 256 px slot (see resolveSource).
+    return spriteCovers.serves(clip, 160) ? spriteCovers.source(clip, 160) ?? RETRY : null;
+  }
+
+  /** One card drawn into the host's bitmap, marked so its echo is not a find. */
+  _capture(i) {
+    this._capturing = true;
+    this._capturedAt.set(i, performance.now());
+    try { return this.cardHost.capture(i) ?? null; }
+    finally { queueMicrotask(() => { this._capturing = false; }); }
+  }
+
+  /**
+   * The cover a card holds, if it can be drawn into the atlas: loaded, and
+   * same-origin, since anything else would taint the atlas canvas. Null sends
+   * the tile down the image path, which asks for the file with CORS.
+   */
+  _cardImage(i) {
+    const img = this.cardHost?.elementFor(i)?.querySelector('img.sp-thumb');
+    if (!img?.complete || !img.naturalWidth) return null;
+    const src = img.currentSrc || img.src;
+    if (/^(blob|data):/i.test(src)) return img;
+    try { return new URL(src, location.href).origin === location.origin ? img : null; }
+    catch { return null; }
+  }
+
+  /**
+   * Decide which items are big enough on screen to wear their title band, and
+   * redraw the near tiles that just crossed the line.
+   *
+   * The measure is the title's height in CSS px: the card is fitted to the
+   * tile, so the tighter of the tile's two axes sets it. An open stack gets
+   * ONE answer, from its median member: its rows differ in height by a few
+   * pixels, and deciding tile by tile labelled some rows and not others.
+   * Elsewhere each item answers for itself, so the near ones are labelled and
+   * the ones behind them are not.
+   */
+  _labelPass(paneHeight) {
+    const f = this.field;
+    const n = Math.min(f.count, this.clips.length, this._labelled.length);
+    const cam = this.camera, eye = cam.position;
+    const focal = paneHeight / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)));
+    const look = cam.getWorldDirection(this._lookDir ??= new THREE.Vector3());
+    const at = this._tileAt ??= new THREE.Vector3();
+    const titlePx = (i) => {
+      f.worldCentre(i, at);
+      const depth = (at.x - eye.x) * look.x + (at.y - eye.y) * look.y + (at.z - eye.z) * look.z;
+      if (!(depth > 0)) return 0;
+      return CARD_TITLE_PX * Math.min(f.sizes[i * 2] / CARD_W, f.sizes[i * 2 + 1] / CARD_H) * focal / depth;
+    };
+    const decide = (was, px) => (px >= LABEL_MIN_TITLE_PX * (was ? LABEL_KEEP : 1) ? 1 : 0);
+    const set = (i, on) => {
+      if (this._labelled[i] === on) return;
+      this._labelled[i] = on;
+      this._relabel.add(i);
+    };
+
+    const open = this.mode === 'piles' && this.piles.spreadPile >= 0 && this._spreadMembers;
+    if (open) {
+      const px = [];
+      for (const i of open) if (i < n) px.push(titlePx(i));
+      px.sort((a, b) => a - b);
+      const on = decide(this._stackLabelled, px[px.length >> 1] ?? 0);
+      this._stackLabelled = on;
+      for (const i of open) if (i < n) set(i, on);
+    } else {
+      this._stackLabelled = 0;
+      for (let i = 0; i < n; i++) if (f.isActive(i)) set(i, decide(this._labelled[i], titlePx(i)));
+    }
+
+    if (!this.cardHost) { this._relabel.clear(); return; }
+    // In place, so a tile never shows an empty slot between its two pictures.
+    const tiles = f.atlases;
+    let left = RELABEL_PER_FRAME;
+    for (const i of this._relabel) {
+      if (left <= 0) break;
+      this._relabel.delete(i);
+      const slot = tiles.nearSlot[i];
+      if (slot < 0) continue;                 // drawn in its new state when it is asked for
+      left--;
+      const source = this._nearSource(i);
+      if (source && source !== RETRY && tiles.near.draw(slot, source)) tiles.onTileReady?.(i, 'near');
+      else tiles.releaseNear(i);              // the queue draws it, by whatever path is left
+    }
+    if (this._relabel.size) this._dirty = true;
+  }
+
+  /** The pool's cards follow the same answer as the tiles around them. */
+  _labelPool() {
+    for (const [i, entry] of this.hybrid.live) entry.el?.classList.toggle('sp-small', !this._labelled[i]);
+  }
+
+  /**
+   * Switch a sheet-covered item's near tile from the bare cell to its card,
+   * the first time the card is painted with its cover in.
+   *
+   * The card gets its cover some time after it is built (_buildCard), and a
+   * capture taken before then is a band under an empty hero. The paint that
+   * follows the cover is the signal the card is whole.
+   */
+  _adoptCovered(indices) {
+    const tiles = this.field?.atlases;
+    if (!tiles || !this.cardHost) return;
+    for (const i of indices) {
+      if (this._cardCovered.has(i) || !spriteCovers.has(this.clips[i])) continue;
+      const img = this.cardHost.elementFor(i)?.querySelector('img.sp-thumb');
+      if (!img?.complete || !img.naturalWidth) continue;
+      this._cardCovered.add(i);
+      // Redraw a tile already holding the cell; one not near yet asks later.
+      if (this._labelled[i] && tiles.nearSlot[i] >= 0) { this._relabel.add(i); this._dirty = true; }
+    }
+  }
+
+  /**
+   * The cards in a paint that may be answering a find: the painted ones, minus
+   * those repainting for a reason of their own.
+   *
+   * - A card whose cover is on its way (_coverPending): the image paints as
+   *   it arrives.
+   * - A card on trial. Its cover has just landed (_coverLanded), which repaints
+   *   it, and an animated cover goes on repainting; each repaint extends the
+   *   trial. A cover that stays still leaves trial RESTLESS_GAP_MS later.
+   * - A restless card: RESTLESS_PAINTS repaints in a row, each within
+   *   RESTLESS_GAP_MS of the last. It is animating, and stays out for good.
+   * - A card we captured within CAPTURE_ECHO_MS: the capture decoded its
+   *   cover, and the card is repainting with it.
+   *
+   * Runs are counted for a card on trial, and for every card before find is
+   * armed, when nothing can be a find. They are not counted for the rest once
+   * it is armed: a match being typed repaints its cards as fast as an
+   * animation does, and those must keep answering. Our own captures repaint
+   * cards too and are not counted, nor is a paint of more than RESTLESS_SET
+   * cards: that is the browser repainting the wall, not a card animating.
+   */
+  _answering(painted, now) {
+    const counted = !this._capturing && painted.length <= RESTLESS_SET;
+    const out = [];
+    for (const i of painted) {
+      if (this._restless.has(i)) continue;
+      if (this._coverPending(i)) continue;
+      if (now - (this._capturedAt.get(i) ?? -Infinity) < CAPTURE_ECHO_MS) continue;
+      let onTrial = this._trial.has(i);
+      if (onTrial && now > this._trial.get(i)) { this._trial.delete(i); this._streaks.delete(i); onTrial = false; }
+      if (onTrial || !this._findArmed) {
+        if (counted) {
+          const run = this._streaks.get(i);
+          const n = run && now - run.last <= RESTLESS_GAP_MS ? run.n + 1 : 1;
+          if (n >= RESTLESS_PAINTS) {
+            this._restless.add(i); this._streaks.delete(i); this._trial.delete(i);
+            continue;
+          }
+          this._streaks.set(i, { n, last: now });
+          if (onTrial) this._trial.set(i, now + RESTLESS_GAP_MS);
+        }
+        if (onTrial) continue;
+      }
+      out.push(i);
+    }
+    return out;
+  }
+
+  /** How many cards are on trial now. Finished trials are closed on the way. */
+  _trialsOpen(now = performance.now()) {
+    for (const [i, until] of this._trial) if (now > until) { this._trial.delete(i); this._streaks.delete(i); }
+    return this._trial.size;
+  }
+
+  /**
+   * Is this card's cover on its way? True from the moment the card's image is
+   * given a URL until its load or error event has been handled here.
+   *
+   * `img.complete` cannot answer this. It turns true, and the card can
+   * repaint with the picture, before the load event runs: measured, the paint
+   * came about 20 ms ahead of `load` in 3 of 24 late arrivals, and each was
+   * read as a find match because the card was not on trial yet.
+   */
+  _coverPending(i) {
+    const img = this._cardImgs.get(i);
+    return !!img && !!img.getAttribute('src') && this._coverSeen.get(i) !== img.src;
+  }
+
+  /** A card's cover has loaded: the card goes on trial, armed or not. */
+  _coverLanded(i) {
+    if (!this._restless.has(i)) this._trial.set(i, performance.now() + RESTLESS_GAP_MS);
+  }
+
+  /**
+   * Arm the find handler once the cards have stopped changing by themselves.
+   *
+   * A `paint` event that names some cards is the only signal a find-in-page
+   * match gives, and anything else that repaints a card looks the same. So the
+   * handler stays disarmed until this view is done changing its own cards:
+   *
+   *   1. the covers a card receives after it is built. A sprite-sheet cell
+   *      reaches its <img> when its page has decoded, long after
+   *      `CardHost.settled()` looked for images still loading and found none.
+   *      Armed that early, every arriving page read as a find: the camera
+   *      moved and an item was selected with nobody at the keyboard.
+   *   2. `settled()`, for the images that have a src by then.
+   *   3. FIND_QUIET_MS without a repaint, for whatever the first two missed.
+   *
+   * A card that never stops repainting (an animated cover) does not hold this
+   * up: it is marked restless and left out, of the wait and of find
+   * (_answering). Before that, such a wall either never armed, or armed in a
+   * chance gap and then read every frame of the animation as a match.
+   */
+  async _armFind(host, work = []) {
+    const current = () => this.cardHost === host;
+    const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    // Bounded: a page that never answers must not hold find off for good.
+    await Promise.race([Promise.allSettled(work), pause(FIND_WORK_TIMEOUT_MS)]);
+    if (!current()) return;
+    await host.settled();
+    this._cardPaintAt = performance.now();
+    // Quiet, and nobody still on trial: armed means every card whose cover is
+    // in will answer. A cover that lands later is tried on its own.
+    while (current() && (performance.now() - this._cardPaintAt < FIND_QUIET_MS || this._trialsOpen() > 0)) await pause(100);
+    if (current()) this._findArmed = true;
+  }
+
   /* ------------------------------------------------------------ cards --- */
 
   _buildCard(i, el, { proxyHero = false } = {}) {
@@ -489,17 +828,57 @@ export class SpatialView {
 
     const sprite = spriteCovers.has(clip);
     const src = sourceFor(clip, 340) || '';   // the card is authored 340 px wide
-    if (src || sprite) {
+    // A video plays in the DOM card too, over its cover as the poster. Not in a
+    // drawable card: a capture is one still frame, and the field's own video
+    // quad already plays at that distance.
+    if (clip.video && !proxyHero) {
+      const video = document.createElement('video');
+      video.className = 'sp-thumb';
+      video.muted = true; video.loop = true; video.playsInline = true;
+      // A capture holds every video on its clock (video-tiles.mjs seek()).
+      video.autoplay = !this.videos?.frozen;
+      if (src && !sprite) video.poster = src;
+      video.src = clip.video;
+      video.addEventListener('error', () => el.classList.add('broken'), { once: true });
+      el.append(video);
+    } else if (src || sprite) {
       const img = document.createElement('img');
       img.className = 'sp-thumb';
       // The DOM pool renders a plain <img> and is fine cross-origin. A drawable
       // is not: cross-origin content inside one is dropped from the snapshot,
       // leaving the hero blank while the rest of the card draws.
       const file = src && (proxyHero ? proxied(src) : src);
+      if (proxyHero) {
+        // A cover repaints its card as it arrives and when it lands, and an
+        // animated one never stops. _answering keeps the card out of find
+        // while the cover is loading and on trial once it is in. Listening
+        // before the source is set covers a sheet cell, which is set later.
+        const gen = this._cardGen;
+        this._cardImgs.set(i, img);
+        // Not once: a card given another cover later is pending, then on
+        // trial, again.
+        img.addEventListener('load', () => {
+          if (gen !== this._cardGen) return;
+          this._coverSeen.set(i, img.src);
+          this._coverLanded(i);
+        });
+        img.addEventListener('error', () => { if (gen === this._cardGen) this._coverSeen.set(i, img.src); });
+      }
       if (sprite) {
         // A pooled card can be rebuilt for another item before the cell
         // arrives; only an <img> still in its card takes it.
-        void spriteCovers.coverUrl(clip, 340 * Math.min(2, window.devicePixelRatio || 1), file).then(url => { if (url && img.parentNode === el) img.src = url; });
+        const landed = spriteCovers.coverUrl(clip, 340 * Math.min(2, window.devicePixelRatio || 1), file).then(url => {
+          if (!url || img.parentNode !== el) return null;
+          img.src = url;
+          // Resolves once the cell is in the card, shown or broken.
+          return new Promise(done => {
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+          });
+        });
+        // A drawable card repaints when this lands, and a repaint is how a
+        // find match announces itself; _armFind waits for it.
+        if (proxyHero) this._cardWork?.push(landed.catch(() => null)); else void landed;
       } else img.src = file;
       img.alt = '';
       img.draggable = false;
@@ -681,11 +1060,60 @@ export class SpatialView {
     this._show();
   }
 
+  /**
+   * While a stack is open, let the near tier reach all of it.
+   *
+   * The lib grants a near slot by world distance, which stands in for "large
+   * on screen" only while the camera is close. A big stack opened in a small
+   * pane is fitted from further back than that, and every one of its tiles
+   * was then a 64 px far tile drawn two or three times that size: soft, and
+   * without the title band a tile drawn from its card carries. So while a
+   * stack is open the reach is extended to where its largest tile is still
+   * drawn larger than a far tile holds. Only that stack is drawn then
+   * (_applyVisibility), so the near pool is not spent on anything else.
+   *
+   * The field's own reach is put back when the stack closes and is never
+   * touched otherwise: it is a setting others may change.
+   */
+  _reachOpenStack(paneHeight) {
+    const open = this.mode === 'piles' && this.piles.spreadPile >= 0 && this._spreadMembers;
+    if (!open) {
+      if (this._nearReach != null) { this.field.nearDistance = this._nearReach; this._nearReach = null; }
+      return;
+    }
+    this._nearReach ??= this.field.nearDistance;
+    const focal = paneHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
+    const sizes = this.field.sizes;
+    let longest = 0;
+    for (const i of open) longest = Math.max(longest, sizes[i * 2], sizes[i * 2 + 1]);
+    this.field.nearDistance = Math.max(this._nearReach, longest * focal / FAR_TILE_PX);
+  }
+
+  /**
+   * Draw what is in scope and, while a stack is open, only that stack.
+   *
+   * An open stack is laid out on its own plane in front of the others, which
+   * stay where they stand. Left drawn, they show through every gap in the open
+   * tray and take the clicks that land there, which closes the stack being
+   * read. Their labels are already hidden while one is open (_labels); this
+   * hides the tiles the same way a scope change does, so they keep their
+   * placement and their atlas slots and return as they were.
+   */
+  _applyVisibility() {
+    const scope = this._inScope;
+    const open = this.mode === 'piles' && this.piles?.spreadPile >= 0 ? this._spreadMembers : null;
+    for (let i = 0; i < this.field.count && i < this.clips.length; i++) {
+      this.field.setActive(i, (!scope || scope.has(i)) && (!open || open.has(i)));
+    }
+    this._dirty = true;
+  }
+
   /** Which corpus indices are in scope. Everything else is hidden in place. */
   _setMembership(indices) {
     this.active = indices;
     const inScope = new Set(indices);
-    for (let i = 0; i < this.field.count && i < this.clips.length; i++) this.field.setActive(i, inScope.has(i));
+    this._inScope = inScope;
+    this._applyVisibility();
     if (this.nav && this.nav.selection >= 0 && !inScope.has(this.nav.selection)) {
       // A filtered-out selection is no selection.
       this.hybrid.setFocus(-1);
@@ -765,6 +1193,7 @@ export class SpatialView {
     });
     if (!animate || this._reducedMotion()) for (const i of pile.indices) this.field.settle(i);
     this._spreadMembers = new Set(pile.indices);
+    this._applyVisibility();
     this._spreadExtent = { x: pile.u, top: pile.v + result.height / 2 };
     // A shallow, non-interactive rim keeps the open tray legible as a place.
     // It never takes a card's hit target or changes collection membership.
@@ -810,7 +1239,9 @@ export class SpatialView {
     const affected = [...pile.indices, ...owners.flatMap(({ p }) => p.exclusive || p.indices)];
     const starts = animate && !this._reducedMotion() ? new Map([...new Set(affected)].map(i => [i, this._placement(i)])) : null;
     if (pile?.exclusive) pile.indices = pile.exclusive; // give shared members back to their own piles
+    const wasOpen = this.piles.spreadPile === index;
     this.piles.collapse(index, true);
+    if (wasOpen) this._applyVisibility();   // the other stacks come back as this one closes
     // Shared members the spread borrowed were moved; their owning piles re-place them.
     for (const { i } of owners) this._collapsePile(i);
     // A stack has a stable cover footprint. Contain banners/portraits within

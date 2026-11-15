@@ -10,8 +10,9 @@ import { ARRANGEMENT_LABELS } from './float-space.mjs';
 
 /** Facet groups as piles on an upright plane (spatial/spatial-view.mjs). */
 export const STACKS = 'stacks';
-/** Menu order: the default (Axes) first, the stacks last. */
-export const MENU = Object.freeze(['axes', 'oklab', 'oklch', 'hsl', 'az', STACKS]);
+/** Menu order: the default (Axes) first, the colour arrangements with the
+ * sphere, the colour globe, after them, the stacks last. */
+export const MENU = Object.freeze(['axes', 'oklab', 'oklch', 'hsl', 'sphere', 'az', STACKS]);
 const LABELS = { ...ARRANGEMENT_LABELS, [STACKS]: 'Stacks' };
 
 /**

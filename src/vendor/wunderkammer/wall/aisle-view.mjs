@@ -9,6 +9,7 @@ import { sortClips, attributeMark } from './attributes.mjs';
 import { NEUTRAL_NOUNS, wallLabel } from './nouns.mjs';
 import { Callout, JumpBox, announcer, titleMatches as matchTitles } from './keyboard-path.mjs';
 import { aisleMove, AISLE_EDGES } from './aisle-keys.mjs';
+import { VideoTiles } from './video-tiles.mjs';
 
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 const vector = value => Array.isArray(value) && value.length === 3 && value.every(n => Number.isFinite(n) && Math.abs(n) <= 1e6);
@@ -112,6 +113,7 @@ export class AisleView {
     }));
     this.art?.setModel({ cohorts: this.cohorts, clipsByKey: this.clipsByKey, allRows: [] }, { preserveOrder: true });
     this.art?.setPresentation({ spread: this.spread, slice: null });
+    this.setVideoPlaces(this.art?.places);
     this.camera.far = Math.max(2000, (this.art?.totalDepth || 0) * 2 + 100); this.camera.updateProjectionMatrix();
     this.overlay.replaceChildren(); this.labels = [];
     for (const anchor of this.art?.labelAnchors || []) { const node = element('span', 'aisle-cohort-label'); this.overlay.append(node); this.labels.push({ anchor, node }); }
@@ -206,6 +208,25 @@ export class AisleView {
   }
   choose(key) { this.keyChoose(this.placeOf(key)); }
   /**
+   * Covers with a video play it on the rack (video-tiles.mjs). A clip shelved
+   * in two racks plays in both, and on every copy of them in the warehouse:
+   * each place is its own item, with its own phase.
+   */
+  setVideoPlaces(places) {
+    // A capture's budget and hold carry over to the new set (scripts/warehouse-video.mjs).
+    const prior = this.videos;
+    prior?.dispose(); this.videos = null;
+    if (!this.art || !places) return;
+    this.videos = new VideoTiles({
+      scene: this.scene, placement: this.art.videoPlacement(places),
+      sourceOf: i => this.clipsByKey.get(places[i].key)?.video || null,
+      keyOf: i => `${places[i].copy || ''}\u0000${places[i].cohort}\u0000${places[i].key}`,
+      onFrame: () => this.invalidate(),
+      ...(prior ? { budget: prior.budget, resident: prior.resident } : {}),
+    });
+    this.videos.frozen = !!prior?.frozen;
+  }
+  /**
    * The image warehouse (warehouse.mjs, warehouse-show.mjs): racks rush in
    * from a white void, then the lights go down on this aisle as it stands.
    * Plays once; a reduced-motion setting, or an aisle with nothing to show,
@@ -217,7 +238,9 @@ export class AisleView {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { this.lastShow = { reason: 'reduced-motion' }; return null; }
     const { WarehouseShow } = await import('./warehouse-show.mjs');
     if (this.show || this.disposed || !this.visible) return this.show;
-    this.show = new WarehouseShow(this, { nouns, onFinish: info => { this.show = null; this.lastShow = info; } });
+    this.show = new WarehouseShow(this, { nouns, onFinish: info => { this.show = null; this.lastShow = info; this.setVideoPlaces(this.art?.places); } });
+    // The copied racks play their covers' videos too, for as long as they stand.
+    if (this.videos?.count) this.setVideoPlaces([...this.art.places, ...this.show.copyPlaces()]);
     this.show.start(); this.invalidate();
     return this.show;
   }
@@ -314,6 +337,7 @@ export class AisleView {
     if (this.keyboardPlace && this.ring.visible) { this.art.worldOf(this.keyboardPlace, this.ring.position); this.ring.position.x -= this.keyboardPlace.side * .03; }
     // A playing warehouse moves the racks and camera for this frame, and asks for the next.
     this.show?.beforeRender(performance.now());
+    if (this.videos?.count) { this.root.updateMatrixWorld(true); this.videos.update(this.camera); }
     this.renderer.render(this.scene, this.camera); this.renderCount = (this.renderCount || 0) + 1;
     if (this.show?.playing) this.invalidate();
     const occupied = [], point = new THREE.Vector3();
@@ -346,6 +370,6 @@ export class AisleView {
   dispose() {
     if (this.disposed) return; this.show?.finish('disposed'); this.disposed = true; this.cancelHover(); if (this.frame) cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect(); this.unlistenWheel?.(); for (const [node, name, fn, options] of this.listeners) node.removeEventListener(name, fn, options);
-    this.controls?.dispose(); this.art?.dispose(); this.renderer?.dispose(); this.renderer?.forceContextLoss(); this.host.replaceChildren();
+    this.controls?.dispose(); this.videos?.dispose(); this.art?.dispose(); this.renderer?.dispose(); this.renderer?.forceContextLoss(); this.host.replaceChildren();
   }
 }

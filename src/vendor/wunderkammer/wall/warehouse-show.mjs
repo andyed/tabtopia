@@ -54,6 +54,29 @@ export class WarehouseShow {
     return { group, walls: rack.walls.map(wall => group.children[rack.group.children.indexOf(wall)]) };
   }
 
+  /**
+   * Every cover on the copied racks, as `{ key, cohort, mesh, index, copy }`
+   * places for VideoTiles: a copy's walls keep its rack's child order, so each
+   * of the rack's places has a twin at the same instance in the copy's mesh.
+   */
+  copyPlaces() {
+    const byMesh = new Map(), out = [];
+    for (const place of this.art.places) {
+      if (!byMesh.has(place.mesh)) byMesh.set(place.mesh, []);
+      byMesh.get(place.mesh).push(place);
+    }
+    for (const inst of this.instances) {
+      if (inst.row.real) continue;
+      const copy = `${inst.row.lane}:${inst.row.copy}`;
+      this.art.racks[inst.row.rack].walls.forEach((wall, j) => wall.children.forEach((mesh, c) => {
+        const twin = inst.walls[j]?.children[c];
+        if (!twin?.isInstancedMesh) return;
+        for (const place of byMesh.get(mesh) || []) out.push({ key: place.key, cohort: place.cohort, mesh: twin, index: place.index, copy });
+      }));
+    }
+    return out;
+  }
+
   /** Where the camera ends: the aisle's Fit at its travel, or the link's own camera. */
   entry() { return this.landing || this.art.cameraPose(this.aisle.travel, this.aisle.camera.aspect); }
 

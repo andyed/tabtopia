@@ -125,3 +125,18 @@ canvas.card-host {
  * the band, so it is hidden here — the DOM overlay still carries it, which is
  * the invariant. */
 .sp-dcard .sp-edit { display: none; }
+
+/* While near tiles are drawn from cards (.sp-cards on the host), every tile
+ * around a pool card wears its title band. A pool card that kept its own
+ * hidden until hover made same-sized neighbours disagree about whether they
+ * have a label, so it shows the band as well. The editor link stays a
+ * disclosure, on hover or selection, which keeps the band the height of a
+ * tile's. Same #0d1017 ground and 15.19:1 / 8.54:1 inks as above. A
+ * sheet-covered item's near tile is drawn from its card as well, once the
+ * cover is in (SpatialView._adoptCovered).
+ *
+ * Not while the card is too small on screen to read its title (.sp-small,
+ * SpatialView._labelPass): the tiles around it drop the band at that size,
+ * and the card goes back to showing it on hover or selection. */
+.sp-host.sp-cards .sp-card:not(.sp-small) .sp-body { visibility: visible; }
+.sp-host.sp-cards .sp-card:not(.sp-small):not(:hover):not([aria-selected="true"]) .sp-edit { display: none; }

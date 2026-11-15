@@ -9,6 +9,19 @@
  * an alphabetical order has one dimension and the wall says so. In Axes each
  * axis carries one chosen dimension, a colour coordinate or an attribute, and
  * an item without a value waits in a labelled slot before the axis starts.
+ *
+ * Sphere is a colour globe, after Runge's Farbenkugel (1810): the lightest
+ * items at the top, the darkest at the bottom, hue around. Its seats are a
+ * Fibonacci lattice (sphereSlots), so the cards cover the surface evenly and
+ * never stack, and that is why its positions are ranks rather than values:
+ * items fill latitude bands in lightness order, and within a band they run
+ * around the sphere in hue order. Latitude was chosen for lightness and
+ * longitude for hue because both read the same way in OKLCH and HSL, and hue is
+ * the one colour coordinate that is itself an angle. Greys have no hue and
+ * lead each band, beside the seam where the hue turn starts; items without a
+ * palette wait on a shelf below. The cards lie on the surface (facing out, a
+ * globe, or in, a bowl), so the view draws them at the arrangement's own
+ * orientation instead of turning them to the camera.
  */
 import { attributeModel, attributeMark } from './attributes.mjs';
 
@@ -18,8 +31,8 @@ export const WORLD = 2000;
 export const MAX_STRETCH = 4;
 /** Cylinder radius for OKLCH and HSL. */
 export const RADIUS = 700;
-export const ARRANGEMENTS = Object.freeze(['oklab', 'oklch', 'hsl', 'az', 'axes', 'cloud']);
-export const ARRANGEMENT_LABELS = Object.freeze({ oklab: 'OKLab', oklch: 'OKLCH', hsl: 'HSL', az: 'A–Z', axes: 'Axes', cloud: 'Cloud' });
+export const ARRANGEMENTS = Object.freeze(['oklab', 'oklch', 'hsl', 'az', 'axes', 'cloud', 'sphere']);
+export const ARRANGEMENT_LABELS = Object.freeze({ oklab: 'OKLab', oklch: 'OKLCH', hsl: 'HSL', az: 'A–Z', axes: 'Axes', cloud: 'Cloud', sphere: 'Sphere' });
 export const isArrangement = value => ARRANGEMENTS.includes(value);
 /** The arrangement the space opens in, from the 3D button or a link that names
  * none. Axes puts the collection's time, lightness and hue on three axes
@@ -140,9 +153,12 @@ export function chromaStretch(labs) {
  *   exact      — the arranged centre before declumping (what the colour says)
  *   sizes      — tile width and height
  *   order      — indices in the arrangement's own reading order (hue, or title)
+ *   rotations  — Sphere only: each card's orientation, quaternions [x, y, z, w];
+ *                the other arrangements leave orientation to the view, which
+ *                turns every card to the camera
  * plus bounds, labels and guide geometry for the renderer.
  */
-export function arrange(clips, arrangement, { edge = tileEdge(clips.length), axes, labelFor, priority } = {}) {
+export function arrange(clips, arrangement, { edge = tileEdge(clips.length), axes, labelFor, priority, sphere } = {}) {
   if (!isArrangement(arrangement)) throw new Error(`Unknown arrangement: ${arrangement}`);
   const n = clips.length, positions = new Float32Array(n * 3), sizes = new Float32Array(n * 2);
   const labels = [], guides = [];
@@ -150,6 +166,7 @@ export function arrange(clips, arrangement, { edge = tileEdge(clips.length), axe
   for (let i = 0; i < n; i++) { const [w, h] = sized(aspectOf(clips[i]), edge); sizes[i * 2] = w; sizes[i * 2 + 1] = h; }
   if (arrangement === 'axes') return arrangeAxes(clips, positions, sizes, edge, axes, labelFor);
   if (arrangement === 'cloud') return arrangeCloud(clips, positions, sizes, edge, priority);
+  if (arrangement === 'sphere') return arrangeSphere(clips, positions, sizes, edge, sphere);
   if (arrangement === 'az') {
     order = alphabetical(clips, positions, sizes, edge, labels);
   } else {
@@ -624,6 +641,171 @@ function arrangeCloud(clips, positions, sizes, edge, priority = []) {
   });
   return { arrangement: 'cloud', edge, stretch: 1, positions, exact: positions.slice(), sizes, order, labels: [], guides: [], unplaced: 0,
     declumped: { moved: 0, maxShift: 0, meanShift: 0 }, bounds: boundsOf(positions, sizes, n) };
+}
+
+/* ---------------------------------------------------------------- Sphere --- */
+
+/** Which way the cards face: out, a globe seen from outside; in, a bowl you look into. */
+export const SPHERE_FACINGS = Object.freeze(['out', 'in']);
+/** The widest opening a link may ask for, in degrees from the opening's centre
+ * to its rim. Past 120° what is left is a shallow dish, no longer a sphere. */
+export const MAX_CAP = 120;
+/** Share of the surface the cards cover: enough to read as a surface. */
+export const SPHERE_FILL = 0.5;
+/** The nearest two seats of an n-seat Fibonacci lattice on a whole sphere of
+ * radius R are at least SEAT_GAP · R / √n apart (measured: 3.087 to 3.092 for
+ * 12 to 1,793 seats). A cap packs the same seats closer, by √((1 + cos cap) / 2). */
+export const SEAT_GAP = 3.08;
+export function seatGap(n, radius, cap = 0) {
+  return SEAT_GAP * radius / Math.sqrt(Math.max(1, n)) * Math.sqrt((1 + Math.cos(Math.min(179, Math.max(0, cap)) * Math.PI / 180)) / 2);
+}
+export const DEFAULT_SPHERE = Object.freeze({ facing: 'out', cap: 0 });
+/** `{ facing?, cap? }`: a facing from SPHERE_FACINGS, a cap in whole degrees from 0 to MAX_CAP. */
+export function validSphere(sphere) {
+  if (!sphere || typeof sphere !== 'object' || Array.isArray(sphere)) return false;
+  if (!Object.keys(sphere).every(k => k === 'facing' || k === 'cap')) return false;
+  if ('facing' in sphere && !SPHERE_FACINGS.includes(sphere.facing)) return false;
+  return !('cap' in sphere) || Number.isInteger(sphere.cap) && sphere.cap >= 0 && sphere.cap <= MAX_CAP;
+}
+
+const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit = v => { const l = Math.hypot(v[0], v[1], v[2]); return l > 1e-9 ? [v[0] / l, v[1] / l, v[2] / l] : null; };
+/** Any unit vector square to `v` (unit). */
+const square = v => unit(cross3(Math.abs(v[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], v));
+
+/**
+ * The orientation, as a quaternion [x, y, z, w], that turns a card's face
+ * (+z, the side its image is drawn on) to point along `dir`, with the card's
+ * top (+y) leaning toward `up`. Where `dir` is parallel to `up` (a card on a
+ * pole), the card's right edge (+x) runs along `up × fallback` instead, so the
+ * result is still a proper rotation and the same on every load.
+ */
+export function faceQuaternion(dir, up = [0, 1, 0], fallback = [0, 0, -1]) {
+  const z = unit(dir); if (!z) return [0, 0, 0, 1];
+  const x = unit(cross3(up, z)) || unit(cross3(fallback, z)) || square(z), y = cross3(z, x);
+  // Rotation matrix with columns x, y, z, to a quaternion (Shepperd's method).
+  const [m00, m10, m20] = x, [m01, m11, m21] = y, [m02, m12, m22] = z, trace = m00 + m11 + m22;
+  let q;
+  if (trace > 0) { const s = 0.5 / Math.sqrt(trace + 1); q = [(m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s, 0.25 / s]; }
+  else if (m00 > m11 && m00 > m22) { const s = 2 * Math.sqrt(1 + m00 - m11 - m22); q = [0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s]; }
+  else if (m11 > m22) { const s = 2 * Math.sqrt(1 + m11 - m00 - m22); q = [(m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s]; }
+  else { const s = 2 * Math.sqrt(1 + m22 - m00 - m11); q = [(m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s]; }
+  const l = Math.hypot(...q);
+  return q.map(c => c / l);
+}
+
+/**
+ * The radius at which cards of total area `area` cover `fill` of a sphere
+ * with a `cap`-degree opening: that surface is 2πR²(1 + cos cap).
+ */
+export function sphereRadius(area, cap = 0, fill = SPHERE_FILL) {
+  const open = Math.min(179, Math.max(0, cap)) * Math.PI / 180;
+  return Math.sqrt(Math.max(0, area) / (fill * 2 * Math.PI * (1 + Math.cos(open))));
+}
+
+/**
+ * `n` seats on a sphere, as a Fibonacci lattice: seat k sits at height
+ * 1 − (k + ½)·2/n along `axis` and a golden angle around from seat k − 1, so
+ * every seat holds the same share of the surface and no two crowd. With a
+ * `cap` (degrees), the lattice leaves out the cap of that half-angle around
+ * `axis`, an opening toward whatever looks along −axis (by default the
+ * camera, which looks from +z), and spreads all n seats over the rest.
+ *
+ * Each seat's card lies on the surface: `facing` 'out' turns its face away
+ * from the centre, 'in' toward it; its top leans toward `up`.
+ *
+ * Returns typed arrays indexed by seat: positions (x, y, z), quaternions
+ * (x, y, z, w) and normals (the unit direction from the centre).
+ */
+export function sphereSlots(n, { radius = 1, cap = 0, facing = 'out', centre = [0, 0, 0], axis = [0, 0, 1], up = [0, 1, 0] } = {}) {
+  const count = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  const positions = new Float32Array(count * 3), quaternions = new Float32Array(count * 4), normals = new Float32Array(count * 3);
+  const a = unit(axis) || [0, 0, 1], e1 = unit(cross3(up, a)) || square(a), e2 = cross3(a, e1);
+  const c0 = Math.cos(Math.min(179, Math.max(0, Number(cap) || 0)) * Math.PI / 180), sign = facing === 'in' ? -1 : 1;
+  for (let k = 0; k < count; k++) {
+    const h = c0 - (c0 + 1) * (k + 0.5) / count, r = Math.sqrt(Math.max(0, 1 - h * h)), t = k * GOLDEN;
+    const u = [0, 1, 2].map(j => r * Math.cos(t) * e1[j] + r * Math.sin(t) * e2[j] + h * a[j]);
+    for (let j = 0; j < 3; j++) { normals[k * 3 + j] = u[j]; positions[k * 3 + j] = centre[j] + radius * u[j]; }
+    quaternions.set(faceQuaternion(u.map(v => v * sign), up), k * 4);
+  }
+  return { positions, quaternions, normals };
+}
+
+/**
+ * Sphere: lightness order from the top down, hue order around (header).
+ * Seats are taken in bands: the lightest items fill the highest seats, as
+ * many per band as a ring around the equator holds, and within a band they
+ * run in OKLCH hue order from the collection's emptiest hue (hueCut), greys
+ * first. Hue runs from the seam, which is where the viewer does not see card
+ * faces: behind a globe, in the near half of a bowl. Seen from the front,
+ * hue then increases from left to right either way.
+ */
+function arrangeSphere(clips, positions, sizes, edge, options = {}) {
+  const n = clips.length, rotations = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) rotations[i * 4 + 3] = 1;
+  const facing = SPHERE_FACINGS.includes(options?.facing) ? options.facing : DEFAULT_SPHERE.facing;
+  const cap = Number.isFinite(options?.cap) ? Math.min(MAX_CAP, Math.max(0, options.cap)) : DEFAULT_SPHERE.cap;
+  const lch = clips.map(clip => { const rgb = dominantColor(clip); return rgb ? oklch(oklab(rgb)) : null; });
+  const placed = [], unplaced = [];
+  for (let i = 0; i < n; i++) (lch[i] ? placed : unplaced).push(i);
+  // A collection with no palette on any item (a wall embedded over plain
+  // files, say) has no colour to order by, and was still asked for a sphere.
+  // Every item takes a seat, in the order given. When some items have a
+  // palette the rest still wait on the shelf: a seat among the coloured ones
+  // would claim a lightness and a hue they do not have.
+  const colourless = n > 0 && placed.length === 0;
+  if (colourless) placed.push(...unplaced.splice(0));
+  const m = placed.length;
+  let area = 0; for (const i of placed) area += sizes[i * 2] * sizes[i * 2 + 1];
+  // Large enough for the cards to cover SPHERE_FILL of it, and for nine in ten
+  // of them to clear their nearest neighbour side by side. The widest tenth
+  // (panoramas) shrink to fit instead of swelling the sphere for everyone.
+  const wide = quantile(placed.map(i => sizes[i * 2]), 0.9) / 0.95, unitGap = seatGap(m, 1, cap);
+  const radius = Math.max(edge * 2, sphereRadius(area, cap), wide / unitGap), room = 0.95 * unitGap * radius;
+  for (const i of placed) {
+    const k = Math.min(1, room / sizes[i * 2], room / sizes[i * 2 + 1]);
+    sizes[i * 2] *= k; sizes[i * 2 + 1] *= k;
+  }
+  const seats = sphereSlots(m, { radius, cap, facing });
+  const seam = facing === 'in' ? 1 : -1, sp = seats.positions;
+  // Angle around the vertical from the seam, increasing to the viewer's right.
+  const around = k => (Math.atan2(-sp[k * 3], seam * sp[k * 3 + 2]) + 2 * Math.PI) % (2 * Math.PI);
+  const hueStart = colourless ? 0 : hueCut(placed.filter(i => lch[i][1] >= GREY_CHROMA).map(i => lch[i][2]));
+  const hueKey = i => colourless ? i : lch[i][1] < GREY_CHROMA ? -1 : (lch[i][2] - hueStart + 360) % 360;
+  const seatOrder = [...Array(m).keys()].sort((a, b) => sp[b * 3 + 1] - sp[a * 3 + 1] || a - b);
+  const byLightness = colourless ? placed.slice() : placed.slice().sort((a, b) => lch[b][0] - lch[a][0] || a - b);
+  // Band height: one seat spacing on the unit sphere, so the equator's band is one ring deep.
+  const spacing = Math.sqrt(2 * Math.PI * (1 + Math.cos(cap * Math.PI / 180)) / Math.max(1, m));
+  const bands = Math.max(1, Math.min(m, Math.round(2 / spacing)));
+  const order = [];
+  for (let b = 0; b < bands; b++) {
+    const lo = Math.round(b * m / bands), hi = Math.round((b + 1) * m / bands);
+    const ring = seatOrder.slice(lo, hi).sort((p, q) => around(p) - around(q) || p - q);
+    const items = byLightness.slice(lo, hi).sort((p, q) => hueKey(p) - hueKey(q) || (colourless ? 0 : lch[q][0] - lch[p][0]) || p - q);
+    items.forEach((i, r) => {
+      const k = ring[r];
+      positions.set(sp.subarray(k * 3, k * 3 + 3), i * 3); rotations.set(seats.quaternions.subarray(k * 4, k * 4 + 4), i * 4);
+      order.push(i);
+    });
+  }
+  const labels = [], guides = [], exact = positions.slice();
+  if (colourless) {
+    // Says why this globe has no colour order, where the hue label would be.
+    labels.push({ text: `No palette · ${m} in order, top to bottom`, kind: 'axis', point: [-radius, 0, 0], side: 'left', gap: 16 });
+  } else if (m) {
+    // Stubs above and below the poles, outside the cards, carry the lightness range.
+    const top = lch[byLightness[0]][0], bottom = lch[byLightness[m - 1]][0], reach = radius + edge * 1.2;
+    const greys = placed.some(i => lch[i][1] < GREY_CHROMA) ? ' · greys first' : '';
+    guides.push([[0, radius, 0], [0, reach, 0]], [[0, -radius, 0], [0, -reach, 0]]);
+    labels.push({ text: `L ${top.toFixed(2)} · lightest`, kind: 'axis', point: [0, reach, 0], side: 'above', gap: 6 },
+      { text: `L ${bottom.toFixed(2)} · darkest`, kind: 'axis', point: [0, -reach, 0], side: 'below', gap: 6 },
+      { text: `around · OKLCH hue from ${hueStart}°${greys}`, kind: 'axis', point: [-radius, 0, 0], side: 'left', gap: 16 });
+  }
+  if (unplaced.length) shelve(clips, unplaced, positions, exact, sizes, edge, labels);
+  return { arrangement: 'sphere', edge, stretch: 1, positions, exact, sizes, rotations, order: order.concat(unplaced), labels, guides,
+    unplaced: unplaced.length, declumped: { moved: 0, maxShift: 0, meanShift: 0 },
+    sphere: { facing, cap, radius, bands, hueCut: hueStart, colourless }, bounds: boundsOf(positions, sizes, n) };
 }
 
 function boundsOf(positions, sizes, n) {

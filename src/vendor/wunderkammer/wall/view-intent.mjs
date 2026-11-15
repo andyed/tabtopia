@@ -1,9 +1,9 @@
 import { validateView, MAX_LIT } from './view-schema.mjs';
-import { ARRANGEMENTS, DEFAULT_ARRANGEMENT, AXES, isAxisName, isFront } from './float-space.mjs';
+import { ARRANGEMENTS, DEFAULT_ARRANGEMENT, AXES, isAxisName, isFront, SPHERE_FACINGS, MAX_CAP } from './float-space.mjs';
 
 // A readable live intent projects into the same ViewSpec as an exact permalink.
 // It does not evaluate collection membership or carry frozen corpus revisions.
-const SINGLE = new Set(['view', 'q', 'group', 'sort', 'direction', 'lens', 'travel', 'spread', 'arrange', 'focus', 'rail', 'frame', 'front', ...AXES]);
+const SINGLE = new Set(['view', 'q', 'group', 'sort', 'direction', 'lens', 'travel', 'spread', 'arrange', 'focus', 'rail', 'frame', 'front', 'facing', 'cap', ...AXES]);
 /** `lit` repeats, one item identity each: an identity is a URL and may hold a comma. */
 const recognized = key => SINGLE.has(key) || key === 'lit' || key.startsWith('facet.') || key.startsWith('highlight.');
 /** Camera framings a live link may ask for; the wall applies one after restoring the view. */
@@ -94,7 +94,8 @@ export function applyViewIntent(url, defaultView) {
     for (const key of ['travel', 'spread']) if (p.has(key)) { view.aisle[key] = bounded(p.get(key)); view.aisle.fitted = true; }
   }
   const axisParams = AXES.filter(axis => p.has(axis));
-  if (view.presentation.mode === 'float' || p.has('arrange') || axisParams.length || p.has('front')) {
+  const sphereParams = ['facing', 'cap'].filter(key => p.has(key));
+  if (view.presentation.mode === 'float' || p.has('arrange') || axisParams.length || p.has('front') || sphereParams.length) {
     // A live link names the arrangement; the camera is the receiver's Fit.
     view.float ??= { version: 1, arrangement: DEFAULT_ARRANGEMENT, position: [0, 0, 4000], target: [0, 0, 0], fitted: true, selection: null };
     if (p.has('arrange')) {
@@ -115,6 +116,17 @@ export function applyViewIntent(url, defaultView) {
       if (p.has('arrange') && p.get('arrange') !== 'cloud' || axisParams.length) invalid('front applies only to arrange=cloud');
       if (!isFront(p.get('front'))) invalid('front must name a dimension, with - first for lowest first');
       view.float.front = p.get('front'); view.float.arrangement = 'cloud'; view.float.fitted = true;
+    }
+    // facing and cap shape the sphere, so they imply arrange=sphere and no other.
+    if (sphereParams.length) {
+      if (p.has('arrange') && p.get('arrange') !== 'sphere' || axisParams.length || p.has('front')) invalid('facing and cap apply only to arrange=sphere');
+      const sphere = {};
+      if (p.has('facing')) { if (!SPHERE_FACINGS.includes(p.get('facing'))) invalid(`facing must be one of ${SPHERE_FACINGS.join(', ')}`); sphere.facing = p.get('facing'); }
+      if (p.has('cap')) {
+        if (!/^\d{1,3}$/.test(p.get('cap')) || Number(p.get('cap')) > MAX_CAP) invalid(`cap must be whole degrees from 0 to ${MAX_CAP}`);
+        sphere.cap = Number(p.get('cap'));
+      }
+      view.float.sphere = sphere; view.float.arrangement = 'sphere'; view.float.fitted = true;
     }
   }
   if (view.presentation.mode === '3d' && !view.spatial) view.spatial = {
@@ -151,5 +163,9 @@ export function targetedViewURL(view, base) {
   if (view.presentation.mode === 'float') p.set('arrange', view.float.arrangement);
   if (view.presentation.mode === 'float' && view.float.arrangement === 'axes') for (const axis of AXES) if (view.float.axes?.[axis]) p.set(axis, view.float.axes[axis]);
   if (view.presentation.mode === 'float' && view.float.arrangement === 'cloud' && view.float.front) p.set('front', view.float.front);
+  if (view.presentation.mode === 'float' && view.float.arrangement === 'sphere' && view.float.sphere) {
+    if (view.float.sphere.facing) p.set('facing', view.float.sphere.facing);
+    if (view.float.sphere.cap !== undefined) p.set('cap', String(view.float.sphere.cap));
+  }
   return u;
 }

@@ -341,6 +341,31 @@ export class AlbumWalls {
     return targets;
   }
 
+  /**
+   * Where each cover is drawn now, for VideoTiles (video-tiles.mjs): item i is
+   * `places[i]`, a `{ key, mesh, index }` (the aisle's own places by default;
+   * the warehouse adds its copies'). Strength is the cover's shade, so a
+   * dimmed cover keeps its poster, and a hidden rack draws nothing. A cover is
+   * the artwork's centre square, which a video's cover fit reproduces.
+   */
+  videoPlacement(places = this.places) {
+    const matrix = new THREE.Matrix4(), color = new THREE.Color();
+    const shown = node => { for (let n = node; n; n = n.parent) if (!n.visible) return false; return true; };
+    return {
+      count: places.length,
+      place: (i, centre, quaternion, size) => {
+        const p = places[i];
+        if (!p || !shown(p.mesh)) return 0;
+        p.mesh.getMatrixAt(p.index, matrix); matrix.premultiply(p.mesh.matrixWorld);
+        matrix.decompose(centre, quaternion, size);
+        size.set(size.x * TILE, size.y * TILE, 1);
+        if (this.highlightColors?.has(p.key)) return 1;
+        p.mesh.getColorAt(p.index, color);
+        return Math.min(color.r, color.g, color.b);
+      },
+    };
+  }
+
   /** A cover's centre in world space; walls move apart with the spread. */
   worldOf(place, out = new THREE.Vector3()) {
     const matrix = new THREE.Matrix4(); place.mesh.getMatrixAt(place.index, matrix); this.root.updateMatrixWorld(true);

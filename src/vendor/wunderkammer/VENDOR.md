@@ -1,6 +1,6 @@
 # Bundled Wunderkammer
 
-Wunderkammer v0.3.0, commit `6da1144f28f7fa840e0b0b59a4bc24fe1e193a5c`,
+Wunderkammer v0.4.0, commit `9abe5bbb3a85eed8c581baba0e53306a51fa6485`,
 from https://github.com/andyed/wunderkammer. MIT; see LICENSE.
 
 Three.js 0.186.1, from the published `three@0.186.1` npm tarball. MIT; see
@@ -8,7 +8,7 @@ three/LICENSE. Only its module/core runtime, OrbitControls and CSS3DRenderer are
 included. No remote executable code is loaded.
 
 Integration differences:
-- Bare Three.js imports resolve to this local copy; inline CDN import maps removed.
+- Bare Three.js imports (including the new `wall/video-tiles.mjs`) resolve to this local copy; inline CDN import maps removed.
 - The main page loads Tabtopia's local fonts and separate Wunderkammer theme.
 - Narrow windows use the overlay filter rail, including desktop windows.
 - The upstream development-only spatial sync script and maintenance log are not shipped.

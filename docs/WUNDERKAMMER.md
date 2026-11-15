@@ -40,12 +40,16 @@ The flat wall works without WebGL. Spatial views need WebGL; textured rendering
 also depends on the image host's CORS policy. A flat-wall image loading does not
 establish that its host permits use as a WebGL texture.
 
-The bundled runtime is pinned to Wunderkammer v0.3.0 and Three.js 0.186.1. See
+The bundled runtime is pinned to Wunderkammer v0.4.0 and Three.js 0.186.1. See
 `src/vendor/wunderkammer/VENDOR.md` and the bundled MIT licenses for provenance
 and the small integration patches. To update it, replace only runtime files from
 the selected release, retain the local Three imports and Tabtopia stylesheet
 links, and rerun the synthetic collection and browser tests. Do not copy upstream
 sample collections, generated exports, machine notes or user inventory.
+
+Zooming into a cover no longer opens its details by itself (Wunderkammer
+v0.4.0); a click still does. Adding `?zoomdetail=on` to the viewer URL restores
+the earlier behaviour.
 
 ## Checks
 

@@ -1,7 +1,7 @@
 # Muriel spatial runtime
 
-Vendored by Wunderkammer v0.3.0 from [Muriel](https://github.com/andyed/muriel),
-`render_assets/_lib/` at `03d71b94b9f27302dcfeb9526d13af0a4e428174`.
+Vendored by Wunderkammer v0.4.0 from [Muriel](https://github.com/andyed/muriel),
+`render_assets/_lib/` at `19be335decb1ded211b070ed965ecfff04258234`.
 MIT, copyright 2026 Andy Edmonds; see the bundled Wunderkammer LICENSE.
 
 Tabtopia consumes the released Wunderkammer copy. Its Three.js imports have been

@@ -23,9 +23,11 @@ import { clipKey } from './context-clusters.mjs';
 import { perf } from './instrument.mjs';
 import { parseFront, isFront, orderValues, isTimeKey } from './float-space.mjs';
 import { ARRANGEMENTS, DEFAULT_ARRANGEMENT, isArrangement, arrange, AXES, AXIS_LABELS, axisDimensions, resolveAxes, validAxes, clipAttributeKeys, attributeAxis, nearestAlong, describeItem } from './float-space.mjs';
+import { DEFAULT_SPHERE, validSphere } from './float-space.mjs';
 import { arrangeMenu, STACKS } from './arrange-menu.mjs';
 import { NEUTRAL_NOUNS, counted } from './nouns.mjs';
 import { Callout, JumpBox, announcer, titleMatches as matchTitles } from './keyboard-path.mjs';
+import { VideoTiles, fieldPlacement } from './video-tiles.mjs';
 
 /** Brightness of an item outside the scope. Dim, not gone: the space keeps its shape. */
 export const FLOAT_DIM = 0.25;
@@ -43,7 +45,25 @@ const ease = t => t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 const FIT_DIRECTION = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(70), THREE.MathUtils.degToRad(32));
 const AXES_DIRECTION = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(74), THREE.MathUtils.degToRad(20));
 const FRONT = new THREE.Vector3(0, 0, 1);
-const fitDirection = arrangement => arrangement === 'az' || arrangement === 'cloud' ? FRONT : arrangement === 'axes' ? AXES_DIRECTION : FIT_DIRECTION;
+const fitDirection = arrangement => arrangement === 'az' || arrangement === 'cloud' || arrangement === 'sphere' ? FRONT : arrangement === 'axes' ? AXES_DIRECTION : FIT_DIRECTION;
+/** The sphere's menus. An opening a link names that is not listed here is added to the menu. */
+const FACING_CHOICES = [['out', 'Outward · a globe'], ['in', 'Inward · a bowl']];
+const CAP_CHOICES = [0, 30, 45, 60, 90];
+/** Sphere options as the view keeps them: null for the defaults, else every field. */
+const sphereOrNull = options => {
+  const next = { ...DEFAULT_SPHERE, ...(options || {}) };
+  return next.facing === DEFAULT_SPHERE.facing && next.cap === DEFAULT_SPHERE.cap ? null : next;
+};
+/** Is NDC point (x, y) inside the convex quad `corners` ([x, y] × 4, in order)? */
+function insideQuad(x, y, corners) {
+  let sign = 0;
+  for (let k = 0; k < 4; k++) {
+    const [ax, ay] = corners[k], [bx, by] = corners[(k + 1) % 4], cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+    if (cross === 0) continue;
+    if (!sign) sign = Math.sign(cross); else if (Math.sign(cross) !== sign) return false;
+  }
+  return true;
+}
 
 /**
  * Dimming, patched into the vendored TileField fragment shader on this view's
@@ -109,6 +129,8 @@ export class FloatView {
     this.lit = null;
     // The cloud's order within each tier (front=): a dimension id, '-' first for lowest first.
     this.front = null; this.frontCache = null;
+    // The sphere's facing and opening (facing=, cap=); null for the defaults.
+    this.sphere = null;
     this.layout = null; this.labels = []; this.listeners = []; this.frameTimes = []; this.renderCount = 0;
     this.host.classList.add('float-host'); this.host.replaceChildren();
     this.scene = new THREE.Scene(); this.scene.background = new THREE.Color('#050510');
@@ -139,8 +161,18 @@ export class FloatView {
       select.setAttribute('aria-label', `${AXIS_LABELS[axis]} axis`);
       label.append(element('span', '', AXIS_LABELS[axis]), select); this.axesGroup.append(label); this.axisSelects.set(axis, select);
     }
+    // Two menus, shown while Sphere is the arrangement: which way the cards face, and the opening toward the camera.
+    this.sphereGroup = element('div', 'float-sphere'); this.sphereGroup.setAttribute('role', 'group'); this.sphereGroup.setAttribute('aria-label', 'Sphere');
+    const sphereSelect = (text, name) => {
+      const label = element('label'), select = element('select');
+      select.setAttribute('aria-label', name); label.append(element('span', '', text), select); this.sphereGroup.append(label);
+      return select;
+    };
+    this.facingSelect = sphereSelect('Cards face', 'Which way the cards face');
+    this.facingSelect.append(...FACING_CHOICES.map(([value, text]) => new Option(text, value)));
+    this.capSelect = sphereSelect('Opening', 'Opening toward the camera');
     this.scopeNote = element('span', 'float-scope');
-    this.toolbar.append(this.arrangeGroup, this.axesGroup, this.scopeNote);
+    this.toolbar.append(this.arrangeGroup, this.axesGroup, this.sphereGroup, this.scopeNote);
     // The keyboard path to items is the space itself: arrows move the selection
     // along the arrangement's axes, / jumps to a title, Enter opens. A callout at
     // the selected item says where it sits in the arrangement's terms, and a
@@ -187,6 +219,8 @@ export class FloatView {
     } catch (error) { this.contextLost = true; this.host.dataset.graphicsState = 'unavailable'; this.graphicsError = error.message; }
     this.host.append(this.overlay, this.callout.node, this.status, this.jump.node, this.toolbar, this.help, this.announcer);
     for (const [axis, select] of this.axisSelects) this.listen(select, 'change', () => { if (this.chooseAxis(axis, select.value)) this.interact(); });
+    this.listen(this.facingSelect, 'change', () => { if (this.setSphere({ ...this.sphereOptions(), facing: this.facingSelect.value })) this.interact(); });
+    this.listen(this.capSelect, 'change', () => { if (this.setSphere({ ...this.sphereOptions(), cap: Number(this.capSelect.value) })) this.interact(); });
     this.listen(this.fallback, 'click', () => this.callbacks.onFlatWall?.());
     this.syncRadios();
     // Debug handle, as in the 3D view (window.__cwSpatial): atlas failures and
@@ -217,6 +251,7 @@ export class FloatView {
     const attributeKeys = this.callbacks.axisKeys?.() ?? clipAttributeKeys(this.clips);
     this.dimensions = axisDimensions(this.clips, attributeKeys, this.callbacks.labelFor);
     this.indexOf = new Map(keys.map((key, i) => [key, i])); this.inScope = new Uint8Array(this.count).fill(1);
+    this.videos?.dispose(); this.videos = null;
     this.field?.dispose(); this.field = null;
     if (!this.renderer) return;
     if (spriteCovers.available) { spriteCovers.warm(64); spriteCovers.warm(160); }
@@ -234,11 +269,17 @@ export class FloatView {
     });
     this.field.count = this.count; this.field.mesh.count = this.count;
     this.field.setRenderer(this.renderer);
+    // Items with a video play it over their cover (video-tiles.mjs).
+    this.videos = new VideoTiles({
+      scene: this.scene, placement: fieldPlacement(this.field),
+      sourceOf: i => clips[i]?.video || null, keyOf: i => this.keys[i],
+      onFrame: () => this.invalidate(),
+    });
     this.dimMode = patchFragment(this.field.material) ? 'brightness' : 'hidden';
     this.resolveAxes();
-    this.layout = arrange(this.clips, this.arrangement, this.arrangeOptions());
-    const q = this.camera.quaternion, p = this.layout.positions, s = this.layout.sizes;
-    for (let i = 0; i < this.count; i++) this.field.place(i, p[i * 3], p[i * 3 + 1], p[i * 3 + 2], s[i * 2], s[i * 2 + 1], q);
+    this.layout = arrange(this.clips, this.arrangement, this.arrangeOptions()); this.unturning = false;
+    const p = this.layout.positions, s = this.layout.sizes;
+    for (let i = 0; i < this.count; i++) this.field.place(i, p[i * 3], p[i * 3 + 1], p[i * 3 + 2], s[i * 2], s[i * 2 + 1], this.rotationOf(i));
     this.field.layout(); this.applyLayoutDecor();
     this.selection = this.indexOf.has(this.selection) ? this.selection : null;
     if (this.fitted) this.fitView({ animate: false, quiet: true });
@@ -314,7 +355,58 @@ export class FloatView {
     return true;
   }
   resolveAxes() { this.axes = resolveAxes(this.dimensions, this.requestedAxes); this.fillAxisMenus(); }
-  arrangeOptions() { return { axes: this.axes, labelFor: this.callbacks.labelFor, priority: this.arrangement === 'cloud' ? this.cloudPriority() : undefined }; }
+  arrangeOptions() { return { axes: this.axes, labelFor: this.callbacks.labelFor, priority: this.arrangement === 'cloud' ? this.cloudPriority() : undefined, sphere: this.sphereOptions() }; }
+  /** The sphere's facing and opening in force: the defaults unless set. */
+  sphereOptions() { return this.sphere ?? DEFAULT_SPHERE; }
+  /**
+   * Set the sphere's facing and opening (facing=, cap=). Fields left out take
+   * the defaults; null restores them. Re-lays the sphere when it is showing.
+   */
+  setSphere(options, { animate = true } = {}) {
+    if (options !== null && !validSphere(options)) { this.syncRadios(); return false; }
+    const before = this.sphereOptions(), next = sphereOrNull(options), after = next ?? DEFAULT_SPHERE;
+    this.sphere = next; this.syncRadios();
+    const changed = before.facing !== after.facing || before.cap !== after.cap;
+    if (changed && this.field && this.arrangement === 'sphere') this.relayout({ animate });
+    return changed;
+  }
+  /**
+   * Item `index`'s orientation in the current layout: its own on the sphere,
+   * whose cards lie on the surface; the camera's everywhere else.
+   */
+  rotationOf(index) {
+    const r = this.layout?.rotations;
+    return r ? (this.layoutQ ??= new THREE.Quaternion()).fromArray(r, index * 4) : this.camera.quaternion;
+  }
+  /** Do the cards lie on the arrangement's surface rather than face the camera? */
+  oriented() { return !!this.layout?.rotations; }
+  /** The direction item `index`'s face points: as drawn now, or with `target`, in the layout it is travelling to. */
+  faceNormal(index, out = new THREE.Vector3(), { target = false } = {}) {
+    const q = target && this.layout?.rotations ? this.rotationOf(index) : this.field.orientationOf(index, this.faceQ ??= new THREE.Quaternion());
+    return out.set(0, 0, 1).applyQuaternion(q);
+  }
+  /**
+   * Can the camera see item `index`'s face? Always, for cards turned to it. A
+   * sphere's card with its back to the camera is not drawn (the field draws
+   * front faces only), so a pointer or an arrow passes over it too.
+   */
+  facesCamera(index) {
+    if (!this.oriented() || !this.field) return true;
+    const c = this.centreOf(index, this.faceC ??= new THREE.Vector3());
+    return this.faceNormal(index, this.faceN ??= new THREE.Vector3()).dot(c.sub(this.camera.position)) < 0;
+  }
+  /**
+   * The direction to look at a sphere's card from: along its face, leaned off
+   * the vertical at the poles, where the orbit camera's up would be undefined.
+   */
+  approachFor(index) {
+    const d = this.faceNormal(index, new THREE.Vector3(), { target: true });
+    if (Math.abs(d.y) > 0.9) {
+      const flat = new THREE.Vector3(d.x, 0, d.z); if (flat.lengthSq() < 1e-9) flat.set(0, 0, 1);
+      flat.normalize().multiplyScalar(Math.sqrt(1 - 0.81)); d.set(flat.x, Math.sign(d.y) * 0.9, flat.z);
+    }
+    return d.normalize();
+  }
   /**
    * Who stands in front of the cloud: lit items, then the rest of the scope,
    * then everything outside it. Within each tier, `front` orders them (highest
@@ -367,13 +459,16 @@ export class FloatView {
     }
   }
   relayout({ animate = true } = {}) {
+    const wasOriented = this.oriented();
     this.layout = arrange(this.clips, this.arrangement, this.arrangeOptions());
     this.syncCallout(); // a new arrangement reads the item differently
-    const p = this.layout.positions, s = this.layout.sizes, q = this.camera.quaternion, still = !animate || reducedMotion();
+    const p = this.layout.positions, s = this.layout.sizes, still = !animate || reducedMotion();
     for (let i = 0; i < this.count; i++) {
-      if (still) { this.field.place(i, p[i * 3], p[i * 3 + 1], p[i * 3 + 2], s[i * 2], s[i * 2 + 1], q); continue; }
-      this.field.moveTo(i, p[i * 3], p[i * 3 + 1], p[i * 3 + 2], s[i * 2], s[i * 2 + 1], q);
+      if (still) { this.field.place(i, p[i * 3], p[i * 3 + 1], p[i * 3 + 2], s[i * 2], s[i * 2 + 1], this.rotationOf(i)); continue; }
+      this.field.moveTo(i, p[i * 3], p[i * 3 + 1], p[i * 3 + 2], s[i * 2], s[i * 2 + 1], this.rotationOf(i));
     }
+    // Leaving the sphere, cards turn to the camera as they travel (billboard).
+    this.unturning = wasOriented && !this.oriented() && !still;
     if (still) this.field.layout();
     this.applyLayoutDecor();
     if (this.fitted) this.fitView({ animate: !still, quiet: true });
@@ -383,6 +478,11 @@ export class FloatView {
     for (const [name, input] of this.radios) input.checked = name === this.arrangement;
     this.axesGroup.hidden = this.arrangement !== 'axes';
     for (const [axis, select] of this.axisSelects) select.value = this.axes?.[axis] || '';
+    this.sphereGroup.hidden = this.arrangement !== 'sphere';
+    const { facing, cap } = this.sphereOptions(), caps = [...new Set([...CAP_CHOICES, cap])].sort((a, b) => a - b);
+    if ([...this.capSelect.options].map(o => o.value).join() !== caps.join())
+      this.capSelect.replaceChildren(...caps.map(deg => new Option(deg ? `${deg}°` : 'None', String(deg))));
+    this.facingSelect.value = facing; this.capSelect.value = String(cap);
   }
 
   applyLayoutDecor() {
@@ -454,12 +554,20 @@ export class FloatView {
    */
   moveSelection(screen) {
     if (!this.layout || !this.field) return;
-    const scoped = this.scoped(); if (!scoped.length) return;
+    // On the sphere, only cards showing their faces: the far side is not drawn.
+    const scoped = this.scoped().filter(i => this.facesCamera(i)); if (!scoped.length) return;
     const p = this.layout.positions, from = this.indexOf.get(this.selection);
     if (from === undefined || !this.inScope[from]) {
       const t = this.controls?.target || new THREE.Vector3();
       let near = scoped[0], best = Infinity;
-      for (const i of scoped) { const d = (p[i * 3] - t.x) ** 2 + (p[i * 3 + 1] - t.y) ** 2 + (p[i * 3 + 2] - t.z) ** 2; if (d < best) { best = d; near = i; } }
+      if (this.oriented()) {
+        // Every seat is as far from the sphere's centre as the next: take the one nearest the line of sight.
+        const eye = this.camera.position, look = t.clone().sub(eye).normalize();
+        for (const i of scoped) {
+          const v = new THREE.Vector3(p[i * 3], p[i * 3 + 1], p[i * 3 + 2]).sub(eye), along = v.dot(look), d = v.lengthSq() - along * along;
+          if (along > 0 && d < best) { best = d; near = i; }
+        }
+      } else for (const i of scoped) { const d = (p[i * 3] - t.x) ** 2 + (p[i * 3 + 1] - t.y) ** 2 + (p[i * 3 + 2] - t.z) ** 2; if (d < best) { best = d; near = i; } }
       this.keyChoose(this.keys[near]); return;
     }
     const { k, sign } = this.screenAxis(screen), next = nearestAlong(p, scoped, from, k, sign);
@@ -505,7 +613,8 @@ export class FloatView {
     const distance = Math.max(h / (2 * tanV * 0.38), w / (2 * tanH * 0.5), 30);
     const from = this.camera.position.clone().sub(centre);
     if (from.lengthSq() < 1e-6) from.copy(FIT_DIRECTION);
-    const direction = from.normalize(), position = centre.clone().addScaledVector(direction, distance), target = centre.clone();
+    // A sphere's card is seen along its face; from where the camera is, it may be the back.
+    const direction = this.oriented() ? this.approachFor(index) : from.normalize(), position = centre.clone().addScaledVector(direction, distance), target = centre.clone();
     // Land beside the detail pane when it covers part of the stage.
     const obscured = clamp(this.callbacks.obscuredRight?.() || 0, 0, this.width * 0.7);
     if (obscured > 0 && this.width) {
@@ -544,7 +653,7 @@ export class FloatView {
       const i = indices[0], centre = new THREE.Vector3().fromArray(this.layout.positions, i * 3);
       const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)), tanH = tanV * this.camera.aspect;
       const distance = Math.max(this.layout.sizes[i * 2 + 1] / (2 * tanV * 0.38), this.layout.sizes[i * 2] / (2 * tanH * 0.5), 30);
-      pose = { position: centre.clone().addScaledVector(fitDirection(this.arrangement), distance), target: centre };
+      pose = { position: centre.clone().addScaledVector(this.oriented() ? this.approachFor(i) : fitDirection(this.arrangement), distance), target: centre };
     } else pose = this.fitPose({ only: indices, labels: false });
     this.fitted = false; this.tween = null;
     this.moveCamera(pose.position, pose.target, { animate });
@@ -663,25 +772,38 @@ export class FloatView {
 
   centreOf(index, out) { return this.field ? this.field.worldCentre(index, out) : out.set(0, 0, 0); }
   /**
-   * The in-scope tile under a client point, nearest first. Tiles face the
-   * camera, so a projected centre and a projected half-size are exact. Dimmed
-   * tiles are skipped: a click passes through them to what the scope holds.
+   * The in-scope tile under a client point, nearest first. Tiles that face
+   * the camera are tested by projected centre and half-size, which is exact;
+   * a sphere's cards, which lie on its surface, by their four projected
+   * corners, and only those showing their faces. Dimmed tiles are skipped: a
+   * click passes through them to what the scope holds.
    */
   pick(clientX, clientY) {
     if (!this.field || this.contextLost || !this.width) return -1;
     const rect = this.canvas.getBoundingClientRect(); if (!rect.width || !rect.height) return -1;
     const x = (clientX - rect.left) / rect.width * 2 - 1, y = -(clientY - rect.top) / rect.height * 2 + 1;
     const v = new THREE.Vector3(), e = this.camera.matrixWorldInverse.elements;
-    const focal = 1 / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const focal = 1 / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)), oriented = this.oriented();
+    const q = new THREE.Quaternion(), corner = new THREE.Vector3(), corners = [[0, 0], [0, 0], [0, 0], [0, 0]];
     let best = -1, bestDepth = Infinity;
     for (let i = 0; i < this.count; i++) {
-      if (!this.inScope[i]) continue;
+      if (!this.inScope[i] || oriented && !this.facesCamera(i)) continue;
       this.centreOf(i, v);
       const depth = -(e[2] * v.x + e[6] * v.y + e[10] * v.z + e[14]);
-      if (depth <= this.camera.near) continue;
+      if (depth <= this.camera.near || depth >= bestDepth) continue;
+      const w = this.field.sizes[i * 2] / 2, h = this.field.sizes[i * 2 + 1] / 2;
+      if (oriented) {
+        this.field.orientationOf(i, q);
+        for (let k = 0; k < 4; k++) {
+          corner.set(k === 0 || k === 3 ? -w : w, k < 2 ? h : -h, 0).applyQuaternion(q).add(v).project(this.camera);
+          corners[k][0] = corner.x; corners[k][1] = corner.y;
+        }
+        if (insideQuad(x, y, corners)) { best = i; bestDepth = depth; }
+        continue;
+      }
       v.project(this.camera);
-      const hw = this.field.sizes[i * 2] / 2 * focal / depth / this.camera.aspect, hh = this.field.sizes[i * 2 + 1] / 2 * focal / depth;
-      if (Math.abs(x - v.x) <= hw && Math.abs(y - v.y) <= hh && depth < bestDepth) { best = i; bestDepth = depth; }
+      const hw = w * focal / depth / this.camera.aspect, hh = h * focal / depth;
+      if (Math.abs(x - v.x) <= hw && Math.abs(y - v.y) <= hh) { best = i; bestDepth = depth; }
     }
     return best;
   }
@@ -700,13 +822,15 @@ export class FloatView {
   /* ------------------------------------------------------------ state --- */
 
   capture() {
-    return { version: 1, arrangement: this.arrangement, ...(this.axes ? { axes: { ...this.axes } } : {}), ...(this.front ? { front: this.front } : {}), position: this.camera.position.toArray(),
+    return { version: 1, arrangement: this.arrangement, ...(this.axes ? { axes: { ...this.axes } } : {}), ...(this.front ? { front: this.front } : {}),
+      ...(this.sphere ? { sphere: { ...this.sphere } } : {}), position: this.camera.position.toArray(),
       target: this.controls?.target.toArray() || [0, 0, 0], fitted: this.fitted, selection: this.selection };
   }
   restore(state) {
     if (!state || state.version !== 1 || !isArrangement(state.arrangement) || !vector(state.position) || !vector(state.target)) return false;
     if (state.axes !== undefined && !validAxes(state.axes)) return false;
     if (state.front !== undefined && !isFront(state.front)) return false;
+    if (state.sphere !== undefined && !validSphere(state.sphere)) return false;
     const distance = new THREE.Vector3().fromArray(state.position).distanceTo(new THREE.Vector3().fromArray(state.target));
     if (distance < .1 || distance > 1e5) return false;
     // Axes first, quietly: the arrangement change below then lays out once.
@@ -718,6 +842,9 @@ export class FloatView {
     // The cloud's order, quietly too: a cloud staying a cloud lays out here, any other change below.
     if (this.arrangement === 'cloud' && state.arrangement === 'cloud') this.setFront(state.front ?? null, { animate: false });
     else this.front = state.front ?? null;
+    // The sphere's facing and opening, the same way.
+    if (this.arrangement === 'sphere' && state.arrangement === 'sphere') this.setSphere(state.sphere ?? null, { animate: false });
+    else this.sphere = sphereOrNull(state.sphere);
     this.setArrangement(state.arrangement, { animate: false });
     this.selection = this.indexOf.has(state.selection) ? state.selection : null;
     this.keyboardSelection = false; this.syncCallout();
@@ -793,6 +920,7 @@ export class FloatView {
       this.billboard();
       this.field?.update(this.camera, now);
       this.field?.takeDirty();
+      this.videos?.update(this.camera);
       endPass();
       this.render();
       this.frameTimes.push(performance.now() - started); if (this.frameTimes.length > 600) this.frameTimes.shift();
@@ -808,12 +936,23 @@ export class FloatView {
     if (flying || moving || loading || this.tween || this.dirty) this.frame = requestAnimationFrame(t => this.tick(t));
     else this.lastTick = undefined;
   }
-  /** Every tile faces the camera: a cover seen edge-on carries no information. */
+  /**
+   * Every tile faces the camera: a cover seen edge-on carries no information.
+   * Not on the sphere, whose cards lie on its surface at the arrangement's own
+   * orientation (layout.rotations): there the step is skipped, and travelling
+   * cards turn by the field's own motion.
+   */
   billboard() {
-    if (!this.field) return;
+    if (!this.field || this.oriented()) return;
     const q = this.camera.quaternion, f = this.field, c = f.centres, s = f.sizes, target = f.targetRot;
+    // Leaving the sphere, a card still travelling keeps turning toward the
+    // camera (the field slerps to targetRot) instead of snapping to it on the
+    // first frame. The set is the vendored field's own, read as the atlas
+    // counters are above.
+    const turning = this.unturning && f.moving > 0 ? f._moving : null;
+    if (!turning) this.unturning = false;
     for (let i = 0; i < this.count; i++) {
-      f.place(i, c[i * 3], c[i * 3 + 1], c[i * 3 + 2], s[i * 2], s[i * 2 + 1], q);
+      if (!turning?.has(i)) f.place(i, c[i * 3], c[i * 3 + 1], c[i * 3 + 2], s[i * 2], s[i * 2 + 1], q);
       target[i * 4] = q.x; target[i * 4 + 1] = q.y; target[i * 4 + 2] = q.z; target[i * 4 + 3] = q.w;
     }
     f.mesh.instanceMatrix.needsUpdate = true;
@@ -824,7 +963,8 @@ export class FloatView {
     const ringKey = this.hoverKey || this.selection, ringIndex = ringKey != null ? this.indexOf.get(ringKey) : undefined;
     this.ring.visible = ringIndex !== undefined && !!this.field;
     if (this.ring.visible) {
-      this.centreOf(ringIndex, this.ring.position); this.ring.quaternion.copy(this.camera.quaternion);
+      // The ring lies on the tile, which faces the camera unless it lies on the sphere.
+      this.centreOf(ringIndex, this.ring.position); this.field.orientationOf(ringIndex, this.ring.quaternion);
       this.ring.scale.set(this.field.sizes[ringIndex * 2] * 1.08, this.field.sizes[ringIndex * 2 + 1] * 1.08, 1);
     }
     this.renderer.render(this.scene, this.camera); this.renderCount++;
@@ -863,7 +1003,7 @@ export class FloatView {
   placeCallout(occupied, t) {
     if (this.callout.node.hidden || !this.field) return;
     const index = this.indexOf.get(this.selection); if (index === undefined) return;
-    const c = this.centreOf(index, new THREE.Vector3()), q = this.camera.quaternion;
+    const c = this.centreOf(index, new THREE.Vector3()), q = this.field.orientationOf(index, new THREE.Quaternion());
     const right = c.clone().addScaledVector(new THREE.Vector3(1, 0, 0).applyQuaternion(q), this.field.sizes[index * 2] / 2);
     const top = c.clone().addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(q), this.field.sizes[index * 2 + 1] / 2);
     c.project(this.camera); right.project(this.camera); top.project(this.camera);
@@ -912,7 +1052,7 @@ export class FloatView {
     if (f && !this.contextLost) for (let i = 0; i < this.count; i++) {
       if (!this.inScope[i]) continue;
       this.centreOf(i, v).project(this.camera);
-      if (v.z > -1 && v.z < 1 && Math.abs(v.x) < 0.8 && Math.abs(v.y) < 0.6) pickTargets.push({ key: this.keys[i], x: v.x, y: v.y });
+      if (v.z > -1 && v.z < 1 && Math.abs(v.x) < 0.8 && Math.abs(v.y) < 0.6 && this.facesCamera(i)) pickTargets.push({ key: this.keys[i], x: v.x, y: v.y });
     }
     let farResident = 0; if (f) for (let i = 0; i < this.count; i++) if (f.atlases.farSlot[i] >= 0) farResident++;
     // Where each item is on screen: NDC x, y, camera depth, and the share of
@@ -931,7 +1071,10 @@ export class FloatView {
       opacity: f ? byKey(i => r(f.aOpacity.array[i])) : {}, screen, stretch: this.layout?.stretch ?? 1,
       moving: f?.moving || 0, flying: !!this.tween, edge: this.layout?.edge || 0, declumped: this.layout?.declumped || null,
       unplaced: this.layout?.unplaced || 0, labels: this.labels.map(l => l.node.textContent),
-      axes: this.axes, axisInfo: this.layout?.axisInfo || null,
+      axes: this.axes, axisInfo: this.layout?.axisInfo || null, sphere: this.layout?.sphere || null,
+      // The way each tile's face points, as drawn now.
+      normals: f ? byKey(i => this.faceNormal(i, v).toArray().map(r)) : {},
+      facing: f ? byKey(i => this.facesCamera(i)) : {},
       callout: this.callout.text, announcement: this.announcer.textContent, dimensions: this.dimensions.map(d => d.id), lit: this.lit ? [...this.lit] : null,
       state: this.capture(), selection: this.selection, renderCount: this.renderCount, farResident,
       failed: f?.atlases._failed?.size ?? 0, loading: f ? (f.atlases._inflight || 0) + f.atlases._farQueue.length + f.atlases._nearQueue.length + (f.atlases.far._dirty || f.atlases.near._dirty ? 1 : 0) : 0,
@@ -940,7 +1083,7 @@ export class FloatView {
   dispose() {
     if (this.disposed) return; this.disposed = true; this.cancelHover(); if (this.frame) cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect(); for (const [node, name, fn] of this.listeners) node.removeEventListener(name, fn);
-    this.controls?.dispose(); this.field?.dispose(); this.guides.geometry.dispose(); this.ring.geometry.dispose();
+    this.controls?.dispose(); this.videos?.dispose(); this.field?.dispose(); this.guides.geometry.dispose(); this.ring.geometry.dispose();
     this.renderer?.dispose(); this.renderer?.forceContextLoss(); this.host.replaceChildren();
   }
 }
