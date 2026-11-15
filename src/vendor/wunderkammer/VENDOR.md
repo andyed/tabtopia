@@ -1,6 +1,6 @@
 # Bundled Wunderkammer
 
-Wunderkammer v0.4.0, commit `9abe5bbb3a85eed8c581baba0e53306a51fa6485`,
+Wunderkammer v0.5.0, commit `9e0071a992d1437a6670376fdc3cc5cab40c9dbd`,
 from https://github.com/andyed/wunderkammer. MIT; see LICENSE.
 
 Three.js 0.186.1, from the published `three@0.186.1` npm tarball. MIT; see

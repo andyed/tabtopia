@@ -589,12 +589,12 @@ function viewNotes() {
       brief = `Axes: ${AXES.map(axis => `${axis} ${figureLabels.axes[axis] ?? title(axis).replace(/\s*\(.*?\)|\s+from\s+\d+°/g, '')}`).join(' · ')}`;
       name = 'Axes';
     } else if (arrangement === 'az') view = name = 'Shelved A–Z by title';
-    else if (arrangement === 'cloud') {
-      // The cloud's only claim is its order; the note says what decided it.
+    else if (arrangement === 'cloud' || arrangement === 'mountain') {
+      // The cloud's only claim is its order, and the mountain's too; the note says what decided it.
       const lead = state.lit ? 'the lit items in front, the rest behind' : state.filtered.length < state.clips.length ? 'the scope in front, the rest behind' : '';
       const order = state.float.describeFront();
-      view = `Cloud${lead || order ? ': ' : ''}${[lead, order && (lead ? `each ${order}` : order)].filter(Boolean).join('; ')}`;
-      name = 'Cloud';
+      name = arrangement === 'cloud' ? 'Cloud' : 'Mountain';
+      view = `${name}${lead || order ? ': ' : ''}${[lead, order && (lead ? `each ${order}` : order)].filter(Boolean).join('; ')}`;
     } else if (arrangement === 'sphere') {
       const { facing, cap } = state.float.sphereOptions();
       const shape = facing === 'in' ? `facing in${cap ? `, open ${cap}°` : ''}` : cap ? `open ${cap}°` : '';

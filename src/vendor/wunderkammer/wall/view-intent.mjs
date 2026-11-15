@@ -1,5 +1,5 @@
 import { validateView, MAX_LIT } from './view-schema.mjs';
-import { ARRANGEMENTS, DEFAULT_ARRANGEMENT, AXES, isAxisName, isFront, SPHERE_FACINGS, MAX_CAP } from './float-space.mjs';
+import { ARRANGEMENTS, DEFAULT_ARRANGEMENT, AXES, isAxisName, isFront, isOrdered, SPHERE_FACINGS, MAX_CAP } from './float-space.mjs';
 
 // A readable live intent projects into the same ViewSpec as an exact permalink.
 // It does not evaluate collection membership or carry frozen corpus revisions.
@@ -111,11 +111,11 @@ export function applyViewIntent(url, defaultView) {
       if (new Set(Object.values(axes)).size !== axisParams.length) invalid('across, up and depth must name different dimensions');
       view.float.axes = axes; view.float.arrangement = 'axes'; view.float.fitted = true;
     }
-    // front orders a cloud, so it implies arrange=cloud and no other.
+    // front orders a cloud or a mountain: alone it implies arrange=cloud, and it goes with no other.
     if (p.has('front')) {
-      if (p.has('arrange') && p.get('arrange') !== 'cloud' || axisParams.length) invalid('front applies only to arrange=cloud');
+      if (p.has('arrange') && !isOrdered(p.get('arrange')) || axisParams.length) invalid('front applies only to arrange=cloud and arrange=mountain');
       if (!isFront(p.get('front'))) invalid('front must name a dimension, with - first for lowest first');
-      view.float.front = p.get('front'); view.float.arrangement = 'cloud'; view.float.fitted = true;
+      view.float.front = p.get('front'); view.float.arrangement = p.get('arrange') === 'mountain' ? 'mountain' : 'cloud'; view.float.fitted = true;
     }
     // facing and cap shape the sphere, so they imply arrange=sphere and no other.
     if (sphereParams.length) {
@@ -162,7 +162,7 @@ export function targetedViewURL(view, base) {
   }
   if (view.presentation.mode === 'float') p.set('arrange', view.float.arrangement);
   if (view.presentation.mode === 'float' && view.float.arrangement === 'axes') for (const axis of AXES) if (view.float.axes?.[axis]) p.set(axis, view.float.axes[axis]);
-  if (view.presentation.mode === 'float' && view.float.arrangement === 'cloud' && view.float.front) p.set('front', view.float.front);
+  if (view.presentation.mode === 'float' && isOrdered(view.float.arrangement) && view.float.front) p.set('front', view.float.front);
   if (view.presentation.mode === 'float' && view.float.arrangement === 'sphere' && view.float.sphere) {
     if (view.float.sphere.facing) p.set('facing', view.float.sphere.facing);
     if (view.float.sphere.cap !== undefined) p.set('cap', String(view.float.sphere.cap));

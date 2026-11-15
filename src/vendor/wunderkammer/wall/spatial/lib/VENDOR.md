@@ -1,6 +1,6 @@
 # Muriel spatial runtime
 
-Vendored by Wunderkammer v0.4.0 from [Muriel](https://github.com/andyed/muriel),
+Vendored by Wunderkammer v0.5.0 from [Muriel](https://github.com/andyed/muriel),
 `render_assets/_lib/` at `19be335decb1ded211b070ed965ecfff04258234`.
 MIT, copyright 2026 Andy Edmonds; see the bundled Wunderkammer LICENSE.
 

@@ -31,8 +31,12 @@ export const WORLD = 2000;
 export const MAX_STRETCH = 4;
 /** Cylinder radius for OKLCH and HSL. */
 export const RADIUS = 700;
-export const ARRANGEMENTS = Object.freeze(['oklab', 'oklch', 'hsl', 'az', 'axes', 'cloud', 'sphere']);
-export const ARRANGEMENT_LABELS = Object.freeze({ oklab: 'OKLab', oklch: 'OKLCH', hsl: 'HSL', az: 'A–Z', axes: 'Axes', cloud: 'Cloud', sphere: 'Sphere' });
+export const ARRANGEMENTS = Object.freeze(['oklab', 'oklch', 'hsl', 'az', 'axes', 'cloud', 'sphere', 'mountain']);
+export const ARRANGEMENT_LABELS = Object.freeze({ oklab: 'OKLab', oklch: 'OKLCH', hsl: 'HSL', az: 'A–Z', axes: 'Axes', cloud: 'Cloud', sphere: 'Sphere', mountain: 'Mountain' });
+/** Arrangements that are an order and nothing else: `priority` (who is in
+ * front) decides every place, so a change of scope or of `front=` moves items. */
+export const ORDERED = Object.freeze(['cloud', 'mountain']);
+export const isOrdered = arrangement => ORDERED.includes(arrangement);
 export const isArrangement = value => ARRANGEMENTS.includes(value);
 /** The arrangement the space opens in, from the 3D button or a link that names
  * none. Axes puts the collection's time, lightness and hue on three axes
@@ -166,6 +170,7 @@ export function arrange(clips, arrangement, { edge = tileEdge(clips.length), axe
   for (let i = 0; i < n; i++) { const [w, h] = sized(aspectOf(clips[i]), edge); sizes[i * 2] = w; sizes[i * 2 + 1] = h; }
   if (arrangement === 'axes') return arrangeAxes(clips, positions, sizes, edge, axes, labelFor);
   if (arrangement === 'cloud') return arrangeCloud(clips, positions, sizes, edge, priority);
+  if (arrangement === 'mountain') return arrangeMountain(clips, positions, sizes, edge, priority);
   if (arrangement === 'sphere') return arrangeSphere(clips, positions, sizes, edge, sphere);
   if (arrangement === 'az') {
     order = alphabetical(clips, positions, sizes, edge, labels);
@@ -641,6 +646,101 @@ function arrangeCloud(clips, positions, sizes, edge, priority = []) {
   });
   return { arrangement: 'cloud', edge, stretch: 1, positions, exact: positions.slice(), sizes, order, labels: [], guides: [], unplaced: 0,
     declumped: { moved: 0, maxShift: 0, meanShift: 0 }, bounds: boundsOf(positions, sizes, n) };
+}
+
+/* -------------------------------------------------------------- Mountain --- */
+
+/** The slope's rise, in degrees from the floor. */
+export const MOUNTAIN_TILT = 24;
+/** A back row stands this tall beside the front row's 1. */
+export const MOUNTAIN_BACK = 0.3;
+/**
+ * Mountain: a slope the order climbs, after Data Mountain (Robertson,
+ * Czerwinski, Larson, Robbins, Thiel and van Dantzich, UIST 1998). There a
+ * person placed about a hundred pages by hand and remembered where. A
+ * collection of hundreds cannot be placed by hand, so here the order places
+ * them: `priority` as the cloud takes it (indices, first is front; the rest
+ * follow in collection order).
+ *
+ * Rows are justified to the slope's width, like a flat justified wall. The
+ * front row is the tallest and nearest; each row behind stands further back,
+ * higher up the slope, and shorter. A back row is therefore small twice over,
+ * by its size and by its distance, so the end of the order costs little of
+ * the view and is still there. Cards stand upright and face the camera.
+ * Nothing here encodes a value; the order is the only claim.
+ *
+ * `mountain.rows` holds each row's items left to right, front row first, and
+ * `mountain.rowOf` an item's row; `mountainStep` walks them.
+ */
+function arrangeMountain(clips, positions, sizes, edge, priority = []) {
+  const n = clips.length, seen = new Set(), order = [];
+  for (const i of priority) if (Number.isInteger(i) && i >= 0 && i < n && !seen.has(i)) { seen.add(i); order.push(i); }
+  for (let i = 0; i < n; i++) if (!seen.has(i)) order.push(i);
+  const aspect = i => sizes[i * 2] / sizes[i * 2 + 1];
+  const width = WORLD * 1.5, depth = WORLD * 1.4, gap = edge * 0.14, rowGap = edge * 0.3;
+  // One pass at a height scale: rows fill the width, the target height easing from front to back.
+  const pack = scale => {
+    const frontH = edge * 2.4 * scale, backH = frontH * MOUNTAIN_BACK, rows = [];
+    let v = 0, k = 0;
+    while (k < n) {
+      const target = frontH + (backH - frontH) * Math.min(1, v / depth), start = k;
+      let sum = 0;
+      while (k < n) { sum += aspect(order[k]); k++; if (sum * target + gap * (k - start - 1) >= width) break; }
+      const fill = (width - gap * (k - start - 1)) / sum;
+      // A short last row keeps the target height and stays left, not stretched across the slope.
+      const h = k >= n && fill > target * 1.45 ? target : fill;
+      rows.push({ start, end: k, v, h }); v += h + rowGap;
+    }
+    return { rows, used: v - rowGap };
+  };
+  // Shrinking the rows puts more in each and makes each shallower, so the depth used falls with the scale: search it.
+  let best = pack(1);
+  if (best.used > depth) {
+    let lo = 0.04, hi = 1; best = pack(lo);
+    for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2, trial = pack(mid); if (trial.used <= depth) { best = trial; lo = mid; } else hi = mid; }
+  }
+  const tilt = MOUNTAIN_TILT * Math.PI / 180, sin = Math.sin(tilt), cos = Math.cos(tilt), used = Math.max(best.used, 1);
+  const rowOf = new Int32Array(n), rows = [];
+  // Centred on the origin: v runs up the slope from its front edge.
+  const place = (u, v, h) => [u, (v - used / 2) * sin + h / 2, (used / 2 - v) * cos];
+  best.rows.forEach((row, r) => {
+    const members = [];
+    let u = -width / 2;
+    for (let k = row.start; k < row.end; k++) {
+      const i = order[k], w = aspect(i) * row.h;
+      positions.set(place(u + w / 2, row.v, row.h), i * 3);
+      sizes[i * 2] = w; sizes[i * 2 + 1] = row.h; rowOf[i] = r; members.push(i); u += w + gap;
+    }
+    rows.push(members);
+  });
+  // The slope's outline, and a rung under each row, so the plane reads as a plane.
+  const edgeAt = v => [[-width / 2, (v - used / 2) * sin, (used / 2 - v) * cos], [width / 2, (v - used / 2) * sin, (used / 2 - v) * cos]];
+  const front = edgeAt(0), back = edgeAt(used), guides = [front, back, [front[0], back[0]], [front[1], back[1]]];
+  for (const row of best.rows.slice(1)) guides.push(edgeAt(row.v - rowGap / 2));
+  return { arrangement: 'mountain', edge, stretch: 1, positions, exact: positions.slice(), sizes, order, labels: [], guides, unplaced: 0,
+    declumped: { moved: 0, maxShift: 0, meanShift: 0 },
+    mountain: { tilt: MOUNTAIN_TILT, width, depth: used, rows, rowOf, up: [0, sin, -cos] }, bounds: boundsOf(positions, sizes, n) };
+}
+/**
+ * One step on the mountain from item `from`: 'left' and 'right' along its
+ * row, 'away' to the row behind and 'toward' to the row in front, landing on
+ * the item nearest across. Only items `allowed(i)` passes are stepped to; a
+ * row with none is passed over. -1 at an edge.
+ */
+export function mountainStep(layout, from, direction, allowed = () => true) {
+  const m = layout?.mountain; if (!m || !(from >= 0 && from < m.rowOf.length)) return -1;
+  const r = m.rowOf[from], row = m.rows[r], x = i => layout.positions[i * 3];
+  if (direction === 'left' || direction === 'right') {
+    const step = direction === 'right' ? 1 : -1;
+    for (let k = row.indexOf(from) + step; k >= 0 && k < row.length; k += step) if (allowed(row[k])) return row[k];
+    return -1;
+  }
+  const step = direction === 'away' ? 1 : direction === 'toward' ? -1 : 0; if (!step) return -1;
+  for (let q = r + step; q >= 0 && q < m.rows.length; q += step) {
+    const open = m.rows[q].filter(allowed); if (!open.length) continue;
+    return open.reduce((a, b) => Math.abs(x(b) - x(from)) < Math.abs(x(a) - x(from)) ? b : a);
+  }
+  return -1;
 }
 
 /* ---------------------------------------------------------------- Sphere --- */

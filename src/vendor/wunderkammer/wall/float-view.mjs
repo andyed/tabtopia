@@ -21,7 +21,7 @@ import { sourceFor, proxied } from './spatial/spatial-view.mjs';
 import { spriteCovers } from './sprite-covers.mjs';
 import { clipKey } from './context-clusters.mjs';
 import { perf } from './instrument.mjs';
-import { parseFront, isFront, orderValues, isTimeKey } from './float-space.mjs';
+import { parseFront, isFront, orderValues, isTimeKey, isOrdered, mountainStep } from './float-space.mjs';
 import { ARRANGEMENTS, DEFAULT_ARRANGEMENT, isArrangement, arrange, AXES, AXIS_LABELS, axisDimensions, resolveAxes, validAxes, clipAttributeKeys, attributeAxis, nearestAlong, describeItem } from './float-space.mjs';
 import { DEFAULT_SPHERE, validSphere } from './float-space.mjs';
 import { arrangeMenu, STACKS } from './arrange-menu.mjs';
@@ -45,7 +45,11 @@ const ease = t => t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 const FIT_DIRECTION = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(70), THREE.MathUtils.degToRad(32));
 const AXES_DIRECTION = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(74), THREE.MathUtils.degToRad(20));
 const FRONT = new THREE.Vector3(0, 0, 1);
-const fitDirection = arrangement => arrangement === 'az' || arrangement === 'cloud' || arrangement === 'sphere' ? FRONT : arrangement === 'axes' ? AXES_DIRECTION : FIT_DIRECTION;
+/** The mountain is seen from its foot, looking up the slope from a little above. */
+const MOUNTAIN_DIRECTION = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(62), 0);
+const fitDirection = arrangement => arrangement === 'az' || arrangement === 'cloud' || arrangement === 'sphere' ? FRONT : arrangement === 'mountain' ? MOUNTAIN_DIRECTION : arrangement === 'axes' ? AXES_DIRECTION : FIT_DIRECTION;
+/** A card lifted off the mountain by the pointer: how far toward the camera and how far up, in its own heights, and how much larger. */
+const STICK_LIFT = 1.6, STICK_SCALE = 1.5, STICK_RISE = 1.1;
 /** The sphere's menus. An opening a link names that is not listed here is added to the menu. */
 const FACING_CHOICES = [['out', 'Outward · a globe'], ['in', 'Inward · a bowl']];
 const CAP_CHOICES = [0, 30, 45, 60, 90];
@@ -139,6 +143,10 @@ export class FloatView {
     // neutral covers, and a line across a cover is a scratch on the evidence.
     this.guides = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x3d474a, depthTest: false, depthWrite: false }));
     this.guides.renderOrder = -1; this.scene.add(this.guides);
+    // The mountain's stick: from a card the pointer lifted, back to its place on the slope.
+    this.stickLine = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(6, 3)), new THREE.LineBasicMaterial({ color: 0xe8e6da, depthTest: false, depthWrite: false }));
+    this.stickLine.visible = false; this.stickLine.frustumCulled = false; this.scene.add(this.stickLine);
+    this.stuck = -1;
     this.ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.5, -.5, 0), new THREE.Vector3(.5, -.5, 0), new THREE.Vector3(.5, .5, 0), new THREE.Vector3(-.5, .5, 0)]),
       new THREE.LineBasicMaterial({ color: 0xaaffaa, depthTest: false }));
     this.ring.renderOrder = 10; this.ring.visible = false; this.scene.add(this.ring);
@@ -208,6 +216,7 @@ export class FloatView {
         if (key !== this.hoverKey) {
           this.cancelHover();
           if (key) { this.hoverKey = key; this.invalidate(); if (this.callbacks.hoverEnabled?.() ?? true) this.callbacks.onHover?.(this.clips[index], e); }
+          if (key) this.stick(index);
         }
       });
       this.listen(this.canvas, 'pointerleave', () => { this.down = null; this.cancelHover(); });
@@ -291,8 +300,8 @@ export class FloatView {
     this.scopeCount = 0;
     for (let i = 0; i < this.count; i++) { const on = wanted.has(this.keys[i]) ? 1 : 0; this.inScope[i] = on; this.scopeCount += on; }
     this.applyOpacity();
-    // The cloud's order is the scope's: it moves items when the scope changes, as no other arrangement does.
-    if (this.arrangement === 'cloud' && this.field) this.relayout({ animate: false });
+    // An ordered arrangement's order is the scope's: it moves items when the scope changes, as no other does.
+    if (isOrdered(this.arrangement) && this.field) this.relayout({ animate: false });
     if (!this.inScopeKey(this.selection)) this.selection = null;
     this.syncCallout();
     this.updateScopeNote();
@@ -319,7 +328,7 @@ export class FloatView {
   setLit(keys) {
     this.lit = keys && keys.size ? new Set(keys) : null;
     this.applyOpacity(); this.updateScopeNote();
-    if (this.arrangement === 'cloud' && this.field) this.relayout({ animate: false });
+    if (isOrdered(this.arrangement) && this.field) this.relayout({ animate: false });
     this.invalidate();
   }
 
@@ -355,7 +364,7 @@ export class FloatView {
     return true;
   }
   resolveAxes() { this.axes = resolveAxes(this.dimensions, this.requestedAxes); this.fillAxisMenus(); }
-  arrangeOptions() { return { axes: this.axes, labelFor: this.callbacks.labelFor, priority: this.arrangement === 'cloud' ? this.cloudPriority() : undefined, sphere: this.sphereOptions() }; }
+  arrangeOptions() { return { axes: this.axes, labelFor: this.callbacks.labelFor, priority: isOrdered(this.arrangement) ? this.cloudPriority() : undefined, sphere: this.sphereOptions() }; }
   /** The sphere's facing and opening in force: the defaults unless set. */
   sphereOptions() { return this.sphere ?? DEFAULT_SPHERE; }
   /**
@@ -437,7 +446,7 @@ export class FloatView {
   setFront(front, { animate = true } = {}) {
     if (front !== null && !isFront(front)) return false;
     this.front = front;
-    if (this.field && this.arrangement === 'cloud') this.relayout({ animate });
+    if (this.field && isOrdered(this.arrangement)) this.relayout({ animate });
     return true;
   }
   /** The order in words, for the figure: "by capture date, latest first". */
@@ -460,6 +469,8 @@ export class FloatView {
   }
   relayout({ animate = true } = {}) {
     const wasOriented = this.oriented();
+    // Every card is placed again below, a lifted one with them.
+    this.stuck = -1; this.stickLine.visible = false;
     this.layout = arrange(this.clips, this.arrangement, this.arrangeOptions());
     this.syncCallout(); // a new arrangement reads the item differently
     const p = this.layout.positions, s = this.layout.sizes, still = !animate || reducedMotion();
@@ -534,7 +545,10 @@ export class FloatView {
     const on = index !== undefined && this.inScope?.[index] === 1;
     if (!on) { this.callout.hide(); return null; }
     const clip = this.clips[index], title = String(clip.title || this.keys[index]);
-    const where = describeItem(clip, this.arrangement, { axes: this.axes, modelFor: id => this.modelFor(id), labelFor: this.callbacks.labelFor });
+    // On the mountain an item's place is its row, counted from the front.
+    const m = this.layout?.mountain, row = m ? `row ${m.rowOf[index] + 1} of ${m.rows.length}` : '';
+    const where = m ? { short: [row], spoken: `${row}, from the front` }
+      : describeItem(clip, this.arrangement, { axes: this.axes, modelFor: id => this.modelFor(id), labelFor: this.callbacks.labelFor });
     this.callout.show(title, where.short.join(' · '));
     this.invalidate();
     return where.spoken ? `${title}. ${where.spoken}.` : `${title}.`;
@@ -570,7 +584,10 @@ export class FloatView {
       } else for (const i of scoped) { const d = (p[i * 3] - t.x) ** 2 + (p[i * 3 + 1] - t.y) ** 2 + (p[i * 3 + 2] - t.z) ** 2; if (d < best) { best = d; near = i; } }
       this.keyChoose(this.keys[near]); return;
     }
-    const { k, sign } = this.screenAxis(screen), next = nearestAlong(p, scoped, from, k, sign);
+    // The mountain is walked by its rows: sideways along one, and up or away to the row behind.
+    const next = this.layout.mountain
+      ? mountainStep(this.layout, from, { up: 'away', away: 'away', down: 'toward', toward: 'toward' }[screen] || screen, i => this.inScope[i] === 1)
+      : (({ k, sign }) => nearestAlong(p, scoped, from, k, sign))(this.screenAxis(screen));
     if (next < 0) { this.announcer.textContent = `No more items ${EDGE_WORDS[screen]}.`; return; }
     this.keyChoose(this.keys[next]);
   }
@@ -607,14 +624,18 @@ export class FloatView {
 
   /** Where the camera ends up to look at item `index`: on the line from where it is now. */
   poseFor(index) {
-    const centre = this.centreOf(index, new THREE.Vector3());
-    const w = this.field.sizes[index * 2], h = this.field.sizes[index * 2 + 1];
+    // On the mountain, the card's place on the slope, not where the pointer may have lifted it to.
+    const mountain = !!this.layout?.mountain, sizes = mountain ? this.layout.sizes : this.field.sizes;
+    const centre = mountain ? new THREE.Vector3().fromArray(this.layout.positions, index * 3) : this.centreOf(index, new THREE.Vector3());
+    const w = sizes[index * 2], h = sizes[index * 2 + 1];
     const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)), tanH = tanV * this.camera.aspect;
-    const distance = Math.max(h / (2 * tanV * 0.38), w / (2 * tanH * 0.5), 30);
+    // The mountain keeps the card's row and the rows around it in view: the camera travels the slope, it does not dive at one card.
+    const distance = mountain ? Math.max(h / (2 * tanV * 0.2), w / (2 * tanH * 0.3), 30) : Math.max(h / (2 * tanV * 0.38), w / (2 * tanH * 0.5), 30);
     const from = this.camera.position.clone().sub(centre);
     if (from.lengthSq() < 1e-6) from.copy(FIT_DIRECTION);
     // A sphere's card is seen along its face; from where the camera is, it may be the back.
-    const direction = this.oriented() ? this.approachFor(index) : from.normalize(), position = centre.clone().addScaledVector(direction, distance), target = centre.clone();
+    // Every card on the mountain is seen from the same side, so stepping row to row moves the camera along the slope.
+    const direction = this.oriented() ? this.approachFor(index) : mountain ? MOUNTAIN_DIRECTION.clone() : from.normalize(), position = centre.clone().addScaledVector(direction, distance), target = centre.clone();
     // Land beside the detail pane when it covers part of the stage.
     const obscured = clamp(this.callbacks.obscuredRight?.() || 0, 0, this.width * 0.7);
     if (obscured > 0 && this.width) {
@@ -740,6 +761,7 @@ export class FloatView {
     if (event.altKey || event.ctrlKey || event.metaKey || !this.controls) return;
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
     if (key === 'Home' || key === '0') { event.preventDefault(); this.tween = null; this.fitView(); return; }
+    if (key === 'Escape' && this.stuck >= 0) { event.preventDefault(); this.unstick(); return; }
     if (key === 'Enter' && this.selection) { event.preventDefault(); this.open(this.selection, { fly: true }); return; }
     if (key === '/') { event.preventDefault(); this.jump.show(); return; }
     if (key === 'PageUp' || key === 'PageDown') { event.preventDefault(); this.moveSelection(key === 'PageUp' ? 'away' : 'toward'); return; }
@@ -766,6 +788,55 @@ export class FloatView {
     if (key === 'ArrowDown') sphere.phi += .08;
     sphere.phi = clamp(sphere.phi, .05, Math.PI - .05);
     this.setCamera(target.clone().add(new THREE.Vector3().setFromSpherical(sphere)).toArray(), target.toArray()); this.interact();
+  }
+
+  /* ------------------------------------------------- the mountain's stick --- */
+
+  /**
+   * Hover on the mountain: the card under the pointer comes off the slope
+   * toward the camera, half again as large, on a stick that runs back to its
+   * place. It stays out when the pointer moves on to empty space, and goes
+   * back when another card is hovered, on Escape, or when the items are laid
+   * out again. It has to stay: lifting a card moves it out from under the
+   * pointer, and one that dropped the moment the pointer lost it would flap.
+   */
+  stick(index) {
+    if (!this.layout?.mountain || !this.field || index === this.stuck || !(index >= 0 && index < this.count)) return false;
+    this.unstick({ quiet: true });
+    const p = this.layout.positions, s = this.layout.sizes, seat = new THREE.Vector3().fromArray(p, index * 3);
+    const toEye = this.camera.position.clone().sub(seat), distance = toEye.length(); if (distance < 1e-3) return false;
+    const h = s[index * 2 + 1], lift = Math.min(distance * 0.5, h * STICK_LIFT);
+    // Toward the camera, and up: a card that only came straight at the eye would hide its own stick.
+    const at = seat.clone().addScaledVector(toEye.normalize(), lift); at.y += h * STICK_RISE;
+    this.stuck = index; this.stuckHalf = h * STICK_SCALE / 2;
+    // The stick starts where the card stood: the middle of its foot, on the slope.
+    this.stickLine.geometry.attributes.position.setXYZ(0, seat.x, seat.y - h / 2, seat.z);
+    this.moveTile(index, at.x, at.y, at.z, s[index * 2] * STICK_SCALE, h * STICK_SCALE);
+    this.stickLine.visible = true; this.syncStick(); this.invalidate();
+    return true;
+  }
+  /** Put the lifted card back on the slope. False when none was out. */
+  unstick({ quiet = false } = {}) {
+    const index = this.stuck; if (index < 0) return false;
+    this.stuck = -1; this.stickLine.visible = false;
+    if (this.field && this.layout && index < this.count) {
+      const p = this.layout.positions, s = this.layout.sizes;
+      this.moveTile(index, p[index * 3], p[index * 3 + 1], p[index * 3 + 2], s[index * 2], s[index * 2 + 1]);
+    }
+    if (!quiet) this.invalidate();
+    return true;
+  }
+  /** One tile to a new place and size: travelling, or at once under reduced motion. */
+  moveTile(index, x, y, z, w, h) {
+    if (reducedMotion()) { this.field.place(index, x, y, z, w, h, this.rotationOf(index)); this.field.layout(); }
+    else this.field.moveTo(index, x, y, z, w, h, this.rotationOf(index));
+  }
+  /** The stick's far end follows the card while it travels. */
+  syncStick() {
+    if (this.stuck < 0 || !this.field) return;
+    // To the middle of the lifted card's foot, so the stick shows below it.
+    const c = this.centreOf(this.stuck, this.stickC ??= new THREE.Vector3()), at = this.stickLine.geometry.attributes.position;
+    at.setXYZ(1, c.x, c.y - this.stuckHalf, c.z); at.needsUpdate = true;
   }
 
   /* ---------------------------------------------------------- picking --- */
@@ -839,8 +910,8 @@ export class FloatView {
       if (relaid) this.setAxes(state.axes, { animate: false });
       else { this.requestedAxes = { ...state.axes }; if (this.field) this.resolveAxes(); this.syncRadios(); }
     }
-    // The cloud's order, quietly too: a cloud staying a cloud lays out here, any other change below.
-    if (this.arrangement === 'cloud' && state.arrangement === 'cloud') this.setFront(state.front ?? null, { animate: false });
+    // The order, quietly too: a cloud staying a cloud (or a mountain a mountain) lays out here, any other change below.
+    if (isOrdered(this.arrangement) && state.arrangement === this.arrangement) this.setFront(state.front ?? null, { animate: false });
     else this.front = state.front ?? null;
     // The sphere's facing and opening, the same way.
     if (this.arrangement === 'sphere' && state.arrangement === 'sphere') this.setSphere(state.sphere ?? null, { animate: false });
@@ -918,6 +989,7 @@ export class FloatView {
       this.dirty = false;
       const endPass = perf.begin('float/pass');
       this.billboard();
+      this.syncStick();
       this.field?.update(this.camera, now);
       this.field?.takeDirty();
       this.videos?.update(this.camera);
@@ -1071,6 +1143,8 @@ export class FloatView {
       opacity: f ? byKey(i => r(f.aOpacity.array[i])) : {}, screen, stretch: this.layout?.stretch ?? 1,
       moving: f?.moving || 0, flying: !!this.tween, edge: this.layout?.edge || 0, declumped: this.layout?.declumped || null,
       unplaced: this.layout?.unplaced || 0, labels: this.labels.map(l => l.node.textContent),
+      stuck: this.stuck >= 0 ? this.keys[this.stuck] : null, mountain: this.layout?.mountain ? { rows: this.layout.mountain.rows.map(row => row.map(i => this.keys[i])) } : null,
+      sizes: f ? byKey(i => [r(f.sizes[i * 2]), r(f.sizes[i * 2 + 1])]) : {},
       axes: this.axes, axisInfo: this.layout?.axisInfo || null, sphere: this.layout?.sphere || null,
       // The way each tile's face points, as drawn now.
       normals: f ? byKey(i => this.faceNormal(i, v).toArray().map(r)) : {},
@@ -1083,7 +1157,7 @@ export class FloatView {
   dispose() {
     if (this.disposed) return; this.disposed = true; this.cancelHover(); if (this.frame) cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect(); for (const [node, name, fn] of this.listeners) node.removeEventListener(name, fn);
-    this.controls?.dispose(); this.videos?.dispose(); this.field?.dispose(); this.guides.geometry.dispose(); this.ring.geometry.dispose();
+    this.controls?.dispose(); this.videos?.dispose(); this.field?.dispose(); this.guides.geometry.dispose(); this.stickLine.geometry.dispose(); this.ring.geometry.dispose();
     this.renderer?.dispose(); this.renderer?.forceContextLoss(); this.host.replaceChildren();
   }
 }
