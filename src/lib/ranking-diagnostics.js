@@ -53,6 +53,10 @@ const CENSOR_REASONS = new Set([
     "inactivity",
     "outcome-not-candidate",
     "candidate-set-changed",
+    // The choice was made from a shown prediction (either experiment arm).
+    // Scoring it would let an exposed ranking validate itself, so it stays out
+    // of the gate and the replay log. See docs/PREDICTION_EXPOSURE_PLAN.md.
+    "prediction-exposed",
     "unspecified"
 ]);
 const DESTINATION_CLASSES = new Set(["existing-tab", "out-of-set", "unknown"]);
@@ -214,7 +218,7 @@ export class RankingDiagnostics {
      * record. Tab identifiers are consumed here and never copied to the local
      * outcome buffer.
      */
-    async takePendingPrediction(actualTabId, qualifiedDwellMs, currentTabIds = [], now = Date.now()) {
+    async takePendingPrediction(actualTabId, qualifiedDwellMs, currentTabIds = [], now = Date.now(), { exposed = false } = {}) {
         if (!this.isEnabled() || !this.sessionStorage) return null;
         const saved = await this.sessionStorage.get([DIAGNOSTICS_PENDING_KEY]);
         const pending = saved[DIAGNOSTICS_PENDING_KEY];
@@ -235,7 +239,9 @@ export class RankingDiagnostics {
             : [];
 
         let censorReason = "";
-        if (observationAgeMs > this.maximumObservationAgeMs) {
+        if (exposed) {
+            censorReason = "prediction-exposed";
+        } else if (observationAgeMs > this.maximumObservationAgeMs) {
             censorReason = "inactivity";
         } else if (!eligibleTabIds.includes(actual)) {
             censorReason = "outcome-not-candidate";

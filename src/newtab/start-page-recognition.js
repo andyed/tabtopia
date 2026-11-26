@@ -11,6 +11,7 @@ import { createStartPageController } from "./start-page-controller.js";
 import { createStartPageActionExecutor } from "./start-page-actions.js";
 import { renderHomeTakeover } from "./home-takeover.js";
 import { FEATURE_FLAGS, readFeatureFlag } from "../lib/feature-flags.js";
+import { applyLikelyTab, createLikelyTabSlot } from "./likely-tab-slot.js";
 
 const HOME_MODEL_CACHE_KEY = "tabtopiaHomeModelV1";
 const HOME_MODEL_CACHE_VERSION = 2;
@@ -27,6 +28,8 @@ let lastHiddenContextItem = null;
 let featuredImpression = null;
 let contextExpiryTimer = null;
 const contextPageId = crypto.randomUUID();
+// Shown-prediction experiment for the focal slot; see docs/PREDICTION_EXPOSURE_PLAN.md.
+const likelyTabSlot = createLikelyTabSlot({ send: message => chrome.runtime.sendMessage(message) });
 let contextImpressionSequence = 0;
 let recommendationRound = 0;
 let recommendationLockedPages = [];
@@ -346,9 +349,10 @@ function renderFreshHome() {
   });
 }
 
-function renderHome(model) {
+function renderHome(rawModel) {
   const root = document.getElementById("startPageHome");
   if (!root) return;
+  const model = applyLikelyTab(likelyTabSlot, rawModel);
   activateHome();
   try {
     const focusedRecommendation = root.contains(document.activeElement) ? document.activeElement?.dataset?.recommendationFocus : null;
@@ -501,6 +505,7 @@ async function undoContextHide() {
 }
 
 async function handleHomeAction(action) {
+  likelyTabSlot.recordSelection(action);
   const result = await executeHomeAction(action);
   if (!result.ok && latestHomeModel) {
     renderHome({

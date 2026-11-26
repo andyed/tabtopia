@@ -68,6 +68,20 @@
             </div>
         </section>
 
+        <section class="setting-panel" aria-labelledby="prediction-exposure-title">
+            <label class="setting-row" for="predictionExposureEnabled">
+                <span class="setting-copy">
+                    <span class="setting-title" id="prediction-exposure-title">Predict likely tabs</span>
+                    <span class="setting-description">Puts the next-tab model in the empty <kbd>tt</kbd> list and the top slot of Home. One session in five keeps the current order for comparison.</span>
+                </span>
+                <span class="switch">
+                    <input id="predictionExposureEnabled" type="checkbox" role="switch">
+                    <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                </span>
+            </label>
+            <div class="install-note"><span id="predictionExposureReport" style="white-space: pre-line"></span></div>
+        </section>
+
         <section class="setting-panel" aria-labelledby="fisheye-title">
             <label class="setting-row" for="searchFisheyeEnabled">
                 <span class="setting-copy">

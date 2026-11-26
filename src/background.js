@@ -49,6 +49,9 @@ import {
     rankTabs
 } from "./lib/tab-recall.js";
 import { buildShadowPredictions } from "./lib/shadow-ranking.js";
+import {
+    PredictionExposureStore, assignArm, orderByTabIds, predictLikelyTabs
+} from "./lib/prediction-exposure.js";
 import { captureReplayFeatures } from "./lib/ranking-replay.js";
 import { resolveActivationOrigin } from "./lib/activation-origin.js";
 import { HomeContextDiagnostics } from "./lib/home-context-diagnostics.js";
@@ -71,6 +74,15 @@ const revisitReady = storageRepairReady.then(() => revisitStore.init()).catch(er
 const rankingDiagnostics = new RankingDiagnostics(chrome.storage.local, chrome.storage.session);
 let rankingDiagnosticsInstallType = "normal";
 const rankingDiagnosticsReady = storageRepairReady.then(initializeRankingDiagnostics);
+// Shown-prediction experiment. UI follows its own setting; its counts are
+// written only while ranking diagnostics are on.
+const predictionExposure = new PredictionExposureStore(chrome.storage.local);
+const predictionExposureReady = rankingDiagnosticsReady
+    .then(() => predictionExposure.init({ installType: rankingDiagnosticsInstallType }))
+    .catch(error => {
+        globalThis.TabtopiaLogger.warn("[PredictionExposure] initialization failed; predictions stay hidden", error);
+        return null;
+    });
 const revisitStudy = new RevisitStudy(chrome.storage.local, {
     isEnabled: () => rankingDiagnostics.isEnabled(),
     digest: async identity => (await revisitReady)?.digest(identity)
@@ -156,6 +168,12 @@ let omniboxSnapshot = null;
 let omniboxSnapshotDirty = true;
 let omniboxLastResults = [];
 let omniboxLastInteraction = null;
+// One arm per omnibox session. `omniboxPrediction` is set while the shown
+// suggestions are the empty-query prediction list, and cleared once typing
+// replaces them with lexical matches.
+let omniboxArm = null;
+let omniboxPrediction = null;
+let omniboxPredictionImpressed = false;
 
 async function initializeRankingDiagnostics() {
     try {
@@ -632,6 +650,9 @@ async function beginOmniboxSession() {
     omniboxSessionId += 1;
     omniboxLastResults = [];
     omniboxLastInteraction = null;
+    resetOmniboxPrediction();
+    const exposure = await predictionExposureReady;
+    omniboxArm = exposure?.isExposureEnabled() ? assignArm() : null;
     await setOmniboxDefault("Search open tabs with Tabtopia");
     try {
         await refreshOmniboxSnapshot();
@@ -649,10 +670,17 @@ async function handleOmniboxInputChanged(text, suggest) {
             : omniboxSnapshot;
         if (requestSession !== omniboxSessionId) return;
 
-        const results = rankTabs(text, snapshot.candidates, {
-            limit: OMNIBOX_RESULT_LIMIT,
-            currentTabId: snapshot.currentTabId
-        });
+        const emptyQuery = normalizeQuery(text).length === 0;
+        const results = emptyQuery && omniboxArm
+            ? predictedOmniboxResults(snapshot, omniboxArm.arm)
+            : rankTabs(text, snapshot.candidates, {
+                limit: OMNIBOX_RESULT_LIMIT,
+                currentTabId: snapshot.currentTabId
+            });
+        if (!emptyQuery && omniboxPrediction) {
+            recordOmniboxExposure("refinement");
+            omniboxPrediction = null;
+        }
         omniboxLastResults = results;
         if (rankingDiagnostics.isEnabled()) {
             omniboxLastInteraction = {
@@ -671,24 +699,97 @@ async function handleOmniboxInputChanged(text, suggest) {
 
         await setOmniboxDefault(text ? "Switch to the best matching open tab" : "Switch to a relevant open tab");
         const nonce = requestSession.toString(36);
-        suggest(results.map(result => ({
+        const likelyNext = emptyQuery && omniboxPrediction?.arm === "treatment" && omniboxPrediction.labeled;
+        suggest(results.map((result, index) => ({
             content: `tabtopia-tab:${result.tabId}:${nonce}`,
-            description: formatOmniboxDescription(result)
+            description: formatOmniboxDescription(result, { likelyNext: likelyNext && index === 0 })
         })));
+        if (emptyQuery && omniboxPrediction && !omniboxPredictionImpressed) {
+            omniboxPredictionImpressed = true;
+            recordOmniboxExposure("impression");
+        }
     } catch (error) {
         console.warn("[Omnibox] ranking failed", error);
         suggest([]);
     }
 }
 
-function formatOmniboxDescription(result) {
+/**
+ * Empty-query suggestions for an exposure session. Treatment shows the gated
+ * model's order; control keeps today's recall order so the experiment has a
+ * comparison after people start reacting to the predictions.
+ */
+function predictedOmniboxResults(snapshot, arm) {
+    const recallOrder = rankTabs("", snapshot.candidates, {
+        limit: snapshot.candidates.length,
+        currentTabId: snapshot.currentTabId
+    });
+    const prediction = predictLikelyTabs(snapshot.candidates, { currentTabId: snapshot.currentTabId });
+    const results = (arm === "treatment" ? orderByTabIds(recallOrder, prediction.tabIds) : recallOrder)
+        .slice(0, OMNIBOX_RESULT_LIMIT);
+    omniboxPrediction = { arm, labeled: arm === "treatment" && prediction.labeled };
+    return results;
+}
+
+function resetOmniboxPrediction() {
+    omniboxPrediction = null;
+    omniboxPredictionImpressed = false;
+}
+
+function recordOmniboxExposure(kind, displayedRank = 0) {
+    if (!omniboxPrediction || !omniboxPredictionImpressed || !rankingDiagnostics.isEnabled()) return;
+    const entry = { surface: "omnibox", arm: omniboxPrediction.arm, labeled: omniboxPrediction.labeled, displayedRank };
+    const write = kind === "impression" ? predictionExposure.recordImpression(entry)
+        : kind === "selection" ? predictionExposure.recordSelection(entry)
+            : kind === "refinement" ? predictionExposure.recordRefinement(entry)
+                : predictionExposure.recordAbandonment(entry);
+    write.catch(error => globalThis.TabtopiaLogger.warn("[PredictionExposure] write failed", error));
+}
+
+async function likelyTabForHome(homeTabId) {
+    const exposure = await predictionExposureReady;
+    if (!exposure?.isExposureEnabled()) return { arm: null, likely: null };
+    const snapshot = await refreshOmniboxSnapshot();
+    const prediction = predictLikelyTabs(snapshot.candidates, { currentTabId: homeTabId });
+    const top = snapshot.candidates.find(candidate => candidate.tabId === prediction.tabIds[0]);
+    const { arm } = assignArm();
+    if (!top) return { arm, likely: null };
+    return {
+        arm,
+        likely: {
+            tabId: top.tabId,
+            windowId: top.windowId,
+            url: top.url,
+            title: top.title,
+            domain: top.domain,
+            labeled: prediction.labeled
+        }
+    };
+}
+
+async function recordHomePredictionExposure(message) {
+    const exposure = await predictionExposureReady;
+    await rankingDiagnosticsReady;
+    if (!exposure?.isExposureEnabled()) return { recorded: false };
+    const entry = { surface: "home", arm: message.arm, labeled: Boolean(message.labeled), displayedRank: Number(message.displayedRank) };
+    if (message.kind === "selection" && Number.isInteger(message.tabId)) {
+        exposure.markExposedActivation(message.tabId);
+    }
+    if (!rankingDiagnostics.isEnabled()) return { recorded: false };
+    const recorded = message.kind === "impression" ? await exposure.recordImpression(entry)
+        : message.kind === "selection" ? await exposure.recordSelection(entry)
+            : false;
+    return { recorded };
+}
+
+function formatOmniboxDescription(result, { likelyNext = false } = {}) {
     const title = escapeOmniboxText(result.title || "Untitled tab");
     const details = [
         result.domain,
         formatRelativeAccess(result.lastAccessed),
         result.reason
     ].filter(Boolean).map(escapeOmniboxText).join(" · ");
-    return `<match>Switch</match> · ${title} <dim>${details}</dim>`;
+    return `<match>${likelyNext ? "Likely next" : "Switch"}</match> · ${title} <dim>${details}</dim>`;
 }
 
 async function setOmniboxDefault(description) {
@@ -711,6 +812,14 @@ async function handleOmniboxInputEntered(text) {
         });
     }
     omniboxLastInteraction = null;
+    if (omniboxPrediction) {
+        const shownIndex = omniboxLastResults.findIndex(result => result.tabId === requestedId);
+        if (shownIndex >= 0) {
+            recordOmniboxExposure("selection", shownIndex + 1);
+            predictionExposure.markExposedActivation(requestedId);
+        }
+    }
+    resetOmniboxPrediction();
 
     try {
         const [origin] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -742,6 +851,8 @@ chrome.omnibox.onInputCancelled.addListener(() => {
             ...omniboxLastInteraction
         });
     }
+    if (omniboxPrediction) recordOmniboxExposure("abandonment");
+    resetOmniboxPrediction();
     omniboxSessionId += 1;
     omniboxLastResults = [];
     omniboxLastInteraction = null;
@@ -755,7 +866,9 @@ async function recordQualifiedActivationDiagnostics(actualTabId) {
     const outcome = await rankingDiagnostics.takePendingPrediction(
         actualTabId,
         REVISIT_QUALIFICATION_MS,
-        snapshot.candidates.map(candidate => candidate.tabId)
+        snapshot.candidates.map(candidate => candidate.tabId),
+        Date.now(),
+        { exposed: predictionExposure.consumeExposedActivation(actualTabId) }
     );
     if (outcome) rankingDiagnostics.record(outcome);
 
@@ -2489,16 +2602,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         rankingDiagnosticsReady
             .then(async () => {
                 await syncBookmarkIntentStudy();
-                return Promise.all([rankingDiagnostics.getSummary(), revisitStudy.getSummary(), bookmarkIntentStudy.summary()]);
+                const exposure = await predictionExposureReady;
+                return Promise.all([
+                    rankingDiagnostics.getSummary(), revisitStudy.getSummary(), bookmarkIntentStudy.summary(),
+                    exposure?.getSummary() || null
+                ]);
             })
-            .then(([summary, revisit, bookmarks]) => sendResponse({
+            .then(([summary, revisit, bookmarks, exposure]) => sendResponse({
                 success: true,
                 enabled: rankingDiagnostics.isEnabled(),
                 installType: rankingDiagnosticsInstallType,
                 summary,
                 revisitStudy: revisit || null,
-                bookmarkIntentStudy: bookmarks || null
+                bookmarkIntentStudy: bookmarks || null,
+                predictionExposure: exposure || null
             }))
+            .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
+    }
+    if (message.action === "getLikelyTab" || message.action === "recordPredictionExposure") {
+        // Home only: an extension page in a normal window. The prediction uses
+        // the Home tab as the current tab, exactly as the shadow study does
+        // when a qualified access lands on Home.
+        const senderUrl = String(sender?.url || sender?.tab?.url || "");
+        const homeTabId = sender?.tab?.id;
+        if (!senderUrl.startsWith(chrome.runtime.getURL("")) || sender?.tab?.incognito || !Number.isInteger(homeTabId)) {
+            sendResponse({ success: false, error: "non-incognito extension pages only" });
+            return true;
+        }
+        const work = message.action === "getLikelyTab"
+            ? likelyTabForHome(homeTabId)
+            : recordHomePredictionExposure(message);
+        work.then(result => sendResponse({ success: true, ...result }))
+            .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
+        return true;
+    }
+    if (message.action === "setPredictionExposure") {
+        predictionExposureReady
+            .then(exposure => {
+                if (!exposure) throw new Error("prediction exposure unavailable");
+                return exposure.setExposureEnabled(Boolean(message.enabled));
+            })
+            .then(enabled => {
+                if (!enabled) {
+                    omniboxArm = null;
+                    resetOmniboxPrediction();
+                }
+                sendResponse({ success: true, enabled });
+            })
             .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));
         return true;
     }
@@ -2509,7 +2660,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (!enabled) {
                     bookmarkIntentRevision += 1;
                     cancelHomeRecommendationTimer();
-                    await Promise.all([homeContextDiagnostics.clear(), homeRecommendationStore.clear(), revisitStudy.clear(), bookmarkIntentStudy.clear()]);
+                    await Promise.all([homeContextDiagnostics.clear(), homeRecommendationStore.clear(), revisitStudy.clear(), bookmarkIntentStudy.clear(), predictionExposure.clear()]);
                     bookmarkIntentDirty = true;
                 }
                 sendResponse({ success: true, enabled });
@@ -2523,7 +2674,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 cancelHomeRecommendationTimer();
                 bookmarkIntentRevision += 1;
                 bookmarkIntentDirty = true;
-                return Promise.all([rankingDiagnostics.clear(), homeContextDiagnostics.clear(), homeRecommendationStore.clear(), revisitStudy.clear(), bookmarkIntentStudy.clear()]);
+                return Promise.all([rankingDiagnostics.clear(), homeContextDiagnostics.clear(), homeRecommendationStore.clear(), revisitStudy.clear(), bookmarkIntentStudy.clear(), predictionExposure.clear()]);
             })
             .then(() => sendResponse({ success: true }))
             .catch(error => sendResponse({ success: false, error: String(error?.message || error) }));

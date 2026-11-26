@@ -3,6 +3,8 @@ import { FEATURE_FLAGS, readFeatureFlag, writeFeatureFlag } from "../lib/feature
 import { readHomeRecommendationPreferences, saveHomeRecommendationPreferences } from "../lib/home-recommendations.js";
 
 const enabledInput = document.getElementById("diagnosticsEnabled");
+const predictionExposureInput = document.getElementById("predictionExposureEnabled");
+const predictionExposureReport = document.getElementById("predictionExposureReport");
 const homeInput = document.getElementById("homeTakeoverEnabled");
 const homeStatus = document.getElementById("homeStatus");
 const fisheyeInput = document.getElementById("searchFisheyeEnabled");
@@ -49,6 +51,20 @@ enabledInput.addEventListener("change", async () => {
     if (!response?.success) {
         enabledInput.checked = !enabledInput.checked;
         reportStatus.textContent = response?.error || "Could not update diagnostics.";
+    }
+    await refresh();
+    setBusy(false);
+});
+
+predictionExposureInput.addEventListener("change", async () => {
+    setBusy(true);
+    const response = await sendMessage({
+        action: "setPredictionExposure",
+        enabled: predictionExposureInput.checked
+    });
+    if (!response?.success) {
+        predictionExposureInput.checked = !predictionExposureInput.checked;
+        predictionExposureReport.textContent = response?.error || "Could not update predictions.";
     }
     await refresh();
     setBusy(false);
@@ -126,6 +142,7 @@ async function refresh() {
         ? "Internal install · default on"
         : "Standard install · default off";
     renderSummary(response.summary, response.enabled);
+    renderPredictionExposure(response.predictionExposure, response.enabled);
     renderRevisitStudy(response.revisitStudy, response.enabled);
     document.getElementById("bookmarkIntentStatus").textContent = !response.enabled ? "Diagnostics are off."
         : response.bookmarkIntentStudy?.groups?.map(group => `${group.source === "mobile-folder" ? "Mobile folder" : "Other bookmarks"}: ${group.tracked} tracked · ${group.opened} opened · ${group.engaged} deeper visits · ${group.pending} pending (${group.overdue7d} saved over a week ago)`).join(". ")
@@ -373,6 +390,7 @@ function formatCensorReasons(reasons) {
         inactivity: "inactivity",
         "outcome-not-candidate": "outside set",
         "candidate-set-changed": "set changed",
+        "prediction-exposed": "chosen from a shown prediction",
         unspecified: "unspecified"
     };
     return reasons
@@ -387,7 +405,9 @@ function renderExposureGate(gate, enabled) {
         return;
     }
     if (gate?.ready) {
-        exposureStatus.textContent = "Study gate passed. Results still remain shadow-only; no prediction UI is enabled automatically.";
+        exposureStatus.textContent = predictionExposureInput.checked
+            ? "Study gate passed. Choices made from shown predictions are kept out of this study."
+            : "Study gate passed. Predictions are off.";
         exposureStatus.dataset.state = "ready";
         return;
     }
@@ -474,8 +494,36 @@ function textElement(tag, classNameOrText, text) {
     return element;
 }
 
+function renderPredictionExposure(exposure, diagnosticsEnabled) {
+    if (!exposure) {
+        predictionExposureInput.disabled = true;
+        predictionExposureReport.textContent = "Predictions are unavailable until the extension is reloaded.";
+        return;
+    }
+    predictionExposureInput.checked = Boolean(exposure.exposureEnabled);
+    if (!diagnosticsEnabled) {
+        predictionExposureReport.textContent = "Not measured while diagnostics are off.";
+        return;
+    }
+    const arms = Array.isArray(exposure.arms) ? exposure.arms : [];
+    if (arms.length === 0) {
+        predictionExposureReport.textContent = "No sessions shown yet.";
+        return;
+    }
+    // Reciprocal rank per shown list: a first-row choice scores 1, none scores 0.
+    predictionExposureReport.textContent = arms.map(arm =>
+        `${arm.surface} ${arm.arm}: ${arm.impressions} shown · ${arm.selections} chosen · `
+        + `${formatShare(arm.reciprocalRankPerImpression)} reciprocal rank per list · ${arm.abandonments} dismissed`
+    ).join("\n");
+}
+
+function formatShare(value) {
+    return Number.isFinite(value) ? value.toFixed(2) : "–";
+}
+
 function setBusy(busy) {
     enabledInput.disabled = busy;
+    predictionExposureInput.disabled = busy;
     homeInput.disabled = busy;
     fisheyeInput.disabled = busy;
     refreshButton.disabled = busy;

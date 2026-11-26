@@ -168,7 +168,7 @@ function paintHomeTakeover(root, model, handlers) {
   } else if (mode === "return") {
     primaryContent = renderReturn(safeModel, actions, handlers, status);
   } else {
-    primaryContent = renderQuiet(actions, interests, handlers, status);
+    primaryContent = renderQuiet(actions, interests, handlers, status, readableText(safeModel.focalLabel));
   }
   if (featuredItems.length) {
     const more = element("details", "home-takeover__other-routes");
@@ -317,7 +317,7 @@ function headingWithCount(tagName, className, text, count) {
   return heading;
 }
 
-function renderQuiet(actions, interests, handlers, status) {
+function renderQuiet(actions, interests, handlers, status, focalLabel = "") {
   const section = element("section", "home-takeover__quiet");
   section.setAttribute("aria-label", "Likely destinations");
 
@@ -329,7 +329,7 @@ function renderQuiet(actions, interests, handlers, status) {
   const focal = actions[0];
   const focalWrap = element("div", "home-takeover__focal");
   focalWrap.append(
-    element("p", "home-takeover__section-label", "Most likely next"),
+    element("p", "home-takeover__section-label", focalLabel || "Most likely next"),
     createActionLink(focal, handlers, status, {
       className: "home-takeover__focal-action",
       showReason: true,
